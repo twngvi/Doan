@@ -15,3 +15,56 @@
  * - /api/history/* : Lịch sử học tập
  * - /api/admin/* : Quản trị hệ thống
  */
+
+/**
+ * Function để test tạo database
+ * Chạy function này để tạo Google Sheets database
+ */
+function initializeDatabase() {
+  try {
+    Logger.log("=== BẮT ĐẦU TẠO DATABASE ===");
+
+    // Gọi function từ schema.js để tạo database
+    const url = createAllSheets();
+
+    Logger.log("=== HOÀN THÀNH TẠO DATABASE ===");
+    Logger.log("Database URL: " + url);
+
+    return {
+      success: true,
+      message: "Database đã được tạo thành công!",
+      url: url,
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI TẠO DATABASE: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function để thêm dữ liệu câu hỏi mẫu
+ */
+function addSampleQuestions() {
+  try {
+    Logger.log("=== BẮT ĐẦU THÊM CÂU HỎI MẪU ===");
+
+    // Thêm dữ liệu mẫu
+    addSampleData();
+
+    Logger.log("=== HOÀN THÀNH THÊM CÂU HỎI MẪU ===");
+
+    return {
+      success: true,
+      message: "Đã thêm dữ liệu câu hỏi mẫu thành công!",
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI THÊM CÂU HỎI: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
