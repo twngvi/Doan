@@ -313,3 +313,163 @@ function addSampleData() {
     Logger.log("Lỗi khi thêm dữ liệu mẫu: " + error.toString());
   }
 }
+
+/**
+ * Setup auto-ID generation cho tất cả các sheets
+ */
+function setupAutoIdGeneration() {
+  try {
+    Logger.log("=== THIẾT LẬP AUTO ID GENERATION ===");
+
+    const spreadsheet = getOrCreateDatabase();
+
+    // Thiết lập cho từng sheet
+    Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
+      setupSheetAutoId(spreadsheet, sheetConfig);
+    });
+
+    Logger.log("=== HOÀN THÀNH THIẾT LẬP AUTO ID ===");
+  } catch (error) {
+    Logger.log("Lỗi khi thiết lập auto ID: " + error.toString());
+  }
+}
+
+/**
+ * Thiết lập auto-ID cho một sheet cụ thể
+ */
+function setupSheetAutoId(spreadsheet, sheetConfig) {
+  try {
+    const sheet = spreadsheet.getSheetByName(sheetConfig.name);
+    if (!sheet) return;
+
+    // Tạo trigger onEdit cho sheet này
+    Logger.log("Thiết lập auto-ID cho sheet: " + sheetConfig.name);
+
+    // Thêm data validation cho cột ID (optional)
+    const idColumn = sheet.getRange(2, 1, sheet.getMaxRows() - 1, 1);
+
+    // Thêm note cho user về auto-ID
+    sheet
+      .getRange(1, 1)
+      .setNote(
+        "ID tự động: Để trống để hệ thống tạo ID tự động. " +
+          "Format: " +
+          getIdPrefixForSheet(sheetConfig.name) +
+          "XXX"
+      );
+  } catch (error) {
+    Logger.log(
+      "Lỗi thiết lập auto-ID cho sheet " +
+        sheetConfig.name +
+        ": " +
+        error.toString()
+    );
+  }
+}
+
+/**
+ * Lấy prefix tương ứng với sheet
+ */
+function getIdPrefixForSheet(sheetName) {
+  const prefixMap = {
+    Users: "USR",
+    Topics: "TOP",
+    MCQ_Questions: "MCQ",
+    Matching_Pairs: "MAT",
+    Logs: "LOG",
+  };
+
+  return prefixMap[sheetName] || "ID";
+}
+
+/**
+ * Function được gọi khi có thay đổi trong sheet
+ * Tự động tạo ID cho các dòng mới
+ */
+function onSheetEdit(e) {
+  try {
+    const sheet = e.source.getActiveSheet();
+    const range = e.range;
+    const sheetName = sheet.getName();
+
+    // Chỉ xử lý các sheet trong DB_CONFIG
+    const validSheets = Object.values(DB_CONFIG.SHEETS).map((s) => s.name);
+    if (!validSheets.includes(sheetName)) return;
+
+    // Chỉ xử lý khi thêm dữ liệu vào cột không phải cột ID (cột 1)
+    if (range.getColumn() === 1) return;
+
+    const row = range.getRow();
+
+    // Bỏ qua header row
+    if (row === 1) return;
+
+    // Kiểm tra xem cột ID có trống không
+    const idCell = sheet.getRange(row, 1);
+    const currentId = idCell.getValue();
+
+    if (!currentId || currentId === "") {
+      // Tạo ID mới
+      const prefix = getIdPrefixForSheet(sheetName);
+      const newId = generateNextId(sheetName, prefix);
+
+      idCell.setValue(newId);
+      Logger.log("Đã tạo ID mới: " + newId + " cho sheet: " + sheetName);
+    }
+  } catch (error) {
+    Logger.log("Lỗi trong onSheetEdit: " + error.toString());
+  }
+}
+
+/**
+ * Tự động điền ID cho nhiều dòng trống
+ */
+function fillMissingIds(sheetName) {
+  try {
+    const sheet = getSheet(sheetName);
+    if (!sheet) return;
+
+    const data = sheet.getDataRange().getValues();
+    const prefix = getIdPrefixForSheet(sheetName);
+    let hasChanges = false;
+
+    // Duyệt qua từng dòng (bỏ qua header)
+    for (let i = 1; i < data.length; i++) {
+      const currentId = data[i][0];
+
+      // Nếu ID trống hoặc không hợp lệ
+      if (!currentId || !validateId(currentId.toString(), prefix)) {
+        const newId = generateNextId(sheetName, prefix);
+        sheet.getRange(i + 1, 1).setValue(newId);
+        hasChanges = true;
+        Logger.log("Đã điền ID: " + newId + " cho dòng " + (i + 1));
+      }
+    }
+
+    if (hasChanges) {
+      // Sắp xếp lại để đảm bảo thứ tự
+      reorderSheetIds(sheetName, prefix);
+    }
+
+    Logger.log("Hoàn thành điền ID cho sheet: " + sheetName);
+  } catch (error) {
+    Logger.log("Lỗi khi điền ID: " + error.toString());
+  }
+}
+
+/**
+ * Điền ID cho tất cả các sheet
+ */
+function fillAllMissingIds() {
+  try {
+    Logger.log("=== BẮT ĐẦU ĐIỀN ID CHO TẤT CẢ SHEET ===");
+
+    Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
+      fillMissingIds(sheetConfig.name);
+    });
+
+    Logger.log("=== HOÀN THÀNH ĐIỀN ID ===");
+  } catch (error) {
+    Logger.log("Lỗi khi điền tất cả ID: " + error.toString());
+  }
+}

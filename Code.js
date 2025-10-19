@@ -1,19 +1,18 @@
 /**
- * Code.js - Entry Point & Router
+ * Code.js - Entry Point & Main Functions
  *
  * Tác dụng:
- * - Nhận và phân tích các HTTP request từ client (GET/POST)
- * - Routing các request đến service tương ứng dựa trên endpoint
- * - Xử lý authentication và authorization
- * - Trả về response JSON chuẩn hóa
+ * - Entry point cho các function chính của hệ thống
+ * - Tạo và quản lý database
+ * - Thiết lập các tính năng tự động
+ * - Test và debug hệ thống
  *
- * Các endpoint chính:
- * - /api/user/* : Quản lý người dùng
- * - /api/topic/* : Quản lý chủ đề
- * - /api/mcq/* : Câu hỏi trắc nghiệm
- * - /api/matching/* : Trò chơi ghép nối
- * - /api/history/* : Lịch sử học tập
- * - /api/admin/* : Quản trị hệ thống
+ * Các function chính:
+ * - initializeDatabase(): Tạo database Google Sheets
+ * - setupAutoIds(): Thiết lập tự động tạo ID
+ * - addSampleQuestions(): Thêm dữ liệu mẫu
+ * - reorderAllIds(): Sắp xếp ID
+ * - fillExistingData(): Điền ID cho dữ liệu có sẵn
  */
 
 /**
@@ -62,6 +61,121 @@ function addSampleQuestions() {
     };
   } catch (error) {
     Logger.log("LỖI KHI THÊM CÂU HỎI: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function thiết lập hệ thống Auto-ID với trigger
+ */
+function setupAutoIds() {
+  try {
+    Logger.log("=== BẮT ĐẦU THIẾT LẬP AUTO-ID ===");
+
+    // Thiết lập trigger tự động
+    const triggerResult = setupAutoIdTrigger();
+
+    if (!triggerResult) {
+      throw new Error("Không thể thiết lập trigger");
+    }
+
+    Logger.log("=== HOÀN THÀNH THIẾT LẬP AUTO-ID ===");
+    Logger.log("🎉 ID sẽ tự động tạo khi bạn nhập dữ liệu vào Google Sheets!");
+
+    return {
+      success: true,
+      message:
+        "Đã thiết lập Auto-ID thành công! ID sẽ tự tạo khi nhập dữ liệu.",
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI THIẾT LẬP AUTO-ID: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function test tính năng tạo ID tự động
+ */
+function testAutoIdFeature() {
+  try {
+    Logger.log("=== TEST AUTO-ID FEATURE ===");
+
+    // Test ID generator functions
+    testIdGenerator();
+
+    // Test và thiết lập trigger
+    const result = testAutoIdTrigger();
+
+    Logger.log("=== HOÀN THÀNH TEST ===");
+
+    return result;
+  } catch (error) {
+    Logger.log("LỖI KHI TEST AUTO-ID: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function để sắp xếp lại ID trong tất cả sheet
+ */
+function reorderAllIds() {
+  try {
+    Logger.log("=== BẮT ĐẦU SẮP XẾP LẠI ID ===");
+
+    const prefixMap = {
+      Users: "USR",
+      Topics: "TOP",
+      MCQ_Questions: "MCQ",
+      Matching_Pairs: "MAT",
+      Logs: "LOG",
+    };
+
+    Object.entries(prefixMap).forEach(([sheetName, prefix]) => {
+      reorderSheetIds(sheetName, prefix);
+    });
+
+    Logger.log("=== HOÀN THÀNH SẮP XẾP LẠI ID ===");
+
+    return {
+      success: true,
+      message: "Đã sắp xếp lại tất cả ID thành công!",
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI SẮP XẾP ID: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function điền ID cho dữ liệu có sẵn (tùy chọn)
+ */
+function fillExistingData() {
+  try {
+    Logger.log("=== ĐIỀN ID CHO DỮ LIỆU CÓ SẴN ===");
+
+    // Gọi function fillAllMissingIds từ schema.js
+    fillAllMissingIds();
+
+    Logger.log("=== HOÀN THÀNH ĐIỀN ID ===");
+
+    return {
+      success: true,
+      message: "Đã điền ID cho dữ liệu có sẵn thành công!",
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI ĐIỀN ID: " + error.toString());
     return {
       success: false,
       message: "Lỗi: " + error.toString(),
