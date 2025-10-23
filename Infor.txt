@@ -1,12 +1,59 @@
 File Code.js - Entry Point:
-- Hàm setupAutoIds dùng để thiết lập id tự động.
-- Hàm initializeDatabase dùng để tạo database Google Sheets.
+- Hàm setupAutoIds dùng để thiết lập id tự động từ chữ cái đầu tên bảng.
+- Hàm initializeDatabase dùng để tạo database Google Sheets với cấu trúc tối ưu.
 - Hàm addSampleQuestions dùng để thêm dữ liệu mẫu.
 - Hàm reorderAllIds dùng để sắp xếp lại ID theo thứ tự tăng dần.
 - Hàm fillExistingData dùng để điền ID cho dữ liệu có sẵn.
+- Hàm testMultiRow dùng để test tạo ID cho nhiều hàng cùng lúc.
+- Hàm setupRelationships dùng để thiết lập foreign keys và difficulty dropdowns.
+- Hàm testRelationships dùng để test foreign key validation.
+- Hàm refreshRelationships dùng để refresh foreign key validations.
 
 File triggers.js - Quản lý Trigger:
-- Hàm setupAutoIdTrigger dùng để tạo trigger tự động.
-- Hàm onEdit dùng để xử lý sự kiện khi chỉnh sửa Google Sheets.
-- Hàm testAutoIdTrigger dùng để test tính năng trigger.
+- Hàm setupAutoIdTrigger dùng để tạo trigger onEdit tự động.
+- Hàm onEdit dùng để xử lý sự kiện khi user chỉnh sửa sheet (auto-ID + foreign key validation, không highlight màu).
+- Hàm getIdPrefixForSheet dùng để lấy prefix ID từ chữ cái đầu tên bảng.
+- Hàm validateForeignKeyEdit dùng để validate foreign key khi user edit (không highlight màu).
+- Hàm testAutoIdTrigger dùng để test trigger hoạt động.
+- Hàm testMultiRowAutoId dùng để test tạo ID cho nhiều hàng.
 - Hàm removeAllTriggers dùng để xóa tất cả trigger.
+
+File utils/idGenerator.js - Sinh ID tự động:
+- Hàm generateNextId dùng để tạo ID mới theo format PREFIX + 3 chữ số.
+- Hàm generateMultipleIds dùng để tạo nhiều ID liên tiếp cùng lúc.
+- Hàm validateId dùng để kiểm tra ID có đúng format không.
+- Hàm generateUserId, generateTopicId, generateQuestionId... cho từng loại entity.
+- Hàm testIdGeneration dùng để test tạo ID.
+
+File config/schema.js - Cấu hình Database:
+- Hàm getOrCreateDatabase dùng để tạo hoặc mở database Google Sheets.
+- Hàm createAllSheets dùng để tạo tất cả sheet theo schema tối ưu.
+- Hàm createSheet dùng để tạo 1 sheet với header.
+- Hàm getSheet dùng để lấy sheet theo tên.
+- Hàm getIdPrefixForSheet dùng để lấy prefix từ config sheet.
+- Hàm addSampleData dùng để thêm dữ liệu mẫu với cấu trúc mới.
+- Hàm setupDifficultyDropdowns dùng để tạo dropdown Easy/Medium/Hard cho MCQ và Matching.
+
+File services/relationshipService.js - Quản lý Foreign Keys:
+- Hàm setupForeignKeyDropdowns dùng để tạo dropdown cho các foreign key columns (chỉ topicId).
+- Hàm setupColumnDropdown dùng để thiết lập dropdown cho 1 cột cụ thể.
+- Hàm validateForeignKey dùng để kiểm tra foreign key có hợp lệ không.
+- Hàm getValidForeignKeyValues dùng để lấy danh sách ID hợp lệ cho dropdown.
+- Hàm checkDeleteConstraints dùng để kiểm tra ràng buộc trước khi xóa.
+- Hàm highlightForeignKeyColumns đã bị vô hiệu hóa (không highlight màu).
+- Hàm refreshForeignKeyValidations dùng để refresh validation rules.
+- Hàm testForeignKeySetup dùng để test hệ thống foreign key.
+
+Cấu trúc bảng đã tối ưu:
+- Topics: topicId, title, description, category (chỉ 4 cột)
+- MCQ_Questions: questionId, topicId, questionText, optionA-D, correctAnswer, explanation, difficulty (dropdown), hint, points
+- Matching_Pairs: pairId, topicId, leftItem, rightItem, itemType, difficulty (dropdown), hints
+
+Relationships đã đơn giản hóa:
+- MCQ_Questions.topicId → Topics.topicId (RESTRICT)
+- Matching_Pairs.topicId → Topics.topicId (RESTRICT)
+
+Tính năng đã loại bỏ:
+- Không highlight màu khi thêm dữ liệu hoặc validation
+- Bỏ các cột: createdBy, usageCount, successRate, isPublic, tags, viewCount
+- Đơn giản hóa relationships, chỉ giữ foreign key topicId

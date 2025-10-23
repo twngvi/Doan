@@ -100,6 +100,13 @@ function setupAutoIds() {
 }
 
 /**
+ * TEST: Kiểm tra Multi-Row Auto-ID
+ */
+function testMultiRow() {
+  return testMultiRowAutoId();
+}
+
+/**
  * Function test tính năng tạo ID tự động
  */
 function testAutoIdFeature() {
@@ -176,6 +183,72 @@ function fillExistingData() {
     };
   } catch (error) {
     Logger.log("LỖI KHI ĐIỀN ID: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+/**
+ * Function thiết lập hệ thống Foreign Keys và Relationships
+ */
+function setupRelationships() {
+  try {
+    Logger.log("=== BẮT ĐẦU THIẾT LẬP RELATIONSHIPS ===");
+
+    // Thiết lập foreign key dropdowns
+    const dropdownResult = setupForeignKeyDropdowns();
+
+    if (!dropdownResult) {
+      throw new Error("Không thể thiết lập foreign key dropdowns");
+    }
+
+    // Thiết lập difficulty dropdowns
+    setupDifficultyDropdowns();
+
+    // Bỏ qua highlight theo yêu cầu user
+    // highlightForeignKeyColumns();
+
+    Logger.log("=== HOÀN THÀNH THIẾT LẬP RELATIONSHIPS ===");
+    Logger.log("🎉 Foreign keys và Difficulty dropdowns đã được thiết lập!");
+
+    return {
+      success: true,
+      message: "Đã thiết lập Foreign Keys và Difficulty Dropdowns thành công!",
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI THIẾT LẬP RELATIONSHIPS: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Function test hệ thống relationships
+ */
+function testRelationships() {
+  return testForeignKeySetup();
+}
+
+/**
+ * Function refresh foreign key validations
+ */
+function refreshRelationships() {
+  try {
+    Logger.log("=== REFRESH RELATIONSHIPS ===");
+
+    const result = refreshForeignKeyValidations();
+
+    return {
+      success: result,
+      message: result
+        ? "Đã refresh relationships thành công!"
+        : "Lỗi khi refresh relationships",
+    };
+  } catch (error) {
+    Logger.log("LỖI REFRESH RELATIONSHIPS: " + error.toString());
     return {
       success: false,
       message: "Lỗi: " + error.toString(),

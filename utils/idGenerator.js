@@ -1,237 +1,199 @@
 /**
- * idGenerator.js - Unique ID Generation Utility
+ * idGenerator.js - Automatic ID Generation System
  *
  * Tác dụng:
- * - Sinh ID tự động cho các entity (User, Question, Topic, etc.)
- * - Đảm bảo tính unique và không trùng lặp
- * - Support nhiều format ID khác nhau
- * - Tối ưu performance khi generate ID hàng loạt
- * - Tracking và maintain ID sequences
- *
- * Các function chính:
- * - generateUserId(): Tạo ID cho user
- * - generateQuestionId(): Tạo ID cho câu hỏi
- * - generateTopicId(): Tạo ID cho chủ đề
- * - generateUUID(): Tạo UUID chuẩn
- * - generateShortId(): Tạo ID ngắn gọn
- * - validateId(): Kiểm tra ID hợp lệ
+ * - Sinh ID tự động cho các entity trong database
+ * - Format: PREFIX + số (3 chữ số)
+ * - PREFIX lấy từ chữ cái đầu của tên bảng:
+ *   + Users → USR001, USR002, USR003...
+ *   + Topics → TOP001, TOP002, TOP003...
+ *   + MCQ_Questions → MCQ001, MCQ002, MCQ003...
+ *   + Matching_Pairs → MAT001, MAT002, MAT003...
+ *   + Logs → LOG001, LOG002, LOG003...
+ * - Đảm bảo ID không trùng lặp và luôn tăng dần
+ * - Hỗ trợ tạo nhiều ID cùng lúc (batch processing)
  */
 
 /**
- * Cấu hình prefix cho từng loại ID
+ * Cấu hình prefix cho từng loại ID từ chữ cái đầu
  */
 const ID_PREFIXES = {
-  USER: "USR",
-  TOPIC: "TOP",
-  QUESTION: "MCQ",
-  MATCHING: "MAT",
-  LOG: "LOG",
+  USER: "USR", // Users → USR
+  TOPIC: "TOP", // Topics → TOP
+  QUESTION: "MCQ", // MCQ_Questions → MCQ
+  MATCHING: "MAT", // Matching_Pairs → MAT
+  LOG: "LOG", // Logs → LOG
 };
 
 /**
- * Lấy ID số cao nhất từ sheet
+ * Sinh ID mới cho một entity
+ * @param {string} sheetName - Tên sheet (Users, Topics, MCQ_Questions...)
+ * @param {string} prefix - Prefix cho ID (USR, TOP, MCQ, MAT, LOG)
+ * @returns {string} - ID mới (ví dụ: USR001, TOP002, MCQ003...)
  */
-function getMaxIdNumber(sheet, prefix, columnIndex = 0) {
+function generateNextId(sheetName, prefix) {
   try {
-    if (!sheet) return 0;
+    // Lấy sheet tương ứng
+    const sheet = getSheet(sheetName);
+    if (!sheet) {
+      throw new Error(`Không tìm thấy sheet: ${sheetName}`);
+    }
 
+    // Lấy tất cả dữ liệu trong cột ID (cột A)
     const data = sheet.getDataRange().getValues();
+
+    // Tìm số lớn nhất hiện có với prefix này
     let maxNumber = 0;
 
-    // Bỏ qua header row (index 0)
     for (let i = 1; i < data.length; i++) {
-      const cellValue = data[i][columnIndex];
-      if (cellValue && typeof cellValue === "string") {
-        // Kiểm tra nếu ID có prefix đúng
-        if (cellValue.startsWith(prefix)) {
-          const numberPart = cellValue.substring(prefix.length);
-          const number = parseInt(numberPart);
-          if (!isNaN(number) && number > maxNumber) {
+      // Bỏ qua header row
+      const currentId = data[i][0];
+      if (currentId && typeof currentId === "string") {
+        // Kiểm tra ID có đúng format không (PREFIX + số)
+        const match = currentId.match(new RegExp(`^${prefix}(\\d+)$`));
+        if (match) {
+          const number = parseInt(match[1]);
+          if (number > maxNumber) {
             maxNumber = number;
           }
         }
       }
     }
 
-    return maxNumber;
-  } catch (error) {
-    Logger.log("Lỗi khi lấy max ID: " + error.toString());
-    return 0;
-  }
-}
-
-/**
- * Tạo ID mới với prefix và số tự tăng
- */
-function generateNextId(sheetName, prefix, digits = 3) {
-  try {
-    const sheet = getSheet(sheetName);
-    const maxNumber = getMaxIdNumber(sheet, prefix);
+    // Tạo ID mới bằng cách tăng số lớn nhất lên 1
     const nextNumber = maxNumber + 1;
+    const newId = prefix + nextNumber.toString().padStart(3, "0");
 
-    // Format số với leading zeros
-    const paddedNumber = nextNumber.toString().padStart(digits, "0");
-    return prefix + paddedNumber;
+    Logger.log(`Đã tạo ID mới: ${newId} cho sheet ${sheetName}`);
+    return newId;
   } catch (error) {
-    Logger.log("Lỗi khi tạo ID: " + error.toString());
-    return prefix + "001";
+    Logger.log(`Lỗi khi tạo ID cho ${sheetName}: ${error.toString()}`);
+    throw error;
   }
 }
 
 /**
- * Tạo nhiều ID liên tiếp
+ * Sinh nhiều ID liên tiếp (cho batch processing)
+ * @param {string} sheetName - Tên sheet
+ * @param {string} prefix - Prefix cho ID
+ * @param {number} count - Số lượng ID cần tạo
+ * @returns {Array<string>} - Mảng các ID mới
  */
-function generateMultipleIds(sheetName, prefix, count, digits = 3) {
+function generateMultipleIds(sheetName, prefix, count) {
   try {
-    const sheet = getSheet(sheetName);
-    const maxNumber = getMaxIdNumber(sheet, prefix);
-    const ids = [];
+    if (count <= 0) return [];
 
-    for (let i = 1; i <= count; i++) {
-      const nextNumber = maxNumber + i;
-      const paddedNumber = nextNumber.toString().padStart(digits, "0");
-      ids.push(prefix + paddedNumber);
+    // Lấy sheet tương ứng
+    const sheet = getSheet(sheetName);
+    if (!sheet) {
+      throw new Error(`Không tìm thấy sheet: ${sheetName}`);
     }
 
-    return ids;
+    // Lấy tất cả dữ liệu trong cột ID (cột A)
+    const data = sheet.getDataRange().getValues();
+
+    // Tìm số lớn nhất hiện có
+    let maxNumber = 0;
+
+    for (let i = 1; i < data.length; i++) {
+      // Bỏ qua header row
+      const currentId = data[i][0];
+      if (currentId && typeof currentId === "string") {
+        const match = currentId.match(new RegExp(`^${prefix}(\\d+)$`));
+        if (match) {
+          const number = parseInt(match[1]);
+          if (number > maxNumber) {
+            maxNumber = number;
+          }
+        }
+      }
+    }
+
+    // Tạo mảng ID liên tiếp
+    const newIds = [];
+    for (let i = 1; i <= count; i++) {
+      const nextNumber = maxNumber + i;
+      const newId = prefix + nextNumber.toString().padStart(3, "0");
+      newIds.push(newId);
+    }
+
+    Logger.log(`Đã tạo ${count} ID cho ${sheetName}: ${newIds.join(", ")}`);
+    return newIds;
   } catch (error) {
-    Logger.log("Lỗi khi tạo nhiều ID: " + error.toString());
-    return [];
+    Logger.log(`Lỗi khi tạo multiple ID cho ${sheetName}: ${error.toString()}`);
+    throw error;
   }
 }
 
 /**
- * Tạo User ID
+ * Tạo ID cho các entity cụ thể - Helper functions
  */
 function generateUserId() {
-  return generateNextId(DB_CONFIG.SHEETS.USERS.name, ID_PREFIXES.USER);
+  return generateNextId("Users", "USR");
 }
 
-/**
- * Tạo Topic ID
- */
 function generateTopicId() {
-  return generateNextId(DB_CONFIG.SHEETS.TOPICS.name, ID_PREFIXES.TOPIC);
+  return generateNextId("Topics", "TOP");
 }
 
-/**
- * Tạo Question ID
- */
 function generateQuestionId() {
-  return generateNextId(
-    DB_CONFIG.SHEETS.MCQ_QUESTIONS.name,
-    ID_PREFIXES.QUESTION
-  );
+  return generateNextId("MCQ_Questions", "MCQ");
 }
 
-/**
- * Tạo Matching Pair ID
- */
-function generateMatchingId() {
-  return generateNextId(
-    DB_CONFIG.SHEETS.MATCHING_PAIRS.name,
-    ID_PREFIXES.MATCHING
-  );
+function generateMatchingPairId() {
+  return generateNextId("Matching_Pairs", "MAT");
 }
 
-/**
- * Tạo Log ID
- */
 function generateLogId() {
-  return generateNextId(DB_CONFIG.SHEETS.LOGS.name, ID_PREFIXES.LOG);
+  return generateNextId("Logs", "LOG");
 }
 
 /**
  * Kiểm tra ID có hợp lệ không
+ * @param {string} id - ID cần kiểm tra
+ * @param {string} prefix - Prefix mong đợi
+ * @returns {boolean} - true nếu hợp lệ
  */
 function validateId(id, prefix) {
   if (!id || typeof id !== "string") return false;
 
-  // Kiểm tra prefix
-  if (!id.startsWith(prefix)) return false;
-
-  // Kiểm tra phần số
-  const numberPart = id.substring(prefix.length);
-  return /^\d+$/.test(numberPart);
+  // Kiểm tra format: PREFIX + 3 chữ số
+  const pattern = new RegExp(`^${prefix}\\d{3}$`);
+  return pattern.test(id);
 }
 
 /**
- * Sắp xếp lại ID trong sheet để đảm bảo thứ tự
+ * Test function - Kiểm tra tạo ID
  */
-function reorderSheetIds(sheetName, prefix) {
+function testIdGeneration() {
   try {
-    const sheet = getSheet(sheetName);
-    if (!sheet) return false;
+    Logger.log("=== TEST ID GENERATION ===");
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const rows = data.slice(1);
+    // Test tạo ID cho từng loại sheet
+    const testCases = [
+      { sheetName: "Users", prefix: "USR" },
+      { sheetName: "Topics", prefix: "TOP" },
+      { sheetName: "MCQ_Questions", prefix: "MCQ" },
+      { sheetName: "Matching_Pairs", prefix: "MAT" },
+      { sheetName: "Logs", prefix: "LOG" },
+    ];
 
-    // Sắp xếp rows theo ID
-    rows.sort((a, b) => {
-      const idA = a[0] || "";
-      const idB = b[0] || "";
-
-      if (idA.startsWith(prefix) && idB.startsWith(prefix)) {
-        const numA = parseInt(idA.substring(prefix.length));
-        const numB = parseInt(idB.substring(prefix.length));
-        return numA - numB;
+    testCases.forEach((testCase) => {
+      try {
+        const newId = generateNextId(testCase.sheetName, testCase.prefix);
+        Logger.log(`✅ ${testCase.sheetName}: ${newId}`);
+      } catch (error) {
+        Logger.log(`❌ ${testCase.sheetName}: ${error.toString()}`);
       }
-
-      return idA.localeCompare(idB);
     });
 
-    // Cập nhật lại sheet
-    sheet.clear();
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    // Test tạo multiple IDs
+    Logger.log("\n=== TEST MULTIPLE ID GENERATION ===");
+    const multipleIds = generateMultipleIds("MCQ_Questions", "MCQ", 3);
+    Logger.log(`Multiple MCQ IDs: ${multipleIds.join(", ")}`);
 
-    if (rows.length > 0) {
-      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    }
-
-    Logger.log("Đã sắp xếp lại IDs trong sheet: " + sheetName);
-    return true;
+    Logger.log("=== HOÀN THÀNH TEST ===");
   } catch (error) {
-    Logger.log("Lỗi khi sắp xếp IDs: " + error.toString());
-    return false;
-  }
-}
-
-/**
- * Test function cho ID generator
- */
-function testIdGenerator() {
-  try {
-    Logger.log("=== TEST ID GENERATOR ===");
-
-    // Test tạo từng loại ID
-    const userId = generateUserId();
-    const topicId = generateTopicId();
-    const questionId = generateQuestionId();
-    const matchingId = generateMatchingId();
-    const logId = generateLogId();
-
-    Logger.log("User ID: " + userId);
-    Logger.log("Topic ID: " + topicId);
-    Logger.log("Question ID: " + questionId);
-    Logger.log("Matching ID: " + matchingId);
-    Logger.log("Log ID: " + logId);
-
-    // Test tạo nhiều ID
-    const multipleIds = generateMultipleIds(
-      DB_CONFIG.SHEETS.TOPICS.name,
-      ID_PREFIXES.TOPIC,
-      5
-    );
-    Logger.log("Multiple Topic IDs: " + multipleIds.join(", "));
-
-    // Test validation
-    Logger.log("Validate USR001: " + validateId("USR001", ID_PREFIXES.USER));
-    Logger.log("Validate TOP123: " + validateId("TOP123", ID_PREFIXES.TOPIC));
-    Logger.log("Validate INVALID: " + validateId("INVALID", ID_PREFIXES.USER));
-
-    Logger.log("=== TEST COMPLETED ===");
-  } catch (error) {
-    Logger.log("Lỗi test ID generator: " + error.toString());
+    Logger.log(`Lỗi test: ${error.toString()}`);
   }
 }

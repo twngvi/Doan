@@ -25,6 +25,7 @@ const DB_CONFIG = {
   SHEETS: {
     USERS: {
       name: "Users",
+      idPrefix: "USR", // Lấy từ chữ cái đầu: Users → USR
       columns: [
         "userId",
         "username",
@@ -40,22 +41,13 @@ const DB_CONFIG = {
 
     TOPICS: {
       name: "Topics",
-      columns: [
-        "topicId",
-        "title",
-        "description",
-        "category",
-        "difficulty",
-        "createdBy",
-        "createdAt",
-        "isPublic",
-        "tags",
-        "viewCount",
-      ],
+      idPrefix: "TOP", // Lấy từ chữ cái đầu: Topics → TOP
+      columns: ["topicId", "title", "description", "category"],
     },
 
     MCQ_QUESTIONS: {
       name: "MCQ_Questions",
+      idPrefix: "MCQ", // Lấy từ chữ cái đầu: MCQ_Questions → MCQ
       columns: [
         "questionId",
         "topicId",
@@ -67,14 +59,14 @@ const DB_CONFIG = {
         "correctAnswer",
         "explanation",
         "difficulty",
+        "hint",
         "points",
-        "createdBy",
-        "usageCount",
       ],
     },
 
     MATCHING_PAIRS: {
       name: "Matching_Pairs",
+      idPrefix: "MAT", // Lấy từ chữ cái đầu: Matching_Pairs → MAT
       columns: [
         "pairId",
         "topicId",
@@ -83,14 +75,12 @@ const DB_CONFIG = {
         "itemType",
         "difficulty",
         "hints",
-        "createdBy",
-        "usageCount",
-        "successRate",
       ],
     },
 
     LOGS: {
       name: "Logs",
+      idPrefix: "LOG", // Lấy từ chữ cái đầu: Logs → LOG
       columns: [
         "logId",
         "timestamp",
@@ -237,28 +227,16 @@ function addSampleData() {
     if (topicsSheet) {
       const sampleTopics = [
         [
-          "TOPIC001",
+          "TOP001",
           "Toán học cơ bản",
-          "Các phép tính cơ bản",
+          "Các phép tính cơ bản và công thức toán học",
           "Math",
-          "Easy",
-          "ADMIN",
-          new Date().toISOString(),
-          true,
-          "math,basic",
-          0,
         ],
         [
-          "TOPIC002",
+          "TOP002",
           "Tiếng Anh giao tiếp",
-          "Từ vựng và ngữ pháp cơ bản",
+          "Từ vựng và ngữ pháp cơ bản cho giao tiếp hàng ngày",
           "English",
-          "Medium",
-          "ADMIN",
-          new Date().toISOString(),
-          true,
-          "english,vocabulary",
-          0,
         ],
       ];
 
@@ -273,34 +251,32 @@ function addSampleData() {
     if (mcqSheet) {
       const sampleQuestions = [
         [
-          "Q001",
-          "TOPIC001",
+          "MCQ001",
+          "TOP001",
           "2 + 2 = ?",
           "3",
           "4",
           "5",
           "6",
           "B",
-          "Phép cộng cơ bản",
+          "Phép cộng cơ bản: 2 + 2 = 4",
           "Easy",
+          "Đây là phép cộng đơn giản nhất",
           10,
-          "ADMIN",
-          0,
         ],
         [
-          "Q002",
-          "TOPIC002",
+          "MCQ002",
+          "TOP002",
           "Hello nghĩa là gì?",
           "Tạm biệt",
           "Xin chào",
           "Cảm ơn",
           "Xin lỗi",
           "B",
-          "Từ chào hỏi cơ bản",
+          "Hello là từ chào hỏi phổ biến nhất",
           "Easy",
+          "Từ chào hỏi cơ bản trong tiếng Anh",
           5,
-          "ADMIN",
-          0,
         ],
       ];
 
@@ -364,6 +340,102 @@ function setupSheetAutoId(spreadsheet, sheetConfig) {
         ": " +
         error.toString()
     );
+  }
+}
+
+/**
+ * Thiết lập dropdown validation cho cột difficulty
+ */
+function setupDifficultyDropdowns() {
+  try {
+    Logger.log("=== THIẾT LẬP DIFFICULTY DROPDOWNS ===");
+
+    const spreadsheet = getOrCreateDatabase();
+    const difficultyOptions = ["Easy", "Medium", "Hard"];
+
+    // Thiết lập cho MCQ_Questions
+    const mcqSheet = spreadsheet.getSheetByName("MCQ_Questions");
+    if (mcqSheet) {
+      const headers = mcqSheet
+        .getRange(1, 1, 1, mcqSheet.getLastColumn())
+        .getValues()[0];
+      const difficultyColumnIndex = headers.indexOf("difficulty") + 1;
+
+      if (difficultyColumnIndex > 0) {
+        const difficultyRange = mcqSheet.getRange(
+          2,
+          difficultyColumnIndex,
+          mcqSheet.getMaxRows() - 1,
+          1
+        );
+
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(difficultyOptions)
+          .setAllowInvalid(false)
+          .setHelpText("Chọn độ khó: Easy, Medium, hoặc Hard")
+          .build();
+
+        difficultyRange.setDataValidation(rule);
+
+        // Thêm note cho header
+        mcqSheet
+          .getRange(1, difficultyColumnIndex)
+          .setNote(
+            "🎯 DIFFICULTY LEVEL\n" +
+              "Easy: Dễ\n" +
+              "Medium: Trung bình\n" +
+              "Hard: Khó\n" +
+              "Chọn từ dropdown"
+          );
+
+        Logger.log("Đã thiết lập difficulty dropdown cho MCQ_Questions");
+      }
+    }
+
+    // Thiết lập cho Matching_Pairs
+    const matchingSheet = spreadsheet.getSheetByName("Matching_Pairs");
+    if (matchingSheet) {
+      const headers = matchingSheet
+        .getRange(1, 1, 1, matchingSheet.getLastColumn())
+        .getValues()[0];
+      const difficultyColumnIndex = headers.indexOf("difficulty") + 1;
+
+      if (difficultyColumnIndex > 0) {
+        const difficultyRange = matchingSheet.getRange(
+          2,
+          difficultyColumnIndex,
+          matchingSheet.getMaxRows() - 1,
+          1
+        );
+
+        const rule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(difficultyOptions)
+          .setAllowInvalid(false)
+          .setHelpText("Chọn độ khó: Easy, Medium, hoặc Hard")
+          .build();
+
+        difficultyRange.setDataValidation(rule);
+
+        // Thêm note cho header
+        matchingSheet
+          .getRange(1, difficultyColumnIndex)
+          .setNote(
+            "🎯 DIFFICULTY LEVEL\n" +
+              "Easy: Dễ\n" +
+              "Medium: Trung bình\n" +
+              "Hard: Khó\n" +
+              "Chọn từ dropdown"
+          );
+
+        Logger.log("Đã thiết lập difficulty dropdown cho Matching_Pairs");
+      }
+    }
+
+    Logger.log("=== HOÀN THÀNH THIẾT LẬP DIFFICULTY DROPDOWNS ===");
+    return true;
+  } catch (error) {
+    Logger.log("Lỗi khi thiết lập difficulty dropdowns: " + error.toString());
+    return false;
   }
 }
 

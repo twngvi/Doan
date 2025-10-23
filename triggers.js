@@ -87,6 +87,8 @@ function onEdit(e) {
     const sheet = e.source.getActiveSheet();
     const range = e.range;
     const sheetName = sheet.getName();
+    const editedColumn = range.getColumn();
+    const editedRow = range.getRow();
 
     // Chỉ xử lý các sheet trong database
     const validSheets = Object.values(DB_CONFIG.SHEETS).map((s) => s.name);
@@ -94,47 +96,153 @@ function onEdit(e) {
       return;
     }
 
-    const row = range.getRow();
-    const col = range.getColumn();
-
-    // Bỏ qua header row (row 1)
-    if (row === 1) {
+    // Bỏ qua header row
+    if (editedRow === 1) {
       return;
     }
 
-    // Bỏ qua nếu edit chính cột ID (col 1)
-    if (col === 1) {
-      return;
+    // === XỬ LÝ AUTO-ID (như cũ) ===
+    if (editedColumn !== 1) {
+      // Không phải cột ID
+      const numRows = range.getNumRows();
+      const firstDataRow = Math.max(editedRow, 2);
+      const lastRow = editedRow + numRows - 1;
+
+      if (firstDataRow <= lastRow) {
+        const prefix = getIdPrefixForSheet(sheetName);
+        const rowsToProcess = [];
+
+        for (let row = firstDataRow; row <= lastRow; row++) {
+          // Kiểm tra xem hàng này có dữ liệu không (bỏ qua cột ID)
+          let hasData = false;
+          const maxCol = Math.min(
+            sheet.getLastColumn(),
+            range.getColumn() + range.getNumColumns() - 1
+          );
+
+          for (let col = Math.max(2, range.getColumn()); col <= maxCol; col++) {
+            const cellValue = sheet.getRange(row, col).getValue();
+            if (cellValue && cellValue !== "") {
+              hasData = true;
+              break;
+            }
+          }
+
+          if (hasData) {
+            // Kiểm tra cột ID có trống không
+            const idCell = sheet.getRange(row, 1);
+            const currentId = idCell.getValue();
+
+            if (!currentId || currentId === "") {
+              rowsToProcess.push(row);
+            }
+          }
+        }
+
+        // Tạo ID cho tất cả hàng cần thiết (batch processing)
+        if (rowsToProcess.length > 0) {
+          const newIds = generateMultipleIds(
+            sheetName,
+            prefix,
+            rowsToProcess.length
+          );
+
+          // Gán ID cho từng hàng
+          for (let i = 0; i < rowsToProcess.length; i++) {
+            const row = rowsToProcess[i];
+            const newId = newIds[i];
+            const idCell = sheet.getRange(row, 1);
+
+            idCell.setValue(newId);
+            // Loại bỏ highlight màu
+          }
+
+          console.log(
+            `🎉 Đã tạo ${
+              rowsToProcess.length
+            } ID cho sheet ${sheetName}: ${newIds.join(", ")}`
+          );
+        }
+      }
     }
 
-    // Kiểm tra xem người dùng có nhập dữ liệu không
-    const cellValue = range.getValue();
-    if (!cellValue || cellValue === "") {
-      return;
-    }
+    // === XỬ LÝ FOREIGN KEY VALIDATION (mới) ===
+    const headers = sheet
+      .getRange(1, 1, 1, sheet.getLastColumn())
+      .getValues()[0];
+    const columnName = headers[editedColumn - 1];
+    const editedValue = range.getValue();
 
-    // Kiểm tra cột ID có trống không
-    const idCell = sheet.getRange(row, 1);
-    const currentId = idCell.getValue();
-
-    // Chỉ tạo ID nếu cột ID trống
-    if (!currentId || currentId === "") {
-      const prefix = getIdPrefixForSheet(sheetName);
-      const newId = generateNextId(sheetName, prefix);
-
-      // Gán ID mới
-      idCell.setValue(newId);
-
-      // Highlight ID vừa tạo
-      idCell.setBackground("#d4edda");
-
-      // Log để theo dõi (có thể tắt trong production)
-      console.log(`✅ Auto-ID: ${newId} → Row ${row}, Sheet: ${sheetName}`);
-    }
+    // Kiểm tra có phải foreign key không
+    validateForeignKeyEdit(
+      sheetName,
+      columnName,
+      editedValue,
+      editedRow,
+      editedColumn
+    );
+    // Loại bỏ highlight màu cho foreign key validation
   } catch (error) {
     // Không throw error để không làm gián đoạn việc edit của user
-    console.log("🚫 Lỗi Auto-ID: " + error.toString());
+    console.log("🚫 Lỗi Auto-ID/Foreign Key: " + error.toString());
   }
+}
+
+/**
+ * Validate foreign key khi user edit
+ */
+function validateForeignKeyEdit(sheetName, columnName, value, row, col) {
+  try {
+    // Bỏ qua nếu giá trị trống
+    if (!value || value === "") return true;
+
+    // Kiểm tra có phải foreign key không
+    const tableName = sheetName.toUpperCase().replace(" ", "_");
+    const relationships = RELATIONSHIPS[tableName];
+
+    if (!relationships || !relationships[columnName]) {
+      return true; // Không phải foreign key
+    }
+
+    // Validate foreign key
+    const isValid = validateForeignKey(tableName, columnName, value);
+
+    if (!isValid) {
+      // Hiển thị cảnh báo cho user
+      const sheet = SpreadsheetApp.getActiveSheet();
+      const cell = sheet.getRange(row, col);
+
+      // Loại bỏ highlight đỏ
+
+      // Thêm comment cảnh báo
+      const relationship = relationships[columnName];
+      cell.setNote(
+        `❌ FOREIGN KEY ERROR\n` +
+          `Giá trị '${value}' không tồn tại trong bảng ${relationship.referencedTable}\n` +
+          `Vui lòng chọn từ dropdown hoặc nhập ID hợp lệ`
+      );
+
+      Logger.log(
+        `❌ Foreign key violation: ${tableName}.${columnName} = '${value}'`
+      );
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    Logger.log(`Lỗi validate foreign key edit: ${error.toString()}`);
+    return true; // Không block user nếu có lỗi system
+  }
+}
+
+/**
+ * Lấy prefix ID cho sheet
+ */
+function getIdPrefixForSheet(sheetName) {
+  const sheet = Object.values(DB_CONFIG.SHEETS).find(
+    (s) => s.name === sheetName
+  );
+  return sheet ? sheet.idPrefix : "GEN";
 }
 
 /**
@@ -171,6 +279,77 @@ function testAutoIdTrigger() {
       success: false,
       message: "Lỗi: " + error.toString(),
     };
+  }
+}
+
+/**
+ * Test Multi-Row Auto-ID - Tạo nhiều hàng cùng lúc
+ */
+function testMultiRowAutoId() {
+  try {
+    Logger.log("=== TEST MULTI-ROW AUTO-ID ===");
+
+    const db = getOrCreateDatabase();
+    const mcqSheet = db.getSheetByName("MCQ_Questions");
+
+    if (!mcqSheet) {
+      throw new Error("Không tìm thấy sheet MCQ_Questions");
+    }
+
+    // Tạo dữ liệu test cho nhiều hàng
+    const testData = [
+      [
+        "",
+        "Câu hỏi 1 về JavaScript",
+        "console.log()",
+        "alert()",
+        "prompt()",
+        "A",
+        "Cơ bản",
+      ],
+      ["", "Câu hỏi 2 về HTML", "<div>", "<span>", "<p>", "A", "Cơ bản"],
+      ["", "Câu hỏi 3 về CSS", "color", "background", "border", "A", "Cơ bản"],
+      [
+        "",
+        "Câu hỏi 4 về React",
+        "useState",
+        "useEffect",
+        "useContext",
+        "A",
+        "Nâng cao",
+      ],
+      [
+        "",
+        "Câu hỏi 5 về Node.js",
+        "express",
+        "koa",
+        "fastify",
+        "A",
+        "Nâng cao",
+      ],
+    ];
+
+    // Tìm vị trí để chèn dữ liệu (sau dữ liệu hiện có)
+    const lastRow = mcqSheet.getLastRow();
+    const startRow = lastRow + 1;
+
+    // Chèn dữ liệu vào nhiều hàng cùng lúc
+    const range = mcqSheet.getRange(
+      startRow,
+      1,
+      testData.length,
+      testData[0].length
+    );
+    range.setValues(testData);
+
+    Logger.log(`✅ Đã chèn ${testData.length} hàng test từ row ${startRow}`);
+    Logger.log("🔄 Auto-ID trigger sẽ tự động tạo ID cho các hàng này");
+    Logger.log("📝 Kiểm tra sheet MCQ_Questions để xem kết quả");
+
+    return true;
+  } catch (error) {
+    Logger.log("🚫 Lỗi Test Multi-Row: " + error.toString());
+    return false;
   }
 }
 
