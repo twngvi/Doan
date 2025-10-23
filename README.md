@@ -39,41 +39,6 @@ Doanv2/
     └── progressModel.js   # Progress entity
 ```
 
-## ✅ Tính năng đã hoàn thành
-
-### 🔧 Core Infrastructure
-
-- [x] **Cấu trúc project** - Tổ chức code theo layered architecture
-- [x] **Database schema** - Định nghĩa cấu trúc Google Sheets database
-- [x] **Auto ID generation** - Hệ thống tạo ID tự động với format PREFIX + số
-
-### 📊 Database Management
-
-- [x] **DB_Master creation** - Tạo Google Sheets database chính
-- [x] **5 sheets chính:**
-  - Users (USR001, USR002...)
-  - Topics (TOP001, TOP002...)
-  - MCQ_Questions (MCQ001, MCQ002...)
-  - Matching_Pairs (MAT001, MAT002...)
-  - Logs (LOG001, LOG002...)
-- [x] **Auto-fill IDs** - Tự động điền ID khi thêm dữ liệu
-- [x] **ID sorting** - Sắp xếp ID theo thứ tự tăng dần
-
-### 🛠️ Development Tools
-
-- [x] **Code structure** - Tổ chức code modular, dễ maintain
-- [x] **Documentation** - Comment chi tiết cho từng file và function
-- [x] **Testing functions** - Các hàm test cho từng tính năng
-
-## 🔄 Hệ thống Auto-ID Generation
-
-### ✨ Tính năng chính:
-
-- **ID tự động tạo** từ chữ cái đầu của tên bảng + 3 chữ số
-- **Format thống nhất**: PREFIX + số có 3 chữ số (001, 002, 003...)
-- **Không trùng lặp**: Luôn tăng dần và unique
-- **Multi-row support**: Tạo ID cho nhiều hàng cùng lúc
-
 ### 📋 Quy tắc tạo ID:
 
 | Tên Bảng           | Chữ cái đầu | Prefix | Ví dụ ID          |
@@ -115,22 +80,6 @@ Doanv2/
 - **difficulty** (Dropdown) - Easy, Medium, Hard
 - **hints** - Gợi ý ghép nối
 
-### 🚀 Cách hoạt động:
-
-1. **Phát hiện sheet**: Hệ thống nhận biết tên sheet
-2. **Lấy prefix**: Áp dụng prefix tương ứng từ chữ cái đầu
-3. **Tìm số cao nhất**: Quét tất cả ID hiện có với prefix đó
-4. **Tạo ID mới**: Tăng số cao nhất lên 1, format 3 chữ số
-5. **Gán ID**: Tự động điền vào cột đầu tiên
-
-### 💡 Ví dụ thực tế:
-
-**Sheet Users đã có:** USR001, USR003, USR005
-**→ ID mới sẽ là:** USR006 (không phải USR004!)
-
-**Sheet MCQ_Questions trống**
-**→ ID đầu tiên:** MCQ001
-
 ## 🔗 Database Relationships & Foreign Keys
 
 ### ✨ Tính năng Relationships:
@@ -164,102 +113,6 @@ Users (USR001, USR002...)
 | **Topics**         | createdBy       | Users       | userId        | SET_NULL  |
 | **Logs**           | userId          | Users       | userId        | SET_NULL  |
 
-### 🎯 Cách sử dụng Foreign Keys:
-
-#### **1. Thêm câu hỏi trắc nghiệm:**
-
-- Mở sheet **MCQ_Questions**
-- Cột **topicId**: Chọn từ dropdown các topic có sẵn
-- Cột **createdBy**: Chọn từ dropdown các user có sẵn
-- Hệ thống sẽ kiểm tra tính hợp lệ realtime
-
-#### **2. Thêm trò chơi ghép nối:**
-
-- Mở sheet **Matching_Pairs**
-- Cột **topicId**: Dropdown hiển thị "TOP001 - Toán học cơ bản"
-- Chọn topic phù hợp cho trò chơi
-
-#### **3. Validation Rules:**
-
-- ✅ **RESTRICT**: Không thể xóa Topics nếu có MCQ_Questions tham chiếu
-- ✅ **SET_NULL**: Khi xóa User, các record tham chiếu sẽ để trống createdBy
-- ✅ **CASCADE**: Khi sửa ID trong bảng cha, tự động cập nhật bảng con
-
-## 🔄 Quy trình làm việc với Relationships
-
-### 1. **Thiết lập Database + Relationships:**
-
-```javascript
-initializeDatabase(); // Tạo DB_Master
-setupAutoIds(); // Thiết lập Auto-ID
-setupRelationships(); // Thiết lập Foreign Keys
-```
-
-### 2. **Test Relationships:**
-
-```javascript
-testRelationships(); // Kiểm tra foreign key validation
-```
-
-### 3. **Refresh Validations (nếu cần):**
-
-```javascript
-refreshRelationships(); // Cập nhật lại dropdown sau khi thêm dữ liệu
-```
-
-### 4. **Workflow thêm dữ liệu có liên quan:**
-
-```
-Step 1: Thêm Users     → Tạo USR001, USR002...
-Step 2: Thêm Topics    → Chọn createdBy từ dropdown Users
-Step 3: Thêm Questions → Chọn topicId từ dropdown Topics
-Step 4: Thêm Matching  → Chọn topicId từ dropdown Topics
-```
-
-### 💡 **Visual Indicators:**
-
-- 🔗 **Yellow Background**: Cột Foreign Key
-- ✅ **Green Background**: Valid foreign key value
-- ❌ **Red Background**: Invalid foreign key value
-- 📝 **Dropdown Arrow**: Có thể chọn từ danh sách
-- 💬 **Note Popup**: Hướng dẫn và lỗi validation
-
-## 🔄 Quy trình làm việc với Database tối ưu
-
-### 1. **Thiết lập Database:**
-
-```javascript
-initializeDatabase(); // Tạo DB_Master với cấu trúc tối ưu
-```
-
-### 2. **Thiết lập Auto-ID + Relationships:**
-
-```javascript
-setupAutoIds(); // Cấu hình tạo ID tự động
-setupRelationships(); // Thiết lập Foreign Keys + Difficulty Dropdowns
-```
-
-### 3. **Thêm dữ liệu mẫu:**
-
-```javascript
-addSampleQuestions(); // Thêm câu hỏi mẫu để test
-```
-
-### 4. **Test hệ thống:**
-
-```javascript
-testMultiRow(); // Test tạo ID tự động cho nhiều hàng cùng lúc
-testRelationships(); // Test foreign key validation
-```
-
-> 💡 **Tip:**
->
-> - Hệ thống đã loại bỏ highlight màu theo yêu cầu
-> - Difficulty có dropdown: Easy, Medium, Hard
-> - Topics chỉ còn 4 cột cơ bản: topicId, title, description, category
-> - MCQ_Questions thêm cột hint, bỏ createdBy và usageCount
-> - Matching_Pairs bỏ createdBy, usageCount, successRate
-
 ### 🎯 **Tính năng đã tối ưu:**
 
 - ❌ **Loại bỏ highlight màu** khi thêm dữ liệu
@@ -267,29 +120,6 @@ testRelationships(); // Test foreign key validation
 - ✅ **Dropdown difficulty**: Easy, Medium, Hard cho MCQ + Matching
 - ✅ **Thêm cột hint** cho MCQ_Questions
 - ✅ **Đơn giản hóa Topics** chỉ còn 4 cột cơ bản
-
-## 📈 Tiến độ dự án
-
-### ✅ Đã hoàn thành (100%)
-
-1. **Project Setup** - Cấu trúc code và kiến trúc
-2. **Database Schema** - Thiết kế và tạo database
-3. **Auto ID System** - Hệ thống tạo ID tự động
-4. **Core Models** - Định nghĩa các entity chính
-
-### 🔄 Đang phát triển (0%)
-
-1. **Business Logic Services** - Implement các service layer
-2. **API Endpoints** - Tạo REST API cho client
-3. **User Management** - Đăng ký, đăng nhập, phân quyền
-4. **Question Management** - CRUD câu hỏi trắc nghiệm
-
-### 📋 Sắp làm
-
-1. **Frontend Integration** - Tích hợp với giao diện người dùng
-2. **AI Integration** - Chatbot và gợi ý thông minh
-3. **Analytics & Reports** - Báo cáo và thống kê
-4. **Mobile Support** - Tối ưu cho mobile
 
 ## 🔗 Database Schema
 
@@ -385,16 +215,6 @@ testRelationships(); // Test foreign key validation
 2. Install clasp: `npm install -g @google/clasp`
 3. Login: `clasp login`
 4. Push code: `clasp push`
-5. Chạy `initializeDatabase()` để tạo database
-
-## 👥 Contributors
-
-- **Developer:** twngvi
-- **Project:** Doanv2 Learning System
-
-## 📄 License
-
-Private Project - Educational Purpose
 
 ---
 
@@ -406,3 +226,4 @@ _Cập nhật lần cuối: October 18, 2025_
 - 19/10/2025: Sửa lại cấu trúc trigger để đúng với Google Apps Script API.
 - 19/10/2025: Cập nhật hệ thống ID tự động từ chữ cái đầu tên bảng + 3 chữ số.
 - 19/10/2025: Thiết lập hệ thống Foreign Keys và Relationships với dropdown validation.
+- 23/10/2025: Cập nhật: Hàm validateForeignKeyEdit (triggers.js) không còn hiển thị comment cảnh báo (cell.setNote) khi nhập sai foreign key. Chỉ ghi log, không popup lỗi, không highlight màu.
