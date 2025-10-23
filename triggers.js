@@ -208,20 +208,7 @@ function validateForeignKeyEdit(sheetName, columnName, value, row, col) {
     const isValid = validateForeignKey(tableName, columnName, value);
 
     if (!isValid) {
-      // Hiển thị cảnh báo cho user
-      const sheet = SpreadsheetApp.getActiveSheet();
-      const cell = sheet.getRange(row, col);
-
-      // Loại bỏ highlight đỏ
-
-      // Thêm comment cảnh báo
-      const relationship = relationships[columnName];
-      cell.setNote(
-        `❌ FOREIGN KEY ERROR\n` +
-          `Giá trị '${value}' không tồn tại trong bảng ${relationship.referencedTable}\n` +
-          `Vui lòng chọn từ dropdown hoặc nhập ID hợp lệ`
-      );
-
+      // Không hiển thị comment cảnh báo nữa
       Logger.log(
         `❌ Foreign key violation: ${tableName}.${columnName} = '${value}'`
       );
