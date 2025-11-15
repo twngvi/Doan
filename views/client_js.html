@@ -1,0 +1,492 @@
+<script>
+  /**
+   * client_js.html - Client-Side JavaScript
+   *
+   * Handles all frontend logic, API calls, navigation, and UI updates
+   */
+
+  // ==================== Global Variables ====================
+  let currentUser = null;
+
+  // ==================== Initialization ====================
+  document.addEventListener("DOMContentLoaded", function () {
+    console.log("App initialized");
+
+    // Check if user is logged in
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser) {
+      try {
+        currentUser = JSON.parse(savedUser);
+        console.log("Found saved user:", currentUser.username);
+        showPage("page-dashboard");
+        loadDashboardData();
+      } catch (error) {
+        console.error("Error parsing saved user:", error);
+        localStorage.removeItem("currentUser");
+        showPage("page-login");
+      }
+    } else {
+      showPage("page-login");
+    }
+  });
+
+  // ==================== Page Navigation ====================
+
+  /**
+   * Show specific page and hide others
+   * @param {string} pageId - ID of the page to show
+   */
+  function showPage(pageId) {
+    console.log("Showing page:", pageId);
+
+    // Hide all pages
+    const allPages = document.querySelectorAll(".page-content");
+    allPages.forEach((page) => {
+      page.style.display = "none";
+    });
+
+    // Show requested page
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) {
+      targetPage.style.display = "block";
+
+      // Update navbar active state if on dashboard
+      if (pageId === "page-dashboard") {
+        updateNavbarActive("page-dashboard");
+      }
+    } else {
+      console.error("Page not found:", pageId);
+    }
+  }
+
+  /**
+   * Update navbar active state
+   */
+  function updateNavbarActive(activePageId) {
+    const navItems = document.querySelectorAll(".navbar-item");
+    navItems.forEach((item) => {
+      item.classList.remove("active");
+    });
+  }
+
+  // ==================== Authentication ====================
+
+  /**
+   * Handle login form submission
+   */
+  function handleLoginFormSubmit() {
+    console.log("Login form submitted");
+
+    // Get form data
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+
+    // Validation
+    if (!username || !password) {
+      showToast("Vui lòng nhập đầy đủ thông tin", "error");
+      return false;
+    }
+
+    // Prepare payload
+    const payload = {
+      username: username,
+      password: password,
+    };
+
+    // Show loading
+    showLoading(true);
+    disableButton("btn-login");
+
+    // Call backend function
+    google.script.run
+      .withSuccessHandler(onLoginSuccess)
+      .withFailureHandler(onApiError)
+      .loginUser(payload);
+
+    return false;
+  }
+
+  /**
+   * Handle successful login
+   */
+  function onLoginSuccess(response) {
+    console.log("Login response:", JSON.stringify(response));
+    console.log("Response status:", response.status);
+    console.log("Response message:", response.message);
+    hideLoading();
+    enableButton("btn-login");
+
+    if (response.status === "success") {
+      // Save user to localStorage
+      currentUser = response.user;
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+      // Show success message
+      showToast("Đăng nhập thành công!", "success");
+
+      // Navigate to dashboard
+      setTimeout(() => {
+        showPage("page-dashboard");
+        loadDashboardData();
+      }, 500);
+    } else {
+      showToast(response.message || "Đăng nhập thất bại", "error");
+    }
+  }
+
+  /**
+   * Handle register form submission
+   */
+  function handleRegisterFormSubmit() {
+    console.log("Register form submitted");
+
+    // Get form data
+    const fullName = document.getElementById("register-fullname").value.trim();
+    const username = document.getElementById("register-username").value.trim();
+    const email = document.getElementById("register-email").value.trim();
+    const password = document.getElementById("register-password").value;
+    const confirmPassword = document.getElementById(
+      "register-confirm-password"
+    ).value;
+
+    // Validation
+    if (!fullName || !username || !password) {
+      showToast("Vui lòng nhập đầy đủ thông tin bắt buộc", "error");
+      return false;
+    }
+
+    if (username.length < 3) {
+      showToast("Tên đăng nhập phải có ít nhất 3 ký tự", "error");
+      return false;
+    }
+
+    if (password.length < 6) {
+      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      return false;
+    }
+
+    if (password !== confirmPassword) {
+      showToast("Mật khẩu xác nhận không khớp", "error");
+      return false;
+    }
+
+    // Prepare payload
+    const payload = {
+      fullName: fullName,
+      username: username,
+      email: email,
+      password: password,
+    };
+
+    // Show loading
+    showLoading(true);
+    disableButton("btn-register");
+
+    // Call backend function
+    google.script.run
+      .withSuccessHandler(onRegisterSuccess)
+      .withFailureHandler(onApiError)
+      .registerUser(payload);
+
+    return false;
+  }
+
+  /**
+   * Handle successful registration
+   */
+  function onRegisterSuccess(response) {
+    console.log("Register response:", JSON.stringify(response));
+    console.log("Response status:", response.status);
+    console.log("Response message:", response.message);
+    hideLoading();
+    enableButton("btn-register");
+
+    if (response.status === "success") {
+      // Save user to localStorage
+      currentUser = response.user;
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+      // Show success message
+      showToast("Đăng ký thành công! Đang chuyển tới trang chủ...", "success");
+
+      // Navigate to dashboard
+      setTimeout(() => {
+        showPage("page-dashboard");
+        loadDashboardData();
+      }, 1000);
+    } else {
+      showToast(response.message || "Đăng ký thất bại", "error");
+    }
+  }
+
+  /**
+   * Handle logout
+   */
+  function handleLogout() {
+    console.log("Logging out...");
+
+    // Clear user data
+    currentUser = null;
+    localStorage.removeItem("currentUser");
+
+    // Show message
+    showToast("Đã đăng xuất", "info");
+
+    // Navigate to login
+    setTimeout(() => {
+      showPage("page-login");
+
+      // Clear form fields
+      document.getElementById("login-username").value = "";
+      document.getElementById("login-password").value = "";
+    }, 500);
+  }
+
+  /**
+   * Handle Google Login
+   */
+  function handleGoogleLogin() {
+    console.log("Google login initiated");
+
+    // Show loading
+    showLoading(true);
+
+    // Call backend function
+    google.script.run
+      .withSuccessHandler(onGoogleAuthSuccess)
+      .withFailureHandler(onApiError)
+      .handleGoogleAuth();
+  }
+
+  /**
+   * Handle Google Signup
+   */
+  function handleGoogleSignup() {
+    console.log("Google signup initiated");
+
+    // Show loading
+    showLoading(true);
+
+    // Call backend function (same as login - backend handles both)
+    google.script.run
+      .withSuccessHandler(onGoogleAuthSuccess)
+      .withFailureHandler(onApiError)
+      .handleGoogleAuth();
+  }
+
+  /**
+   * Handle successful Google authentication
+   */
+  function onGoogleAuthSuccess(response) {
+    console.log("Google auth response:", JSON.stringify(response));
+    hideLoading();
+
+    if (response.status === "success") {
+      // Save user to localStorage
+      currentUser = response.user;
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+      // Show success message
+      if (response.isNewUser) {
+        showToast(
+          "Tài khoản mới đã được tạo! Chào mừng " + response.user.fullName,
+          "success"
+        );
+      } else {
+        showToast("Đăng nhập thành công với Google!", "success");
+      }
+
+      // Navigate to dashboard
+      setTimeout(() => {
+        showPage("page-dashboard");
+        loadDashboardData();
+      }, 1000);
+    } else {
+      showToast(response.message || "Đăng nhập Google thất bại", "error");
+    }
+  }
+
+  // ==================== Dashboard ====================
+
+  /**
+   * Load dashboard data
+   */
+  function loadDashboardData() {
+    console.log("Loading dashboard data...");
+
+    if (!currentUser) {
+      console.error("No current user");
+      return;
+    }
+
+    // Update user display name
+    const displayElements = document.querySelectorAll(
+      "#user-display-name, #dashboard-user-name"
+    );
+    displayElements.forEach((el) => {
+      if (el) {
+        el.textContent = currentUser.fullName || currentUser.username;
+      }
+    });
+
+    // Load stats (placeholder values for now)
+    updateDashboardStats({
+      totalTopics: 0,
+      completed: 0,
+      avgScore: 0,
+      streak: 0,
+    });
+
+    // TODO: Load actual data from user progress sheet
+    console.log("Dashboard loaded for user:", currentUser.userId);
+  }
+
+  /**
+   * Update dashboard statistics
+   */
+  function updateDashboardStats(stats) {
+    const elements = {
+      totalTopics: document.getElementById("stat-total-topics"),
+      completed: document.getElementById("stat-completed"),
+      avgScore: document.getElementById("stat-avg-score"),
+      streak: document.getElementById("stat-streak"),
+    };
+
+    if (elements.totalTopics)
+      elements.totalTopics.textContent = stats.totalTopics || 0;
+    if (elements.completed)
+      elements.completed.textContent = stats.completed || 0;
+    if (elements.avgScore) elements.avgScore.textContent = stats.avgScore || 0;
+    if (elements.streak) elements.streak.textContent = stats.streak || 0;
+  }
+
+  // ==================== UI Utilities ====================
+
+  /**
+   * Show loading overlay
+   */
+  function showLoading(show) {
+    const overlay = document.getElementById("loading-overlay");
+    if (overlay) {
+      overlay.style.display = show ? "flex" : "none";
+    }
+  }
+
+  /**
+   * Hide loading overlay
+   */
+  function hideLoading() {
+    showLoading(false);
+  }
+
+  /**
+   * Show toast notification
+   * @param {string} message - Message to display
+   * @param {string} type - Type: success, error, info, warning
+   */
+  function showToast(message, type = "info") {
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toast-message");
+
+    if (!toast || !toastMessage) return;
+
+    // Set message
+    toastMessage.textContent = message;
+
+    // Remove all type classes
+    toast.classList.remove(
+      "toast-success",
+      "toast-error",
+      "toast-info",
+      "toast-warning"
+    );
+
+    // Add type class
+    toast.classList.add("toast-" + type);
+
+    // Show toast
+    toast.classList.remove("translate-x-full");
+    toast.classList.add("translate-x-0");
+
+    // Hide after 3 seconds
+    setTimeout(() => {
+      toast.classList.remove("translate-x-0");
+      toast.classList.add("translate-x-full");
+    }, 3000);
+  }
+
+  /**
+   * Disable button
+   */
+  function disableButton(buttonId) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+      button.disabled = true;
+      button.classList.add("opacity-50", "cursor-not-allowed");
+    }
+  }
+
+  /**
+   * Enable button
+   */
+  function enableButton(buttonId) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  }
+
+  /**
+   * Handle API errors
+   */
+  function onApiError(error) {
+    console.error("API Error:", error);
+    hideLoading();
+
+    // Re-enable buttons
+    enableButton("btn-login");
+    enableButton("btn-register");
+
+    showToast("Có lỗi xảy ra: " + error.message, "error");
+  }
+
+  // ==================== Helper Functions ====================
+
+  /**
+   * Format date to Vietnamese format
+   */
+  function formatDate(dateString) {
+    if (!dateString) return "";
+
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("vi-VN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (error) {
+      return dateString;
+    }
+  }
+
+  /**
+   * Validate email format
+   */
+  function isValidEmail(email) {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+  }
+
+  // Make functions available globally
+  window.showPage = showPage;
+  window.handleLoginFormSubmit = handleLoginFormSubmit;
+  window.handleRegisterFormSubmit = handleRegisterFormSubmit;
+  window.handleLogout = handleLogout;
+  window.showToast = showToast;
+
+  console.log("Client JavaScript loaded successfully");
+</script>

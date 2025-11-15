@@ -1,8 +1,8 @@
-# 📚 Doanv2 - Hệ thống Học tập Thông minh
+# 📚 Doanv3 - Hệ thống Học tập Thông minh
 
 ## 📋 Tổng quan dự án
 
-Doanv2 là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets, cung cấp các tính năng:
+Doanv3 là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets, cung cấp các tính năng:
 
 - Quản lý câu hỏi trắc nghiệm (MCQ)
 - Trò chơi ghép nối (Matching Game)
