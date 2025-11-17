@@ -44,6 +44,151 @@ function initializeDatabase() {
 }
 
 /**
+ * Function để xóa và tạo lại database mới hoàn toàn
+ * CHỈ DÙNG KHI GẶP LỖI VỚI DATABASE CŨ
+ */
+function resetDatabase() {
+  try {
+    Logger.log("=== BẮT ĐẦU XÓA DATABASE CŨ ===");
+
+    // Tìm và xóa DB_Master cũ
+    const files = DriveApp.getFilesByName("DB_Master");
+    while (files.hasNext()) {
+      const file = files.next();
+      Logger.log("Deleting old database: " + file.getId());
+      file.setTrashed(true);
+    }
+
+    Logger.log("=== TẠO DATABASE MỚI ===");
+
+    // Tạo database mới
+    const ss = SpreadsheetApp.create("DB_Master");
+    const ssId = ss.getId();
+    Logger.log("Created new database: " + ssId);
+
+    // Xóa sheet mặc định nếu có
+    const sheets = ss.getSheets();
+    const defaultSheetNames = [
+      "Sheet1",
+      "Sheet",
+      "Trang tính1",
+      "Trang tính 1",
+    ];
+
+    // Tạo Users sheet trước
+    const usersSheet = ss.insertSheet("Users");
+    const userHeaders = [
+      "userId",
+      "username",
+      "email",
+      "passwordHash",
+      "fullName",
+      "role",
+      "createdAt",
+      "lastLogin",
+      "isActive",
+      "spreadsheetId",
+    ];
+    usersSheet.getRange(1, 1, 1, userHeaders.length).setValues([userHeaders]);
+    usersSheet.getRange(1, 1, 1, userHeaders.length).setFontWeight("bold");
+    usersSheet.getRange(1, 1, 1, userHeaders.length).setBackground("#4285f4");
+    usersSheet.getRange(1, 1, 1, userHeaders.length).setFontColor("white");
+    usersSheet.setFrozenRows(1);
+    Logger.log("Created Users sheet");
+
+    // Tạo các sheet khác
+    const sheetsConfig = [
+      {
+        name: "Topics",
+        headers: ["topicId", "title", "description", "category"],
+      },
+      {
+        name: "MCQ_Questions",
+        headers: [
+          "questionId",
+          "topicId",
+          "questionText",
+          "optionA",
+          "optionB",
+          "optionC",
+          "optionD",
+          "correctAnswer",
+          "explanation",
+          "difficulty",
+          "hint",
+          "points",
+        ],
+      },
+      {
+        name: "Matching_Pairs",
+        headers: [
+          "pairId",
+          "topicId",
+          "leftItem",
+          "rightItem",
+          "itemType",
+          "difficulty",
+          "hints",
+        ],
+      },
+      {
+        name: "Logs",
+        headers: [
+          "logId",
+          "timestamp",
+          "level",
+          "category",
+          "userId",
+          "action",
+          "details",
+          "ipAddress",
+          "userAgent",
+          "sessionId",
+        ],
+      },
+    ];
+
+    sheetsConfig.forEach((config) => {
+      const sheet = ss.insertSheet(config.name);
+      sheet
+        .getRange(1, 1, 1, config.headers.length)
+        .setValues([config.headers]);
+      sheet.getRange(1, 1, 1, config.headers.length).setFontWeight("bold");
+      sheet.getRange(1, 1, 1, config.headers.length).setBackground("#4285f4");
+      sheet.getRange(1, 1, 1, config.headers.length).setFontColor("white");
+      sheet.setFrozenRows(1);
+      Logger.log("Created sheet: " + config.name);
+    });
+
+    // Xóa các sheet mặc định
+    sheets.forEach((sheet) => {
+      const sheetName = sheet.getName();
+      if (defaultSheetNames.includes(sheetName)) {
+        Logger.log("Deleting default sheet: " + sheetName);
+        ss.deleteSheet(sheet);
+      }
+    });
+
+    Logger.log("=== HOÀN THÀNH RESET DATABASE ===");
+    Logger.log("Database URL: " + ss.getUrl());
+    Logger.log("Database ID: " + ssId);
+
+    return {
+      success: true,
+      message: "Database đã được reset thành công!",
+      url: ss.getUrl(),
+      id: ssId,
+    };
+  } catch (error) {
+    Logger.log("LỖI KHI RESET DATABASE: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
  * Function để thêm dữ liệu câu hỏi mẫu
  */
 function addSampleQuestions() {

@@ -150,12 +150,16 @@ function getOrCreateDatabase() {
       // Try to find Sheet1 or any default sheet
       for (let i = 0; i < allSheets.length; i++) {
         const sheetName = allSheets[i].getName();
+        Logger.log("Found sheet: " + sheetName);
         if (
           sheetName === "Sheet1" ||
+          sheetName === "Sheet" ||
           sheetName.startsWith("Sheet") ||
-          sheetName === "Trang tính1"
+          sheetName === "Trang tính1" ||
+          sheetName === "Trang tính 1"
         ) {
           defaultSheet = allSheets[i];
+          Logger.log("Selected default sheet: " + sheetName);
           break;
         }
       }
@@ -163,11 +167,22 @@ function getOrCreateDatabase() {
       if (defaultSheet) {
         // Rename existing default sheet to Users
         const oldName = defaultSheet.getName();
-        usersSheet = defaultSheet;
-        usersSheet.setName("Users");
-        Logger.log("Renamed '" + oldName + "' to Users");
+        Logger.log("Attempting to rename '" + oldName + "' to Users");
+        
+        try {
+          defaultSheet.setName("Users");
+          usersSheet = defaultSheet;
+          Logger.log("Successfully renamed '" + oldName + "' to Users");
+        } catch (renameError) {
+          Logger.log("Failed to rename sheet: " + renameError.toString());
+          // If rename fails, create new sheet and delete old one
+          usersSheet = ss.insertSheet("Users");
+          ss.deleteSheet(defaultSheet);
+          Logger.log("Created new Users sheet and deleted old sheet");
+        }
       } else {
         // No default sheet found, create new Users sheet
+        Logger.log("No default sheet found, creating new Users sheet");
         usersSheet = ss.insertSheet("Users");
         Logger.log("Created new Users sheet");
       }
