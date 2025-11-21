@@ -488,7 +488,7 @@ function handleGoogleAuthWithToken(idToken) {
           fullName: data[i][4],
           role: data[i][5],
           createdAt: data[i][6],
-          lastLogin: new Date(),
+          lastLogin: new Date().toISOString(),
         };
 
         // Update last login
@@ -711,7 +711,7 @@ function handleGoogleAuth() {
           fullName: data[i][4],
           role: data[i][5],
           createdAt: data[i][6],
-          lastLogin: new Date(),
+          lastLogin: new Date().toISOString(),
         };
 
         // Update last login (quick operation)
