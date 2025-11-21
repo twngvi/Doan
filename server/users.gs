@@ -634,55 +634,38 @@ function decodeJWT(token) {
 
 /**
  * Handle Google Sign-In
+ * @param {Object} userInfo - User info from client { email, name }
  * @return {Object} { status, message, user, userEmail }
  */
-function handleGoogleAuth() {
+function handleGoogleAuth(userInfo) {
   // CRITICAL: Wrap everything in try-catch to ensure we ALWAYS return something
   try {
     Logger.log("=== GOOGLE AUTH START ===");
-    Logger.log("Step 1: Function called");
-
-    // Add a small delay to prevent rate limiting
-    try {
-      Utilities.sleep(500);
-      Logger.log("Step 2: Sleep completed");
-    } catch (sleepError) {
-      Logger.log("Sleep error (non-critical): " + sleepError.toString());
-    }
-
-    // Get user's email from Google account
-    Logger.log("Step 3: Getting user email...");
-    let userEmail = null;
-
-    try {
-      userEmail = Session.getActiveUser().getEmail();
-      Logger.log("Step 3a: getActiveUser email: " + userEmail);
-    } catch (emailError) {
-      Logger.log("Step 3a error: " + emailError.toString());
-    }
-
-    // Fallback: Try effective user
-    if (!userEmail) {
-      try {
-        userEmail = Session.getEffectiveUser().getEmail();
-        Logger.log("Step 3b: getEffectiveUser email: " + userEmail);
-      } catch (emailError) {
-        Logger.log("Step 3b error: " + emailError.toString());
-      }
-    }
-
-    if (!userEmail) {
-      Logger.log("Step 3 FAILED: No email found");
+    Logger.log("Step 1: Function called with userInfo");
+    
+    // ✅ FIX: Lấy email từ client thay vì Session.getEffectiveUser()
+    if (!userInfo || !userInfo.email) {
+      Logger.log("❌ Error: No userInfo or email provided from client");
       return {
         status: "error",
-        message:
-          "Could not get Google account email. Please check webapp executeAs setting.",
+        message: "Không nhận được thông tin email từ client. Vui lòng thử lại.",
       };
     }
 
-    Logger.log("Step 4: Email found: " + userEmail);
+    const userEmail = userInfo.email;
+    const fullName = userInfo.name || userEmail.split("@")[0];
+    
+    Logger.log("📧 Email from client: " + userEmail);
+    Logger.log("👤 Name from client: " + fullName);
 
-    Logger.log("Step 4: Email found: " + userEmail);
+    // Validate email format
+    if (!isValidEmail(userEmail)) {
+      Logger.log("❌ Error: Invalid email format: " + userEmail);
+      return {
+        status: "error",
+        message: "Email không hợp lệ: " + userEmail,
+      };
+    }
 
     // Get database
     Logger.log("Step 5: Getting database...");
@@ -788,27 +771,22 @@ function handleGoogleAuth() {
 
     Logger.log("Step 9: No existing user found, creating new one...");
 
-    Logger.log("Step 9: No existing user found, creating new one...");
-
-    // User doesn't exist - create new account
+    // ✅ User doesn't exist - create new account with info from client
     const userId = generateNextId(usersSheet, "USR");
     Logger.log("Step 10: Generated userId: " + userId);
 
     // Extract username from email (part before @)
     const username = userEmail.split("@")[0];
 
-    // Get user's full name from Google account if available
-    const fullName = userEmail.split("@")[0]; // Fallback to email username
-
     const timestamp = formatDate(new Date());
 
-    // Create new user row
+    // Create new user row (fullName already from client)
     const newUser = {
       userId: userId,
       username: username,
       email: userEmail,
       passwordHash: "GOOGLE_AUTH", // No password for Google auth
-      fullName: fullName,
+      fullName: fullName, // ✅ From client (userInfo.name)
       role: "student",
       createdAt: timestamp,
       lastLogin: timestamp,

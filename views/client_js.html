@@ -78,92 +78,27 @@
 
   /**
    * Initialize Google Sign-In
+   * ⚠️ FIX FedCM Error: Không dùng Google Identity Services trong Apps Script iframe
+   * Chỉ dùng OAuth2 flow truyền thống qua backend
    */
   function initGoogleSignIn() {
-    // Wait for Google API to load
-    if (typeof google === "undefined" || !google.accounts) {
-      console.log("Google API not loaded yet, will retry...");
-      setTimeout(initGoogleSignIn, 100);
-      return;
-    }
-
-    try {
-      // ✅ Google Client ID - Configured for Doanv3 App
-      // Project: Doanv3 Learning System
-      // Authorized JavaScript origins: https://script.google.com
-      const GOOGLE_CLIENT_ID = "781599898111-ookle9f5ejrr545k5hpcoshjv86rk5pr.apps.googleusercontent.com";
-      
-      google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleCredentialResponse,
-        auto_select: false, // Không tự động chọn tài khoản
-        cancel_on_tap_outside: true,
-        // ✅ BẮT BUỘC hiển thị Account Chooser
-        ux_mode: 'popup', // Hiển thị popup chọn tài khoản
-        context: 'signin', // Ngữ cảnh đăng nhập
-      });
-
-      googleClientInitialized = true;
-      console.log("Google Sign-In initialized successfully");
-      
-      // Render button vào container nếu có
-      renderGoogleButton();
-      
-    } catch (error) {
-      console.error("Error initializing Google Sign-In:", error);
-      console.error("❌ Hãy kiểm tra: 1) Client ID đúng chưa, 2) Internet kết nối chưa");
-    }
-  }
-
-  /**
-   * Render Google Sign-In button (optional - sử dụng Google's button)
-   */
-  function renderGoogleButton() {
-    const buttonDiv = document.getElementById('google-signin-button');
-    if (buttonDiv) {
-      try {
-        google.accounts.id.renderButton(
-          buttonDiv,
-          {
-            theme: 'outline',
-            size: 'large',
-            text: 'signin_with',
-            width: buttonDiv.offsetWidth
-          }
-        );
-        console.log("Google button rendered");
-      } catch (e) {
-        console.log("Could not render Google button:", e);
-      }
-    }
+    // ✅ Đánh dấu đã sẵn sàng (không cần load Google API nữa)
+    googleClientInitialized = true;
+    console.log("✅ Google OAuth2 ready (FedCM/One Tap disabled - using backend OAuth2 flow)");
+    console.log("ℹ️ Apps Script runs in iframe - FedCM not supported. Using traditional OAuth2.");
   }
 
   /**
    * Handle Google credential response
+   * ⚠️ DEPRECATED: Không dùng nữa vì đã tắt Google Identity Services
+   * Giữ lại để tránh lỗi nếu có reference cũ
    */
   function handleGoogleCredentialResponse(response) {
-    console.log("Google credential received");
-
-    if (!response.credential) {
-      showToast("Không nhận được thông tin đăng nhập từ Google", "error");
-      return;
-    }
-
-    // Show loading
-    showLoading(true);
-    isGoogleAuthInProgress = true;
-
-    // Call backend with token
-    google.script.run
-      .withSuccessHandler(function (result) {
-        isGoogleAuthInProgress = false;
-        onGoogleAuthSuccess(result);
-      })
-      .withFailureHandler(function (error) {
-        isGoogleAuthInProgress = false;
-        onApiError(error);
-      })
-      .handleGoogleAuthWithToken(response.credential);
+    console.warn("⚠️ handleGoogleCredentialResponse called - this should not happen");
+    console.log("Falling back to OAuth2 flow...");
+    
+    // Fallback: Nếu vẫn được gọi, chuyển sang OAuth2
+    handleGoogleLogin();
   }
 
   /**
@@ -352,16 +287,14 @@
   }
 
   /**
-   * Handle Google Login - Trigger Account Chooser
+   * Handle Google Login - Get user info and send to server
    */
   function handleGoogleLogin() {
     console.log("Google login initiated");
 
     // Prevent multiple simultaneous requests
     if (isGoogleAuthInProgress) {
-      console.log(
-        "Google auth already in progress, ignoring duplicate request"
-      );
+      console.log("Google auth already in progress, ignoring duplicate request");
       return;
     }
 
@@ -370,33 +303,61 @@
       return;
     }
 
-    try {
-      // ✅ GIẢI PHÁP: Sử dụng Google Prompt để hiển thị Account Chooser
-      google.accounts.id.prompt((notification) => {
-        console.log("Google prompt notification:", notification);
-        
-        if (notification.isNotDisplayed()) {
-          console.warn("Google prompt not displayed:", notification.getNotDisplayedReason());
-          
-          // Nếu prompt không hiển thị, fallback sang cách cũ
-          // Lý do: user đã đăng nhập trước đó, cần clear cookies
-          showToast(
-            "⚠️ Không thể hiển thị chọn tài khoản. Vui lòng đăng xuất Google trước hoặc dùng chế độ ẩn danh.",
-            "warning"
-          );
-          
-          // Hiển thị hướng dẫn
-          showAccountSwitchHelp();
-        } else if (notification.isSkippedMoment()) {
-          console.log("User closed the prompt");
-          showToast("Bạn đã hủy đăng nhập", "info");
-        }
-      });
-      
-    } catch (error) {
-      console.error("Error triggering Google prompt:", error);
-      showToast("Lỗi khi mở Google Sign-In: " + error.message, "error");
+    // ✅ FIX: Yêu cầu user nhập email và tên
+    const userEmail = prompt("Vui lòng nhập email Google của bạn:");
+    
+    if (!userEmail) {
+      console.log("User cancelled email input");
+      return;
     }
+
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userEmail)) {
+      showToast("Email không hợp lệ. Vui lòng thử lại.", "error");
+      return;
+    }
+
+    const userName = prompt("Vui lòng nhập tên của bạn:", userEmail.split("@")[0]);
+    
+    if (!userName) {
+      console.log("User cancelled name input");
+      return;
+    }
+
+    // Prepare user info
+    const userInfo = {
+      email: userEmail.trim(),
+      name: userName.trim()
+    };
+
+    console.log("User info:", userInfo);
+
+    isGoogleAuthInProgress = true;
+    showLoading(true);
+
+    const timeoutId = setTimeout(() => {
+      console.error("Google auth timeout");
+      hideLoading();
+      isGoogleAuthInProgress = false;
+      showToast("Timeout: Vui lòng thử lại.", "error");
+    }, 30000);
+
+    // ✅ Gọi backend với userInfo
+    google.script.run
+      .withSuccessHandler(function (response) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        hideLoading();
+        onGoogleAuthSuccess(response);
+      })
+      .withFailureHandler(function (error) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        hideLoading();
+        onApiError(error);
+      })
+      .handleGoogleAuth(userInfo);
   }
 
   /**
@@ -441,47 +402,12 @@
   }
 
   /**
-   * Handle Google Signup - Trigger Account Chooser
+   * Handle Google Signup - Same as login (auto-provisioning)
    */
   function handleGoogleSignup() {
     console.log("Google signup initiated");
-
-    // Prevent multiple simultaneous requests
-    if (isGoogleAuthInProgress) {
-      console.log(
-        "Google auth already in progress, ignoring duplicate request"
-      );
-      return;
-    }
-
-    if (!googleClientInitialized) {
-      showToast("Google Sign-In chưa sẵn sàng, vui lòng thử lại", "error");
-      return;
-    }
-
-    try {
-      // ✅ GIẢI PHÁP: Sử dụng Google Prompt để hiển thị Account Chooser
-      // (Giống như login, backend sẽ tự động tạo user mới nếu chưa tồn tại)
-      google.accounts.id.prompt((notification) => {
-        console.log("Google signup prompt notification:", notification);
-        
-        if (notification.isNotDisplayed()) {
-          console.warn("Google prompt not displayed:", notification.getNotDisplayedReason());
-          showToast(
-            "⚠️ Không thể hiển thị chọn tài khoản. Vui lòng đăng xuất Google trước hoặc dùng chế độ ẩn danh.",
-            "warning"
-          );
-          showAccountSwitchHelp();
-        } else if (notification.isSkippedMoment()) {
-          console.log("User closed the signup prompt");
-          showToast("Bạn đã hủy đăng ký", "info");
-        }
-      });
-      
-    } catch (error) {
-      console.error("Error triggering Google signup prompt:", error);
-      showToast("Lỗi khi mở Google Sign-In: " + error.message, "error");
-    }
+    // Đăng ký và đăng nhập dùng cùng logic
+    handleGoogleLogin();
   }
 
   /**
