@@ -7,10 +7,15 @@
 
   // ==================== Global Variables ====================
   let currentUser = null;
+  let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
+  let googleClientInitialized = false;
 
   // ==================== Initialization ====================
   document.addEventListener("DOMContentLoaded", function () {
     console.log("App initialized");
+
+    // Initialize Google Sign-In
+    initGoogleSignIn();
 
     // Check if user is logged in
     const savedUser = localStorage.getItem("currentUser");
@@ -70,6 +75,60 @@
   }
 
   // ==================== Authentication ====================
+
+  /**
+   * Initialize Google Sign-In
+   */
+  function initGoogleSignIn() {
+    // Wait for Google API to load
+    if (typeof google === "undefined" || !google.accounts) {
+      console.log("Google API not loaded yet, will retry...");
+      setTimeout(initGoogleSignIn, 100);
+      return;
+    }
+
+    try {
+      google.accounts.id.initialize({
+        client_id: "YOUR_GOOGLE_CLIENT_ID", // This will be replaced
+        callback: handleGoogleCredentialResponse,
+        auto_select: false, // Don't auto-select account
+        cancel_on_tap_outside: true,
+      });
+
+      googleClientInitialized = true;
+      console.log("Google Sign-In initialized");
+    } catch (error) {
+      console.error("Error initializing Google Sign-In:", error);
+    }
+  }
+
+  /**
+   * Handle Google credential response
+   */
+  function handleGoogleCredentialResponse(response) {
+    console.log("Google credential received");
+
+    if (!response.credential) {
+      showToast("Không nhận được thông tin đăng nhập từ Google", "error");
+      return;
+    }
+
+    // Show loading
+    showLoading(true);
+    isGoogleAuthInProgress = true;
+
+    // Call backend with token
+    google.script.run
+      .withSuccessHandler(function (result) {
+        isGoogleAuthInProgress = false;
+        onGoogleAuthSuccess(result);
+      })
+      .withFailureHandler(function (error) {
+        isGoogleAuthInProgress = false;
+        onApiError(error);
+      })
+      .handleGoogleAuthWithToken(response.credential);
+  }
 
   /**
    * Handle login form submission
@@ -229,6 +288,20 @@
     currentUser = null;
     localStorage.removeItem("currentUser");
 
+    // Clear Google auth state to force account chooser next time
+    if (
+      googleClientInitialized &&
+      typeof google !== "undefined" &&
+      google.accounts
+    ) {
+      try {
+        google.accounts.id.disableAutoSelect();
+        console.log("Google auto-select disabled");
+      } catch (e) {
+        console.log("Error disabling Google auto-select:", e);
+      }
+    }
+
     // Show message
     showToast("Đã đăng xuất", "info");
 
@@ -248,13 +321,38 @@
   function handleGoogleLogin() {
     console.log("Google login initiated");
 
+    // Prevent multiple simultaneous requests
+    if (isGoogleAuthInProgress) {
+      console.log(
+        "Google auth already in progress, ignoring duplicate request"
+      );
+      return;
+    }
+
+    isGoogleAuthInProgress = true;
+
     // Show loading
     showLoading(true);
 
-    // Call backend function
+    // Call backend function with timeout
+    const timeoutId = setTimeout(() => {
+      console.error("Google auth timeout");
+      hideLoading();
+      isGoogleAuthInProgress = false;
+      showToast("Timeout: Vui lòng thử lại sau.", "error");
+    }, 30000); // 30 second timeout
+
     google.script.run
-      .withSuccessHandler(onGoogleAuthSuccess)
-      .withFailureHandler(onApiError)
+      .withSuccessHandler(function (response) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        onGoogleAuthSuccess(response);
+      })
+      .withFailureHandler(function (error) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        onApiError(error);
+      })
       .handleGoogleAuth();
   }
 
@@ -264,13 +362,39 @@
   function handleGoogleSignup() {
     console.log("Google signup initiated");
 
+    // Prevent multiple simultaneous requests
+    if (isGoogleAuthInProgress) {
+      console.log(
+        "Google auth already in progress, ignoring duplicate request"
+      );
+      return;
+    }
+
+    isGoogleAuthInProgress = true;
+
     // Show loading
     showLoading(true);
 
+    // Call backend function with timeout
+    const timeoutId = setTimeout(() => {
+      console.error("Google auth timeout");
+      hideLoading();
+      isGoogleAuthInProgress = false;
+      showToast("Timeout: Vui lòng thử lại sau.", "error");
+    }, 30000); // 30 second timeout
+
     // Call backend function (same as login - backend handles both)
     google.script.run
-      .withSuccessHandler(onGoogleAuthSuccess)
-      .withFailureHandler(onApiError)
+      .withSuccessHandler(function (response) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        onGoogleAuthSuccess(response);
+      })
+      .withFailureHandler(function (error) {
+        clearTimeout(timeoutId);
+        isGoogleAuthInProgress = false;
+        onApiError(error);
+      })
       .handleGoogleAuth();
   }
 
@@ -281,10 +405,26 @@
     console.log("Google auth response:", JSON.stringify(response));
     hideLoading();
 
+    // Check if response is valid
+    if (!response) {
+      console.error("Response is null or undefined");
+      showToast(
+        "Lỗi: Không nhận được phản hồi từ server. Vui lòng thử lại.",
+        "error"
+      );
+      return;
+    }
+
+    console.log("Response status:", response.status);
+
     if (response.status === "success") {
+      console.log("Login successful, saving user data...");
+
       // Save user to localStorage
       currentUser = response.user;
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+      console.log("User saved to localStorage:", currentUser.username);
 
       // Show success message
       if (response.isNewUser) {
@@ -296,12 +436,15 @@
         showToast("Đăng nhập thành công với Google!", "success");
       }
 
-      // Navigate to dashboard
+      // Navigate to dashboard immediately
+      console.log("Navigating to dashboard...");
       setTimeout(() => {
+        console.log("Showing dashboard page");
         showPage("page-dashboard");
         loadDashboardData();
-      }, 1000);
+      }, 500); // Giảm từ 1000ms xuống 500ms
     } else {
+      console.error("Login failed with status:", response.status);
       showToast(response.message || "Đăng nhập Google thất bại", "error");
     }
   }
@@ -380,6 +523,30 @@
   }
 
   /**
+   * Show account switch help
+   */
+  function showAccountSwitchHelp() {
+    const helpText = `
+Để đổi tài khoản Google khi đăng nhập:
+
+1️⃣ Mở ứng dụng trong chế độ Incognito/Ẩn danh:
+   • Chrome: Ctrl+Shift+N
+   • Edge: Ctrl+Shift+P
+   • Firefox: Ctrl+Shift+P
+
+2️⃣ Hoặc đăng xuất khỏi tất cả tài khoản Google:
+   • Vào accounts.google.com
+   • Chọn "Đăng xuất"
+
+3️⃣ Sau đó quay lại và đăng nhập bằng tài khoản mới
+
+💡 Mẹo: Dùng nhiều Profile trong Chrome để quản lý nhiều tài khoản dễ dàng hơn!
+    `.trim();
+
+    alert(helpText);
+  }
+
+  /**
    * Show toast notification
    * @param {string} message - Message to display
    * @param {string} type - Type: success, error, info, warning
@@ -448,7 +615,26 @@
     enableButton("btn-login");
     enableButton("btn-register");
 
-    showToast("Có lỗi xảy ra: " + error.message, "error");
+    // Check for specific error types
+    let errorMessage = "Có lỗi xảy ra";
+
+    if (error && error.message) {
+      const msg = error.message.toLowerCase();
+
+      if (msg.includes("429") || msg.includes("too many requests")) {
+        errorMessage = "Quá nhiều yêu cầu. Vui lòng đợi 1 phút và thử lại.";
+      } else if (msg.includes("timeout")) {
+        errorMessage =
+          "Hết thời gian chờ. Vui lòng kiểm tra kết nối và thử lại.";
+      } else if (msg.includes("network")) {
+        errorMessage =
+          "Lỗi kết nối mạng. Vui lòng kiểm tra internet và thử lại.";
+      } else {
+        errorMessage = "Có lỗi xảy ra: " + error.message;
+      }
+    }
+
+    showToast(errorMessage, "error");
   }
 
   // ==================== Helper Functions ====================

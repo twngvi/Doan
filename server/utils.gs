@@ -123,18 +123,46 @@ function logActivity(logData) {
  */
 function getOrCreateDatabase() {
   try {
-    // Try to find existing database by name
-    const files = DriveApp.getFilesByName("DB_Master");
+    // Try to get from cache first (valid for 6 hours)
+    const cache = CacheService.getScriptCache();
+    const cachedId = cache.get("DB_MASTER_ID");
 
     let ss;
-    if (files.hasNext()) {
-      const file = files.next();
-      ss = SpreadsheetApp.openById(file.getId());
-      Logger.log("Found existing database: " + ss.getId());
-    } else {
-      // Create new database
-      ss = SpreadsheetApp.create("DB_Master");
-      Logger.log("Created new database: " + ss.getId());
+
+    if (cachedId) {
+      try {
+        ss = SpreadsheetApp.openById(cachedId);
+        Logger.log("Found database from cache: " + cachedId);
+      } catch (e) {
+        Logger.log("Cached ID invalid, searching again...");
+        cache.remove("DB_MASTER_ID");
+      }
+    }
+
+    if (!ss) {
+      // Try to find existing database by name
+      const files = DriveApp.getFilesByName("DB_Master");
+
+      if (files.hasNext()) {
+        const file = files.next();
+        ss = SpreadsheetApp.openById(file.getId());
+        Logger.log("Found existing database: " + ss.getId());
+
+        // Cache the ID for 6 hours
+        cache.put("DB_MASTER_ID", ss.getId(), 21600);
+      } else {
+        // Create new database
+        ss = SpreadsheetApp.create("DB_Master");
+        Logger.log("Created new database: " + ss.getId());
+
+        // Cache the ID for 6 hours
+        cache.put("DB_MASTER_ID", ss.getId(), 21600);
+      }
+    }
+
+    // Ensure ss is valid
+    if (!ss) {
+      throw new Error("Không thể tạo hoặc mở database spreadsheet");
     }
 
     // Check if Users sheet exists, if not initialize database
@@ -154,9 +182,10 @@ function getOrCreateDatabase() {
         if (
           sheetName === "Sheet1" ||
           sheetName === "Sheet" ||
-          sheetName.startsWith("Sheet") ||
+          sheetName.indexOf("Sheet") === 0 ||
           sheetName === "Trang tính1" ||
-          sheetName === "Trang tính 1"
+          sheetName === "Trang tính 1" ||
+          sheetName.indexOf("Trang tính") === 0
         ) {
           defaultSheet = allSheets[i];
           Logger.log("Selected default sheet: " + sheetName);
@@ -168,7 +197,7 @@ function getOrCreateDatabase() {
         // Rename existing default sheet to Users
         const oldName = defaultSheet.getName();
         Logger.log("Attempting to rename '" + oldName + "' to Users");
-        
+
         try {
           defaultSheet.setName("Users");
           usersSheet = defaultSheet;
@@ -176,9 +205,14 @@ function getOrCreateDatabase() {
         } catch (renameError) {
           Logger.log("Failed to rename sheet: " + renameError.toString());
           // If rename fails, create new sheet and delete old one
-          usersSheet = ss.insertSheet("Users");
-          ss.deleteSheet(defaultSheet);
-          Logger.log("Created new Users sheet and deleted old sheet");
+          try {
+            usersSheet = ss.insertSheet("Users");
+            ss.deleteSheet(defaultSheet);
+            Logger.log("Created new Users sheet and deleted old sheet");
+          } catch (deleteError) {
+            Logger.log("Failed to delete old sheet: " + deleteError.toString());
+            usersSheet = ss.getSheetByName("Users");
+          }
         }
       } else {
         // No default sheet found, create new Users sheet
@@ -289,9 +323,17 @@ function getOrCreateDatabase() {
       Logger.log("Database initialized successfully!");
     }
 
+    // Final check - ensure Users sheet exists
+    usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) {
+      throw new Error("Users sheet could not be created or found");
+    }
+
+    Logger.log("Database ready! Users sheet confirmed.");
     return ss;
   } catch (error) {
     Logger.log("Error getting/creating database: " + error.toString());
+    Logger.log("Error stack: " + error.stack);
     throw new Error(
       "Không thể tạo hoặc truy cập database: " + error.toString()
     );

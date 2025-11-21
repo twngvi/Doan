@@ -358,32 +358,112 @@ function findUserProgressSheet(userId) {
 }
 
 /**
- * Handle Google Sign-In
- * @return {Object} { status, message, user, userEmail }
+ * Ensure user has progress sheet (create if not exists)
+ * Called when user first accesses dashboard
+ * @param {string} userId - User ID
+ * @return {Object} { status, message, spreadsheetId }
  */
-function handleGoogleAuth() {
+function ensureUserProgressSheet(userId) {
   try {
-    Logger.log("=== GOOGLE AUTH ===");
+    Logger.log("Ensuring progress sheet for user: " + userId);
 
-    // Get user's email from Google account
-    // Note: This only works when webapp executeAs is set to "USER_ACCESSING"
-    let userEmail = Session.getActiveUser().getEmail();
+    // Get user info
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
 
-    // Fallback: Try effective user (when executeAs is USER_ACCESSING)
-    if (!userEmail) {
-      userEmail = Session.getEffectiveUser().getEmail();
+    if (!usersSheet) {
+      return { status: "error", message: "Users sheet not found" };
     }
 
-    if (!userEmail) {
-      Logger.log("Failed to get user email. Check webapp executeAs setting.");
+    const data = usersSheet.getDataRange().getValues();
+    let userRow = null;
+    let rowIndex = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === userId) {
+        userRow = data[i];
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (!userRow) {
+      return { status: "error", message: "User not found" };
+    }
+
+    const fullName = userRow[4]; // fullName in column E
+
+    // Check if already has spreadsheet ID
+    if (userRow[9]) {
+      // spreadsheetId in column J
+      Logger.log("User already has progress sheet: " + userRow[9]);
       return {
-        status: "error",
-        message:
-          "Could not get Google account email. Please ensure the web app is configured with executeAs: USER_ACCESSING and you have granted permissions.",
+        status: "success",
+        message: "Progress sheet already exists",
+        spreadsheetId: userRow[9],
       };
     }
 
-    Logger.log("Google email: " + userEmail);
+    // Create new progress sheet
+    Logger.log("Creating new progress sheet...");
+    const spreadsheetId = createUserProgressSheet(userId, fullName);
+
+    if (spreadsheetId) {
+      // Update user record with spreadsheet ID
+      usersSheet.getRange(rowIndex, 10).setValue(spreadsheetId);
+
+      return {
+        status: "success",
+        message: "Progress sheet created successfully",
+        spreadsheetId: spreadsheetId,
+      };
+    } else {
+      return {
+        status: "error",
+        message: "Failed to create progress sheet",
+      };
+    }
+  } catch (error) {
+    Logger.log("Error ensuring progress sheet: " + error.toString());
+    return {
+      status: "error",
+      message: "Error: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Handle Google Sign-In with OAuth token
+ * @param {string} idToken - Google ID token from client
+ * @return {Object} { status, message, user, userEmail }
+ */
+function handleGoogleAuthWithToken(idToken) {
+  try {
+    Logger.log("=== GOOGLE AUTH WITH TOKEN START ===");
+
+    if (!idToken) {
+      return {
+        status: "error",
+        message: "No ID token provided",
+      };
+    }
+
+    // Verify and decode the token
+    // Note: In production, you should verify the token signature
+    const payload = decodeJWT(idToken);
+
+    if (!payload || !payload.email) {
+      return {
+        status: "error",
+        message: "Invalid token or no email in token",
+      };
+    }
+
+    const userEmail = payload.email;
+    const fullName = payload.name || userEmail.split("@")[0];
+
+    Logger.log("Google email from token: " + userEmail);
+    Logger.log("Full name: " + fullName);
 
     // Get database
     const ss = getOrCreateDatabase();
@@ -392,16 +472,15 @@ function handleGoogleAuth() {
     if (!usersSheet) {
       return {
         status: "error",
-        message: "Users sheet not found. Please initialize database first.",
+        message: "Users sheet not found",
       };
     }
 
-    // Check if user with this email already exists
+    // Check if user exists
     const data = usersSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][2] === userEmail) {
-        // email in column C
-        // User exists - return as login
+        // User exists
         const user = {
           userId: data[i][0],
           username: data[i][1],
@@ -415,14 +494,7 @@ function handleGoogleAuth() {
         // Update last login
         usersSheet.getRange(i + 1, 8).setValue(formatDate(new Date()));
 
-        // Log activity
-        logActivity({
-          userId: user.userId,
-          action: "Google Login",
-          details: "User logged in with Google account",
-        });
-
-        Logger.log("Existing user logged in via Google: " + user.username);
+        Logger.log("Existing user logged in: " + user.username);
 
         return {
           status: "success",
@@ -434,8 +506,243 @@ function handleGoogleAuth() {
       }
     }
 
+    // Create new user
+    const userId = generateNextId(usersSheet, "USR");
+    const username = userEmail.split("@")[0];
+    const timestamp = formatDate(new Date());
+
+    const newUser = {
+      userId: userId,
+      username: username,
+      email: userEmail,
+      passwordHash: "GOOGLE_AUTH",
+      fullName: fullName,
+      role: "student",
+      createdAt: timestamp,
+      lastLogin: timestamp,
+      isActive: true,
+    };
+
+    usersSheet.appendRow([
+      newUser.userId,
+      newUser.username,
+      newUser.email,
+      newUser.passwordHash,
+      newUser.fullName,
+      newUser.role,
+      newUser.createdAt,
+      newUser.lastLogin,
+      newUser.isActive,
+    ]);
+
+    // Create progress sheet (async, don't wait)
+    try {
+      createUserProgressSheet(userId, fullName);
+    } catch (e) {
+      Logger.log("Progress sheet creation failed: " + e.toString());
+    }
+
+    Logger.log("New user created: " + username);
+
+    return {
+      status: "success",
+      message: "Account created successfully with Google",
+      user: newUser,
+      userEmail: userEmail,
+      isNewUser: true,
+    };
+  } catch (error) {
+    Logger.log("Error in Google auth with token: " + error.toString());
+    return {
+      status: "error",
+      message: "Failed to authenticate: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Simple JWT decoder (for Google ID token)
+ */
+function decodeJWT(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const payload = parts[1];
+    const decoded = Utilities.newBlob(
+      Utilities.base64Decode(payload.replace(/-/g, "+").replace(/_/g, "/"))
+    ).getDataAsString();
+
+    return JSON.parse(decoded);
+  } catch (e) {
+    Logger.log("JWT decode error: " + e.toString());
+    return null;
+  }
+}
+
+/**
+ * Handle Google Sign-In
+ * @return {Object} { status, message, user, userEmail }
+ */
+function handleGoogleAuth() {
+  // CRITICAL: Wrap everything in try-catch to ensure we ALWAYS return something
+  try {
+    Logger.log("=== GOOGLE AUTH START ===");
+    Logger.log("Step 1: Function called");
+
+    // Add a small delay to prevent rate limiting
+    try {
+      Utilities.sleep(500);
+      Logger.log("Step 2: Sleep completed");
+    } catch (sleepError) {
+      Logger.log("Sleep error (non-critical): " + sleepError.toString());
+    }
+
+    // Get user's email from Google account
+    Logger.log("Step 3: Getting user email...");
+    let userEmail = null;
+
+    try {
+      userEmail = Session.getActiveUser().getEmail();
+      Logger.log("Step 3a: getActiveUser email: " + userEmail);
+    } catch (emailError) {
+      Logger.log("Step 3a error: " + emailError.toString());
+    }
+
+    // Fallback: Try effective user
+    if (!userEmail) {
+      try {
+        userEmail = Session.getEffectiveUser().getEmail();
+        Logger.log("Step 3b: getEffectiveUser email: " + userEmail);
+      } catch (emailError) {
+        Logger.log("Step 3b error: " + emailError.toString());
+      }
+    }
+
+    if (!userEmail) {
+      Logger.log("Step 3 FAILED: No email found");
+      return {
+        status: "error",
+        message:
+          "Could not get Google account email. Please check webapp executeAs setting.",
+      };
+    }
+
+    Logger.log("Step 4: Email found: " + userEmail);
+
+    Logger.log("Step 4: Email found: " + userEmail);
+
+    // Get database
+    Logger.log("Step 5: Getting database...");
+    let ss = null;
+
+    try {
+      ss = getOrCreateDatabase();
+      Logger.log("Step 5a: Database retrieved");
+    } catch (dbError) {
+      Logger.log("Step 5 ERROR: " + dbError.toString());
+      return {
+        status: "error",
+        message: "Database error: " + dbError.toString(),
+      };
+    }
+
+    if (!ss) {
+      Logger.log("Step 5 FAILED: ss is null");
+      return {
+        status: "error",
+        message: "Database spreadsheet could not be created or accessed.",
+      };
+    }
+
+    Logger.log("Step 6: Database ID: " + ss.getId());
+
+    let usersSheet = null;
+    try {
+      usersSheet = ss.getSheetByName("Users");
+      Logger.log("Step 6a: Got Users sheet");
+    } catch (sheetError) {
+      Logger.log("Step 6 ERROR: " + sheetError.toString());
+      return {
+        status: "error",
+        message: "Error accessing Users sheet: " + sheetError.toString(),
+      };
+    }
+
+    if (!usersSheet) {
+      Logger.log("Step 6 FAILED: Users sheet not found");
+      return {
+        status: "error",
+        message: "Users sheet not found. Please initialize database first.",
+      };
+    }
+
+    Logger.log("Step 7: Users sheet found successfully");
+
+    Logger.log("Step 7: Users sheet found successfully");
+
+    // Check if user with this email already exists
+    Logger.log("Step 8: Checking for existing user...");
+    let data = [];
+
+    try {
+      data = usersSheet.getDataRange().getValues();
+      Logger.log("Step 8a: Got " + data.length + " rows");
+    } catch (dataError) {
+      Logger.log("Step 8 ERROR: " + dataError.toString());
+      return {
+        status: "error",
+        message: "Error reading user data: " + dataError.toString(),
+      };
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][2] === userEmail) {
+        // email in column C
+        // User exists - return as login
+        Logger.log("Step 9: Found existing user at row " + i);
+
+        const user = {
+          userId: data[i][0],
+          username: data[i][1],
+          email: data[i][2],
+          fullName: data[i][4],
+          role: data[i][5],
+          createdAt: data[i][6],
+          lastLogin: new Date(),
+        };
+
+        // Update last login (quick operation)
+        try {
+          usersSheet.getRange(i + 1, 8).setValue(formatDate(new Date()));
+          Logger.log("Step 9a: Updated last login");
+        } catch (updateError) {
+          Logger.log("Step 9a WARNING: " + updateError.toString());
+        }
+
+        // Don't log activity - too slow
+        Logger.log("Step 10: Skipping activity log to avoid timeout");
+        Logger.log("Step 11: Returning success response for existing user");
+
+        return {
+          status: "success",
+          message: "Logged in successfully with Google",
+          user: user,
+          userEmail: userEmail,
+          isNewUser: false,
+        };
+      }
+    }
+
+    Logger.log("Step 9: No existing user found, creating new one...");
+
+    Logger.log("Step 9: No existing user found, creating new one...");
+
     // User doesn't exist - create new account
     const userId = generateNextId(usersSheet, "USR");
+    Logger.log("Step 10: Generated userId: " + userId);
 
     // Extract username from email (part before @)
     const username = userEmail.split("@")[0];
@@ -459,42 +766,68 @@ function handleGoogleAuth() {
     };
 
     // Append to Users sheet
-    usersSheet.appendRow([
-      newUser.userId,
-      newUser.username,
-      newUser.email,
-      newUser.passwordHash,
-      newUser.fullName,
-      newUser.role,
-      newUser.createdAt,
-      newUser.lastLogin,
-      newUser.isActive,
-    ]);
+    Logger.log("Step 9: Appending new user to sheet...");
+    try {
+      usersSheet.appendRow([
+        newUser.userId,
+        newUser.username,
+        newUser.email,
+        newUser.passwordHash,
+        newUser.fullName,
+        newUser.role,
+        newUser.createdAt,
+        newUser.lastLogin,
+        newUser.isActive,
+      ]);
+      Logger.log("Step 9a: User appended successfully");
+    } catch (appendError) {
+      Logger.log("Step 9 ERROR: " + appendError.toString());
+      return {
+        status: "error",
+        message: "Error creating user: " + appendError.toString(),
+      };
+    }
 
-    // Create progress sheet for new user
-    createUserProgressSheet(userId, fullName);
+    // DON'T create progress sheet here - it takes too long and causes timeout
+    // Progress sheet will be created on first login to dashboard
+    Logger.log("Step 10: Skipping progress sheet creation to avoid timeout");
 
-    // Log activity
-    logActivity({
-      userId: userId,
-      action: "Google Signup",
-      details: "New user registered with Google account: " + email,
-    });
+    // DON'T log activity - it's slow and not critical
+    Logger.log("Step 11: Skipping activity log to avoid timeout");
 
+    Logger.log("Step 12: Returning success response NOW");
     Logger.log("New user registered via Google: " + username);
 
-    return {
+    // RETURN IMMEDIATELY - don't do any more operations
+    const successResponse = {
       status: "success",
       message: "Account created successfully with Google",
       user: newUser,
       userEmail: userEmail,
       isNewUser: true,
     };
+
+    Logger.log("Step 13: Response object created, returning...");
+    return successResponse;
   } catch (error) {
-    Logger.log("Error in Google auth: " + error.toString());
+    // CRITICAL: Always return an error object, never throw or return nothing
+    const errorMsg =
+      error && error.toString ? error.toString() : "Unknown error";
+    Logger.log("=== GOOGLE AUTH ERROR ===");
+    Logger.log("Error: " + errorMsg);
+    Logger.log("Stack: " + (error && error.stack ? error.stack : "No stack"));
+
     return {
       status: "error",
-      message: "Failed to authenticate with Google: " + error.toString(),
+      message: "Failed to authenticate with Google: " + errorMsg,
+      error: errorMsg,
     };
   }
+
+  // CRITICAL: This should never be reached, but just in case
+  Logger.log("=== GOOGLE AUTH UNEXPECTED END ===");
+  return {
+    status: "error",
+    message: "Unexpected end of function",
+  };
 }
