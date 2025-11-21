@@ -442,45 +442,60 @@ function handleGoogleAuthWithToken(idToken) {
     Logger.log("=== GOOGLE AUTH WITH TOKEN START ===");
 
     if (!idToken) {
+      Logger.log("❌ Error: No ID token provided");
       return {
         status: "error",
-        message: "No ID token provided",
+        message: "Không nhận được token xác thực từ Google",
       };
     }
 
     // Verify and decode the token
-    // Note: In production, you should verify the token signature
     const payload = decodeJWT(idToken);
 
     if (!payload || !payload.email) {
+      Logger.log("❌ Error: Invalid token or missing email");
       return {
         status: "error",
-        message: "Invalid token or no email in token",
+        message: "Token không hợp lệ hoặc thiếu thông tin email",
       };
     }
 
     const userEmail = payload.email;
-    const fullName = payload.name || userEmail.split("@")[0];
+    const fullName = payload.name || payload.given_name || userEmail.split("@")[0];
+    const googleId = payload.sub; // Google user ID
 
-    Logger.log("Google email from token: " + userEmail);
-    Logger.log("Full name: " + fullName);
+    Logger.log("📧 Google email: " + userEmail);
+    Logger.log("👤 Full name: " + fullName);
+    Logger.log("🆔 Google ID: " + googleId);
+
+    // Validate email format
+    if (!isValidEmail(userEmail)) {
+      Logger.log("❌ Error: Invalid email format: " + userEmail);
+      return {
+        status: "error",
+        message: "Email không hợp lệ: " + userEmail,
+      };
+    }
 
     // Get database
     const ss = getOrCreateDatabase();
     const usersSheet = ss.getSheetByName("Users");
 
     if (!usersSheet) {
+      Logger.log("❌ Error: Users sheet not found in DB_Master");
       return {
         status: "error",
-        message: "Users sheet not found",
+        message: "Lỗi hệ thống: Không tìm thấy bảng Users",
       };
     }
 
-    // Check if user exists
+    // Check if user already exists in DB_Master
     const data = usersSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][2] === userEmail) {
-        // User exists
+        // ✅ User exists → Login
+        Logger.log("Existing user found: " + data[i][1] + " (" + data[i][0] + ")");
+        
         const user = {
           userId: data[i][0],
           username: data[i][1],
@@ -489,16 +504,32 @@ function handleGoogleAuthWithToken(idToken) {
           role: data[i][5],
           createdAt: data[i][6],
           lastLogin: new Date().toISOString(),
+          isActive: data[i][8],
         };
 
-        // Update last login
+        // Update last login timestamp
         usersSheet.getRange(i + 1, 8).setValue(formatDate(new Date()));
 
-        Logger.log("Existing user logged in: " + user.username);
+        // Log activity
+        try {
+          logActivity({
+            level: "INFO",
+            category: "USER",
+            userId: user.userId,
+            action: "GOOGLE_LOGIN",
+            details: "User logged in via Google Sign-In: " + userEmail,
+            ipAddress: "",
+            userAgent: "",
+          });
+        } catch (e) {
+          Logger.log("⚠️ Activity logging failed (non-critical): " + e.toString());
+        }
+
+        Logger.log("✅ Existing user logged in successfully: " + user.username);
 
         return {
           status: "success",
-          message: "Logged in successfully with Google",
+          message: "Đăng nhập thành công! Chào mừng trở lại " + user.fullName,
           user: user,
           userEmail: userEmail,
           isNewUser: false,
@@ -506,7 +537,9 @@ function handleGoogleAuthWithToken(idToken) {
       }
     }
 
-    // Create new user
+    // ✅ User not found → Create new user (auto registration)
+    Logger.log("User not found, creating new account via Google Sign-In...");
+    
     const userId = generateNextId(usersSheet, "USR");
     const username = userEmail.split("@")[0];
     const timestamp = formatDate(new Date());
@@ -515,7 +548,7 @@ function handleGoogleAuthWithToken(idToken) {
       userId: userId,
       username: username,
       email: userEmail,
-      passwordHash: "GOOGLE_AUTH",
+      passwordHash: "GOOGLE_AUTH", // Special marker for Google-authenticated users
       fullName: fullName,
       role: "student",
       createdAt: timestamp,
@@ -523,6 +556,7 @@ function handleGoogleAuthWithToken(idToken) {
       isActive: true,
     };
 
+    // Save to DB_Master Users sheet
     usersSheet.appendRow([
       newUser.userId,
       newUser.username,
@@ -535,18 +569,34 @@ function handleGoogleAuthWithToken(idToken) {
       newUser.isActive,
     ]);
 
-    // Create progress sheet (async, don't wait)
+    Logger.log("✅ New user created in DB_Master: " + username + " (" + userId + ")");
+
+    // Create user progress sheet for tracking learning activities
     try {
-      createUserProgressSheet(userId, fullName);
+      const progressSheetId = createUserProgressSheet(userId, fullName);
+      Logger.log("✅ User progress sheet created: " + progressSheetId);
     } catch (e) {
-      Logger.log("Progress sheet creation failed: " + e.toString());
+      Logger.log("⚠️ Progress sheet creation failed (non-critical): " + e.toString());
     }
 
-    Logger.log("New user created: " + username);
+    // Log activity to Logs sheet
+    try {
+      logActivity({
+        level: "INFO",
+        category: "USER",
+        userId: userId,
+        action: "GOOGLE_SIGNUP",
+        details: "New user registered via Google Sign-In: " + userEmail,
+        ipAddress: "",
+        userAgent: "",
+      });
+    } catch (e) {
+      Logger.log("⚠️ Activity logging failed (non-critical): " + e.toString());
+    }
 
     return {
       status: "success",
-      message: "Account created successfully with Google",
+      message: "Tài khoản đã được tạo thành công bằng Google! Chào mừng " + fullName,
       user: newUser,
       userEmail: userEmail,
       isNewUser: true,
