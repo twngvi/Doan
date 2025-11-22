@@ -1013,13 +1013,30 @@ Hoặc bạn có thể:
    * Handle email verification from URL
    */
   function handleEmailVerification() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const action = urlParams.get("action");
-    const token = urlParams.get("token");
+    console.log("🔍 Checking for verification/reset action...");
+
+    // Try to get params from server injection first
+    let action = window.SERVER_PARAMS?.action || "";
+    let token = window.SERVER_PARAMS?.token || "";
+
+    // Fallback: try URL params (may not work in iframe)
+    if (!action || !token) {
+      const urlParams = new URLSearchParams(window.location.search);
+      action = urlParams.get("action") || "";
+      token = urlParams.get("token") || "";
+    }
+
+    console.log("📦 Server params:", window.SERVER_PARAMS);
+    console.log("🔗 URL search:", window.location.search);
+    console.log("Action:", action);
+    console.log("Token:", token ? token.substring(0, 10) + "..." : "none");
 
     if (action === "verify" && token) {
-      console.log("🔐 Verifying email with token...");
+      console.log("🔐 Verifying email with token");
       showLoading(true);
+
+      // Show login page
+      showPage("page-login");
 
       google.script.run
         .withSuccessHandler(function (response) {
@@ -1027,10 +1044,10 @@ Hoặc bạn có thể:
           console.log("✅ Verification Response:", response);
 
           if (response.success) {
-            showToast(response.message, "success");
-            setTimeout(() => {
-              showPage("page-login");
-            }, 2000);
+            showToast(
+              response.message + " Bạn có thể đăng nhập ngay!",
+              "success"
+            );
           } else {
             showToast(response.message, "error");
           }
@@ -1041,16 +1058,164 @@ Hoặc bạn có thể:
           showToast("Lỗi xác thực: " + error.message, "error");
         })
         .verifyEmailToken(token);
-    }
-
-    if (action === "reset" && token) {
-      console.log("🔐 Reset password with token...");
+    } else if (action === "reset" && token) {
+      console.log("🔐 Reset password with token");
       showResetPasswordForm(token);
+    } else {
+      console.log("ℹ️ No verification or reset action found");
     }
   }
 
   /**
-   * Show reset password form
+   * Handle Request Reset Code (Step 1)
+   */
+  function handleRequestResetCode() {
+    const email = document.getElementById("forgot-email").value.trim();
+
+    if (!email || !isValidEmail(email)) {
+      showToast("Vui lòng nhập email hợp lệ", "error");
+      return;
+    }
+
+    showLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        hideLoading();
+        console.log("✅ Request Reset Code Response:", response);
+
+        if (response.success) {
+          showToast(response.message, "success");
+
+          // Store email and show step 2
+          document.getElementById("reset-email").value = email;
+          document.getElementById("step-request-code").style.display = "none";
+          document.getElementById("step-reset-password").style.display =
+            "block";
+        } else {
+          showToast(response.message, "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        hideLoading();
+        console.error("❌ Request Reset Code Error:", error);
+        showToast("Lỗi: " + error.message, "error");
+      })
+      .requestResetPassword(email);
+  }
+
+  /**
+   * Handle Reset Password with Code (Step 2)
+   */
+  function handleResetPassword() {
+    const email = document.getElementById("reset-email").value;
+    const code = document.getElementById("verification-code").value.trim();
+    const newPassword = document.getElementById("new-password").value;
+    const confirmPassword = document.getElementById(
+      "confirm-new-password"
+    ).value;
+
+    // Validation
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      showToast("Vui lòng nhập mã xác thực 6 chữ số", "error");
+      return;
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast("Mật khẩu xác nhận không khớp", "error");
+      return;
+    }
+
+    showLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        hideLoading();
+        console.log("✅ Reset Password Response:", response);
+
+        if (response.success) {
+          showToast(response.message, "success");
+
+          // Reset form and go back to login
+          document.getElementById("reset-password-form").reset();
+          setTimeout(() => {
+            showPage("page-login");
+            backToStep1(); // Reset forgot password form
+          }, 2000);
+        } else {
+          showToast(response.message, "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        hideLoading();
+        console.error("❌ Reset Password Error:", error);
+        showToast("Lỗi: " + error.message, "error");
+      })
+      .resetPasswordWithCode({
+        email: email,
+        code: code,
+        newPassword: newPassword,
+        confirmPassword: confirmPassword,
+      });
+  }
+
+  /**
+   * Handle Resend Reset Code
+   */
+  function handleResendResetCode() {
+    const email = document.getElementById("reset-email").value;
+
+    if (!email) {
+      showToast("Email không hợp lệ", "error");
+      return;
+    }
+
+    showLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        hideLoading();
+        console.log("✅ Resend Code Response:", response);
+
+        if (response.success) {
+          showToast("Mã xác thực mới đã được gửi!", "success");
+        } else {
+          showToast(response.message, "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        hideLoading();
+        console.error("❌ Resend Code Error:", error);
+        showToast("Lỗi: " + error.message, "error");
+      })
+      .requestResetPassword(email);
+  }
+
+  /**
+   * Back to Step 1
+   */
+  function backToStep1() {
+    document.getElementById("step-reset-password").style.display = "none";
+    document.getElementById("step-request-code").style.display = "block";
+    document.getElementById("request-code-form").reset();
+    document.getElementById("reset-password-form").reset();
+  }
+
+  /**
+   * Show forgot password modal (Legacy - kept for compatibility)
+   */
+  function showForgotPasswordModal() {
+    // Redirect to new forgot password page
+    showPage("page-forgot-password");
+  }
+
+  /**
+   * Show reset password form (Legacy - kept for compatibility)
    */
   function showResetPasswordForm(token) {
     const newPassword = prompt("Nhập mật khẩu mới (tối thiểu 6 ký tự):");
@@ -1110,6 +1275,10 @@ Hoặc bạn có thể:
   window.showForgotPasswordModal = showForgotPasswordModal;
   window.handleGoogleLogin = handleGoogleLogin;
   window.showAccountChooser = showAccountChooser;
+  window.handleRequestResetCode = handleRequestResetCode;
+  window.handleResetPassword = handleResetPassword;
+  window.handleResendResetCode = handleResendResetCode;
+  window.backToStep1 = backToStep1;
 
   console.log("Client JavaScript loaded successfully");
 

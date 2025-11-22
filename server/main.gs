@@ -11,9 +11,15 @@
  */
 function doGet(e) {
   try {
+    Logger.log("=== doGet called ===");
+    Logger.log("Parameters: " + JSON.stringify(e.parameter));
+    
     // Create HTML template from index.html
     const template = HtmlService.createTemplateFromFile("views/index");
-
+    
+    // Pass URL parameters to template
+    template.params = e.parameter || {};
+    
     // Evaluate the template (processes <?!= ... ?> tags)
     const htmlOutput = template
       .evaluate()

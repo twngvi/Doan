@@ -689,11 +689,23 @@ function requestPasswordReset(email) {
     const resetTokenIndex = headers.indexOf("resetPasswordToken");
     const resetExpiresIndex = headers.indexOf("resetPasswordExpires");
     const googleIdIndex = headers.indexOf("googleId");
+    const fullNameIndex = headers.indexOf("fullName");
+
+    Logger.log("Searching for email in " + (data.length - 1) + " users...");
+
+    let userFound = false;
 
     for (let i = 1; i < data.length; i++) {
-      if (data[i][emailIndex] === email) {
+      if (
+        data[i][emailIndex] &&
+        data[i][emailIndex].toLowerCase() === email.toLowerCase()
+      ) {
+        userFound = true;
+        Logger.log("✅ User found at row " + (i + 1));
+
         // Kiểm tra nếu là Google account
         if (data[i][googleIdIndex]) {
+          Logger.log("❌ User has Google account");
           return {
             success: false,
             message:
@@ -701,45 +713,75 @@ function requestPasswordReset(email) {
           };
         }
 
-        // Generate reset token
-        const resetToken = generateVerificationToken();
+        // Generate 6-digit verification code
+        const resetCode = Math.floor(
+          100000 + Math.random() * 900000
+        ).toString();
         const resetExpires = new Date();
         resetExpires.setHours(resetExpires.getHours() + 1); // 1 giờ
 
-        // Lưu token
-        usersSheet.getRange(i + 1, resetTokenIndex + 1).setValue(resetToken);
+        Logger.log("Generated reset code: " + resetCode);
+        Logger.log("Expires at: " + resetExpires);
+
+        // Lưu code
+        usersSheet.getRange(i + 1, resetTokenIndex + 1).setValue(resetCode);
         usersSheet
           .getRange(i + 1, resetExpiresIndex + 1)
           .setValue(resetExpires);
 
-        // Gửi email
-        const emailSent = sendPasswordResetEmail(email, resetToken, data[i][4]);
+        Logger.log("✅ Code saved to database");
+
+        // Gửi email với mã xác thực
+        const fullName = data[i][fullNameIndex] || "User";
+        Logger.log("Sending email to: " + email + " for user: " + fullName);
+
+        const emailSent = sendPasswordResetCodeEmail(
+          email,
+          resetCode,
+          fullName
+        );
+
+        Logger.log("Email sent status: " + emailSent);
 
         // Log activity
         logActivity(
           data[i][0],
           "Password Reset Request",
-          "Requested password reset"
+          "Requested password reset with code"
         );
 
-        Logger.log("✅ Password reset email sent");
-
-        return {
-          success: true,
-          message: emailSent
-            ? "Link reset mật khẩu đã được gửi đến email của bạn."
-            : "Đã tạo link reset nhưng không thể gửi email.",
-        };
+        if (emailSent) {
+          Logger.log("✅ Password reset code email sent successfully");
+          return {
+            success: true,
+            message:
+              "Mã xác thực đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư.",
+          };
+        } else {
+          Logger.log("⚠️ Code saved but email failed");
+          return {
+            success: true,
+            message:
+              "Mã xác thực đã được tạo. Kiểm tra logs nếu không nhận được email.",
+          };
+        }
       }
     }
 
+    // Email không tìm thấy
+    Logger.log("❌ Email not found in database: " + email);
+    Logger.log("⚠️ Returning generic message for security");
+
     // Security: Không tiết lộ email không tồn tại
+    // Nhưng vẫn log để debug
     return {
-      success: true,
-      message: "Nếu email tồn tại, link reset mật khẩu đã được gửi.",
+      success: false,
+      message:
+        "Email không tồn tại trong hệ thống. Vui lòng kiểm tra lại hoặc đăng ký tài khoản mới.",
     };
   } catch (error) {
     Logger.log("❌ Error in requestPasswordReset: " + error.toString());
+    Logger.log("❌ Error stack: " + error.stack);
     return {
       success: false,
       message: "Lỗi: " + error.toString(),
@@ -834,6 +876,143 @@ function resetPassword(data) {
     };
   } catch (error) {
     Logger.log("❌ Error in resetPassword: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Reset password với mã xác thực 6 chữ số
+ * @param {Object} data - {email, code, newPassword, confirmPassword}
+ * @returns {Object} {success, message}
+ */
+function resetPasswordWithCode(data) {
+  try {
+    Logger.log("=== RESET PASSWORD WITH CODE ===");
+    Logger.log("Email: " + data.email);
+    Logger.log("Code: " + data.code);
+
+    if (
+      !data.email ||
+      !data.code ||
+      !data.newPassword ||
+      !data.confirmPassword
+    ) {
+      return {
+        success: false,
+        message: "Thiếu thông tin",
+      };
+    }
+
+    if (data.newPassword !== data.confirmPassword) {
+      return {
+        success: false,
+        message: "Mật khẩu xác nhận không khớp",
+      };
+    }
+
+    if (data.newPassword.length < 6) {
+      return {
+        success: false,
+        message: "Mật khẩu phải có ít nhất 6 ký tự",
+      };
+    }
+
+    // Validate code format (6 digits)
+    if (!/^\d{6}$/.test(data.code)) {
+      return {
+        success: false,
+        message: "Mã xác thực không hợp lệ",
+      };
+    }
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Lỗi hệ thống: Không tìm thấy Users sheet",
+      };
+    }
+
+    const userData = usersSheet.getDataRange().getValues();
+    const headers = userData[0];
+    const emailIndex = headers.indexOf("email");
+    const resetTokenIndex = headers.indexOf("resetPasswordToken");
+    const resetExpiresIndex = headers.indexOf("resetPasswordExpires");
+    const passwordIndex = headers.indexOf("passwordHash");
+
+    for (let i = 1; i < userData.length; i++) {
+      if (
+        userData[i][emailIndex] &&
+        userData[i][emailIndex].toLowerCase() === data.email.toLowerCase()
+      ) {
+        const storedCode = String(userData[i][resetTokenIndex]).trim();
+        const inputCode = String(data.code).trim();
+
+        Logger.log(
+          "Stored code: '" + storedCode + "' (type: " + typeof storedCode + ")"
+        );
+        Logger.log(
+          "Input code: '" + inputCode + "' (type: " + typeof inputCode + ")"
+        );
+        Logger.log("Comparison result: " + (storedCode === inputCode));
+
+        if (storedCode !== inputCode) {
+          Logger.log("❌ Code mismatch!");
+          return {
+            success: false,
+            message: "Mã xác thực không đúng. Vui lòng kiểm tra lại email.",
+          };
+        }
+
+        Logger.log("✅ Code matched!");
+
+        // Kiểm tra mã hết hạn (1 giờ)
+        const expires = new Date(userData[i][resetExpiresIndex]);
+        const now = new Date();
+
+        Logger.log("Expires: " + expires);
+        Logger.log("Now: " + now);
+
+        if (now > expires) {
+          return {
+            success: false,
+            message: "Mã xác thực đã hết hạn. Vui lòng yêu cầu mã mới.",
+          };
+        }
+
+        // Hash password mới
+        const newPasswordHash = hashPasswordSecure(data.newPassword);
+
+        // Cập nhật password và clear code
+        usersSheet.getRange(i + 1, passwordIndex + 1).setValue(newPasswordHash);
+        usersSheet.getRange(i + 1, resetTokenIndex + 1).setValue("");
+        usersSheet.getRange(i + 1, resetExpiresIndex + 1).setValue("");
+
+        // Log activity
+        logActivity(
+          userData[i][0],
+          "Password Reset",
+          "Password reset with verification code"
+        );
+
+        Logger.log("✅ Password reset with code successful");
+
+        return {
+          success: true,
+          message: "Mật khẩu đã được đặt lại thành công! Bạn có thể đăng nhập.",
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: "Email không tồn tại",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in resetPasswordWithCode: " + error.toString());
     return {
       success: false,
       message: "Lỗi: " + error.toString(),
@@ -1004,6 +1183,64 @@ Trân trọng,
     return true;
   } catch (error) {
     Logger.log("❌ Error sending reset email: " + error.toString());
+    Logger.log("❌ Error stack: " + error.stack);
+    return false;
+  }
+}
+
+/**
+ * Send password reset code email (6 digits)
+ * @param {string} email - Email người dùng
+ * @param {string} code - 6-digit reset code
+ * @param {string} fullName - Tên người dùng
+ * @returns {boolean} Success
+ */
+function sendPasswordResetCodeEmail(email, code, fullName) {
+  try {
+    Logger.log("📧 Attempting to send password reset code email...");
+    Logger.log("To: " + email);
+    Logger.log("Code: " + code);
+
+    // Kiểm tra quota email
+    const emailQuotaRemaining = MailApp.getRemainingDailyQuota();
+    Logger.log("Email quota remaining: " + emailQuotaRemaining);
+
+    if (emailQuotaRemaining <= 0) {
+      Logger.log("❌ No email quota remaining!");
+      return false;
+    }
+
+    const subject = "Mã xác thực reset mật khẩu - Doanv3";
+    const body = `
+Xin chào ${fullName},
+
+Chúng tôi nhận được yêu cầu reset mật khẩu cho tài khoản của bạn.
+
+Mã xác thực của bạn là:
+
+    ${code}
+
+Vui lòng nhập mã này trên trang reset mật khẩu để tiếp tục.
+
+Mã này sẽ hết hạn sau 1 giờ.
+
+Nếu bạn không yêu cầu reset mật khẩu, vui lòng bỏ qua email này và giữ mã xác thực bí mật.
+
+Trân trọng,
+Đội ngũ Doanv3
+    `;
+
+    MailApp.sendEmail({
+      to: email,
+      subject: subject,
+      body: body,
+      name: "Doanv3 System",
+    });
+
+    Logger.log("✅ Password reset code email sent successfully to: " + email);
+    return true;
+  } catch (error) {
+    Logger.log("❌ Error sending reset code email: " + error.toString());
     Logger.log("❌ Error stack: " + error.stack);
     return false;
   }
