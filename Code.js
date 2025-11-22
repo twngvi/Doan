@@ -400,3 +400,518 @@ function refreshRelationships() {
     };
   }
 }
+
+/**
+ * ========================================
+ * AUTO EMAIL DETECTION FUNCTIONS
+ * Sử dụng Session.getActiveUser().getEmail()
+ * Không cần prompt email thủ công
+ * ========================================
+ */
+
+/**
+ * Lấy email của user hiện tại từ Google Account
+ * @returns {string|null} Email hoặc null nếu không lấy được
+ */
+function getCurrentUserEmail() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+
+    if (!email || email === "") {
+      Logger.log("⚠️ Không thể lấy email từ Session");
+      return null;
+    }
+
+    Logger.log("✅ Đã lấy email: " + email);
+    return email;
+  } catch (error) {
+    Logger.log("❌ Lỗi lấy email: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Lấy thông tin user hiện tại (cho client)
+ * @returns {Object} Thông tin user hoặc thông báo lỗi
+ */
+function getCurrentUser() {
+  try {
+    const email = getCurrentUserEmail();
+
+    if (!email) {
+      return {
+        success: false,
+        message:
+          "Không thể xác định email người dùng. Vui lòng đăng nhập Google Account.",
+      };
+    }
+
+    // Tìm user trong database
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Database chưa được khởi tạo",
+      };
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return {
+        success: false,
+        message: "Database chưa có dữ liệu",
+        email: email,
+      };
+    }
+
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+
+    if (emailIndex === -1) {
+      return {
+        success: false,
+        message: "Cấu trúc database không đúng",
+      };
+    }
+
+    // Tìm user theo email
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === email) {
+        return {
+          success: true,
+          user: {
+            userId: data[i][0],
+            username: data[i][1],
+            email: data[i][2],
+            fullName: data[i][4],
+            role: data[i][5],
+            isActive: data[i][8],
+          },
+        };
+      }
+    }
+
+    // User chưa tồn tại - trả về email để tự động đăng ký
+    return {
+      success: false,
+      message: "Tài khoản chưa tồn tại. Vui lòng đăng ký.",
+      email: email,
+      autoRegister: true,
+    };
+  } catch (error) {
+    Logger.log("❌ Lỗi getCurrentUser: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi hệ thống: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Đăng nhập tự động bằng Google Account
+ * @returns {Object} Kết quả đăng nhập
+ */
+function autoLoginWithGoogle() {
+  try {
+    const email = getCurrentUserEmail();
+
+    if (!email) {
+      return {
+        success: false,
+        message:
+          "Không thể xác định Google Account. Vui lòng đăng nhập vào Google.",
+      };
+    }
+
+    // Tìm user trong database
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Database chưa được khởi tạo",
+      };
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return {
+        success: false,
+        message: "Database chưa có dữ liệu",
+        email: email,
+        autoRegister: true,
+      };
+    }
+
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+    const lastLoginIndex = headers.indexOf("lastLogin");
+
+    // Tìm user theo email
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === email) {
+        // Kiểm tra tài khoản có active không
+        const isActive = data[i][8];
+        if (!isActive) {
+          return {
+            success: false,
+            message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin.",
+          };
+        }
+
+        // Cập nhật lastLogin
+        const now = new Date();
+        if (lastLoginIndex !== -1) {
+          usersSheet.getRange(i + 1, lastLoginIndex + 1).setValue(now);
+        }
+
+        // Log activity
+        logActivity(
+          data[i][0],
+          "Auto Login",
+          "Logged in via Google Account: " + email
+        );
+
+        Logger.log("✅ Đăng nhập thành công: " + email);
+
+        return {
+          success: true,
+          message: "Đăng nhập thành công! Chào mừng " + data[i][4],
+          user: {
+            userId: data[i][0],
+            username: data[i][1],
+            email: data[i][2],
+            fullName: data[i][4],
+            role: data[i][5],
+            spreadsheetId: data[i][9] || "",
+          },
+        };
+      }
+    }
+
+    // User chưa tồn tại - đề xuất đăng ký
+    Logger.log("⚠️ User chưa tồn tại: " + email);
+    return {
+      success: false,
+      message: "Tài khoản chưa tồn tại",
+      email: email,
+      autoRegister: true,
+    };
+  } catch (error) {
+    Logger.log("❌ Lỗi autoLoginWithGoogle: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi đăng nhập: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Đăng ký tự động với Google Account
+ * @param {Object} userData - Thông tin bổ sung từ user (fullName, username)
+ * @returns {Object} Kết quả đăng ký
+ */
+function autoRegisterWithGoogle(userData) {
+  try {
+    const email = getCurrentUserEmail();
+
+    if (!email) {
+      return {
+        success: false,
+        message:
+          "Không thể xác định Google Account. Vui lòng đăng nhập vào Google.",
+      };
+    }
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Database chưa được khởi tạo",
+      };
+    }
+
+    // Kiểm tra email đã tồn tại chưa
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === email) {
+        return {
+          success: false,
+          message: "Email đã được đăng ký. Vui lòng đăng nhập.",
+        };
+      }
+    }
+
+    // Tạo user mới
+    const userId = generateNextId("Users", "USR");
+    const username = userData.username || email.split("@")[0];
+    const fullName = userData.fullName || username;
+    const now = new Date();
+
+    // Tạo User Progress Sheet riêng cho user
+    const progressSheetId = createUserProgressSheet(userId, fullName);
+
+    const newUser = [
+      userId,
+      username,
+      email,
+      "GOOGLE_AUTH", // Password hash - không cần password cho Google users
+      fullName,
+      userData.role || "student", // Default role
+      now, // createdAt
+      now, // lastLogin
+      true, // isActive
+      progressSheetId, // spreadsheetId
+    ];
+
+    // Thêm vào sheet
+    usersSheet.appendRow(newUser);
+
+    // Log activity
+    logActivity(
+      userId,
+      "Auto Register",
+      "Registered via Google Account: " + email
+    );
+
+    Logger.log("✅ Đăng ký thành công: " + email + " - " + userId);
+
+    return {
+      success: true,
+      message: "Đăng ký thành công! Chào mừng " + fullName,
+      user: {
+        userId: userId,
+        username: username,
+        email: email,
+        fullName: fullName,
+        role: userData.role || "student",
+        spreadsheetId: progressSheetId,
+      },
+    };
+  } catch (error) {
+    Logger.log("❌ Lỗi autoRegisterWithGoogle: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi đăng ký: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Tạo Progress Sheet riêng cho user
+ * @param {string} userId - ID người dùng
+ * @param {string} fullName - Tên đầy đủ
+ * @returns {string} ID của spreadsheet
+ */
+function createUserProgressSheet(userId, fullName) {
+  try {
+    const sheetName = "Progress_" + userId;
+    const ss = SpreadsheetApp.create(sheetName);
+    const sheet = ss.getActiveSheet();
+
+    // Đổi tên sheet
+    sheet.setName("User_Progress");
+
+    // Tạo headers
+    const headers = [
+      "progressId",
+      "userId",
+      "topicId",
+      "activityType",
+      "completedAt",
+      "score",
+      "timeSpent",
+      "attempts",
+      "isCompleted",
+      "accuracyRate",
+      "streakCount",
+    ];
+
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+    sheet.getRange(1, 1, 1, headers.length).setBackground("#34a853");
+    sheet.getRange(1, 1, 1, headers.length).setFontColor("white");
+    sheet.setFrozenRows(1);
+
+    // Thêm note
+    ss.addEditor(Session.getActiveUser().getEmail());
+    ss.rename("Progress_" + fullName + "_" + userId);
+
+    Logger.log("✅ Tạo Progress Sheet: " + ss.getId());
+
+    return ss.getId();
+  } catch (error) {
+    Logger.log("❌ Lỗi tạo Progress Sheet: " + error.toString());
+    return "";
+  }
+}
+
+/**
+ * Log activity vào Logs sheet
+ * @param {string} userId - ID người dùng
+ * @param {string} action - Hành động
+ * @param {string} details - Chi tiết
+ */
+function logActivity(userId, action, details) {
+  try {
+    const logsSheet = getSheet("Logs");
+    if (!logsSheet) {
+      Logger.log("⚠️ Không tìm thấy Logs sheet");
+      return;
+    }
+
+    const logId = generateNextId("Logs", "LOG");
+    const now = new Date();
+
+    const logEntry = [
+      logId,
+      now,
+      "INFO",
+      "USER",
+      userId,
+      action,
+      details,
+      "", // IP address - không lấy được trong Apps Script
+      "", // User agent - không lấy được trong Apps Script
+      Session.getTemporaryActiveUserKey() || "", // Session ID
+    ];
+
+    logsSheet.appendRow(logEntry);
+    Logger.log("✅ Logged activity: " + action);
+  } catch (error) {
+    Logger.log("❌ Lỗi log activity: " + error.toString());
+  }
+}
+
+/**
+ * Lấy helper function getSheet
+ * @param {string} sheetName - Tên sheet
+ * @returns {Sheet|null} Sheet object hoặc null
+ */
+function getSheet(sheetName) {
+  try {
+    const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
+    return ss.getSheetByName(sheetName);
+  } catch (error) {
+    Logger.log("❌ Lỗi getSheet: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * ========================================
+ * TEST FUNCTIONS
+ * ========================================
+ */
+
+/**
+ * Test lấy email hiện tại
+ */
+function testGetCurrentUserEmail() {
+  const email = getCurrentUserEmail();
+  Logger.log("Current Email: " + email);
+  return email;
+}
+
+/**
+ * Test lấy thông tin user hiện tại
+ */
+function testGetCurrentUser() {
+  const result = getCurrentUser();
+  Logger.log("Current User Result: " + JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Test auto login
+ */
+function testAutoLogin() {
+  const result = autoLoginWithGoogle();
+  Logger.log("Auto Login Result: " + JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Test auto register
+ */
+function testAutoRegister() {
+  const userData = {
+    fullName: "Test User",
+    username: "testuser",
+  };
+  const result = autoRegisterWithGoogle(userData);
+  Logger.log("Auto Register Result: " + JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * ========================================
+ * NEW AUTHENTICATION FUNCTIONS
+ * Wrapper functions cho authService.js
+ * ========================================
+ */
+
+/**
+ * Đăng ký với Email & Password
+ * @param {Object} userData - {email, password, confirmPassword, fullName}
+ * @returns {Object} Result
+ */
+function registerWithEmailPassword(userData) {
+  return registerWithEmail(userData);
+}
+
+/**
+ * Xác thực email
+ * @param {string} token - Verification token
+ * @returns {Object} Result
+ */
+function verifyEmailToken(token) {
+  return verifyEmail(token);
+}
+
+/**
+ * Đăng nhập với Email & Password
+ * @param {Object} credentials - {email, password}
+ * @returns {Object} Result
+ */
+function loginWithEmailPassword(credentials) {
+  return loginWithEmail(credentials);
+}
+
+/**
+ * Đăng nhập với Google OAuth2
+ * Tự động provision nếu user chưa tồn tại
+ * @returns {Object} Result
+ */
+function loginWithGoogleOAuth() {
+  return loginWithGoogle();
+}
+
+/**
+ * Yêu cầu reset password
+ * @param {string} email - Email
+ * @returns {Object} Result
+ */
+function requestResetPassword(email) {
+  return requestPasswordReset(email);
+}
+
+/**
+ * Reset password với token
+ * @param {Object} data - {token, newPassword, confirmPassword}
+ * @returns {Object} Result
+ */
+function resetPasswordWithToken(data) {
+  return resetPassword(data);
+}
+
+/**
+ * Gửi lại email xác thực
+ * @param {string} email - Email
+ * @returns {Object} Result
+ */
+function resendVerificationEmailToUser(email) {
+  return resendVerificationEmail(email);
+}

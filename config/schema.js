@@ -36,6 +36,13 @@ const DB_CONFIG = {
         "createdAt",
         "lastLogin",
         "isActive",
+        "googleId",
+        "emailVerified",
+        "avatarUrl",
+        "verificationToken",
+        "verificationExpires",
+        "resetPasswordToken",
+        "resetPasswordExpires",
       ],
     },
 
@@ -161,6 +168,8 @@ function createSheet(spreadsheet, sheetConfig) {
       Logger.log("Đã tạo sheet: " + sheetConfig.name);
     } else {
       Logger.log("Sheet đã tồn tại: " + sheetConfig.name);
+      // Cập nhật header nếu cần
+      updateSheetSchema(sheet, sheetConfig);
       return sheet;
     }
 
@@ -185,6 +194,47 @@ function createSheet(spreadsheet, sheetConfig) {
       "Lỗi khi tạo sheet " + sheetConfig.name + ": " + error.toString()
     );
     throw error;
+  }
+}
+
+/**
+ * Cập nhật schema cho sheet đã tồn tại
+ */
+function updateSheetSchema(sheet, sheetConfig) {
+  try {
+    // Lấy header hiện tại
+    const lastColumn = sheet.getLastColumn();
+    if (lastColumn === 0) {
+      // Sheet trống, tạo header mới
+      const headerRange = sheet.getRange(1, 1, 1, sheetConfig.columns.length);
+      headerRange.setValues([sheetConfig.columns]);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#4285f4");
+      headerRange.setFontColor("white");
+      sheet.setFrozenRows(1);
+      return;
+    }
+
+    const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    
+    // So sánh với schema mới
+    const newColumns = sheetConfig.columns;
+    
+    // Nếu số cột khác nhau, cần cập nhật
+    if (currentHeaders.length < newColumns.length) {
+      Logger.log("📝 Updating schema for " + sheetConfig.name + ": " + currentHeaders.length + " -> " + newColumns.length + " columns");
+      
+      // Cập nhật header
+      const headerRange = sheet.getRange(1, 1, 1, newColumns.length);
+      headerRange.setValues([newColumns]);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#4285f4");
+      headerRange.setFontColor("white");
+      
+      Logger.log("✅ Schema updated for " + sheetConfig.name);
+    }
+  } catch (error) {
+    Logger.log("⚠️ Error updating schema for " + sheetConfig.name + ": " + error.toString());
   }
 }
 
@@ -545,3 +595,38 @@ function fillAllMissingIds() {
     Logger.log("Lỗi khi điền tất cả ID: " + error.toString());
   }
 }
+
+/**
+ * Update schema cho tất cả sheets (thêm cột mới nếu cần)
+ * Gọi function này sau khi update schema trong code
+ */
+function updateAllSheetsSchema() {
+  try {
+    Logger.log("=== BẮT ĐẦU CẬP NHẬT SCHEMA ===");
+    
+    const spreadsheet = getOrCreateDatabase();
+    
+    Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
+      const sheet = spreadsheet.getSheetByName(sheetConfig.name);
+      if (sheet) {
+        updateSheetSchema(sheet, sheetConfig);
+      } else {
+        Logger.log("⚠️ Sheet không tồn tại: " + sheetConfig.name);
+        createSheet(spreadsheet, sheetConfig);
+      }
+    });
+    
+    Logger.log("=== HOÀN THÀNH CẬP NHẬT SCHEMA ===");
+    return {
+      success: true,
+      message: "Schema đã được cập nhật thành công!"
+    };
+  } catch (error) {
+    Logger.log("❌ Lỗi khi cập nhật schema: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString()
+    };
+  }
+}
+
