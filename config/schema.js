@@ -216,25 +216,38 @@ function updateSheetSchema(sheet, sheetConfig) {
     }
 
     const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-    
+
     // So sánh với schema mới
     const newColumns = sheetConfig.columns;
-    
+
     // Nếu số cột khác nhau, cần cập nhật
     if (currentHeaders.length < newColumns.length) {
-      Logger.log("📝 Updating schema for " + sheetConfig.name + ": " + currentHeaders.length + " -> " + newColumns.length + " columns");
-      
+      Logger.log(
+        "📝 Updating schema for " +
+          sheetConfig.name +
+          ": " +
+          currentHeaders.length +
+          " -> " +
+          newColumns.length +
+          " columns"
+      );
+
       // Cập nhật header
       const headerRange = sheet.getRange(1, 1, 1, newColumns.length);
       headerRange.setValues([newColumns]);
       headerRange.setFontWeight("bold");
       headerRange.setBackground("#4285f4");
       headerRange.setFontColor("white");
-      
+
       Logger.log("✅ Schema updated for " + sheetConfig.name);
     }
   } catch (error) {
-    Logger.log("⚠️ Error updating schema for " + sheetConfig.name + ": " + error.toString());
+    Logger.log(
+      "⚠️ Error updating schema for " +
+        sheetConfig.name +
+        ": " +
+        error.toString()
+    );
   }
 }
 
@@ -603,9 +616,9 @@ function fillAllMissingIds() {
 function updateAllSheetsSchema() {
   try {
     Logger.log("=== BẮT ĐẦU CẬP NHẬT SCHEMA ===");
-    
+
     const spreadsheet = getOrCreateDatabase();
-    
+
     Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
       const sheet = spreadsheet.getSheetByName(sheetConfig.name);
       if (sheet) {
@@ -615,18 +628,17 @@ function updateAllSheetsSchema() {
         createSheet(spreadsheet, sheetConfig);
       }
     });
-    
+
     Logger.log("=== HOÀN THÀNH CẬP NHẬT SCHEMA ===");
     return {
       success: true,
-      message: "Schema đã được cập nhật thành công!"
+      message: "Schema đã được cập nhật thành công!",
     };
   } catch (error) {
     Logger.log("❌ Lỗi khi cập nhật schema: " + error.toString());
     return {
       success: false,
-      message: "Lỗi: " + error.toString()
+      message: "Lỗi: " + error.toString(),
     };
   }
 }
-
