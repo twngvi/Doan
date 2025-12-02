@@ -2,52 +2,175 @@
 
 ## 📋 Tổng quan dự án
 
-Doanv3 là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets, cung cấp các tính năng:
+Doanv3 là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets với kiến trúc **2 tầng database**:
 
-- Quản lý câu hỏi trắc nghiệm (MCQ)
-- Trò chơi ghép nối (Matching Game)
-- Tracking tiến độ học tập
-- Tích hợp AI cho chatbot và gợi ý
-- Quản trị hệ thống
+- ✅ **MASTER_DB**: Database tổng cho toàn hệ thống
+- ✅ **USER_DB**: Database cá nhân riêng cho từng user
+
+### 🎯 Tính năng chính
+
+- 📝 Quản lý câu hỏi trắc nghiệm (MCQ)
+- 🎮 Trò chơi ghép nối (Matching Game)
+- 🏆 Mini Challenges đa dạng
+- 📊 Tracking tiến độ học tập chi tiết
+- 🤖 AI Evaluation & Recommendation System
+- 🏅 Gamification: XP, Level, Mountain Climbing
+- 🎖️ Achievement System
+- 📚 Personal Knowledge Notebook
+- 📈 Leaderboard toàn hệ thống
 
 ## 🏗️ Kiến trúc hệ thống
 
 ```
-Doanv2/
-├── Code.js                 # Entry point & Router chính
+Doan/
+├── Code.js                      # Entry point
 ├── config/
-│   └── schema.js          # Cấu hình database schema
-├── services/              # Business Logic Layer
-│   ├── dbService.js       # Database operations
-│   ├── userService.js     # Quản lý người dùng
-│   ├── topicService.js    # Quản lý chủ đề
-│   ├── mcqService.js      # Câu hỏi trắc nghiệm
-│   ├── matchingService.js # Trò chơi ghép nối
-│   ├── historyService.js  # Lịch sử học tập
-│   ├── adminService.js    # Quản trị hệ thống
-│   └── aiService.js       # Tích hợp AI
-├── utils/                 # Utilities
-│   ├── idGenerator.js     # Tạo ID tự động
-│   ├── responseUtil.js    # Chuẩn hóa response
-│   └── validationUtil.js  # Validation dữ liệu
-└── models/                # Data Models
-    ├── userModel.js       # User entity
-    ├── topicModel.js      # Topic entity
-    ├── mcqModel.js        # MCQ entity
-    ├── matchingModel.js   # Matching entity
-    ├── logModel.js        # Log entity
-    └── progressModel.js   # Progress entity
+│   └── schema.js               # ⭐ Database schema (MASTER_DB + USER_DB)
+├── server/                     # Server-side logic
+│   ├── main.gs                 # Web app entry point
+│   ├── users.gs                # User registration/login
+│   ├── userOperations.gs       # ⭐ USER_DB CRUD operations
+│   └── utils.gs                # Utility functions
+├── services/                   # Business Logic
+│   ├── authService.js          # Authentication & Authorization
+│   └── relationshipService.js  # Data relationships
+├── views/                      # Frontend HTML templates
+│   ├── index.html              # Main SPA
+│   ├── page_dashboard.html     # Dashboard
+│   ├── page_login.html         # Login page
+│   └── ...
+└── docs/                       # ⭐ Documentation
+    ├── DATABASE_STRUCTURE.md   # Chi tiết cấu trúc DB
+    ├── MIGRATION_GUIDE.md      # Hướng dẫn migration
+    ├── QUICK_START.md         # Quick start guide
+    └── SUMMARY.md             # Tóm tắt project
 ```
+
+## 🗄️ Cấu trúc Database
+
+### MASTER_DB (Google Sheet Tổng)
+
+| Sheet           | Mục đích                                |
+| --------------- | --------------------------------------- |
+| Users           | Bảng định danh user với progressSheetId |
+| Topics          | Danh sách chủ đề học tập                |
+| MCQ_Questions   | Câu hỏi trắc nghiệm                     |
+| Matching_Pairs  | Cặp ghép nối                            |
+| Mini_Challenges | Thử thách mini                          |
+| Achievements    | Danh sách thành tựu                     |
+| Leaderboard     | Bảng xếp hạng                           |
+| Logs            | Log hoạt động hệ thống                  |
+| Error_Logs      | Log lỗi chi tiết                        |
+
+### USER*DB*<userId> (Google Sheet Cá Nhân)
+
+| Sheet              | Mục đích                      |
+| ------------------ | ----------------------------- |
+| Profile            | Thông tin cá nhân & tổng quan |
+| Topic_Progress     | Tiến trình từng chủ đề        |
+| Game_History       | Lịch sử chơi game chi tiết    |
+| Knowledge_Notebook | Sổ ghi chú cá nhân            |
+| AI_Evaluations     | Đánh giá AI                   |
+| Achievements       | Thành tựu đã đạt              |
+| Session_Logs       | Log phiên đăng nhập           |
 
 ### 📋 Quy tắc tạo ID:
 
-| Tên Bảng           | Chữ cái đầu | Prefix | Ví dụ ID          |
-| ------------------ | ----------- | ------ | ----------------- |
-| **Users**          | U-S-R       | USR    | USR001, USR002... |
-| **Topics**         | T-O-P       | TOP    | TOP001, TOP002... |
-| **MCQ_Questions**  | M-C-Q       | MCQ    | MCQ001, MCQ002... |
-| **Matching_Pairs** | M-A-T       | MAT    | MAT001, MAT002... |
-| **Logs**           | L-O-G       | LOG    | LOG001, LOG002... |
+| Bảng            | Prefix | Ví dụ               |
+| --------------- | ------ | ------------------- |
+| Users           | USR    | USR001, USR002...   |
+| Topics          | TOP    | TOP001, TOP002...   |
+| MCQ_Questions   | MCQ    | MCQ001, MCQ002...   |
+| Matching_Pairs  | MAT    | MAT001, MAT002...   |
+| Mini_Challenges | CHL    | CHL001, CHL002...   |
+| Achievements    | ACH    | ACH001, ACH002...   |
+| Logs            | LOG    | LOG001, LOG002...   |
+| Error_Logs      | ERR    | ERR001, ERR002...   |
+| Progress        | PRG    | PRG001, PRG002...   |
+| History         | HST    | HST001, HST002...   |
+| Notes           | NOTE   | NOTE001, NOTE002... |
+| Evaluations     | EVAL   | EVAL001, EVAL002... |
+
+## 🚀 Quick Start
+
+### 1. Khởi tạo Database
+
+```javascript
+// Mở Google Apps Script Editor và chạy:
+function setupDatabase() {
+  const url = createAllSheets();
+  Logger.log("✅ MASTER_DB created: " + url);
+}
+```
+
+### 2. Đăng ký User mới
+
+```javascript
+const result = registerUser({
+  username: "john_doe",
+  password: "password123",
+  email: "john@example.com",
+  fullName: "John Doe",
+});
+
+// USER_DB_USR001 sẽ được tạo tự động!
+Logger.log("Progress Sheet: " + result.user.progressSheetId);
+```
+
+### 3. Sử dụng API
+
+```javascript
+// Lấy profile
+const profile = getUserProfile("USR001");
+
+// Cập nhật progress
+updateTopicProgress("USR001", {
+  topicId: "TOP001",
+  quizDone: 5,
+  accuracy: 80,
+});
+
+// Thêm game history
+addGameHistory("USR001", {
+  topicId: "TOP001",
+  gameType: "mcq",
+  isCorrect: true,
+  pointsEarned: 10,
+});
+```
+
+## 📚 Documentation
+
+- **[DATABASE_STRUCTURE.md](./docs/DATABASE_STRUCTURE.md)** - Chi tiết đầy đủ về cấu trúc database
+- **[MIGRATION_GUIDE.md](./docs/MIGRATION_GUIDE.md)** - Hướng dẫn migrate từ version cũ
+- **[QUICK_START.md](./docs/QUICK_START.md)** - Hướng dẫn nhanh cho developers
+- **[SUMMARY.md](./docs/SUMMARY.md)** - Tóm tắt toàn bộ project
+
+## 🎯 Key Features
+
+### ✅ Gamification System
+
+- Level progression (1-100)
+- XP points system
+- Mountain climbing stages
+- Achievement badges
+- Global leaderboard
+
+### ✅ AI Integration
+
+- Performance evaluation
+- Adaptive difficulty
+- Topic recommendation
+- Strength/weakness analysis
+- Personalized learning path
+
+### ✅ Personal Learning
+
+- Individual progress tracking
+- Personal knowledge notebook
+- Game history analytics
+- Session logging
+- Custom achievements
 
 ### 🗂️ Cấu trúc bảng đã tối ưu:
 
