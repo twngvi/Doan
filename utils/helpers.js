@@ -51,21 +51,22 @@ function formatDate(date) {
 }
 
 /**
- * Log activity to Logs sheet
+ * Log activity to System_Logs sheet
  */
 function logActivity(logData) {
   try {
     const ss = getOrCreateDatabase();
-    const logsSheet = ss.getSheetByName("Logs");
+    const logsSheet = ss.getSheetByName("System_Logs");
 
     if (!logsSheet) {
-      Logger.log("Logs sheet not found");
+      Logger.log("System_Logs sheet not found");
       return;
     }
 
     const logId = generateNextId(logsSheet, "LOG");
     const timestamp = new Date();
 
+    // Columns: logId, timestamp, level, category, userId, action, details, ipAddress, sessionId, errorMessage
     const logRow = [
       logId,
       timestamp,
@@ -76,6 +77,7 @@ function logActivity(logData) {
       logData.details || "",
       logData.ipAddress || "",
       logData.sessionId || Session.getTemporaryActiveUserKey() || "",
+      logData.errorMessage || "",
     ];
 
     logsSheet.appendRow(logRow);
