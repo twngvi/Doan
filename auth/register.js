@@ -104,26 +104,36 @@ function registerWithEmail(userData) {
     const username = userData.email.split("@")[0];
     const now = new Date();
 
+    // Columns: userId, googleId, email, displayName, username, passwordHash, avatarUrl, role, level, aiLevel, totalPoints, totalXP, currentStreak, longestStreak, lastActiveDate, lastLogin, createdAt, isActive, mountainPosition, mountainStage, mountainProgress, totalQuizAnswered, totalPuzzleSolved, totalChallengeCompleted, progressSheetId, emailVerified, verificationToken, verificationExpires
     const newUser = [
-      userId,
-      username,
-      userData.email,
-      passwordHash,
-      "",
-      "",
-      "student",
-      1,
-      0,
-      1,
-      0,
-      1,
-      "",
-      false,
-      verificationToken,
-      verificationExpires,
-      now,
-      "",
-      false,
+      userId,                    // userId
+      "",                        // googleId
+      userData.email,            // email
+      "",                        // displayName
+      username,                  // username
+      passwordHash,              // passwordHash
+      "",                        // avatarUrl
+      "student",                 // role
+      1,                         // level
+      1,                         // aiLevel
+      0,                         // totalPoints
+      0,                         // totalXP
+      0,                         // currentStreak
+      0,                         // longestStreak
+      "",                        // lastActiveDate
+      "",                        // lastLogin
+      now,                       // createdAt
+      false,                     // isActive
+      0,                         // mountainPosition
+      1,                         // mountainStage
+      0,                         // mountainProgress
+      0,                         // totalQuizAnswered
+      0,                         // totalPuzzleSolved
+      0,                         // totalChallengeCompleted
+      "",                        // progressSheetId
+      false,                     // emailVerified
+      verificationToken,         // verificationToken
+      verificationExpires,       // verificationExpires
     ];
 
     usersSheet.appendRow(newUser);
