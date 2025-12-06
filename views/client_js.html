@@ -396,11 +396,13 @@
   function handleLogout() {
     console.log("Logging out...");
 
-    // Clear user data
+    // Clear user data from all storage
     currentUser = null;
     localStorage.removeItem("currentUser");
+    localStorage.removeItem("userSession");
+    sessionStorage.removeItem("userSession");
 
-    // Clear Google auth state to force account chooser next time
+    // Clear Google auth state if needed
     if (
       googleClientInitialized &&
       typeof google !== "undefined" &&
@@ -415,15 +417,28 @@
     }
 
     // Show message
-    showToast("Đã đăng xuất", "info");
+    if (typeof showToast === 'function') {
+      showToast("Đã đăng xuất", "info");
+    } else {
+      alert("Đã đăng xuất");
+    }
 
     // Navigate to login
     setTimeout(() => {
-      showPage("page-login");
+      if (typeof showPage === 'function') {
+        showPage("page-login");
+      } else {
+        // Fallback if showPage is not defined
+        document.querySelectorAll(".page-content").forEach(p => p.style.display = "none");
+        const loginPage = document.getElementById("page-login");
+        if (loginPage) loginPage.style.display = "block";
+      }
 
       // Clear form fields
-      document.getElementById("login-username").value = "";
-      document.getElementById("login-password").value = "";
+      const emailInput = document.getElementById("login-email");
+      const passwordInput = document.getElementById("login-password");
+      if (emailInput) emailInput.value = "";
+      if (passwordInput) passwordInput.value = "";
     }, 500);
   }
 

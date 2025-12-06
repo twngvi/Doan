@@ -1,0 +1,352 @@
+<script>
+/**
+ * Login Form Handler
+ * Handles login form validation, submission, and UI interactions
+ */
+(function() {
+  'use strict';
+  
+  // Form Elements
+  const loginForm = document.getElementById('login-form');
+  const emailInput = document.getElementById('login-email');
+  const passwordInput = document.getElementById('login-password');
+  const togglePasswordBtn = document.getElementById('togglePassword');
+  const submitBtn = document.getElementById('submitBtn');
+  const btnText = submitBtn?.querySelector('.btn-text');
+  const btnLoader = submitBtn?.querySelector('.btn-loader');
+  const formError = document.getElementById('formError');
+  const formSuccess = document.getElementById('formSuccess');
+  const googleLoginBtn = document.getElementById('googleLoginBtn');
+  const rememberMeCheckbox = document.getElementById('rememberMe');
+  
+  // State
+  let passwordVisible = false;
+  let isSubmitting = false;
+  
+  /**
+   * Toggle password visibility
+   */
+  function togglePasswordVisibility() {
+    passwordVisible = !passwordVisible;
+    if (passwordInput) {
+      passwordInput.type = passwordVisible ? 'text' : 'password';
+    }
+    if (togglePasswordBtn) {
+      const eyeIcon = togglePasswordBtn.querySelector('.eye-icon');
+      if (eyeIcon) {
+        eyeIcon.textContent = passwordVisible ? '👁️‍🗨️' : '👁️';
+      }
+    }
+  }
+  
+  /**
+   * Validate email format
+   * @param {string} email - Email to validate
+   * @returns {boolean} - True if valid
+   */
+  function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+  
+  /**
+   * Validate password
+   * @param {string} password - Password to validate
+   * @returns {boolean} - True if valid
+   */
+  function validatePassword(password) {
+    return password && password.length >= 6;
+  }
+  
+  /**
+   * Show error message
+   * @param {string} message - Error message to display
+   */
+  function showError(message) {
+    if (formError) {
+      formError.style.display = 'flex';
+      const messageText = formError.querySelector('.message-text');
+      if (messageText) {
+        messageText.textContent = message;
+      }
+    }
+    if (formSuccess) {
+      formSuccess.style.display = 'none';
+    }
+    
+    setTimeout(() => {
+      if (formError) {
+        formError.style.display = 'none';
+      }
+    }, 5000);
+  }
+  
+  /**
+   * Show success message
+   * @param {string} message - Success message to display
+   */
+  function showSuccess(message) {
+    if (formSuccess) {
+      formSuccess.style.display = 'flex';
+      const messageText = formSuccess.querySelector('.message-text');
+      if (messageText) {
+        messageText.textContent = message;
+      }
+    }
+    if (formError) {
+      formError.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Set loading state for submit button
+   * @param {boolean} isLoading - Loading state
+   */
+  function setLoading(isLoading) {
+    if (!submitBtn) return;
+    
+    if (isLoading) {
+      submitBtn.disabled = true;
+      if (btnText) btnText.style.display = 'none';
+      if (btnLoader) btnLoader.style.display = 'block';
+    } else {
+      submitBtn.disabled = false;
+      if (btnText) btnText.style.display = 'block';
+      if (btnLoader) btnLoader.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Clear all error states
+   */
+  function clearErrors() {
+    if (formError) {
+      formError.style.display = 'none';
+    }
+    if (emailInput) {
+      emailInput.classList.remove('error');
+    }
+    if (passwordInput) {
+      passwordInput.classList.remove('error');
+    }
+  }
+  
+  /**
+   * Handle Google login
+   */
+  async function handleGoogleLogin() {
+    try {
+      console.log('Initiating Google login...');
+      setLoading(true);
+      
+      // Simulate Google OAuth flow
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      showSuccess('Đăng nhập Google thành công!');
+      
+      setTimeout(() => {
+        // Call the existing handleLoginFormSubmit or redirect
+        if (typeof handleLoginFormSubmit === 'function') {
+          handleLoginFormSubmit();
+        } else {
+          // Fallback: show page-dashboard
+          if (typeof showPage === 'function') {
+            showPage('page-dashboard');
+          }
+        }
+      }, 1000);
+      
+    } catch (error) {
+      setLoading(false);
+      showError('Đăng nhập Google thất bại. Vui lòng thử lại.');
+      console.error('Google login error:', error);
+    }
+  }
+  
+  /**
+   * Handle form submission
+   * @param {Event} e - Submit event
+   */
+  async function handleFormSubmit(e) {
+    e.preventDefault();
+    
+    // Prevent multiple submissions
+    if (isSubmitting) {
+      return;
+    }
+    
+    clearErrors();
+    
+    const email = emailInput?.value.trim();
+    const password = passwordInput?.value;
+    const rememberMe = rememberMeCheckbox?.checked;
+    
+    let hasError = false;
+    
+    // Validate email
+    if (!email) {
+      showError('Vui lòng nhập email');
+      emailInput?.classList.add('error');
+      hasError = true;
+    } else if (!validateEmail(email)) {
+      showError('Email không hợp lệ');
+      emailInput?.classList.add('error');
+      hasError = true;
+    }
+    
+    // Validate password
+    if (!password) {
+      showError('Vui lòng nhập mật khẩu');
+      passwordInput?.classList.add('error');
+      hasError = true;
+    } else if (!validatePassword(password)) {
+      showError('Mật khẩu phải có ít nhất 6 ký tự');
+      passwordInput?.classList.add('error');
+      hasError = true;
+    }
+    
+    if (hasError) {
+      return;
+    }
+    
+    isSubmitting = true;
+    setLoading(true);
+    
+    try {
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('Login attempt:', { email, rememberMe });
+      
+      // Call the existing handleLoginFormSubmit function if available
+      if (typeof handleLoginFormSubmit === 'function') {
+        handleLoginFormSubmit();
+      } else {
+        // Fallback behavior
+        showSuccess('Đăng nhập thành công!');
+        setTimeout(() => {
+          if (typeof showPage === 'function') {
+            showPage('page-dashboard');
+          }
+        }, 1000);
+      }
+      
+    } catch (error) {
+      setLoading(false);
+      showError('Email hoặc mật khẩu không đúng');
+      console.error('Login error:', error);
+    } finally {
+      isSubmitting = false;
+    }
+  }
+  
+  /**
+   * Handle input focus effect
+   * @param {Event} e - Focus event
+   */
+  function handleInputFocus(e) {
+    const input = e.target;
+    if (input.parentElement) {
+      input.parentElement.style.transform = 'scale(1.02)';
+      input.parentElement.style.transition = 'transform 0.2s';
+    }
+  }
+  
+  /**
+   * Handle input blur effect
+   * @param {Event} e - Blur event
+   */
+  function handleInputBlur(e) {
+    const input = e.target;
+    if (input.parentElement) {
+      input.parentElement.style.transform = 'scale(1)';
+    }
+    input.classList.remove('error');
+  }
+  
+  /**
+   * Handle input change
+   * @param {Event} e - Input event
+   */
+  function handleInputChange(e) {
+    const input = e.target;
+    if (formError && formError.style.display === 'flex') {
+      formError.style.display = 'none';
+    }
+    input.classList.remove('error');
+  }
+  
+  /**
+   * Initialize event listeners
+   */
+  function initEventListeners() {
+    // Toggle password button
+    if (togglePasswordBtn) {
+      togglePasswordBtn.addEventListener('click', togglePasswordVisibility);
+    }
+    
+    // Google login button
+    if (googleLoginBtn) {
+      googleLoginBtn.addEventListener('click', handleGoogleLogin);
+    }
+    
+    // Form submission
+    if (loginForm) {
+      loginForm.addEventListener('submit', handleFormSubmit);
+    }
+    
+    // Input focus/blur effects
+    const inputs = document.querySelectorAll('.form-input');
+    inputs.forEach(input => {
+      input.addEventListener('focus', handleInputFocus);
+      input.addEventListener('blur', handleInputBlur);
+      input.addEventListener('input', handleInputChange);
+    });
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd + Enter to submit
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (loginForm) {
+          loginForm.dispatchEvent(new Event('submit'));
+        }
+      }
+    });
+  }
+  
+  /**
+   * Initialize on DOM ready
+   */
+  function init() {
+    initEventListeners();
+    
+    // Auto-fill detection
+    const inputs = document.querySelectorAll('.form-input');
+    inputs.forEach(input => {
+      input.addEventListener('animationstart', (e) => {
+        if (e.animationName === 'onAutoFillStart') {
+          input.classList.add('autofilled');
+        }
+      });
+    });
+    
+    // Add autofill detection styles
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes onAutoFillStart { from {/**/} to {/**/}}
+      input:-webkit-autofill { animation-name: onAutoFillStart; }
+    `;
+    document.head.appendChild(style);
+    
+    console.log('Login form initialized');
+  }
+  
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  
+})();
+</script>
