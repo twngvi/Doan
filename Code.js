@@ -72,6 +72,28 @@ function loginWithEmailPassword(credentials) {
   return loginWithEmail(credentials);
 }
 
+function loginUser(payload) {
+  // Wrapper function for frontend compatibility
+  const result = loginWithEmail({
+    email: payload.username, // frontend sends 'username' but backend expects 'email'
+    password: payload.password,
+  });
+
+  // Convert response format to match frontend expectations
+  if (result.success) {
+    return {
+      status: "success",
+      message: result.message,
+      user: result.user,
+    };
+  } else {
+    return {
+      status: "error",
+      message: result.message,
+    };
+  }
+}
+
 function requestResetPassword(email) {
   return requestPasswordReset(email);
 }

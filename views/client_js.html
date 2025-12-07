@@ -47,6 +47,9 @@
   function showPage(pageId, params = {}, addToHistory = true) {
     console.log("Showing page:", pageId, params);
 
+    // Hide toast when changing pages
+    hideToast();
+
     // Hide all pages
     const allPages = document.querySelectorAll(".page-content");
     allPages.forEach((page) => {
@@ -1384,6 +1387,132 @@ Hoặc bạn có thể:
   // Check for email verification or password reset on page load
   setTimeout(handleEmailVerification, 500);
 
+  // ==================== Toast Notification System ====================
+
+  /**
+   * Show toast notification with star effect
+   * @param {string} message - Message to display
+   * @param {string} type - Type: 'success', 'error', 'info', 'warning'
+   */
+  function showToast(message, type = "info") {
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toast-message");
+
+    if (!toast || !toastMessage) return;
+
+    // Set message
+    toastMessage.textContent = message;
+
+    // Set colors based on type
+    toast.classList.remove(
+      "bg-green-500",
+      "bg-red-500",
+      "bg-blue-500",
+      "bg-yellow-500"
+    );
+    switch (type) {
+      case "success":
+        toast.classList.add("bg-green-500");
+        break;
+      case "error":
+        toast.classList.add("bg-red-500");
+        break;
+      case "warning":
+        toast.classList.add("bg-yellow-500");
+        break;
+      default:
+        toast.classList.add("bg-blue-500");
+    }
+
+    // Show toast with animation
+    toast.classList.remove("translate-x-full");
+    toast.classList.add("translate-x-0");
+
+    // Create star effect
+    createStarEffect(toast);
+
+    // Auto hide after 3 seconds
+    setTimeout(() => {
+      hideToast();
+    }, 3000);
+  }
+
+  /**
+   * Hide toast notification
+   */
+  function hideToast() {
+    const toast = document.getElementById("toast");
+    if (toast) {
+      toast.classList.remove("translate-x-0");
+      toast.classList.add("translate-x-full");
+    }
+  }
+
+  /**
+   * Create star effect around toast
+   * @param {HTMLElement} element - Element to add stars around
+   */
+  function createStarEffect(element) {
+    const starContainer = document.createElement("div");
+    starContainer.style.position = "fixed";
+    starContainer.style.top = element.offsetTop + "px";
+    starContainer.style.right = "1rem";
+    starContainer.style.width = element.offsetWidth + "px";
+    starContainer.style.height = element.offsetHeight + "px";
+    starContainer.style.pointerEvents = "none";
+    starContainer.style.zIndex = "9999";
+    document.body.appendChild(starContainer);
+
+    const stars = ["⭐", "✨", "🌟", "💫"];
+    const starCount = 8;
+
+    for (let i = 0; i < starCount; i++) {
+      const star = document.createElement("div");
+      star.textContent = stars[Math.floor(Math.random() * stars.length)];
+      star.style.position = "absolute";
+      star.style.fontSize = "1.5rem";
+      star.style.animation = "starBurst 1s ease-out forwards";
+
+      // Random position around the toast
+      const angle = (Math.PI * 2 * i) / starCount;
+      const distance = 50 + Math.random() * 30;
+      star.style.left = "50%";
+      star.style.top = "50%";
+      star.style.setProperty("--tx", Math.cos(angle) * distance + "px");
+      star.style.setProperty("--ty", Math.sin(angle) * distance + "px");
+
+      starContainer.appendChild(star);
+    }
+
+    // Add animation styles if not exists
+    if (!document.getElementById("star-animation-style")) {
+      const style = document.createElement("style");
+      style.id = "star-animation-style";
+      style.textContent = `
+        @keyframes starBurst {
+          0% {
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 1;
+          }
+          50% {
+            transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1.2);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(calc(-50% + var(--tx) * 1.5), calc(-50% + var(--ty) * 1.5)) scale(0);
+            opacity: 0;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Remove star container after animation
+    setTimeout(() => {
+      starContainer.remove();
+    }, 1000);
+  }
+
   // ==================== Global Notification Flower Effect ====================
 
   // Create flower container for global use
@@ -1457,4 +1586,59 @@ Hoặc bạn có thể:
       }
     }
   });
+
+  // ==================== Dashboard Data Loading ====================
+
+  /**
+   * Load and update dashboard data
+   */
+  function loadDashboardData() {
+    console.log("Loading dashboard data...");
+
+    // Get current user
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser) {
+      try {
+        currentUser = JSON.parse(savedUser);
+        console.log("Current user:", currentUser);
+
+        // Update user name in dashboard
+        updateDashboardUserName();
+      } catch (error) {
+        console.error("Error loading dashboard data:", error);
+      }
+    }
+  }
+
+  /**
+   * Update user name in dashboard UI
+   */
+  function updateDashboardUserName() {
+    if (!currentUser) return;
+
+    // Try multiple name fields
+    const name =
+      currentUser.fullName ||
+      currentUser.username ||
+      currentUser.email?.split("@")[0] ||
+      "User";
+    console.log("Updating dashboard with name:", name);
+
+    // Update all user name elements
+    const userNameEl = document.getElementById("userName");
+    const userNameWelcomeEl = document.getElementById("userNameWelcome");
+
+    if (userNameEl) {
+      userNameEl.textContent = name;
+      console.log("Updated userName element");
+    }
+
+    if (userNameWelcomeEl) {
+      userNameWelcomeEl.textContent = name;
+      console.log("Updated userNameWelcome element");
+    }
+  }
+
+  // Make loadDashboardData available globally
+  window.loadDashboardData = loadDashboardData;
 </script>

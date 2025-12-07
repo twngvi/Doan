@@ -1,27 +1,58 @@
 <script>
   // ===== USER DATA =====
   function getUserData() {
+    // Try currentUser first (saved by login)
+    const currentUserData = localStorage.getItem("currentUser");
+    if (currentUserData) {
+      try {
+        return JSON.parse(currentUserData);
+      } catch (e) {
+        console.error("Error parsing currentUser:", e);
+      }
+    }
+
+    // Fallback to old "user" key
     const userData =
       localStorage.getItem("user") || sessionStorage.getItem("user");
     if (userData) {
-      return JSON.parse(userData);
+      try {
+        return JSON.parse(userData);
+      } catch (e) {
+        console.error("Error parsing user:", e);
+      }
     }
-    // Fallback to currentUser from client_js.html if available
+
+    // Fallback to global currentUser variable
     if (typeof currentUser !== "undefined" && currentUser) {
       return currentUser;
     }
+
     return null;
   }
 
-  // Check if user is logged in
+  // Check if user is logged in and update UI
   const user = getUserData();
+  console.log("Dashboard user data:", user);
+
   if (user) {
-    const name = user.fullName || user.email.split("@")[0];
+    // Try multiple name fields
+    const name =
+      user.fullName || user.username || user.email?.split("@")[0] || "User";
+    console.log("Display name:", name);
+
     const userNameEl = document.getElementById("userName");
     const userNameWelcomeEl = document.getElementById("userNameWelcome");
 
-    if (userNameEl) userNameEl.textContent = name;
-    if (userNameWelcomeEl) userNameWelcomeEl.textContent = name;
+    if (userNameEl) {
+      userNameEl.textContent = name;
+      console.log("Updated userName:", name);
+    }
+    if (userNameWelcomeEl) {
+      userNameWelcomeEl.textContent = name;
+      console.log("Updated userNameWelcome:", name);
+    }
+  } else {
+    console.warn("No user data found in dashboard");
   }
 
   // ===== SIDEBAR TOGGLE =====
