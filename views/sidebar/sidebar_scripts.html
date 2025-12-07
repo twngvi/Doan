@@ -2,6 +2,15 @@
   (function () {
     "use strict";
 
+    // Danh sách các trang KHÔNG hiện sidebar (Public Pages)
+    const PUBLIC_PAGES = [
+      "page-landing",
+      "page-login",
+      "page-register",
+      "page-verify-email",
+      "page-forgot-password"
+    ];
+
     // Global Sidebar Management
     const GlobalSidebar = {
       sidebar: null,
@@ -31,10 +40,8 @@
         // Setup navigation
         this.setupNavigation();
 
-        // Show sidebar for authenticated pages
-        setTimeout(() => {
-          this.updateSidebarVisibility();
-        }, 100);
+        // Kiểm tra ngay lập tức khi init
+        this.checkVisibility(this.getCurrentPageId());
       },
 
       setupEventListeners: function () {
@@ -137,40 +144,41 @@
         }
       },
 
-      updateSidebarVisibility: function () {
-        const currentPage = this.getCurrentPage();
-        const hidePages = [
-          "page-landing",
-          "page-login",
-          "page-register",
-          "page-verify-email",
-          "page-forgot-password",
-        ];
+      // Thêm hàm lấy ID trang hiện tại an toàn hơn
+      getCurrentPageId: function () {
+        // Tìm page đang không ẩn
+        const pages = document.querySelectorAll(".page-content");
+        for (let page of pages) {
+          if (page.style.display !== "none") return page.id;
+        }
+        // Fallback: Kiểm tra URL hash
+        const hash = window.location.hash.replace("#", "page-");
+        if (hash && document.getElementById(hash)) return hash;
 
-        console.log("Current page:", currentPage);
-        console.log("Should hide sidebar:", hidePages.includes(currentPage));
+        return "page-landing"; // Mặc định
+      },
 
-        if (hidePages.includes(currentPage)) {
-          document.body.classList.add("hide-sidebar");
+      // Hàm xử lý hiển thị quan trọng nhất
+      checkVisibility: function (pageId) {
+        console.log("Checking visibility for:", pageId);
+
+        // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
+        if (PUBLIC_PAGES.includes(pageId)) {
           document.body.classList.remove("has-sidebar");
+          document.body.classList.add("hide-sidebar");
+          console.log("Hiding sidebar for public page");
         } else {
-          document.body.classList.remove("hide-sidebar");
+          // Ngược lại -> Hiện Sidebar
           document.body.classList.add("has-sidebar");
-          this.updateActiveNav(currentPage);
+          document.body.classList.remove("hide-sidebar");
+          this.updateActiveNav(pageId);
+          console.log("Showing sidebar for authenticated page");
         }
       },
 
       getCurrentPage: function () {
-        const pages = document.querySelectorAll(".page-content");
-        for (let page of pages) {
-          if (
-            page.style.display !== "none" &&
-            window.getComputedStyle(page).display !== "none"
-          ) {
-            return page.id;
-          }
-        }
-        return "page-landing";
+        return this.getCurrentPageId();
+      },
       },
 
       updateActiveNav: function (pageId) {
@@ -196,7 +204,13 @@
         try {
           const saved = localStorage.getItem("sidebarCollapsed");
           this.isCollapsed = saved === "true";
-          this.updateCollapsedState();
+          if (this.sidebar) {
+            // Cập nhật class collapsed ngay lập tức nếu cần
+            if (this.isCollapsed) {
+              this.sidebar.classList.add("collapsed");
+              document.body.classList.add("sidebar-collapsed");
+            }
+          }
         } catch (e) {
           console.warn("Could not load sidebar state:", e);
         }
@@ -219,10 +233,37 @@
     // Make it globally accessible
     window.GlobalSidebar = GlobalSidebar;
 
+    // --- SỬA ĐỔI QUAN TRỌNG: Ghi đè showPage để xử lý tức thì ---
+    const originalShowPage = window.showPage;
+
+    // Ghi đè hàm showPage toàn cục
+    window.showPage = function (pageId, params, addToHistory) {
+      console.log("Navigating to:", pageId);
+
+      // 1. Xử lý Sidebar NGAY LẬP TỨC (trước khi UI kịp render)
+      if (window.GlobalSidebar) {
+        window.GlobalSidebar.checkVisibility(pageId);
+      } else {
+        // Fallback nếu GlobalSidebar chưa load xong
+        if (PUBLIC_PAGES.includes(pageId)) {
+          document.body.classList.remove("has-sidebar");
+          document.body.classList.add("hide-sidebar");
+        } else {
+          document.body.classList.add("has-sidebar");
+          document.body.classList.remove("hide-sidebar");
+        }
+      }
+
+      // 2. Gọi hàm gốc để chuyển nội dung
+      if (typeof originalShowPage === "function") {
+        originalShowPage(pageId, params, addToHistory);
+      }
+    };
+
     // Add mobile menu toggle button dynamically
     function addMobileMenuToggle() {
       const existingBtn = document.getElementById("mobileMenuToggleGlobal");
-      if (!existingBtn) {
+      if (!existingBtn && !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId())) {
         const btn = document.createElement("button");
         btn.id = "mobileMenuToggleGlobal";
         btn.className = "mobile-menu-toggle";
@@ -232,16 +273,7 @@
       }
     }
 
-    // Update sidebar visibility on page change
-    const originalShowPage = window.showPage;
-    if (typeof originalShowPage === "function") {
-      window.showPage = function (pageId) {
-        originalShowPage(pageId);
-        setTimeout(() => {
-          GlobalSidebar.updateSidebarVisibility();
-          addMobileMenuToggle();
-        }, 50);
-      };
-    }
+    // Add mobile button after init
+    setTimeout(addMobileMenuToggle, 200);
   })();
 </script>
