@@ -63,8 +63,9 @@ function generateRandomString(length) {
 }
 
 /**
- * Generate verification token
+ * Generate verification token (6-digit code)
  */
 function generateVerificationToken() {
-  return generateRandomString(32);
+  // Generate 6-digit random code
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }

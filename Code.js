@@ -106,6 +106,26 @@ function resendVerificationEmailToUser(email) {
   return resendVerificationEmail(email);
 }
 
+function verifyEmailCode(verificationData) {
+  return verifyEmailWithCode(verificationData);
+}
+
+// ========================================
+// PROFILE MANAGEMENT WRAPPERS
+// ========================================
+
+function updateProfile(profileData) {
+  return updateUserProfile(profileData);
+}
+
+function changePassword(passwordData) {
+  return changeUserPassword(passwordData);
+}
+
+function uploadAvatar(avatarData) {
+  return uploadUserAvatar(avatarData);
+}
+
 // ========================================
 // TEST FUNCTIONS
 // ========================================

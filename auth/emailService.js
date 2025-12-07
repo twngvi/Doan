@@ -5,13 +5,13 @@
  */
 
 /**
- * Send verification email
+ * Send verification email with OTP code
  */
-function sendVerificationEmail(email, token, fullName) {
+function sendVerificationEmail(email, code, fullName) {
   try {
     Logger.log("Sending verification email...");
     Logger.log("To: " + email);
-    Logger.log("Token: " + token);
+    Logger.log("Code: " + code);
 
     const emailQuotaRemaining = MailApp.getRemainingDailyQuota();
     Logger.log("Email quota remaining: " + emailQuotaRemaining);
@@ -21,21 +21,19 @@ function sendVerificationEmail(email, token, fullName) {
       return false;
     }
 
-    const webAppUrl = ScriptApp.getService().getUrl();
-    const verificationLink = webAppUrl + "?action=verify&token=" + token;
-
-    Logger.log("Verification link: " + verificationLink);
-
-    const subject = "Xác thực tài khoản Doanv3";
+    const subject = "Mã xác thực tài khoản - Doanv3";
     const body = `
 Xin chào ${fullName},
 
 Cảm ơn bạn đã đăng ký tài khoản tại Doanv3!
 
-Vui lòng click vào link bên dưới để xác thực email của bạn:
-${verificationLink}
+Mã xác thực của bạn là:
 
-Link này sẽ hết hạn sau 24 giờ.
+    ${code}
+
+Vui lòng nhập mã này vào trang xác thực để kích hoạt tài khoản.
+
+Mã này sẽ hết hạn sau 24 giờ.
 
 Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email này.
 

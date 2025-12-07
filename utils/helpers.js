@@ -85,3 +85,45 @@ function logActivity(logData) {
     Logger.log("Error logging activity: " + error.toString());
   }
 }
+
+/**
+ * Generate Gravatar URL from email
+ * @param {string} email - User's email address
+ * @param {number} size - Image size (default: 200)
+ * @param {string} defaultImage - Default image type (default: 'identicon')
+ * @returns {string} - Gravatar URL
+ */
+function getGravatarUrl(email, size, defaultImage) {
+  try {
+    size = size || 200;
+    defaultImage = defaultImage || "identicon";
+
+    // Create MD5 hash of email
+    const emailLower = email.trim().toLowerCase();
+    const hash = Utilities.computeDigest(
+      Utilities.DigestAlgorithm.MD5,
+      emailLower,
+      Utilities.Charset.UTF_8
+    );
+
+    // Convert hash to hex string
+    const hexHash = hash
+      .map(function (byte) {
+        const v = byte < 0 ? 256 + byte : byte;
+        return ("0" + v.toString(16)).slice(-2);
+      })
+      .join("");
+
+    return (
+      "https://www.gravatar.com/avatar/" +
+      hexHash +
+      "?s=" +
+      size +
+      "&d=" +
+      defaultImage
+    );
+  } catch (error) {
+    Logger.log("Error generating Gravatar URL: " + error.toString());
+    return "https://www.gravatar.com/avatar/?d=mp&s=" + (size || 200);
+  }
+}

@@ -37,7 +37,11 @@
   if (user) {
     // Try multiple name fields
     const name =
-      user.fullName || user.username || user.email?.split("@")[0] || "User";
+      user.displayName ||
+      user.fullName ||
+      user.username ||
+      user.email?.split("@")[0] ||
+      "User";
     console.log("Display name:", name);
 
     const userNameEl = document.getElementById("userName");
@@ -50,6 +54,19 @@
     if (userNameWelcomeEl) {
       userNameWelcomeEl.textContent = name;
       console.log("Updated userNameWelcome:", name);
+    }
+
+    // Update avatar
+    const userAvatarEl = document.querySelector(".user-avatar");
+    if (userAvatarEl && user.avatarUrl) {
+      userAvatarEl.src = user.avatarUrl;
+      console.log("Updated avatar:", user.avatarUrl);
+    } else if (userAvatarEl) {
+      // Fallback to UI Avatars with user's name
+      userAvatarEl.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        name
+      )}&background=random`;
+      console.log("Using fallback avatar for:", name);
     }
   } else {
     console.warn("No user data found in dashboard");
@@ -269,15 +286,20 @@
 
   // ===== GREETING BASED ON TIME =====
   function updateGreeting() {
-    const hour = new Date().getHours();
+    const now = new Date();
+    const hour = now.getHours();
+    console.log("Current time:", now.toLocaleString("vi-VN"), "Hour:", hour);
+
     let greeting = "Chào mừng trở lại";
 
-    if (hour < 12) {
+    if (hour >= 5 && hour < 12) {
       greeting = "Chào buổi sáng";
-    } else if (hour < 18) {
+    } else if (hour >= 12 && hour < 18) {
       greeting = "Chào buổi chiều";
-    } else {
+    } else if (hour >= 18 && hour < 22) {
       greeting = "Chào buổi tối";
+    } else {
+      greeting = "Chúc ngủ ngon";
     }
 
     const welcomeTitle = document.querySelector(".welcome-title");

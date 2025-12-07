@@ -1,0 +1,358 @@
+<!-- Email Verification Page -->
+<div class="auth-login-container">
+  <!-- Left Side - Illustration -->
+  <div class="auth-illustration">
+    <div class="illustration-content">
+      <div class="logo-section">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">Doanv3</span>
+      </div>
+      <h1 class="illustration-title">Xác thực email</h1>
+      <p class="illustration-description">
+        Kiểm tra email và nhập mã xác thực để kích hoạt tài khoản
+      </p>
+      <div class="illustration-image">
+        <div class="mountain-scene">
+          <div class="email-icon-large">📧</div>
+          <div class="verification-badge">✅</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side - Verification Form -->
+  <div class="auth-form-container">
+    <div class="auth-form-wrapper">
+      <div class="form-header">
+        <h2 class="form-title">Xác thực Email</h2>
+        <p class="form-description">
+          Chúng tôi đã gửi mã xác thực đến email: <br />
+          <strong id="verify-email-display"></strong>
+        </p>
+      </div>
+
+      <!-- Verification Form -->
+      <form id="verify-form" class="auth-form">
+        <!-- Verification Code Input -->
+        <div class="form-group">
+          <label for="verification-code" class="form-label"
+            >🔐 Mã xác thực (6 chữ số)</label
+          >
+          <div class="input-wrapper">
+            <span class="input-icon">🔑</span>
+            <input
+              type="text"
+              id="verification-code"
+              name="code"
+              class="form-input verification-input"
+              placeholder="Nhập mã 6 chữ số"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              required
+              autocomplete="off"
+            />
+          </div>
+          <span class="form-hint">Mã xác thực có hiệu lực trong 24 giờ</span>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn-submit" id="btn-verify">
+          <span class="btn-text">Xác thực</span>
+          <span class="btn-loader"></span>
+        </button>
+
+        <!-- Resend Code -->
+        <div class="form-options" style="margin-top: 1rem; text-align: center">
+          <p class="footer-text">
+            Không nhận được mã?
+            <a
+              href="#"
+              class="footer-link"
+              id="resend-code-btn"
+              onclick="handleResendCode(); return false;"
+            >
+              Gửi lại mã
+            </a>
+          </p>
+          <p class="form-hint" id="resend-timer" style="display: none">
+            Bạn có thể gửi lại sau <span id="timer-seconds">60</span> giây
+          </p>
+        </div>
+      </form>
+
+      <!-- Back to Login -->
+      <div class="form-footer">
+        <p class="footer-text">
+          <a
+            href="#"
+            class="footer-link"
+            onclick="showPage('page-login'); return false;"
+          >
+            ← Quay lại đăng nhập
+          </a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .verification-input {
+    font-size: 1.5rem;
+    letter-spacing: 0.5rem;
+    text-align: center;
+    font-weight: bold;
+  }
+
+  .email-icon-large {
+    font-size: 8rem;
+    animation: bounce 2s ease-in-out infinite;
+  }
+
+  .verification-badge {
+    font-size: 4rem;
+    position: absolute;
+    top: 50%;
+    right: 20%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes bounce {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.2);
+    }
+  }
+
+  .mountain-scene {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+  }
+</style>
+
+<script>
+  (function () {
+    "use strict";
+
+    // Function to initialize verification page
+    function initVerifyPage() {
+      console.log("🔐 Initializing verify page...");
+
+      // Get verification data from localStorage
+      const verificationData = localStorage.getItem("pendingVerification");
+      console.log("📦 Verification data from localStorage:", verificationData);
+
+      if (!verificationData) {
+        console.error("❌ No verification data found in localStorage");
+        if (typeof window.showToast === "function") {
+          window.showToast("Không tìm thấy thông tin xác thực", "error");
+        }
+        setTimeout(() => {
+          if (typeof showPage === "function") {
+            showPage("page-login");
+          }
+        }, 2000);
+        return;
+      }
+
+      const data = JSON.parse(verificationData);
+      console.log("✅ Parsed verification data:", data);
+
+      const emailDisplay = document.getElementById("verify-email-display");
+      if (emailDisplay) {
+        emailDisplay.textContent = data.email || "";
+        console.log("📧 Set email display to:", data.email);
+      }
+
+      // Resend timer
+      let resendTimer = 60;
+      let timerInterval = null;
+
+      function startResendTimer() {
+        const resendBtn = document.getElementById("resend-code-btn");
+        const timerDisplay = document.getElementById("resend-timer");
+        const timerSeconds = document.getElementById("timer-seconds");
+
+        if (resendBtn) resendBtn.style.display = "none";
+        if (timerDisplay) timerDisplay.style.display = "block";
+
+        timerInterval = setInterval(() => {
+          resendTimer--;
+          if (timerSeconds) timerSeconds.textContent = resendTimer;
+
+          if (resendTimer <= 0) {
+            clearInterval(timerInterval);
+            if (resendBtn) resendBtn.style.display = "inline";
+            if (timerDisplay) timerDisplay.style.display = "none";
+            resendTimer = 60;
+          }
+        }, 1000);
+      }
+
+      // Auto-start timer on page load
+      startResendTimer();
+
+      // Form submission
+      const verifyForm = document.getElementById("verify-form");
+      const verificationCodeInput =
+        document.getElementById("verification-code");
+      const btnVerify = document.getElementById("btn-verify");
+
+      if (verifyForm) {
+        verifyForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const code = verificationCodeInput?.value.trim();
+
+          if (!code || code.length !== 6) {
+            if (typeof window.showToast === "function") {
+              window.showToast("Vui lòng nhập mã 6 chữ số", "error");
+            }
+            return;
+          }
+
+          // Set loading state
+          if (btnVerify) {
+            btnVerify.disabled = true;
+            const btnText = btnVerify.querySelector(".btn-text");
+            const btnLoader = btnVerify.querySelector(".btn-loader");
+            if (btnText) btnText.style.display = "none";
+            if (btnLoader) btnLoader.style.display = "block";
+          }
+
+          if (typeof window.showToast === "function") {
+            window.showToast("Đang xác thực...", "info");
+          }
+
+          // Call backend
+          google.script.run
+            .withSuccessHandler(function (response) {
+              console.log("Verify response:", response);
+
+              // Reset button state
+              if (btnVerify) {
+                btnVerify.disabled = false;
+                const btnText = btnVerify.querySelector(".btn-text");
+                const btnLoader = btnVerify.querySelector(".btn-loader");
+                if (btnText) btnText.style.display = "block";
+                if (btnLoader) btnLoader.style.display = "none";
+              }
+
+              if (response.success) {
+                if (typeof window.showToast === "function") {
+                  window.showToast(
+                    "Xác thực thành công! Đang chuyển đến trang đăng nhập...",
+                    "success"
+                  );
+                }
+
+                // Clear verification data
+                localStorage.removeItem("pendingVerification");
+
+                // Redirect to login
+                setTimeout(() => {
+                  if (typeof showPage === "function") {
+                    showPage("page-login");
+                  }
+                }, 1500);
+              } else {
+                if (typeof window.showToast === "function") {
+                  window.showToast(
+                    response.message || "Mã xác thực không đúng",
+                    "error"
+                  );
+                }
+              }
+            })
+            .withFailureHandler(function (error) {
+              console.error("Verify error:", error);
+
+              // Reset button state
+              if (btnVerify) {
+                btnVerify.disabled = false;
+                const btnText = btnVerify.querySelector(".btn-text");
+                const btnLoader = btnVerify.querySelector(".btn-loader");
+                if (btnText) btnText.style.display = "block";
+                if (btnLoader) btnLoader.style.display = "none";
+              }
+
+              if (typeof window.showToast === "function") {
+                window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
+              }
+            })
+            .verifyEmailCode({
+              email: data.email,
+              code: code,
+            });
+        });
+      }
+
+      // Resend code handler
+      window.handleResendCode = function () {
+        if (typeof window.showToast === "function") {
+          window.showToast("Đang gửi lại mã...", "info");
+        }
+
+        google.script.run
+          .withSuccessHandler(function (response) {
+            console.log("Resend response:", response);
+
+            if (response.success) {
+              if (typeof window.showToast === "function") {
+                window.showToast("Đã gửi lại mã xác thực!", "success");
+              }
+              startResendTimer();
+            } else {
+              if (typeof window.showToast === "function") {
+                window.showToast(
+                  response.message || "Không thể gửi lại mã",
+                  "error"
+                );
+              }
+            }
+          })
+          .withFailureHandler(function (error) {
+            console.error("Resend error:", error);
+            if (typeof window.showToast === "function") {
+              window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
+            }
+          })
+          .resendVerificationEmailToUser(data.email);
+      };
+
+      // Auto-focus on code input and format input to numbers only
+      if (verificationCodeInput) {
+        verificationCodeInput.focus();
+        verificationCodeInput.addEventListener("input", function (e) {
+          this.value = this.value.replace(/[^0-9]/g, "");
+        });
+      }
+    } // End of initVerifyPage
+
+    // Call init when page loads
+    // Check if we're on the verify page
+    const verifyPage = document.getElementById("page-verify-email");
+    if (verifyPage && verifyPage.style.display !== "none") {
+      initVerifyPage();
+    }
+
+    // Also set up a global function that can be called when page is shown
+    window.initVerifyEmailPage = initVerifyPage;
+  })();
+</script>

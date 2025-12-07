@@ -86,17 +86,22 @@ function loginWithEmail(credentials) {
 
         Logger.log("Login successful: " + credentials.email);
 
+        // Get avatar URL - use stored avatar or generate Gravatar
+        const avatarUrl = data[i][6] || getGravatarUrl(data[i][2]);
+
         return {
           success: true,
           message: "Đăng nhập thành công!",
           user: {
             userId: data[i][0],
-            username: data[i][1],
+            username: data[i][4],
             email: data[i][2],
-            role: data[i][6],
-            level: data[i][7],
-            totalXP: data[i][8],
-            progressSheetId: data[i][12],
+            displayName: data[i][3] || data[i][4],
+            avatarUrl: avatarUrl,
+            role: data[i][7],
+            level: data[i][8],
+            totalXP: data[i][11],
+            progressSheetId: data[i][24],
           },
         };
       }
@@ -130,17 +135,22 @@ function getUserSession(userId) {
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
+        // Get avatar URL - use stored avatar or generate Gravatar
+        const avatarUrl = data[i][6] || getGravatarUrl(data[i][2]);
+
         return {
           status: "success",
           user: {
             userId: data[i][0],
-            username: data[i][1],
+            username: data[i][4],
             email: data[i][2],
-            role: data[i][6],
-            level: data[i][7],
-            totalXP: data[i][8],
-            lastLogin: data[i][17],
-            isActive: data[i][18],
+            displayName: data[i][3] || data[i][4],
+            avatarUrl: avatarUrl,
+            role: data[i][7],
+            level: data[i][8],
+            totalXP: data[i][11],
+            lastLogin: data[i][15],
+            isActive: data[i][17],
           },
         };
       }

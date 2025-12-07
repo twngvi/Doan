@@ -106,34 +106,34 @@ function registerWithEmail(userData) {
 
     // Columns: userId, googleId, email, displayName, username, passwordHash, avatarUrl, role, level, aiLevel, totalPoints, totalXP, currentStreak, longestStreak, lastActiveDate, lastLogin, createdAt, isActive, mountainPosition, mountainStage, mountainProgress, totalQuizAnswered, totalPuzzleSolved, totalChallengeCompleted, progressSheetId, emailVerified, verificationToken, verificationExpires
     const newUser = [
-      userId,                    // userId
-      "",                        // googleId
-      userData.email,            // email
-      "",                        // displayName
-      username,                  // username
-      passwordHash,              // passwordHash
-      "",                        // avatarUrl
-      "student",                 // role
-      1,                         // level
-      1,                         // aiLevel
-      0,                         // totalPoints
-      0,                         // totalXP
-      0,                         // currentStreak
-      0,                         // longestStreak
-      "",                        // lastActiveDate
-      "",                        // lastLogin
-      now,                       // createdAt
-      false,                     // isActive
-      0,                         // mountainPosition
-      1,                         // mountainStage
-      0,                         // mountainProgress
-      0,                         // totalQuizAnswered
-      0,                         // totalPuzzleSolved
-      0,                         // totalChallengeCompleted
-      "",                        // progressSheetId
-      false,                     // emailVerified
-      verificationToken,         // verificationToken
-      verificationExpires,       // verificationExpires
+      userId, // userId
+      "", // googleId
+      userData.email, // email
+      "", // displayName
+      username, // username
+      passwordHash, // passwordHash
+      "", // avatarUrl
+      "student", // role
+      1, // level
+      1, // aiLevel
+      0, // totalPoints
+      0, // totalXP
+      0, // currentStreak
+      0, // longestStreak
+      "", // lastActiveDate
+      "", // lastLogin
+      now, // createdAt
+      false, // isActive
+      0, // mountainPosition
+      1, // mountainStage
+      0, // mountainProgress
+      0, // totalQuizAnswered
+      0, // totalPuzzleSolved
+      0, // totalChallengeCompleted
+      "", // progressSheetId
+      false, // emailVerified
+      verificationToken, // verificationToken
+      verificationExpires, // verificationExpires
     ];
 
     usersSheet.appendRow(newUser);
@@ -407,6 +407,109 @@ function resendVerificationEmail(email) {
     };
   } catch (error) {
     Logger.log("Error in resendVerificationEmail: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Verify email with code (OTP)
+ */
+function verifyEmailWithCode(verificationData) {
+  try {
+    Logger.log("=== VERIFY EMAIL WITH CODE ===");
+    Logger.log("Email: " + verificationData.email);
+    Logger.log("Code: " + verificationData.code);
+
+    if (!verificationData.email || !verificationData.code) {
+      return {
+        success: false,
+        message: "Email và mã xác thực là bắt buộc",
+      };
+    }
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Lỗi hệ thống",
+      };
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+    const tokenIndex = headers.indexOf("verificationToken");
+    const expiresIndex = headers.indexOf("verificationExpires");
+    const emailVerifiedIndex = headers.indexOf("emailVerified");
+    const isActiveIndex = headers.indexOf("isActive");
+
+    // Find user by email
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === verificationData.email) {
+        const storedCode = data[i][tokenIndex];
+        const expiresDate = new Date(data[i][expiresIndex]);
+        const now = new Date();
+
+        // Check if code expired
+        if (now > expiresDate) {
+          return {
+            success: false,
+            message: "Mã xác thực đã hết hạn. Vui lòng gửi lại mã.",
+          };
+        }
+
+        // Check if code matches
+        // Ép kiểu về String và xóa khoảng trắng thừa để so sánh chính xác
+        if (
+          String(storedCode).trim() !== String(verificationData.code).trim()
+        ) {
+          Logger.log(
+            "Code mismatch - Stored: [" +
+              storedCode +
+              "], Received: [" +
+              verificationData.code +
+              "]"
+          );
+          return {
+            success: false,
+            message: "Mã xác thực không đúng. Vui lòng kiểm tra lại.",
+          };
+        }
+
+        // Verify email and activate account
+        usersSheet.getRange(i + 1, emailVerifiedIndex + 1).setValue(true);
+        usersSheet.getRange(i + 1, isActiveIndex + 1).setValue(true);
+        usersSheet.getRange(i + 1, tokenIndex + 1).setValue(""); // Clear token
+
+        // Log activity
+        logActivity({
+          level: "INFO",
+          category: "USER",
+          userId: data[i][0],
+          action: "EMAIL_VERIFIED",
+          details: "Email verified with OTP code",
+        });
+
+        Logger.log(
+          "Email verified successfully for: " + verificationData.email
+        );
+
+        return {
+          success: true,
+          message: "Xác thực email thành công! Bạn có thể đăng nhập ngay.",
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: "Email không tồn tại trong hệ thống",
+    };
+  } catch (error) {
+    Logger.log("Error in verifyEmailWithCode: " + error.toString());
     return {
       success: false,
       message: "Lỗi: " + error.toString(),

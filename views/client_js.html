@@ -102,6 +102,23 @@
         tryInitTopics();
       }
 
+      // Initialize verify email page
+      if (pageId === "page-verify-email") {
+        console.log("🔐 Verify email page shown, calling init...");
+        const verifyPageElement = document.getElementById("page-verify-email");
+        console.log("📄 Verify page element:", verifyPageElement);
+        console.log(
+          "👁️ Verify page display:",
+          verifyPageElement?.style.display
+        );
+
+        if (typeof window.initVerifyEmailPage === "function") {
+          window.initVerifyEmailPage();
+        } else {
+          console.error("❌ initVerifyEmailPage function not found");
+        }
+      }
+
       // Pass parameters to page if needed
       if (Object.keys(params).length > 0) {
         window.currentPageParams = params;
@@ -305,15 +322,33 @@
           // Hiển thị thông báo xác thực email
           showToast(response.message, "success");
 
-          // Nếu email không được gửi, hiển thị nút "Gửi lại"
-          if (!response.emailSent) {
-            showResendVerificationOption(userData.email);
-          }
+          // --- PHẦN SỬA ĐỔI QUAN TRỌNG Ở ĐÂY ---
 
-          // Chuyển về trang login sau 3 giây
-          setTimeout(() => {
-            showPage("page-login");
-          }, 3000);
+          // Kiểm tra xem server có yêu cầu xác thực không
+          if (response.requiresVerification) {
+            console.log("🔏 Yêu cầu xác thực email, đang chuyển hướng...");
+
+            // 1. Lưu email vào localStorage để trang Verify biết xác thực cho ai
+            const verificationData = {
+              email: email,
+              timestamp: new Date().getTime(),
+            };
+            localStorage.setItem(
+              "pendingVerification",
+              JSON.stringify(verificationData)
+            );
+
+            // 2. Chuyển sang trang Verify thay vì Login
+            setTimeout(() => {
+              showPage("page-verify-email");
+            }, 1500);
+          } else {
+            // Nếu không cần xác thực thì mới về Login
+            setTimeout(() => {
+              showPage("page-login");
+            }, 3000);
+          }
+          // --------------------------------------
         } else {
           showToast(response.message, "error");
         }

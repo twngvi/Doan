@@ -169,3 +169,176 @@
     </div>
   </div>
 </div>
+
+<script>
+  (function () {
+    "use strict";
+
+    const registerForm = document.getElementById("register-form");
+    const btnRegister = document.getElementById("btn-register");
+    const fullNameInput = document.getElementById("register-fullname");
+    const emailInput = document.getElementById("register-email");
+    const passwordInput = document.getElementById("register-password");
+    const confirmPasswordInput = document.getElementById(
+      "register-confirm-password"
+    );
+    const acceptTermsCheckbox = document.getElementById("acceptTerms");
+
+    // Handle register form submission
+    window.handleRegisterFormSubmit = function () {
+      // Validate inputs
+      const fullName = fullNameInput?.value.trim();
+      const email = emailInput?.value.trim();
+      const password = passwordInput?.value;
+      const confirmPassword = confirmPasswordInput?.value;
+      const acceptTerms = acceptTermsCheckbox?.checked;
+
+      if (!fullName || !email || !password || !confirmPassword) {
+        if (typeof window.showToast === "function") {
+          window.showToast("Vui lòng điền đầy đủ thông tin", "error");
+        }
+        return;
+      }
+
+      if (!acceptTerms) {
+        if (typeof window.showToast === "function") {
+          window.showToast("Vui lòng đồng ý với điều khoản sử dụng", "error");
+        }
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        if (typeof window.showToast === "function") {
+          window.showToast("Mật khẩu xác nhận không khớp", "error");
+        }
+        return;
+      }
+
+      if (password.length < 6) {
+        if (typeof window.showToast === "function") {
+          window.showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+        }
+        return;
+      }
+
+      // Set loading state
+      if (btnRegister) {
+        btnRegister.disabled = true;
+        const btnText = btnRegister.querySelector(".btn-text");
+        const btnLoader = btnRegister.querySelector(".btn-loader");
+        if (btnText) btnText.style.display = "none";
+        if (btnLoader) btnLoader.style.display = "block";
+      }
+
+      if (typeof window.showToast === "function") {
+        window.showToast("Đang đăng ký...", "info");
+      }
+
+      // Call backend
+      google.script.run
+        .withSuccessHandler(function (response) {
+          console.log("✅ ========== REGISTER RESPONSE ==========");
+          console.log("Full response:", JSON.stringify(response, null, 2));
+          console.log("response.success:", response.success);
+          console.log(
+            "response.requiresVerification:",
+            response.requiresVerification
+          );
+          console.log("response.message:", response.message);
+          console.log("========================================");
+
+          // Reset button state
+          if (btnRegister) {
+            btnRegister.disabled = false;
+            const btnText = btnRegister.querySelector(".btn-text");
+            const btnLoader = btnRegister.querySelector(".btn-loader");
+            if (btnText) btnText.style.display = "block";
+            if (btnLoader) btnLoader.style.display = "none";
+          }
+
+          if (response.success) {
+            if (typeof window.showToast === "function") {
+              window.showToast(
+                response.message ||
+                  "Đăng ký thành công! Vui lòng kiểm tra email để xác thực.",
+                "success"
+              );
+            }
+
+            // ALWAYS check requiresVerification
+            console.log("🔍 Checking requiresVerification...");
+            if (response.requiresVerification === true) {
+              console.log(
+                "✅ YES - Requires verification, will redirect to verify page"
+              );
+
+              // Save email for verification page
+              const verificationData = {
+                email: email,
+                timestamp: new Date().getTime(),
+              };
+              localStorage.setItem(
+                "pendingVerification",
+                JSON.stringify(verificationData)
+              );
+
+              console.log("💾 Saved to localStorage:", verificationData);
+              console.log(
+                "📦 Verify localStorage:",
+                localStorage.getItem("pendingVerification")
+              );
+
+              // Redirect to verification page
+              setTimeout(() => {
+                console.log("🔄 NOW calling showPage('page-verify-email')...");
+                if (typeof showPage === "function") {
+                  showPage("page-verify-email");
+                  console.log("✅ showPage called successfully");
+                } else {
+                  console.error("❌ ERROR: showPage function not found!");
+                  alert("Lỗi: Không thể chuyển trang. Vui lòng F5 và thử lại.");
+                }
+              }, 1000);
+            } else {
+              console.log(
+                "❌ NO - requiresVerification is FALSE or undefined, going to login"
+              );
+              // If no verification required, go to login
+              setTimeout(() => {
+                if (typeof showPage === "function") {
+                  showPage("page-login");
+                }
+              }, 1500);
+            }
+          } else {
+            console.error("❌ Registration failed:", response.message);
+            if (typeof window.showToast === "function") {
+              window.showToast(response.message || "Đăng ký thất bại", "error");
+            }
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.error("Register error:", error);
+
+          // Reset button state
+          if (btnRegister) {
+            btnRegister.disabled = false;
+            const btnText = btnRegister.querySelector(".btn-text");
+            const btnLoader = btnRegister.querySelector(".btn-loader");
+            if (btnText) btnText.style.display = "block";
+            if (btnLoader) btnLoader.style.display = "none";
+          }
+
+          if (typeof window.showToast === "function") {
+            window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
+          }
+        })
+        .registerWithEmailPassword({
+          fullName: fullName,
+          email: email,
+          password: password,
+          confirmPassword: confirmPassword,
+        });
+    };
+  })();
+</script>
