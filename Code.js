@@ -13,6 +13,7 @@
  * - auth/login.js: loginWithEmail, getUserSession
  * - auth/passwordReset.js: requestPasswordReset, resetPasswordWithCode
  * - auth/emailService.js: sendVerificationEmail, sendPasswordResetCodeEmail
+ * - server/topics.js: getAllTopics, getUserTopicProgress, updateUserTopicProgress
  */ // ========================================
 // WEB APP ENTRY POINT
 // ========================================

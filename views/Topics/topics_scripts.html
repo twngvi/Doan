@@ -1,0 +1,545 @@
+<!-- Topics Page Scripts -->
+<script>
+  (function () {
+    console.log("🚀 Topics page scripts loading...");
+
+    // ========================================
+    // MODULE VARIABLES (in closure)
+    // ========================================
+    let allTopics = [];
+    let filteredTopics = [];
+    let currentFilter = "all";
+    let currentView = "grid";
+    let selectedTopic = null;
+    let userProgress = {};
+
+    // ========================================
+    // INITIALIZATION
+    // ========================================
+    window.initTopicsPage = function () {
+      console.log("✅ Initializing Topics Page...");
+      setupEventListeners();
+      loadTopics();
+    };
+
+    function setupEventListeners() {
+      // Search input debounce
+      const searchInput = document.getElementById("searchTopics");
+      if (!searchInput) {
+        console.warn("Search input not found, skipping event listener setup");
+        return;
+      }
+
+      let searchTimeout;
+      searchInput.addEventListener("input", function (e) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          searchTopics(e.target.value);
+        }, 300);
+      });
+    }
+    // ========================================
+    // LOAD TOPICS FROM DATABASE
+    // ========================================
+    function loadTopics() {
+      console.log("Loading topics from database...");
+
+      // Show loading state
+      showLoadingState();
+
+      // Call server-side function to get topics
+      google.script.run
+        .withSuccessHandler(onTopicsLoaded)
+        .withFailureHandler(onTopicsLoadError)
+        .getAllTopics();
+    }
+
+    function onTopicsLoaded(result) {
+      console.log("Topics loaded successfully:", result);
+
+      // Comprehensive null check
+      if (!result) {
+        showErrorState("Lỗi: Server không trả về dữ liệu (Result is null).");
+        return;
+      }
+
+      if (!result.success) {
+        showErrorState(result.message || "Lỗi không xác định từ Server.");
+        return;
+      }
+
+      if (result.success && result.topics && result.topics.length > 0) {
+        allTopics = result.topics;
+        filteredTopics = [...allTopics];
+
+        // Load user progress
+        loadUserProgress();
+
+        // Render topics
+        renderTopics();
+
+        // Update stats
+        updateProgressStats();
+
+        // Hide loading, show content
+        hideLoadingState();
+      } else {
+        showEmptyState();
+      }
+    }
+
+    function onTopicsLoadError(error) {
+      console.error("Error loading topics:", error);
+      showErrorState(
+        error.message || "Không thể kết nối với server. Vui lòng thử lại sau."
+      );
+    }
+
+    // ========================================
+    // LOAD USER PROGRESS
+    // ========================================
+    function loadUserProgress() {
+      google.script.run
+        .withSuccessHandler(onUserProgressLoaded)
+        .withFailureHandler((error) =>
+          console.error("Error loading user progress:", error)
+        )
+        .getUserTopicProgress();
+    }
+
+    function onUserProgressLoaded(result) {
+      if (result.success && result.progress) {
+        userProgress = result.progress;
+        console.log("User progress loaded:", userProgress);
+        // Re-render to show progress
+        renderTopics();
+      }
+    }
+
+    // ========================================
+    // RENDER TOPICS
+    // ========================================
+    function renderTopics() {
+      if (currentView === "grid") {
+        renderGridView();
+      } else {
+        renderJourneyView();
+      }
+    }
+
+    function renderGridView() {
+      const grid = document.getElementById("topicsGrid");
+      grid.innerHTML = "";
+
+      if (filteredTopics.length === 0) {
+        showEmptyState();
+        return;
+      }
+
+      filteredTopics.forEach((topic) => {
+        const card = createTopicCard(topic);
+        grid.appendChild(card);
+      });
+
+      grid.style.display = "grid";
+      document.getElementById("topicsJourney").style.display = "none";
+    }
+
+    function renderJourneyView() {
+      const journeyContainer = document.getElementById("topicsJourney");
+
+      // Group topics by journey
+      const beginnerTopics = filteredTopics.filter(
+        (t) => t.journey === "Beginner"
+      );
+      const intermediateTopics = filteredTopics.filter(
+        (t) => t.journey === "Intermediate"
+      );
+      const advancedTopics = filteredTopics.filter(
+        (t) => t.journey === "Advanced"
+      );
+
+      // Render each journey section
+      document.getElementById("beginnerTopics").innerHTML = "";
+      beginnerTopics.forEach((topic) => {
+        document
+          .getElementById("beginnerTopics")
+          .appendChild(createTopicCard(topic));
+      });
+
+      document.getElementById("intermediateTopics").innerHTML = "";
+      intermediateTopics.forEach((topic) => {
+        document
+          .getElementById("intermediateTopics")
+          .appendChild(createTopicCard(topic));
+      });
+
+      document.getElementById("advancedTopics").innerHTML = "";
+      advancedTopics.forEach((topic) => {
+        document
+          .getElementById("advancedTopics")
+          .appendChild(createTopicCard(topic));
+      });
+
+      document.getElementById("topicsGrid").style.display = "none";
+      journeyContainer.style.display = "flex";
+    }
+
+    function createTopicCard(topic) {
+      const card = document.createElement("div");
+      card.className = "topic-card";
+      card.onclick = () => showTopicDetail(topic);
+
+      // Get user progress for this topic
+      const progress = userProgress[topic.topicId] || {
+        completed: false,
+        progress: 0,
+      };
+      const isLocked = !checkTopicUnlocked(topic);
+
+      card.innerHTML = `
+      <div class="topic-card-header">
+        <div class="topic-icon">${getJourneyIcon(topic.journey)}</div>
+        <div class="topic-badges">
+          <span class="badge badge-journey">${topic.journey}</span>
+          ${
+            topic.category
+              ? `<span class="badge badge-category">${topic.category}</span>`
+              : ""
+          }
+          ${
+            progress.completed
+              ? '<span class="badge badge-completed">✓ Completed</span>'
+              : ""
+          }
+          ${isLocked ? '<span class="badge badge-locked">🔒 Locked</span>' : ""}
+        </div>
+      </div>
+      <h3 class="topic-title">${topic.title}</h3>
+      <p class="topic-description">${truncateText(topic.description, 100)}</p>
+      <div class="topic-stats">
+        <div class="stat">
+          <div class="stat-value">${topic.totalStages || 0}</div>
+          <div class="stat-label">Stages</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">${topic.minAILevel || 1}</div>
+          <div class="stat-label">Min AI</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">${topic.minAccuracy || 0}%</div>
+          <div class="stat-label">Min Acc</div>
+        </div>
+      </div>
+      ${
+        !isLocked
+          ? `
+        <div class="topic-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: ${
+              progress.progress || 0
+            }%"></div>
+          </div>
+          <p class="progress-text">${progress.progress || 0}% completed</p>
+        </div>
+      `
+          : ""
+      }
+      <button class="topic-action ${isLocked ? "locked" : ""}"
+              onclick="event.stopPropagation(); ${
+                isLocked ? "" : `startTopic('${topic.topicId}')`
+              }">
+        ${
+          isLocked
+            ? "🔒 Locked"
+            : progress.completed
+            ? "🔄 Review"
+            : "🚀 Start Learning"
+        }
+      </button>
+    `;
+
+      return card;
+    }
+
+    // ========================================
+    // FILTER & SEARCH
+    // ========================================
+    function filterTopics(journey) {
+      currentFilter = journey;
+
+      // Update active tab
+      document.querySelectorAll(".filter-tab").forEach((tab) => {
+        tab.classList.remove("active");
+        if (tab.dataset.filter === journey) {
+          tab.classList.add("active");
+        }
+      });
+
+      // Filter topics
+      if (journey === "all") {
+        filteredTopics = [...allTopics];
+      } else {
+        filteredTopics = allTopics.filter((topic) => topic.journey === journey);
+      }
+
+      // Apply search if active
+      const searchValue = document.getElementById("searchTopics").value;
+      if (searchValue) {
+        searchTopics(searchValue);
+      } else {
+        renderTopics();
+      }
+    }
+
+    function searchTopics(query) {
+      if (!query.trim()) {
+        filteredTopics =
+          currentFilter === "all"
+            ? [...allTopics]
+            : allTopics.filter((t) => t.journey === currentFilter);
+      } else {
+        const searchLower = query.toLowerCase();
+        const baseTopics =
+          currentFilter === "all"
+            ? allTopics
+            : allTopics.filter((t) => t.journey === currentFilter);
+
+        filteredTopics = baseTopics.filter(
+          (topic) =>
+            topic.title.toLowerCase().includes(searchLower) ||
+            topic.description.toLowerCase().includes(searchLower) ||
+            topic.category.toLowerCase().includes(searchLower)
+        );
+      }
+
+      renderTopics();
+    }
+
+    // ========================================
+    // VIEW TOGGLE
+    // ========================================
+    function toggleView(view) {
+      currentView = view;
+
+      // Update active button
+      document.querySelectorAll(".toggle-btn").forEach((btn) => {
+        btn.classList.remove("active");
+        if (btn.dataset.view === view) {
+          btn.classList.add("active");
+        }
+      });
+
+      renderTopics();
+    }
+
+    // ========================================
+    // TOPIC DETAIL MODAL
+    // ========================================
+    function showTopicDetail(topic) {
+      selectedTopic = topic;
+      const progress = userProgress[topic.topicId] || {
+        completed: false,
+        progress: 0,
+      };
+      const isLocked = !checkTopicUnlocked(topic);
+
+      // Populate modal
+      document.getElementById("modalTopicTitle").textContent = topic.title;
+      document.getElementById("modalJourney").textContent = topic.journey;
+      document.getElementById("modalCategory").textContent =
+        topic.category || "General";
+      document.getElementById("modalDescription").textContent =
+        topic.description;
+      document.getElementById("modalTotalStages").textContent =
+        topic.totalStages || 0;
+      document.getElementById("modalMinAI").textContent = topic.minAILevel || 1;
+      document.getElementById("modalMinAccuracy").textContent = `${
+        topic.minAccuracy || 0
+      }%`;
+      document.getElementById("modalProgressFill").style.width = `${
+        progress.progress || 0
+      }%`;
+      document.getElementById("modalProgressText").textContent = `${
+        progress.progress || 0
+      }% completed`;
+
+      // Update start button
+      const startBtn = document.getElementById("modalStartBtn");
+      if (isLocked) {
+        startBtn.innerHTML = "<span>🔒</span> Locked";
+        startBtn.disabled = true;
+        startBtn.style.background = "#cbd5e0";
+        startBtn.style.cursor = "not-allowed";
+      } else {
+        startBtn.innerHTML = progress.completed
+          ? "<span>🔄</span> Review Topic"
+          : "<span>🚀</span> Bắt đầu học";
+        startBtn.disabled = false;
+        startBtn.style.background =
+          "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+        startBtn.style.cursor = "pointer";
+      }
+
+      // Show modal
+      document.getElementById("topicDetailModal").style.display = "flex";
+    }
+
+    function closeTopicDetail(event) {
+      if (!event || event.target === event.currentTarget) {
+        document.getElementById("topicDetailModal").style.display = "none";
+        selectedTopic = null;
+      }
+    }
+
+    function startTopic(topicId) {
+      const topic = topicId
+        ? allTopics.find((t) => t.topicId === topicId)
+        : selectedTopic;
+
+      if (!topic) {
+        showNotification("Topic not found", "error");
+        return;
+      }
+
+      if (!checkTopicUnlocked(topic)) {
+        showNotification(
+          "This topic is locked. Complete prerequisites first.",
+          "warning"
+        );
+        return;
+      }
+
+      console.log("Starting topic:", topic.topicId);
+
+      // Navigate to MCQ or Matching page based on topic type
+      // For now, navigate to MCQ page as default
+      showPage("page-mcq", { topicId: topic.topicId, topicTitle: topic.title });
+
+      // Close modal if open
+      closeTopicDetail();
+    }
+
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    function checkTopicUnlocked(topic) {
+      // TODO: Implement actual unlock logic based on user's AI level and accuracy
+      // For now, return true to allow all topics
+      return true;
+    }
+
+    function getJourneyIcon(journey) {
+      const icons = {
+        Beginner: "🌱",
+        Intermediate: "🌿",
+        Advanced: "🌳",
+      };
+      return icons[journey] || "📚";
+    }
+
+    function truncateText(text, maxLength) {
+      if (text.length <= maxLength) return text;
+      return text.substring(0, maxLength) + "...";
+    }
+
+    function updateProgressStats() {
+      const completed = Object.values(userProgress).filter(
+        (p) => p.completed
+      ).length;
+      const inProgress = Object.values(userProgress).filter(
+        (p) => p.progress > 0 && !p.completed
+      ).length;
+
+      document.getElementById("completedTopics").textContent = completed;
+      document.getElementById("inProgressTopics").textContent = inProgress;
+    }
+
+    // ========================================
+    // UI STATE MANAGEMENT
+    // ========================================
+    function showLoadingState() {
+      document.getElementById("topicsLoading").style.display = "block";
+      document.getElementById("topicsError").style.display = "none";
+      document.getElementById("topicsEmpty").style.display = "none";
+      document.getElementById("topicsGrid").style.display = "none";
+      document.getElementById("topicsJourney").style.display = "none";
+    }
+
+    function hideLoadingState() {
+      document.getElementById("topicsLoading").style.display = "none";
+    }
+
+    function showErrorState(message) {
+      document.getElementById("topicsLoading").style.display = "none";
+      document.getElementById("topicsError").style.display = "block";
+      document.querySelector(".error-message").textContent = message;
+    }
+
+    function showEmptyState() {
+      document.getElementById("topicsLoading").style.display = "none";
+      document.getElementById("topicsError").style.display = "none";
+      document.getElementById("topicsEmpty").style.display = "block";
+    }
+
+    function showNotification(message, type = "info") {
+      // Reuse existing notification system
+      if (typeof window.showNotification === "function") {
+        window.showNotification(message, type);
+      } else {
+        alert(message);
+      }
+    }
+
+    // ========================================
+    // EXPORT GLOBAL FUNCTIONS
+    // ========================================
+
+    // Export functions to window for onclick handlers
+    window.filterTopics = filterTopics;
+    window.searchTopics = searchTopics;
+    window.toggleView = toggleView;
+    window.showTopicDetail = showTopicDetail;
+    window.closeTopicDetail = closeTopicDetail;
+    window.startTopic = startTopic;
+
+    // ========================================
+    // AUTO-INITIALIZE SETUP
+    // ========================================
+
+    // Global initialization flag to prevent multiple inits
+    window.topicsPageInitialized = false;
+
+    // Function to be called when page is shown
+    window.initTopicsPageOnShow = function () {
+      console.log(
+        "initTopicsPageOnShow called, initialized:",
+        window.topicsPageInitialized
+      );
+
+      if (!window.topicsPageInitialized) {
+        console.log("Initializing Topics Page for the first time...");
+        window.topicsPageInitialized = true;
+
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(function () {
+          loadTopics();
+        }, 100);
+      } else {
+        console.log("Topics Page already initialized, refreshing data...");
+        loadTopics();
+      }
+    };
+
+    // Create aliases for compatibility with different calling patterns
+    window.initTopics = window.initTopicsPageOnShow;
+    window.loadTopicsPage = window.initTopicsPageOnShow;
+
+    console.log("✅ Topics page scripts loaded successfully");
+    console.log("- window.initTopicsPage:", typeof window.initTopicsPage);
+    console.log(
+      "- window.initTopicsPageOnShow:",
+      typeof window.initTopicsPageOnShow
+    );
+  })();
+</script>

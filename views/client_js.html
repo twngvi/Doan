@@ -41,9 +41,11 @@
   /**
    * Show specific page and hide others
    * @param {string} pageId - ID of the page to show
+   * @param {object} params - Optional parameters to pass to the page
+   * @param {boolean} addToHistory - Whether to add this navigation to browser history
    */
-  function showPage(pageId) {
-    console.log("Showing page:", pageId);
+  function showPage(pageId, params = {}, addToHistory = true) {
+    console.log("Showing page:", pageId, params);
 
     // Hide all pages
     const allPages = document.querySelectorAll(".page-content");
@@ -56,14 +58,92 @@
     if (targetPage) {
       targetPage.style.display = "block";
 
+      // Update browser history
+      if (addToHistory) {
+        const state = { pageId: pageId, params: params };
+        const url =
+          window.location.pathname + "#" + pageId.replace("page-", "");
+        history.pushState(state, "", url);
+      }
+
       // Update navbar active state if on dashboard
       if (pageId === "page-dashboard") {
         updateNavbarActive("page-dashboard");
+      }
+
+      // Initialize page-specific logic
+      if (pageId === "page-topics") {
+        // Initialize Topics page with retry mechanism
+        const tryInitTopics = (retries = 0) => {
+          if (typeof window.initTopicsPageOnShow === "function") {
+            console.log("Triggering Topics page initialization...");
+            window.initTopicsPageOnShow();
+          } else if (retries < 5) {
+            console.warn(
+              `Topics initialization function not found, retrying... (${
+                retries + 1
+              }/5)`
+            );
+            setTimeout(() => tryInitTopics(retries + 1), 200);
+          } else {
+            console.error(
+              "Topics initialization function not found after 5 retries"
+            );
+            // Fallback: try to call directly
+            if (typeof initTopicsPage === "function") {
+              console.log("Using fallback initTopicsPage");
+              initTopicsPage();
+            }
+          }
+        };
+        tryInitTopics();
+      }
+
+      // Pass parameters to page if needed
+      if (Object.keys(params).length > 0) {
+        window.currentPageParams = params;
+        console.log("Page parameters set:", params);
       }
     } else {
       console.error("Page not found:", pageId);
     }
   }
+
+  // ==================== Browser History Handling ====================
+
+  /**
+   * Handle browser back/forward buttons
+   */
+  window.addEventListener("popstate", function (event) {
+    console.log("Popstate event:", event.state);
+
+    if (event.state && event.state.pageId) {
+      // Navigate to the page from history without adding to history again
+      showPage(event.state.pageId, event.state.params || {}, false);
+    } else {
+      // No state - go to default page
+      const savedUser = localStorage.getItem("currentUser");
+      if (savedUser) {
+        showPage("page-dashboard", {}, false);
+      } else {
+        showPage("page-landing", {}, false);
+      }
+    }
+  });
+
+  // Initialize history state on first load
+  window.addEventListener("load", function () {
+    if (!history.state) {
+      const savedUser = localStorage.getItem("currentUser");
+      const initialPage = savedUser ? "page-dashboard" : "page-landing";
+      const state = { pageId: initialPage, params: {} };
+      history.replaceState(
+        state,
+        "",
+        window.location.pathname + "#" + initialPage.replace("page-", "")
+      );
+    }
+  });
 
   /**
    * Update navbar active state
@@ -417,7 +497,7 @@
     }
 
     // Show message
-    if (typeof showToast === 'function') {
+    if (typeof showToast === "function") {
       showToast("Đã đăng xuất", "info");
     } else {
       alert("Đã đăng xuất");
@@ -425,11 +505,13 @@
 
     // Navigate to login
     setTimeout(() => {
-      if (typeof showPage === 'function') {
+      if (typeof showPage === "function") {
         showPage("page-login");
       } else {
         // Fallback if showPage is not defined
-        document.querySelectorAll(".page-content").forEach(p => p.style.display = "none");
+        document
+          .querySelectorAll(".page-content")
+          .forEach((p) => (p.style.display = "none"));
         const loginPage = document.getElementById("page-login");
         if (loginPage) loginPage.style.display = "block";
       }
@@ -1288,6 +1370,7 @@ Hoặc bạn có thể:
   window.handleRegisterFormSubmit = handleRegisterFormSubmit;
   window.handleLogout = handleLogout;
   window.showToast = showToast;
+  window.showNotification = showToast; // Alias for compatibility
   window.showForgotPasswordModal = showForgotPasswordModal;
   window.handleGoogleLogin = handleGoogleLogin;
   window.showAccountChooser = showAccountChooser;

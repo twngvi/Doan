@@ -10,6 +10,21 @@
 function getOrCreateDatabase() {
   try {
     const cache = CacheService.getScriptCache();
+
+    // Priority 1: Use hard-coded ID from config
+    if (DB_CONFIG.SPREADSHEET_ID) {
+      try {
+        const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
+        Logger.log("Using hard-coded database ID: " + DB_CONFIG.SPREADSHEET_ID);
+        return ss;
+      } catch (e) {
+        Logger.log(
+          "Hard-coded ID failed, falling back to search: " + e.toString()
+        );
+      }
+    }
+
+    // Priority 2: Check cache
     const cachedId = cache.get("DB_MASTER_ID");
 
     let ss;
@@ -25,6 +40,7 @@ function getOrCreateDatabase() {
       }
     }
 
+    // Priority 3: Search by name
     const files = DriveApp.getFilesByName(DB_CONFIG.SPREADSHEET_NAME);
 
     if (files.hasNext()) {
