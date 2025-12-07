@@ -1,0 +1,247 @@
+<script>
+  (function () {
+    "use strict";
+
+    // Global Sidebar Management
+    const GlobalSidebar = {
+      sidebar: null,
+      toggleBtn: null,
+      overlay: null,
+      isCollapsed: false,
+      isMobileOpen: false,
+
+      init: function () {
+        this.sidebar = document.getElementById("globalSidebar");
+        this.toggleBtn = document.getElementById("sidebarToggleBtn");
+        this.overlay = document.getElementById("sidebarOverlay");
+
+        if (!this.sidebar) {
+          console.error("Global sidebar not found!");
+          return;
+        }
+
+        console.log("Global sidebar initialized");
+
+        // Load saved state
+        this.loadState();
+
+        // Setup event listeners
+        this.setupEventListeners();
+
+        // Setup navigation
+        this.setupNavigation();
+
+        // Show sidebar for authenticated pages
+        setTimeout(() => {
+          this.updateSidebarVisibility();
+        }, 100);
+      },
+
+      setupEventListeners: function () {
+        // Desktop toggle
+        if (this.toggleBtn) {
+          this.toggleBtn.addEventListener("click", () => this.toggleCollapse());
+        }
+
+        // Mobile overlay
+        if (this.overlay) {
+          this.overlay.addEventListener("click", () => this.closeMobile());
+        }
+
+        // Window resize
+        window.addEventListener("resize", () => this.handleResize());
+
+        // Prevent sidebar close on sidebar click
+        if (this.sidebar) {
+          this.sidebar.addEventListener("click", (e) => {
+            e.stopPropagation();
+          });
+        }
+      },
+
+      setupNavigation: function () {
+        const navItems = this.sidebar.querySelectorAll(".nav-item[data-page]");
+
+        navItems.forEach((item) => {
+          item.addEventListener("click", (e) => {
+            e.preventDefault();
+            const targetPage = item.getAttribute("data-page");
+
+            // Update active state
+            navItems.forEach((nav) => nav.classList.remove("active"));
+            item.classList.add("active");
+
+            // Navigate to page
+            if (typeof showPage === "function") {
+              showPage(targetPage);
+            }
+
+            // Close mobile menu
+            if (window.innerWidth <= 768) {
+              this.closeMobile();
+            }
+          });
+        });
+
+        // Logout button
+        const logoutBtn = document.getElementById("globalLogoutBtn");
+        if (logoutBtn) {
+          logoutBtn.addEventListener("click", () => {
+            if (typeof logout === "function") {
+              logout();
+            } else {
+              // Fallback logout
+              localStorage.removeItem("currentUser");
+              localStorage.removeItem("authToken");
+              if (typeof showPage === "function") {
+                showPage("page-login");
+              }
+            }
+          });
+        }
+      },
+
+      toggleCollapse: function () {
+        this.isCollapsed = !this.isCollapsed;
+        this.updateCollapsedState();
+        this.saveState();
+      },
+
+      updateCollapsedState: function () {
+        if (this.isCollapsed) {
+          this.sidebar.classList.add("collapsed");
+          document.body.classList.add("sidebar-collapsed");
+        } else {
+          this.sidebar.classList.remove("collapsed");
+          document.body.classList.remove("sidebar-collapsed");
+        }
+      },
+
+      openMobile: function () {
+        this.isMobileOpen = true;
+        this.sidebar.classList.add("mobile-open");
+        this.overlay.classList.add("active");
+        document.body.style.overflow = "hidden";
+      },
+
+      closeMobile: function () {
+        this.isMobileOpen = false;
+        this.sidebar.classList.remove("mobile-open");
+        this.overlay.classList.remove("active");
+        document.body.style.overflow = "";
+      },
+
+      handleResize: function () {
+        if (window.innerWidth > 768) {
+          this.closeMobile();
+        }
+      },
+
+      updateSidebarVisibility: function () {
+        const currentPage = this.getCurrentPage();
+        const hidePages = [
+          "page-landing",
+          "page-login",
+          "page-register",
+          "page-verify-email",
+          "page-forgot-password",
+        ];
+
+        console.log("Current page:", currentPage);
+        console.log("Should hide sidebar:", hidePages.includes(currentPage));
+
+        if (hidePages.includes(currentPage)) {
+          document.body.classList.add("hide-sidebar");
+          document.body.classList.remove("has-sidebar");
+        } else {
+          document.body.classList.remove("hide-sidebar");
+          document.body.classList.add("has-sidebar");
+          this.updateActiveNav(currentPage);
+        }
+      },
+
+      getCurrentPage: function () {
+        const pages = document.querySelectorAll(".page-content");
+        for (let page of pages) {
+          if (
+            page.style.display !== "none" &&
+            window.getComputedStyle(page).display !== "none"
+          ) {
+            return page.id;
+          }
+        }
+        return "page-landing";
+      },
+
+      updateActiveNav: function (pageId) {
+        const navItems = this.sidebar.querySelectorAll(".nav-item[data-page]");
+        navItems.forEach((item) => {
+          if (item.getAttribute("data-page") === pageId) {
+            item.classList.add("active");
+          } else {
+            item.classList.remove("active");
+          }
+        });
+      },
+
+      saveState: function () {
+        try {
+          localStorage.setItem("sidebarCollapsed", this.isCollapsed);
+        } catch (e) {
+          console.warn("Could not save sidebar state:", e);
+        }
+      },
+
+      loadState: function () {
+        try {
+          const saved = localStorage.getItem("sidebarCollapsed");
+          this.isCollapsed = saved === "true";
+          this.updateCollapsedState();
+        } catch (e) {
+          console.warn("Could not load sidebar state:", e);
+        }
+      },
+    };
+
+    // Initialize when DOM is ready
+    console.log("Sidebar script loaded, readyState:", document.readyState);
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        console.log("DOM loaded, initializing sidebar");
+        GlobalSidebar.init();
+      });
+    } else {
+      console.log("DOM already loaded, initializing sidebar immediately");
+      GlobalSidebar.init();
+    }
+
+    // Make it globally accessible
+    window.GlobalSidebar = GlobalSidebar;
+
+    // Add mobile menu toggle button dynamically
+    function addMobileMenuToggle() {
+      const existingBtn = document.getElementById("mobileMenuToggleGlobal");
+      if (!existingBtn) {
+        const btn = document.createElement("button");
+        btn.id = "mobileMenuToggleGlobal";
+        btn.className = "mobile-menu-toggle";
+        btn.innerHTML = "☰";
+        btn.addEventListener("click", () => GlobalSidebar.openMobile());
+        document.body.appendChild(btn);
+      }
+    }
+
+    // Update sidebar visibility on page change
+    const originalShowPage = window.showPage;
+    if (typeof originalShowPage === "function") {
+      window.showPage = function (pageId) {
+        originalShowPage(pageId);
+        setTimeout(() => {
+          GlobalSidebar.updateSidebarVisibility();
+          addMobileMenuToggle();
+        }, 50);
+      };
+    }
+  })();
+</script>
