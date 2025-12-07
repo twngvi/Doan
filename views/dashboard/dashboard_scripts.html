@@ -1,227 +1,282 @@
 <script>
-// ===== USER DATA =====
-function getUserData() {
-    const userData = localStorage.getItem('user') || sessionStorage.getItem('user');
+  // ===== USER DATA =====
+  function getUserData() {
+    const userData =
+      localStorage.getItem("user") || sessionStorage.getItem("user");
     if (userData) {
-        return JSON.parse(userData);
+      return JSON.parse(userData);
     }
     // Fallback to currentUser from client_js.html if available
-    if (typeof currentUser !== 'undefined' && currentUser) {
-        return currentUser;
+    if (typeof currentUser !== "undefined" && currentUser) {
+      return currentUser;
     }
     return null;
-}
+  }
 
-// Check if user is logged in
-const user = getUserData();
-if (user) {
-    const name = user.fullName || user.email.split('@')[0];
-    const userNameEl = document.getElementById('userName');
-    const userNameWelcomeEl = document.getElementById('userNameWelcome');
-    
+  // Check if user is logged in
+  const user = getUserData();
+  if (user) {
+    const name = user.fullName || user.email.split("@")[0];
+    const userNameEl = document.getElementById("userName");
+    const userNameWelcomeEl = document.getElementById("userNameWelcome");
+
     if (userNameEl) userNameEl.textContent = name;
     if (userNameWelcomeEl) userNameWelcomeEl.textContent = name;
-}
+  }
 
-// ===== SIDEBAR TOGGLE =====
-const sidebar = document.getElementById('sidebar');
-const sidebarToggle = document.getElementById('sidebarToggle');
-const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  // ===== SIDEBAR TOGGLE =====
+  const sidebar = document.getElementById("sidebar");
+  const sidebarToggle = document.getElementById("sidebarToggle");
+  const mobileMenuBtn = document.getElementById("mobileMenuBtn");
 
-function toggleSidebar() {
-    if (sidebar) sidebar.classList.toggle('open');
-}
+  function toggleSidebar() {
+    if (sidebar) sidebar.classList.toggle("open");
+  }
 
-sidebarToggle?.addEventListener('click', toggleSidebar);
-mobileMenuBtn?.addEventListener('click', toggleSidebar);
+  sidebarToggle?.addEventListener("click", toggleSidebar);
+  mobileMenuBtn?.addEventListener("click", toggleSidebar);
 
-// ===== ACTIVE NAV ITEM & NAVIGATION =====
-const navItems = document.querySelectorAll('.nav-item');
+  // ===== ACTIVE NAV ITEM & NAVIGATION =====
+  const navItems = document.querySelectorAll(".nav-item");
 
-navItems.forEach(item => {
-    item.addEventListener('click', function(e) {
-        // Prevent default link behavior
-        e.preventDefault();
-        
-        if (!this.classList.contains('logout-btn')) {
-            // Update UI
-            navItems.forEach(nav => nav.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Navigate
-            const pageId = this.getAttribute('data-page');
-            if (pageId) {
-                // Map data-page to actual page IDs in index.html
-                const pageMap = {
-                    'overview': 'page-dashboard',
-                    'topics': 'page-topics',
-                    'quiz': 'page-mcq',
-                    'puzzle': 'page-matching', // Assuming puzzle maps to matching for now
-                    'challenge': 'page-challenge', // Might not exist yet
-                    'notebook': 'page-notebook', // Might not exist yet
-                    'leaderboard': 'page-leaderboard', // Might not exist yet
-                    'profile': 'page-profile'
-                };
-                
-                const targetPageId = pageMap[pageId] || 'page-' + pageId;
-                
-                if (typeof showPage === 'function') {
-                    showPage(targetPageId);
-                } else {
-                    console.error('showPage function not found');
-                }
-            }
+  navItems.forEach((item) => {
+    item.addEventListener("click", function (e) {
+      // Prevent default link behavior
+      e.preventDefault();
+
+      if (!this.classList.contains("logout-btn")) {
+        // Update UI
+        navItems.forEach((nav) => nav.classList.remove("active"));
+        this.classList.add("active");
+
+        // Navigate
+        const pageId = this.getAttribute("data-page");
+        if (pageId) {
+          // Map data-page to actual page IDs in index.html
+          const pageMap = {
+            overview: "page-dashboard",
+            topics: "page-topics",
+            quiz: "page-mcq",
+            puzzle: "page-matching", // Assuming puzzle maps to matching for now
+            challenge: "page-challenge", // Might not exist yet
+            notebook: "page-notebook", // Might not exist yet
+            leaderboard: "page-leaderboard", // Might not exist yet
+            profile: "page-profile",
+          };
+
+          const targetPageId = pageMap[pageId] || "page-" + pageId;
+
+          if (typeof showPage === "function") {
+            showPage(targetPageId);
+          } else {
+            console.error("showPage function not found");
+          }
         }
+      }
     });
-});
+  });
 
-// ===== LOGOUT =====
-const logoutBtn = document.getElementById('logoutBtn');
+  // ===== LOGOUT =====
+  const logoutBtn = document.getElementById("logoutBtn");
 
-logoutBtn?.addEventListener('click', (e) => {
+  logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
-    if (typeof handleLogout === 'function') {
-        handleLogout();
+    if (typeof handleLogout === "function") {
+      handleLogout();
     } else {
-        if (confirm('Bạn có chắc muốn đăng xuất?')) {
-            localStorage.removeItem('user');
-            sessionStorage.removeItem('user');
-            localStorage.removeItem('currentUser'); // Clear client_js user
-            if (typeof showPage === 'function') {
-                showPage('page-login');
-            } else {
-                window.location.reload();
-            }
+      if (confirm("Bạn có chắc muốn đăng xuất?")) {
+        localStorage.removeItem("user");
+        sessionStorage.removeItem("user");
+        localStorage.removeItem("currentUser"); // Clear client_js user
+        if (typeof showPage === "function") {
+          showPage("page-login");
+        } else {
+          window.location.reload();
         }
+      }
     }
-});
+  });
 
-// ===== NOTIFICATION PANEL =====
-const notificationBtn = document.getElementById('notificationBtn');
-const notificationPanel = document.getElementById('notificationPanel');
-const closeNotifBtn = document.getElementById('closeNotifBtn');
+  // ===== NOTIFICATION PANEL =====
+  const notificationBtn = document.getElementById("notificationBtn");
+  const notificationPanel = document.getElementById("notificationPanel");
+  const closeNotifBtn = document.getElementById("closeNotifBtn");
 
-notificationBtn?.addEventListener('click', () => {
+  // Create flower container
+  let flowerContainer = document.getElementById("flowerContainer");
+  if (!flowerContainer) {
+    flowerContainer = document.createElement("div");
+    flowerContainer.id = "flowerContainer";
+    flowerContainer.className = "flower-container";
+    document.body.appendChild(flowerContainer);
+  }
+
+  // Function to create falling flowers
+  function createFallingFlowers() {
+    const flowers = ["🌸", "🌺", "🌼", "🌻", "🌷", "🏵️", "💐", "🌹"];
+    const flowerCount = 15;
+
+    // Clear existing flowers
+    flowerContainer.innerHTML = "";
+
+    for (let i = 0; i < flowerCount; i++) {
+      const flower = document.createElement("div");
+      flower.className = "flower";
+      flower.textContent = flowers[Math.floor(Math.random() * flowers.length)];
+      flower.style.left = Math.random() * 100 + "%";
+      flower.style.animationDuration = Math.random() * 2 + 2 + "s";
+      flower.style.animationDelay = Math.random() * 0.5 + "s";
+      flowerContainer.appendChild(flower);
+    }
+  }
+
+  notificationBtn?.addEventListener("click", () => {
     if (notificationPanel) {
-        const isVisible = notificationPanel.style.display === 'block';
-        notificationPanel.style.display = isVisible ? 'none' : 'block';
-    }
-});
+      const isVisible = notificationPanel.style.display === "block";
+      notificationPanel.style.display = isVisible ? "none" : "block";
 
-closeNotifBtn?.addEventListener('click', () => {
-    if (notificationPanel) notificationPanel.style.display = 'none';
-});
+      // Show flowers when opening notification
+      if (!isVisible) {
+        flowerContainer.style.display = "block";
+        createFallingFlowers();
 
-// Close notification panel when clicking outside
-document.addEventListener('click', (e) => {
-    if (notificationBtn && notificationPanel && !notificationBtn.contains(e.target) && !notificationPanel.contains(e.target)) {
-        notificationPanel.style.display = 'none';
-    }
-});
-
-// ===== MARK NOTIFICATION AS READ =====
-const notificationItems = document.querySelectorAll('.notification-item');
-
-notificationItems.forEach(item => {
-    item.addEventListener('click', function() {
-        this.classList.remove('unread');
-        // Update badge count
-        const badge = document.querySelector('.notif-badge');
-        if (badge) {
-            const currentCount = parseInt(badge.textContent);
-            if (currentCount > 0) {
-                badge.textContent = currentCount - 1;
-            }
-        }
-    });
-});
-
-// ===== SEARCH FUNCTIONALITY =====
-const searchInput = document.querySelector('.search-input');
-
-searchInput?.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase();
-    console.log('Searching for:', query);
-    // Implement search logic here
-});
-
-// ===== ANIMATE PROGRESS BARS ON LOAD =====
-// Use a function we can call when the dashboard becomes visible
-function animateDashboard() {
-    const progressFills = document.querySelectorAll('.progress-fill');
-    progressFills.forEach(fill => {
-        const width = fill.style.width;
-        fill.style.width = '0%';
+        // Hide flower container after animation
         setTimeout(() => {
-            fill.style.width = width;
-        }, 100);
+          flowerContainer.style.display = "none";
+        }, 4000);
+      } else {
+        flowerContainer.style.display = "none";
+      }
+    }
+  });
+
+  closeNotifBtn?.addEventListener("click", () => {
+    if (notificationPanel) notificationPanel.style.display = "none";
+    flowerContainer.style.display = "none";
+  });
+
+  // Close notification panel when clicking outside
+  document.addEventListener("click", (e) => {
+    if (
+      notificationBtn &&
+      notificationPanel &&
+      !notificationBtn.contains(e.target) &&
+      !notificationPanel.contains(e.target)
+    ) {
+      notificationPanel.style.display = "none";
+      flowerContainer.style.display = "none";
+    }
+  });
+
+  // ===== MARK NOTIFICATION AS READ =====
+  const notificationItems = document.querySelectorAll(".notification-item");
+
+  notificationItems.forEach((item) => {
+    item.addEventListener("click", function () {
+      this.classList.remove("unread");
+      // Update badge count
+      const badge = document.querySelector(".notif-badge");
+      if (badge) {
+        const currentCount = parseInt(badge.textContent);
+        if (currentCount > 0) {
+          badge.textContent = currentCount - 1;
+        }
+      }
     });
-}
+  });
 
-// Call animation when script loads (if dashboard is visible)
-if (document.getElementById('page-dashboard') && document.getElementById('page-dashboard').style.display !== 'none') {
+  // ===== SEARCH FUNCTIONALITY =====
+  const searchInput = document.querySelector(".search-input");
+
+  searchInput?.addEventListener("input", (e) => {
+    const query = e.target.value.toLowerCase();
+    console.log("Searching for:", query);
+    // Implement search logic here
+  });
+
+  // ===== ANIMATE PROGRESS BARS ON LOAD =====
+  // Use a function we can call when the dashboard becomes visible
+  function animateDashboard() {
+    const progressFills = document.querySelectorAll(".progress-fill");
+    progressFills.forEach((fill) => {
+      const width = fill.style.width;
+      fill.style.width = "0%";
+      setTimeout(() => {
+        fill.style.width = width;
+      }, 100);
+    });
+  }
+
+  // Call animation when script loads (if dashboard is visible)
+  if (
+    document.getElementById("page-dashboard") &&
+    document.getElementById("page-dashboard").style.display !== "none"
+  ) {
     animateDashboard();
-}
+  }
 
-// Hook into showPage to trigger animations if possible, or just rely on CSS transitions
-// Since we can't easily hook into showPage from here without modifying client_js, 
-// we'll just let the CSS transitions handle it when the element becomes visible.
+  // Hook into showPage to trigger animations if possible, or just rely on CSS transitions
+  // Since we can't easily hook into showPage from here without modifying client_js,
+  // we'll just let the CSS transitions handle it when the element becomes visible.
 
-// ===== STAT COUNTER ANIMATION =====
-function animateCounter(element, target, duration = 1500) {
+  // ===== STAT COUNTER ANIMATION =====
+  function animateCounter(element, target, duration = 1500) {
     const start = 0;
     const increment = target / (duration / 16);
     let current = start;
-    
+
     const timer = setInterval(() => {
-        current += increment;
-        if (current >= target) {
-            element.textContent = target.toLocaleString('vi-VN');
-            clearInterval(timer);
-        } else {
-            element.textContent = Math.floor(current).toLocaleString('vi-VN');
-        }
+      current += increment;
+      if (current >= target) {
+        element.textContent = target.toLocaleString("vi-VN");
+        clearInterval(timer);
+      } else {
+        element.textContent = Math.floor(current).toLocaleString("vi-VN");
+      }
     }, 16);
-}
+  }
 
-// ===== GREETING BASED ON TIME =====
-function updateGreeting() {
+  // ===== GREETING BASED ON TIME =====
+  function updateGreeting() {
     const hour = new Date().getHours();
-    let greeting = 'Chào mừng trở lại';
-    
+    let greeting = "Chào mừng trở lại";
+
     if (hour < 12) {
-        greeting = 'Chào buổi sáng';
+      greeting = "Chào buổi sáng";
     } else if (hour < 18) {
-        greeting = 'Chào buổi chiều';
+      greeting = "Chào buổi chiều";
     } else {
-        greeting = 'Chào buổi tối';
+      greeting = "Chào buổi tối";
     }
-    
-    const welcomeTitle = document.querySelector('.welcome-title');
-    const userNameEl = document.getElementById('userNameWelcome');
-    
+
+    const welcomeTitle = document.querySelector(".welcome-title");
+    const userNameEl = document.getElementById("userNameWelcome");
+
     if (welcomeTitle && userNameEl) {
-        const userName = userNameEl.textContent;
-        welcomeTitle.innerHTML = `${greeting}, <span id="userNameWelcome">${userName}</span>! 👋`;
+      const userName = userNameEl.textContent;
+      welcomeTitle.innerHTML = `${greeting}, <span id="userNameWelcome">${userName}</span>! 👋`;
     }
-}
+  }
 
-updateGreeting();
+  updateGreeting();
 
-// ===== KEYBOARD SHORTCUTS =====
-document.addEventListener('keydown', (e) => {
+  // ===== KEYBOARD SHORTCUTS =====
+  document.addEventListener("keydown", (e) => {
     // Ctrl/Cmd + K for search
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        searchInput?.focus();
+    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      e.preventDefault();
+      searchInput?.focus();
     }
-    
-    // Esc to close notification panel
-    if (e.key === 'Escape' && notificationPanel) {
-        notificationPanel.style.display = 'none';
-    }
-});
 
-// ===== CONSOLE WELCOME =====
-console.log('%c🎮 CodeQuest Dashboard', 'background: #2563EB; color: white; font-size: 18px; font-weight: bold; padding: 10px;');
+    // Esc to close notification panel
+    if (e.key === "Escape" && notificationPanel) {
+      notificationPanel.style.display = "none";
+    }
+  });
+
+  // ===== CONSOLE WELCOME =====
+  console.log(
+    "%c🎮 CodeQuest Dashboard",
+    "background: #2563EB; color: white; font-size: 18px; font-weight: bold; padding: 10px;"
+  );
 </script>

@@ -1383,4 +1383,78 @@ Hoặc bạn có thể:
 
   // Check for email verification or password reset on page load
   setTimeout(handleEmailVerification, 500);
+
+  // ==================== Global Notification Flower Effect ====================
+
+  // Create flower container for global use
+  let globalFlowerContainer = document.getElementById("globalFlowerContainer");
+  if (!globalFlowerContainer) {
+    globalFlowerContainer = document.createElement("div");
+    globalFlowerContainer.id = "globalFlowerContainer";
+    globalFlowerContainer.className = "flower-container";
+    globalFlowerContainer.style.display = "none";
+    document.body.appendChild(globalFlowerContainer);
+  }
+
+  // Function to create falling flowers globally
+  window.createFallingFlowers = function () {
+    const flowers = ["🌸", "🌺", "🌼", "🌻", "🌷", "🏵️", "💐", "🌹", "💮", "🪷"];
+    const flowerCount = 20;
+
+    // Clear existing flowers
+    globalFlowerContainer.innerHTML = "";
+    globalFlowerContainer.style.display = "block";
+
+    for (let i = 0; i < flowerCount; i++) {
+      const flower = document.createElement("div");
+      flower.className = "flower";
+      flower.textContent = flowers[Math.floor(Math.random() * flowers.length)];
+      flower.style.left = Math.random() * 100 + "%";
+      flower.style.animationDuration = Math.random() * 2 + 2 + "s";
+      flower.style.animationDelay = Math.random() * 0.5 + "s";
+      globalFlowerContainer.appendChild(flower);
+    }
+
+    // Hide flower container after animation
+    setTimeout(() => {
+      globalFlowerContainer.style.display = "none";
+    }, 4500);
+  };
+
+  // Setup notification panel handlers for all pages
+  document.addEventListener("click", function (e) {
+    const notificationBtn = e.target.closest(
+      ".notification-btn, #notificationBtn"
+    );
+    const closeNotifBtn = e.target.closest(".close-notif-btn, #closeNotifBtn");
+    const notificationPanel =
+      document.getElementById("notificationPanel") ||
+      document.querySelector(".notification-panel");
+
+    if (notificationBtn && notificationPanel) {
+      const isVisible = notificationPanel.style.display === "block";
+      notificationPanel.style.display = isVisible ? "none" : "block";
+
+      // Show flowers when opening notification
+      if (!isVisible) {
+        window.createFallingFlowers();
+      } else {
+        globalFlowerContainer.style.display = "none";
+      }
+      e.stopPropagation();
+    } else if (closeNotifBtn && notificationPanel) {
+      notificationPanel.style.display = "none";
+      globalFlowerContainer.style.display = "none";
+      e.stopPropagation();
+    } else if (
+      notificationPanel &&
+      notificationPanel.style.display === "block"
+    ) {
+      // Close notification panel when clicking outside
+      if (!notificationPanel.contains(e.target)) {
+        notificationPanel.style.display = "none";
+        globalFlowerContainer.style.display = "none";
+      }
+    }
+  });
 </script>
