@@ -83,13 +83,14 @@ function getAllTopics() {
         category: String(row[3]),
         order: Number(row[4]) || 0,
         iconUrl: String(row[5] || ""),
-        estimatedTime: row[6],
-        prerequisiteTopics: row[7],
-        isLocked: row[8],
-        unlockCondition: row[9],
-        createdBy: row[10],
-        createdAt: row[11],
-        updatedAt: row[12], // Cột mới thêm (cột 13)
+        estimatedTime: String(row[6] || ""),
+        prerequisiteTopics: String(row[7] || ""),
+        isLocked: Boolean(row[8]),
+        unlockCondition: String(row[9] || ""),
+        createdBy: String(row[10] || ""),
+        // Chuyển Date object sang chuỗi ISO hoặc chuỗi rỗng nếu không có dữ liệu
+        createdAt: row[11] instanceof Date ? row[11].toISOString() : String(row[11] || ""),
+        updatedAt: row[12] instanceof Date ? row[12].toISOString() : String(row[12] || ""),
 
         // Map thêm trường cho Frontend hiển thị
         journey: mapCategoryToJourney(row[3]),
