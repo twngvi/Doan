@@ -144,3 +144,9 @@ function testSendEmail() {
   Logger.log("Email sent: " + result);
   return result;
 }
+
+function testGetAllTopics() {
+  const result = getAllTopics();
+  Logger.log("Topics test result: " + JSON.stringify(result));
+  return result;
+}

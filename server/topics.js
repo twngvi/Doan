@@ -6,60 +6,119 @@
 
 /**
  * Get all topics from MASTER_DB
+ * Updated to read 13 columns including updatedAt
  */
 function getAllTopics() {
+  Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
+
   try {
-    Logger.log("=== getAllTopics called ===");
+    // 1. Cấu hình ID Spreadsheet
+    const SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const SHEET_NAME = "Topics";
 
-    const db = getOrCreateDatabase();
-    const sheet = db.getSheetByName("Topics");
+    Logger.log("Opening spreadsheet: " + SPREADSHEET_ID);
 
+    // 2. Kết nối Google Sheet
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+
+    // Kiểm tra nếu không tìm thấy Sheet
     if (!sheet) {
-      Logger.log("Topics sheet not found");
+      const availableSheets = ss
+        .getSheets()
+        .map((s) => s.getName())
+        .join(", ");
+
+      Logger.log("❌ Lỗi: Không tìm thấy sheet tên là '" + SHEET_NAME + "'");
+      Logger.log("Các sheet có sẵn: " + availableSheets);
+
+      // QUAN TRỌNG: Phải return object lỗi để frontend không bị null
       return {
         success: false,
-        message: "Topics sheet not found in database",
+        message: "Không tìm thấy Sheet dữ liệu: " + SHEET_NAME,
+        availableSheets: availableSheets,
       };
     }
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const rows = data.slice(1);
+    Logger.log("✅ Found sheet: " + SHEET_NAME);
 
-    // Filter out empty rows and map to objects
-    const topics = rows
-      .filter((row) => row[0]) // Filter rows with topicId
-      .map((row) => {
-        return {
-          topicId: row[0],
-          title: row[1],
-          description: row[2],
-          category: row[3],
-          order: row[4],
-          iconUrl: row[5],
-          estimatedTime: row[6],
-          prerequisiteTopics: row[7],
-          isLocked: row[8],
-          unlockCondition: row[9],
-          createdBy: row[10],
-          createdAt: row[11],
-          journey: mapCategoryToJourney(row[3]),
-        };
-      })
-      .sort((a, b) => (a.order || 0) - (b.order || 0)); // Sort by order
+    // 3. Lấy dữ liệu
+    const lastRow = sheet.getLastRow();
+    Logger.log("Last row: " + lastRow);
 
-    Logger.log(`Found ${topics.length} topics`);
+    // Nếu chỉ có header hoặc không có dữ liệu
+    if (lastRow < 2) {
+      Logger.log("⚠️ No data rows found (only header or empty sheet)");
+      return {
+        success: true,
+        topics: [],
+        count: 0,
+      };
+    }
 
+    // Đọc từ dòng 2, cột 1, lấy hết dòng, lấy 13 CỘT (A đến M)
+    // Cấu trúc: topicId, title, description, category, order, iconUrl,
+    // estimatedTime, prerequisiteTopics, isLocked, unlockCondition,
+    // createdBy, createdAt, updatedAt
+    const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+
+    Logger.log("Đã lấy được " + data.length + " dòng dữ liệu");
+
+    const topics = [];
+
+    // 4. Map dữ liệu sang Object JSON
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+
+      // Bỏ qua dòng trống nếu có (cột A = topicId rỗng)
+      if (!row[0]) {
+        Logger.log("Skipping empty row at index " + i);
+        continue;
+      }
+
+      topics.push({
+        topicId: String(row[0]),
+        title: String(row[1]),
+        description: String(row[2]),
+        category: String(row[3]),
+        order: Number(row[4]) || 0,
+        iconUrl: String(row[5] || ""),
+        estimatedTime: row[6],
+        prerequisiteTopics: row[7],
+        isLocked: row[8],
+        unlockCondition: row[9],
+        createdBy: row[10],
+        createdAt: row[11],
+        updatedAt: row[12], // Cột mới thêm (cột 13)
+
+        // Map thêm trường cho Frontend hiển thị
+        journey: mapCategoryToJourney(row[3]),
+        totalStages: 5, // Default value
+        minAILevel: 1,
+        minAccuracy: 70,
+      });
+    }
+
+    // Sắp xếp theo cột Order
+    topics.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    Logger.log("✅ Successfully processed " + topics.length + " topics");
+
+    // 5. TRẢ VỀ KẾT QUẢ (Quan trọng nhất)
     return {
       success: true,
       topics: topics,
       count: topics.length,
     };
   } catch (error) {
-    Logger.log("Error in getAllTopics: " + error.toString());
+    Logger.log("❌ LỖI NGHIÊM TRỌNG TRONG getAllTopics: " + error.toString());
+    Logger.log("Error stack: " + error.stack);
+
+    // QUAN TRỌNG: Phải return lỗi để Frontend hiển thị, không được để null
     return {
       success: false,
-      message: error.toString(),
+      message: "Lỗi Server: " + error.toString(),
+      error: error.stack,
     };
   }
 }
@@ -68,15 +127,31 @@ function getAllTopics() {
  * Helper function: Map category to journey level
  */
 function mapCategoryToJourney(category) {
-  const cat = (category || "").toString().toLowerCase();
-  if (cat.includes("fundamental") || cat.includes("logic")) return "Beginner";
+  if (!category) return "Beginner";
+
+  const cat = category.toString().toLowerCase();
+
+  if (cat.includes("fundamental") || cat.includes("logic")) {
+    return "Beginner";
+  }
+
   if (
     cat.includes("control") ||
     cat.includes("data") ||
+    cat.includes("struct") ||
     cat.includes("programming")
-  )
+  ) {
     return "Intermediate";
-  if (cat.includes("algorithm") || cat.includes("advanced")) return "Advanced";
+  }
+
+  if (
+    cat.includes("algorithm") ||
+    cat.includes("advanced") ||
+    cat.includes("optimize")
+  ) {
+    return "Advanced";
+  }
+
   return "Beginner"; // Default
 }
 

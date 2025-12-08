@@ -18,7 +18,8 @@
     initGoogleSignIn();
 
     // Check if user is logged in
-    const savedUser = localStorage.getItem("currentUser");
+    // Đổi thành sessionStorage để khi tắt tab sẽ tự đăng xuất
+    const savedUser = sessionStorage.getItem("currentUser");
     if (savedUser) {
       try {
         currentUser = JSON.parse(savedUser);
@@ -27,7 +28,7 @@
         loadDashboardData();
       } catch (error) {
         console.error("Error parsing saved user:", error);
-        localStorage.removeItem("currentUser");
+        sessionStorage.removeItem("currentUser");
         showPage("page-landing");
       }
     } else {
@@ -142,7 +143,7 @@
       showPage(event.state.pageId, event.state.params || {}, false);
     } else {
       // No state - go to default page
-      const savedUser = localStorage.getItem("currentUser");
+      const savedUser = sessionStorage.getItem("currentUser");
       if (savedUser) {
         showPage("page-dashboard", {}, false);
       } else {
@@ -154,7 +155,7 @@
   // Initialize history state on first load
   window.addEventListener("load", function () {
     if (!history.state) {
-      const savedUser = localStorage.getItem("currentUser");
+      const savedUser = sessionStorage.getItem("currentUser");
       const initialPage = savedUser ? "page-dashboard" : "page-landing";
       const state = { pageId: initialPage, params: {} };
       history.replaceState(
@@ -254,9 +255,9 @@
     enableButton("btn-login");
 
     if (response.status === "success") {
-      // Save user to localStorage
+      // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
 
       // Show success message
       showToast("Đăng nhập thành công!", "success");
@@ -491,9 +492,9 @@
     enableButton("btn-register");
 
     if (response.status === "success") {
-      // Save user to localStorage
+      // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
 
       // Show success message
       showToast("Đăng ký thành công! Đang chuyển tới trang chủ...", "success");
@@ -516,8 +517,7 @@
 
     // Clear user data from all storage
     currentUser = null;
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("userSession");
+    sessionStorage.removeItem("currentUser");
     sessionStorage.removeItem("userSession");
 
     // Clear Google auth state if needed
@@ -781,11 +781,11 @@ Hoặc bạn có thể:
     if (response.status === "success") {
       console.log("Google auth successful, saving user data...");
 
-      // Save user to localStorage
+      // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
 
-      console.log("User saved to localStorage:", currentUser.username);
+      console.log("User saved to sessionStorage:", currentUser.username);
       console.log("Is new user:", response.isNewUser);
 
       // Show appropriate success message
@@ -1631,7 +1631,7 @@ Hoặc bạn có thể:
     console.log("Loading dashboard data...");
 
     // Get current user
-    const savedUser = localStorage.getItem("currentUser");
+    const savedUser = sessionStorage.getItem("currentUser");
     if (savedUser) {
       try {
         currentUser = JSON.parse(savedUser);

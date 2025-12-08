@@ -55,20 +55,31 @@
     }
 
     function onTopicsLoaded(result) {
-      console.log("Topics loaded successfully:", result);
+      console.log("Topics loaded - Raw result:", result);
+      console.log("Result type:", typeof result);
+      console.log("Result is null:", result === null);
+      console.log("Result is undefined:", result === undefined);
 
       // Comprehensive null check
       if (!result) {
-        showErrorState("Lỗi: Server không trả về dữ liệu (Result is null).");
+        console.error("❌ Result is null or undefined");
+        showErrorState(
+          "Lỗi: Server không trả về dữ liệu (Result is null/undefined)."
+        );
         return;
       }
 
+      console.log("Result.success:", result.success);
+      console.log("Result.topics:", result.topics);
+
       if (!result.success) {
+        console.error("❌ Request failed:", result.message);
         showErrorState(result.message || "Lỗi không xác định từ Server.");
         return;
       }
 
       if (result.success && result.topics && result.topics.length > 0) {
+        console.log(`✅ Successfully loaded ${result.topics.length} topics`);
         allTopics = result.topics;
         filteredTopics = [...allTopics];
 
@@ -84,14 +95,22 @@
         // Hide loading, show content
         hideLoadingState();
       } else {
+        console.warn("⚠️ No topics found in database");
         showEmptyState();
       }
     }
 
     function onTopicsLoadError(error) {
-      console.error("Error loading topics:", error);
+      console.error("❌ Error loading topics:", error);
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+        toString: error.toString(),
+      });
       showErrorState(
-        error.message || "Không thể kết nối với server. Vui lòng thử lại sau."
+        error.message ||
+          error.toString() ||
+          "Không thể kết nối với server. Vui lòng thử lại sau."
       );
     }
 
