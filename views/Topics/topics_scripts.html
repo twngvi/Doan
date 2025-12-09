@@ -411,6 +411,9 @@
       }
     }
 
+    /**
+     * Start topic - Show lesson content first
+     */
     function startTopic(topicId) {
       const topic = topicId
         ? allTopics.find((t) => t.topicId === topicId)
@@ -431,12 +434,69 @@
 
       console.log("Starting topic:", topic.topicId);
 
-      // Navigate to MCQ or Matching page based on topic type
-      // For now, navigate to MCQ page as default
-      showPage("page-mcq", { topicId: topic.topicId, topicTitle: topic.title });
+      // ⭐ KIỂM TRA XEM CÓ CONTENT DOC KHÔNG
+      if (topic.contentDocId && topic.contentDocId !== "") {
+        console.log("Topic has lesson content, navigating to Lesson page...");
+        navigateToLesson(topic);
+      } else {
+        console.log("No lesson content, navigate to Quiz directly");
+        navigateToQuiz(topic);
+      }
 
-      // Close modal if open
       closeTopicDetail();
+    }
+
+    /**
+     * ⭐ Navigate to Lesson page (NEW)
+     */
+    function navigateToLesson(topic) {
+      console.log(
+        "🔍 ==================== NAVIGATE TO LESSON ===================="
+      );
+      console.log("🔍 Topic object:", topic);
+      console.log("📄 contentDocId:", topic.contentDocId);
+      console.log("📄 contentDocId type:", typeof topic.contentDocId);
+      console.log(
+        "📄 contentDocId length:",
+        topic.contentDocId ? topic.contentDocId.length : 0
+      );
+      console.log("📄 contentDocId value:", JSON.stringify(topic.contentDocId));
+
+      if (
+        !topic.contentDocId ||
+        topic.contentDocId === "" ||
+        topic.contentDocId === "undefined" ||
+        topic.contentDocId === "null"
+      ) {
+        console.error("❌ Invalid contentDocId");
+        showNotification("Lỗi: Không có Doc ID cho bài học này", "error");
+        return;
+      }
+
+      const params = {
+        topicId: topic.topicId,
+        topicTitle: topic.title,
+        contentDocId: topic.contentDocId.trim(),
+      };
+
+      console.log("✅ Calling showPage with params:", params);
+
+      showPage("page-lesson", params);
+
+      console.log(
+        "🔍 ==================== END NAVIGATE TO LESSON ===================="
+      );
+    }
+
+    /**
+     * Navigate to Quiz directly (no lesson)
+     */
+    function navigateToQuiz(topic) {
+      showPage("page-mcq", {
+        topicId: topic.topicId,
+        topicTitle: topic.title,
+        mode: "quiz",
+      });
     }
 
     // ========================================
@@ -521,6 +581,8 @@
     window.showTopicDetail = showTopicDetail;
     window.closeTopicDetail = closeTopicDetail;
     window.startTopic = startTopic;
+    window.navigateToLesson = navigateToLesson;
+    window.navigateToQuiz = navigateToQuiz;
 
     // ========================================
     // AUTO-INITIALIZE SETUP

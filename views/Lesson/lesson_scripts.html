@@ -1,0 +1,186 @@
+<script>
+  /**
+   * Lesson Page Scripts
+   */
+
+  let currentLessonData = null;
+  let scrollProgress = 0;
+
+  /**
+   * Initialize Lesson Page
+   */
+  function initLessonPage() {
+    console.log("📚 Initializing Lesson Page...");
+    console.log("🔍 window.currentPageParams:", window.currentPageParams);
+
+    // Get params from window.currentPageParams
+    if (window.currentPageParams) {
+      currentLessonData = window.currentPageParams;
+      console.log("✅ Lesson params:", currentLessonData);
+      console.log("📄 contentDocId:", currentLessonData.contentDocId);
+      console.log("📋 topicId:", currentLessonData.topicId);
+      console.log("🏷️ topicTitle:", currentLessonData.topicTitle);
+
+      // Update header
+      document.getElementById("lesson-topic-title").textContent =
+        currentLessonData.topicTitle || "Bài học";
+
+      // Load lesson content
+      if (currentLessonData.contentDocId) {
+        console.log(
+          "🚀 Calling loadLessonContent with docId:",
+          currentLessonData.contentDocId
+        );
+        loadLessonContent(currentLessonData.contentDocId);
+      } else {
+        console.error("❌ No contentDocId found");
+        showLessonError("Không tìm thấy nội dung bài học");
+      }
+    } else {
+      console.error("❌ No currentPageParams found");
+      showLessonError("Thiếu thông tin bài học");
+    }
+
+    // Setup scroll tracking
+    setupScrollTracking();
+  }
+
+  /**
+   * Load lesson content from Google Doc
+   */
+  function loadLessonContent(docId) {
+    console.log("📄 Loading lesson content from Doc ID:", docId);
+    console.log("🔍 docId type:", typeof docId);
+    console.log("🔍 docId value:", docId);
+
+    // Show loading
+    document.getElementById("lesson-loading").style.display = "block";
+    document.getElementById("lesson-error").style.display = "none";
+    document.getElementById("lesson-content-area").style.display = "none";
+    document.getElementById("lesson-actions").style.display = "none";
+
+    // ⭐ KIỂM TRA XEM HÀM google.script.run CÓ TỒN TẠI KHÔNG
+    if (typeof google === "undefined" || !google.script || !google.script.run) {
+      console.error("❌ google.script.run not available!");
+      showLessonError("Lỗi: Không thể kết nối với server. Vui lòng thử lại.");
+      return;
+    }
+
+    console.log("✅ google.script.run available");
+    console.log("🚀 Calling getTopicContentByDocId...");
+
+    // Call server function
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Lesson content response:", response);
+        console.log("📊 Response type:", typeof response);
+        console.log("📊 Response.success:", response?.success);
+        console.log("📊 Response.message:", response?.message);
+        console.log("📊 Response.content length:", response?.content?.length);
+
+        if (response && response.success) {
+          // Hide loading
+          document.getElementById("lesson-loading").style.display = "none";
+
+          // Show content
+          const contentArea = document.getElementById("lesson-content-area");
+          contentArea.innerHTML = response.content;
+          contentArea.style.display = "block";
+
+          // Show actions after a delay
+          setTimeout(() => {
+            document.getElementById("lesson-actions").style.display = "block";
+          }, 2000);
+
+          showToast("✅ Đã tải bài giảng", "success");
+        } else {
+          console.error("❌ Response failed:", response);
+          showLessonError(response?.message || "Lỗi không xác định");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error loading lesson:", error);
+        console.error("❌ Error type:", typeof error);
+        console.error("❌ Error message:", error?.message);
+        console.error("❌ Error toString:", error?.toString());
+        showLessonError(
+          "Lỗi: " + (error?.message || error?.toString() || "Không xác định")
+        );
+      })
+      .getTopicContentByDocId(docId);
+  }
+
+  /**
+   * Show lesson error
+   */
+  function showLessonError(message) {
+    document.getElementById("lesson-loading").style.display = "none";
+    document.getElementById("lesson-content-area").style.display = "none";
+    document.getElementById("lesson-error").style.display = "block";
+    document.getElementById("lesson-error-message").textContent = message;
+  }
+
+  /**
+   * Retry loading lesson
+   */
+  function retryLoadLesson() {
+    if (currentLessonData && currentLessonData.contentDocId) {
+      loadLessonContent(currentLessonData.contentDocId);
+    }
+  }
+
+  /**
+   * Setup scroll tracking for reading progress
+   */
+  function setupScrollTracking() {
+    window.addEventListener("scroll", function () {
+      const contentArea = document.getElementById("lesson-content-area");
+      if (!contentArea || contentArea.style.display === "none") return;
+
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop =
+        window.pageYOffset || document.documentElement.scrollTop;
+
+      // Calculate progress
+      const scrollable = documentHeight - windowHeight;
+      const progress = scrollable > 0 ? (scrollTop / scrollable) * 100 : 0;
+
+      // Update progress bar
+      document.getElementById("lesson-progress-bar").style.width =
+        progress + "%";
+      document.getElementById("lesson-progress-text").textContent =
+        Math.round(progress) + "%";
+
+      scrollProgress = progress;
+    });
+  }
+
+  /**
+   * Start quiz from lesson page
+   */
+  function startQuizFromLesson() {
+    console.log("🎯 Starting quiz from lesson...");
+
+    if (!currentLessonData) {
+      showToast("Lỗi: Thiếu thông tin bài học", "error");
+      return;
+    }
+
+    // Navigate to MCQ page with quiz mode
+    showPage("page-mcq", {
+      topicId: currentLessonData.topicId,
+      topicTitle: currentLessonData.topicTitle,
+      mode: "quiz",
+      fromLesson: true,
+      readingProgress: scrollProgress,
+    });
+  }
+
+  // Make functions globally available
+  window.initLessonPage = initLessonPage;
+  window.retryLoadLesson = retryLoadLesson;
+  window.startQuizFromLesson = startQuizFromLesson;
+
+  console.log("✅ Lesson scripts loaded");
+</script>

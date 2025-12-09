@@ -122,26 +122,43 @@ function changePassword(passwordData) {
   return changeUserPassword(passwordData);
 }
 
-function uploadAvatar(avatarData) {
-  return uploadUserAvatar(avatarData);
+// ⭐ Thêm wrapper mới
+function saveAvatarUrl(userId, avatarUrl) {
+  return saveUserAvatarUrl(userId, avatarUrl);
+}
+
+// ========================================
+// CONTENT MANAGEMENT WRAPPERS
+// ========================================
+
+function getTopicContent(docId) {
+  return getTopicContentByDocId(docId);
+}
+
+function getDocumentMetadata(docId) {
+  return getDocMetadata(docId);
 }
 
 // ========================================
 // TEST FUNCTIONS
 // ========================================
 
-function testVerifyEmail() {
-  const token = "test-token-here";
-  const result = verifyEmail(token);
-  Logger.log("Test result: " + JSON.stringify(result));
-  return result;
-}
+function testGetTopicContent() {
+  // ⭐ THAY ĐỔI ID NÀY BẰNG ID THẬT CỦA BẠN
+  const testDocId = "1D9U4sFVkXt0k_Mk-1qJZ1AoECUhHvURx1xYZSnqpgNM";
 
-function testSendEmail() {
-  const email = "test@example.com";
-  const token = "test123";
-  const result = sendVerificationEmail(email, token, "Test User");
-  Logger.log("Email sent: " + result);
+  Logger.log("Testing getTopicContentByDocId...");
+  const result = getTopicContentByDocId(testDocId);
+
+  Logger.log(
+    "Result: " +
+      JSON.stringify({
+        success: result.success,
+        message: result.message,
+        contentLength: result.content ? result.content.length : 0,
+      })
+  );
+
   return result;
 }
 

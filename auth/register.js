@@ -5,6 +5,52 @@
  */
 
 /**
+ * ⭐ Lấy avatar ngẫu nhiên từ danh sách
+ */
+function getRandomAvatar() {
+  const avatarTypes = ["bottts", "dylan", "shapes"];
+  const seeds = [
+    "Alexander",
+    "Mason",
+    "Andrea",
+    "Oliver",
+    "Leo",
+    "Leah",
+    "Katherine",
+    "Jude",
+    "Brian",
+    "Avery",
+    "Vivian",
+    "Riley",
+    "Valentina",
+    "Kimberly",
+    "Jocelyn",
+    "Aidan",
+    "Adrian",
+    "Mackenzie",
+    "Nolan",
+    "Maria",
+    "Jameson",
+    "Liam",
+    "Kingston",
+    "Destiny",
+    "Christopher",
+    "Emery",
+    "Sarah",
+    "Sara",
+    "Sophia",
+    "Luis",
+    "Robert",
+  ];
+
+  const randomType =
+    avatarTypes[Math.floor(Math.random() * avatarTypes.length)];
+  const randomSeed = seeds[Math.floor(Math.random() * seeds.length)];
+
+  return `https://api.dicebear.com/9.x/${randomType}/svg?seed=${randomSeed}`;
+}
+
+/**
  * Register with Email & Password
  */
 function registerWithEmail(userData) {
@@ -104,36 +150,40 @@ function registerWithEmail(userData) {
     const username = userData.email.split("@")[0];
     const now = new Date();
 
+    // ⭐ TẠO AVATAR NGẪU NHIÊN
+    const randomAvatar = getRandomAvatar();
+    Logger.log("Generated random avatar: " + randomAvatar);
+
     // Columns: userId, googleId, email, displayName, username, passwordHash, avatarUrl, role, level, aiLevel, totalPoints, totalXP, currentStreak, longestStreak, lastActiveDate, lastLogin, createdAt, isActive, mountainPosition, mountainStage, mountainProgress, totalQuizAnswered, totalPuzzleSolved, totalChallengeCompleted, progressSheetId, emailVerified, verificationToken, verificationExpires
     const newUser = [
-      userId, // userId
-      "", // googleId
-      userData.email, // email
-      "", // displayName
-      username, // username
-      passwordHash, // passwordHash
-      "", // avatarUrl
-      "student", // role
-      1, // level
-      1, // aiLevel
-      0, // totalPoints
-      0, // totalXP
-      0, // currentStreak
-      0, // longestStreak
-      "", // lastActiveDate
-      "", // lastLogin
-      now, // createdAt
-      false, // isActive
-      0, // mountainPosition
-      1, // mountainStage
-      0, // mountainProgress
-      0, // totalQuizAnswered
-      0, // totalPuzzleSolved
-      0, // totalChallengeCompleted
-      "", // progressSheetId
-      false, // emailVerified
-      verificationToken, // verificationToken
-      verificationExpires, // verificationExpires
+      userId,
+      "",
+      userData.email,
+      userData.fullName || "",
+      username,
+      passwordHash,
+      randomAvatar, // ⭐ AVATAR NGẪU NHIÊN
+      "student",
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      "",
+      "",
+      now,
+      false,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      "",
+      false,
+      verificationToken,
+      verificationExpires,
     ];
 
     usersSheet.appendRow(newUser);
@@ -164,6 +214,7 @@ function registerWithEmail(userData) {
       requiresVerification: true,
       userId: userId,
       emailSent: emailSent,
+      avatarUrl: randomAvatar, // ⭐ RETURN AVATAR
     };
   } catch (error) {
     Logger.log("Error in registerWithEmail: " + error.toString());

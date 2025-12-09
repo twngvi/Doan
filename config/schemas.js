@@ -61,6 +61,7 @@ const DB_CONFIG = {
         "createdBy",
         "createdAt",
         "updatedAt",
+        "contentDocId", // ⭐ THÊM CỘT MỚI
       ],
     },
 

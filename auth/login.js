@@ -86,8 +86,16 @@ function loginWithEmail(credentials) {
 
         Logger.log("Login successful: " + credentials.email);
 
-        // Get avatar URL - use stored avatar or generate Gravatar
-        const avatarUrl = data[i][6] || getGravatarUrl(data[i][2]);
+        // ⭐ Get avatar URL - ưu tiên stored avatar
+        let avatarUrl = data[i][6]; // Column 6 is avatarUrl
+
+        if (!avatarUrl || avatarUrl === "") {
+          // Nếu không có avatar, tạo Gravatar
+          avatarUrl = getGravatarUrl(data[i][2]);
+          Logger.log("No avatar found, using Gravatar: " + avatarUrl);
+        } else {
+          Logger.log("Using stored avatar: " + avatarUrl);
+        }
 
         return {
           success: true,
@@ -97,7 +105,7 @@ function loginWithEmail(credentials) {
             username: data[i][4],
             email: data[i][2],
             displayName: data[i][3] || data[i][4],
-            avatarUrl: avatarUrl,
+            avatarUrl: avatarUrl, // ⭐ ENSURE AVATAR URL
             role: data[i][7],
             level: data[i][8],
             totalXP: data[i][11],

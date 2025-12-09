@@ -6,23 +6,20 @@
 
 /**
  * Get all topics from MASTER_DB
- * Updated to read 13 columns including updatedAt
+ * Updated to read 14 columns including contentDocId
  */
 function getAllTopics() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
 
   try {
-    // 1. Cấu hình ID Spreadsheet
     const SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
     const SHEET_NAME = "Topics";
 
     Logger.log("Opening spreadsheet: " + SPREADSHEET_ID);
 
-    // 2. Kết nối Google Sheet
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = ss.getSheetByName(SHEET_NAME);
 
-    // Kiểm tra nếu không tìm thấy Sheet
     if (!sheet) {
       const availableSheets = ss
         .getSheets()
@@ -32,7 +29,6 @@ function getAllTopics() {
       Logger.log("❌ Lỗi: Không tìm thấy sheet tên là '" + SHEET_NAME + "'");
       Logger.log("Các sheet có sẵn: " + availableSheets);
 
-      // QUAN TRỌNG: Phải return object lỗi để frontend không bị null
       return {
         success: false,
         message: "Không tìm thấy Sheet dữ liệu: " + SHEET_NAME,
@@ -42,11 +38,9 @@ function getAllTopics() {
 
     Logger.log("✅ Found sheet: " + SHEET_NAME);
 
-    // 3. Lấy dữ liệu
     const lastRow = sheet.getLastRow();
     Logger.log("Last row: " + lastRow);
 
-    // Nếu chỉ có header hoặc không có dữ liệu
     if (lastRow < 2) {
       Logger.log("⚠️ No data rows found (only header or empty sheet)");
       return {
@@ -56,21 +50,16 @@ function getAllTopics() {
       };
     }
 
-    // Đọc từ dòng 2, cột 1, lấy hết dòng, lấy 13 CỘT (A đến M)
-    // Cấu trúc: topicId, title, description, category, order, iconUrl,
-    // estimatedTime, prerequisiteTopics, isLocked, unlockCondition,
-    // createdBy, createdAt, updatedAt
-    const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    // ⭐ ĐỌC 14 CỘT (A đến N) - Thêm cột contentDocId
+    const data = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
 
     Logger.log("Đã lấy được " + data.length + " dòng dữ liệu");
 
     const topics = [];
 
-    // 4. Map dữ liệu sang Object JSON
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
 
-      // Bỏ qua dòng trống nếu có (cột A = topicId rỗng)
       if (!row[0]) {
         Logger.log("Skipping empty row at index " + i);
         continue;
@@ -88,24 +77,30 @@ function getAllTopics() {
         isLocked: Boolean(row[8]),
         unlockCondition: String(row[9] || ""),
         createdBy: String(row[10] || ""),
-        // Chuyển Date object sang chuỗi ISO hoặc chuỗi rỗng nếu không có dữ liệu
-        createdAt: row[11] instanceof Date ? row[11].toISOString() : String(row[11] || ""),
-        updatedAt: row[12] instanceof Date ? row[12].toISOString() : String(row[12] || ""),
+        createdAt:
+          row[11] instanceof Date
+            ? row[11].toISOString()
+            : String(row[11] || ""),
+        updatedAt:
+          row[12] instanceof Date
+            ? row[12].toISOString()
+            : String(row[12] || ""),
+
+        // ⭐ THÊM CỘT CONTENT DOC ID
+        contentDocId: String(row[13] || ""),
 
         // Map thêm trường cho Frontend hiển thị
         journey: mapCategoryToJourney(row[3]),
-        totalStages: 5, // Default value
+        totalStages: 5,
         minAILevel: 1,
         minAccuracy: 70,
       });
     }
 
-    // Sắp xếp theo cột Order
     topics.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     Logger.log("✅ Successfully processed " + topics.length + " topics");
 
-    // 5. TRẢ VỀ KẾT QUẢ (Quan trọng nhất)
     return {
       success: true,
       topics: topics,
@@ -115,7 +110,6 @@ function getAllTopics() {
     Logger.log("❌ LỖI NGHIÊM TRỌNG TRONG getAllTopics: " + error.toString());
     Logger.log("Error stack: " + error.stack);
 
-    // QUAN TRỌNG: Phải return lỗi để Frontend hiển thị, không được để null
     return {
       success: false,
       message: "Lỗi Server: " + error.toString(),

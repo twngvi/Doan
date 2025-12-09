@@ -6,7 +6,8 @@
    */
 
   // ==================== Global Variables ====================
-  let currentUser = null;
+  var currentUser = null; // ⭐ Dùng var để tự động gắn vào window
+  window.currentUser = null; // ⭐ Gán trực tiếp để chắc chắn
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
 
@@ -35,6 +36,44 @@
       // Show landing page for new visitors
       showPage("page-landing");
     }
+
+    // ⭐ Debug session khi app khởi động
+    console.log("🔍 =".repeat(30));
+    console.log("🔍 APP INITIALIZED - CHECKING SESSION");
+    console.log("🔍 =".repeat(30));
+
+    const isLoggedIn = sessionStorage.getItem("isLoggedIn");
+    const userId = sessionStorage.getItem("userId");
+
+    console.log("📦 Session Storage:");
+    console.log("  - currentUser:", savedUser ? "EXISTS" : "NULL");
+    console.log("  - isLoggedIn:", isLoggedIn);
+    console.log("  - userId:", userId);
+
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        console.log("✅ User data parsed:");
+        console.log("  - userId:", user.userId);
+        console.log("  - email:", user.email);
+        console.log("  - avatarUrl:", user.avatarUrl);
+
+        currentUser = user;
+        window.currentUser = user; // ⭐ Đồng bộ vào window
+        console.log("✅ Current user synced to window:", currentUser);
+        showPage("page-dashboard");
+        loadDashboardData();
+      } catch (error) {
+        console.error("❌ Error parsing saved user:", error);
+        sessionStorage.clear();
+        showPage("page-landing");
+      }
+    } else {
+      console.log("ℹ️ No saved session, showing landing page");
+      showPage("page-landing");
+    }
+
+    console.log("🔍 =".repeat(30));
   });
 
   // ==================== Page Navigation ====================
@@ -117,6 +156,38 @@
           window.initVerifyEmailPage();
         } else {
           console.error("❌ initVerifyEmailPage function not found");
+        }
+      }
+
+      // ⭐ Initialize Lesson page
+      if (pageId === "page-lesson") {
+        if (typeof window.initLessonPage === "function") {
+          console.log("Initializing Lesson page...");
+          window.initLessonPage();
+        } else {
+          console.error("initLessonPage function not found");
+        }
+      }
+
+      // ⭐ Initialize MCQ page
+      if (pageId === "page-mcq") {
+        if (typeof window.initMCQPage === "function") {
+          console.log("Initializing MCQ page...");
+          window.initMCQPage();
+        } else {
+          console.error("initMCQPage function not found");
+        }
+      }
+
+      // ⭐ Initialize Profile page
+      if (pageId === "page-profile") {
+        if (typeof window.initProfilePage === "function") {
+          console.log("Initializing Profile page...");
+          setTimeout(() => {
+            window.initProfilePage();
+          }, 100);
+        } else {
+          console.error("initProfilePage function not found");
         }
       }
 
@@ -257,7 +328,9 @@
     if (response.status === "success") {
       // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
+      window.currentUser = response.user; // ⭐ Đồng bộ vào window
       sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("✅ Current user synced to window:", currentUser);
 
       // Show success message
       showToast("Đăng nhập thành công!", "success");
@@ -398,10 +471,17 @@
         console.log("✅ Login Response:", response);
 
         if (response.success) {
-          // Lưu session
+          // ⭐ LƯU SESSION ĐẦY ĐỦ
+          currentUser = response.user;
           sessionStorage.setItem("currentUser", JSON.stringify(response.user));
           sessionStorage.setItem("isLoggedIn", "true");
-          currentUser = response.user;
+          sessionStorage.setItem("userId", response.user.userId);
+
+          console.log("✅ Session saved:", {
+            userId: response.user.userId,
+            email: response.user.email,
+            avatarUrl: response.user.avatarUrl,
+          });
 
           showToast(response.message, "success");
 
@@ -494,7 +574,9 @@
     if (response.status === "success") {
       // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
+      window.currentUser = response.user; // ⭐ Đồng bộ vào window
       sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("✅ Current user synced to window:", currentUser);
 
       // Show success message
       showToast("Đăng ký thành công! Đang chuyển tới trang chủ...", "success");
@@ -517,6 +599,7 @@
 
     // Clear user data from all storage
     currentUser = null;
+    window.currentUser = null; // ⭐ Xóa khỏi window
     sessionStorage.removeItem("currentUser");
     sessionStorage.removeItem("userSession");
 
@@ -783,7 +866,9 @@ Hoặc bạn có thể:
 
       // Save user to sessionStorage (auto logout when closing tab)
       currentUser = response.user;
+      window.currentUser = response.user; // ⭐ Đồng bộ vào window
       sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("✅ Current user synced to window:", currentUser.username);
 
       console.log("User saved to sessionStorage:", currentUser.username);
       console.log("Is new user:", response.isNewUser);
@@ -1485,7 +1570,6 @@ Hoặc bạn có thể:
 
   /**
    * Create star effect around toast
-   * @param {HTMLElement} element - Element to add stars around
    */
   function createStarEffect(element) {
     const starContainer = document.createElement("div");
@@ -1508,7 +1592,6 @@ Hoặc bạn có thể:
       star.style.fontSize = "1.5rem";
       star.style.animation = "starBurst 1s ease-out forwards";
 
-      // Random position around the toast
       const angle = (Math.PI * 2 * i) / starCount;
       const distance = 50 + Math.random() * 30;
       star.style.left = "50%";
@@ -1519,7 +1602,6 @@ Hoặc bạn có thể:
       starContainer.appendChild(star);
     }
 
-    // Add animation styles if not exists
     if (!document.getElementById("star-animation-style")) {
       const style = document.createElement("style");
       style.id = "star-animation-style";
@@ -1542,7 +1624,6 @@ Hoặc bạn có thể:
       document.head.appendChild(style);
     }
 
-    // Remove star container after animation
     setTimeout(() => {
       starContainer.remove();
     }, 1000);
@@ -1550,7 +1631,6 @@ Hoặc bạn có thể:
 
   // ==================== Global Notification Flower Effect ====================
 
-  // Create flower container for global use
   let globalFlowerContainer = document.getElementById("globalFlowerContainer");
   if (!globalFlowerContainer) {
     globalFlowerContainer = document.createElement("div");
@@ -1560,12 +1640,10 @@ Hoặc bạn có thể:
     document.body.appendChild(globalFlowerContainer);
   }
 
-  // Function to create falling flowers globally
   window.createFallingFlowers = function () {
     const flowers = ["🌸", "🌺", "🌼", "🌻", "🌷", "🏵️", "💐", "🌹", "💮", "🪷"];
     const flowerCount = 20;
 
-    // Clear existing flowers
     globalFlowerContainer.innerHTML = "";
     globalFlowerContainer.style.display = "block";
 
@@ -1579,13 +1657,11 @@ Hoặc bạn có thể:
       globalFlowerContainer.appendChild(flower);
     }
 
-    // Hide flower container after animation
     setTimeout(() => {
       globalFlowerContainer.style.display = "none";
     }, 4500);
   };
 
-  // Setup notification panel handlers for all pages
   document.addEventListener("click", function (e) {
     const notificationBtn = e.target.closest(
       ".notification-btn, #notificationBtn"
@@ -1599,7 +1675,6 @@ Hoặc bạn có thể:
       const isVisible = notificationPanel.style.display === "block";
       notificationPanel.style.display = isVisible ? "none" : "block";
 
-      // Show flowers when opening notification
       if (!isVisible) {
         window.createFallingFlowers();
       } else {
@@ -1614,7 +1689,6 @@ Hoặc bạn có thể:
       notificationPanel &&
       notificationPanel.style.display === "block"
     ) {
-      // Close notification panel when clicking outside
       if (!notificationPanel.contains(e.target)) {
         notificationPanel.style.display = "none";
         globalFlowerContainer.style.display = "none";
@@ -1624,20 +1698,14 @@ Hoặc bạn có thể:
 
   // ==================== Dashboard Data Loading ====================
 
-  /**
-   * Load and update dashboard data
-   */
   function loadDashboardData() {
     console.log("Loading dashboard data...");
 
-    // Get current user
     const savedUser = sessionStorage.getItem("currentUser");
     if (savedUser) {
       try {
         currentUser = JSON.parse(savedUser);
         console.log("Current user:", currentUser);
-
-        // Update user name in dashboard
         updateDashboardUserName();
       } catch (error) {
         console.error("Error loading dashboard data:", error);
@@ -1645,13 +1713,9 @@ Hoặc bạn có thể:
     }
   }
 
-  /**
-   * Update user name in dashboard UI
-   */
   function updateDashboardUserName() {
     if (!currentUser) return;
 
-    // Try multiple name fields
     const name =
       currentUser.fullName ||
       currentUser.username ||
@@ -1659,7 +1723,6 @@ Hoặc bạn có thể:
       "User";
     console.log("Updating dashboard with name:", name);
 
-    // Update all user name elements
     const userNameEl = document.getElementById("userName");
     const userNameWelcomeEl = document.getElementById("userNameWelcome");
 
@@ -1674,6 +1737,5 @@ Hoặc bạn có thể:
     }
   }
 
-  // Make loadDashboardData available globally
   window.loadDashboardData = loadDashboardData;
 </script>

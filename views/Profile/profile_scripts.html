@@ -1,399 +1,424 @@
 <!-- Profile Page Scripts -->
 <script>
-  /**
-   * Profile Page Script
-   */
-  (function () {
-    "use strict";
+  console.log("🎨 Profile scripts loading...");
 
-    // Load user data
-    function loadProfileData() {
-      const currentUserData = localStorage.getItem("currentUser");
-      if (!currentUserData) {
-        console.error("No user data found");
-        if (typeof showPage === "function") {
-          showPage("page-login");
+  // ⭐ DANH SÁCH AVATAR TỪ DICEBEAR
+  const PRESET_AVATARS = [
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Alexander",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Mason",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Mason",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Andrea",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Oliver",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Leo",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Leah",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Katherine",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Jude",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Brian",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Avery",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Vivian",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Riley",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Valentina",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Kimberly",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Jocelyn",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Aidan",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Adrian",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Mackenzie",
+    "https://api.dicebear.com/9.x/bottts/svg?seed=Nolan",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=seting",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=key",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Maria",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Jameson",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Valentina",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Liam",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Kingston",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Destiny",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Christopher",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Oliver",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Mason",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Emery",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Sarah",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Aiden",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Sara",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Kimberly",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Sophia",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Brian",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Luis",
+    "https://api.dicebear.com/9.x/dylan/svg?seed=Robert",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=seting",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=key",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Maria",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Jameson",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Valentina",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Liam",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Kingston",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Destiny",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Christopher",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Oliver",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Emery",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Mason",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Aiden",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Sarah",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Sara",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Kimberly",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Sophia",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Brian",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Luis",
+    "https://api.dicebear.com/9.x/shapes/svg?seed=Robert",
+  ];
+
+  // ⭐ AVATAR MODAL FUNCTIONS
+  function openAvatarModal() {
+    console.log("🎨 Opening avatar modal...");
+    const modal = document.getElementById("avatarSelectionModal");
+    if (!modal) {
+      console.error("❌ Modal not found");
+      showToast("Lỗi: Không tìm thấy modal", "error");
+      return;
+    }
+    modal.style.display = "flex";
+    renderAvatarGrid("all");
+  }
+
+  function closeAvatarModal(e) {
+    if (e && e.target !== e.currentTarget && e.type === "click") return;
+    const modal = document.getElementById("avatarSelectionModal");
+    if (modal) modal.style.display = "none";
+  }
+
+  function filterAvatars(type) {
+    console.log("Filtering:", type);
+    document.querySelectorAll(".avatar-tabs .filter-tab").forEach((btn) => {
+      btn.classList.remove("active");
+      if (btn.dataset.type === type) btn.classList.add("active");
+    });
+    renderAvatarGrid(type);
+  }
+
+  function renderAvatarGrid(filterType) {
+    const container = document.getElementById("avatarGrid");
+    if (!container) return;
+
+    container.innerHTML = "";
+    let filtered =
+      filterType === "all"
+        ? PRESET_AVATARS
+        : PRESET_AVATARS.filter((url) => url.includes(`/${filterType}/`));
+
+    console.log(`Rendering ${filtered.length} avatars`);
+
+    filtered.forEach((url) => {
+      const img = document.createElement("img");
+      img.src = url;
+      img.className = "avatar-option";
+      img.onclick = () => selectAvatar(url);
+      img.style.opacity = "0";
+      img.style.transition = "opacity 0.3s ease";
+      img.onload = () => {
+        img.style.opacity = "1";
+      };
+      container.appendChild(img);
+    });
+  }
+
+  function selectAvatar(url) {
+    console.log("Selected:", url);
+
+    // Lấy user từ global hoặc sessionStorage
+    let user = window.currentUser || profileData;
+
+    if (!user) {
+      const userData = sessionStorage.getItem("currentUser");
+      if (userData) {
+        try {
+          user = JSON.parse(userData);
+        } catch (e) {
+          console.error("Parse error:", e);
         }
-        return;
       }
-
-      const user = JSON.parse(currentUserData);
-      console.log("Profile user data:", user);
-
-      // Update header
-      const profileName = document.getElementById("profileName");
-      const profileEmail = document.getElementById("profileEmail");
-      const profileLevel = document.getElementById("profileLevel");
-      const profileXP = document.getElementById("profileXP");
-      const profileRole = document.getElementById("profileRole");
-      const profileAvatar = document.getElementById("profileAvatar");
-
-      const displayName =
-        user.displayName || user.fullName || user.username || "User";
-
-      if (profileName) profileName.textContent = displayName;
-      if (profileEmail) profileEmail.textContent = user.email || "";
-      if (profileLevel) profileLevel.textContent = user.level || 1;
-      if (profileXP) profileXP.textContent = user.totalXP || 0;
-      if (profileRole) {
-        const roleMap = {
-          student: "Học viên",
-          teacher: "Giáo viên",
-          admin: "Quản trị viên",
-        };
-        profileRole.textContent = roleMap[user.role] || user.role || "Student";
-      }
-
-      // Update avatar
-      if (profileAvatar) {
-        if (user.avatarUrl) {
-          profileAvatar.src = user.avatarUrl;
-        } else {
-          profileAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-            displayName
-          )}&background=random`;
-        }
-      }
-
-      // Update form fields
-      const displayNameInput = document.getElementById("displayName");
-      const emailInput = document.getElementById("email");
-      const usernameInput = document.getElementById("username");
-
-      if (displayNameInput) displayNameInput.value = displayName;
-      if (emailInput) emailInput.value = user.email || "";
-      if (usernameInput) usernameInput.value = user.username || "";
     }
 
-    // Password toggle functionality
-    const passwordToggles = document.querySelectorAll(".password-toggle");
-    passwordToggles.forEach((toggle) => {
+    if (!user) {
+      showToast("Phiên đăng nhập hết hạn", "error");
+      setTimeout(() => showPage("page-login"), 1500);
+      return;
+    }
+
+    // Update UI immediately
+    const profileAvatar = document.getElementById("profile-avatar");
+    const sidebarAvatar = document.getElementById("sidebar-avatar");
+    if (profileAvatar) profileAvatar.src = url;
+    if (sidebarAvatar) sidebarAvatar.src = url;
+
+    closeAvatarModal();
+    showToast("Đang lưu avatar...", "info");
+
+    // Save to server
+    google.script.run
+      .withSuccessHandler(function (res) {
+        console.log("Save response:", res);
+        if (res.success) {
+          user.avatarUrl = url;
+          window.currentUser = user; // Update global
+          profileData = user; // Update local
+          sessionStorage.setItem("currentUser", JSON.stringify(user));
+          showToast("Đổi avatar thành công!", "success");
+          window.dispatchEvent(
+            new CustomEvent("avatar-updated", { detail: { url } })
+          );
+          setTimeout(() => updateAllAvatars(url), 100);
+        } else {
+          showToast("Lỗi: " + res.message, "error");
+          if (profileAvatar && user.avatarUrl)
+            profileAvatar.src = user.avatarUrl;
+          if (sidebarAvatar && user.avatarUrl)
+            sidebarAvatar.src = user.avatarUrl;
+        }
+      })
+      .withFailureHandler(function (err) {
+        console.error("Save error:", err);
+        showToast("Lỗi kết nối", "error");
+        if (profileAvatar && user.avatarUrl) profileAvatar.src = user.avatarUrl;
+        if (sidebarAvatar && user.avatarUrl) sidebarAvatar.src = user.avatarUrl;
+      })
+      .saveAvatarUrl(user.userId, url);
+  }
+
+  function updateAllAvatars(url) {
+    console.log("Updating all avatars");
+    ["profile-avatar", "sidebar-avatar", "dashboard-avatar"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.src = url;
+    });
+    document.querySelectorAll(".user-avatar").forEach((el) => (el.src = url));
+  }
+
+  // ⭐ PROFILE PAGE INITIALIZATION
+  let profileData = null;
+
+  function initProfilePage() {
+    console.log("Initializing Profile...");
+    loadProfileData();
+    setupEventListeners();
+  }
+
+  function loadProfileData() {
+    // Kiểm tra user từ nhiều nguồn
+    let user = null;
+
+    console.log("🔍 DEBUG: Checking user sources...");
+    console.log("  - typeof currentUser:", typeof currentUser);
+    console.log("  - currentUser value:", currentUser);
+    console.log("  - window.currentUser:", window.currentUser);
+    console.log(
+      "  - sessionStorage currentUser:",
+      sessionStorage.getItem("currentUser") ? "EXISTS" : "NULL"
+    );
+
+    // 1. Kiểm tra biến currentUser trong scope (ưu tiên cao nhất)
+    if (typeof currentUser !== "undefined" && currentUser) {
+      user = currentUser;
+      console.log("✅ Found user from scope variable:", user.email);
+    }
+    // 2. Kiểm tra window.currentUser
+    else if (window.currentUser) {
+      user = window.currentUser;
+      console.log("✅ Found user from window.currentUser:", user.email);
+    }
+    // 3. Kiểm tra sessionStorage (fallback cuối cùng)
+    else {
+      const saved = sessionStorage.getItem("currentUser");
+      if (saved) {
+        try {
+          user = JSON.parse(saved);
+          window.currentUser = user; // Sync to global
+          currentUser = user; // ⭐ QUAN TRỌNG: Đồng bộ vào biến global
+          console.log("✅ Found user from sessionStorage:", user.email);
+        } catch (e) {
+          console.error("❌ Error parsing user data:", e);
+        }
+      }
+    }
+
+    // Nếu không tìm thấy user -> Redirect login
+    if (!user) {
+      console.warn("⚠️ No user found, redirecting to login");
+      console.error("❌ ALL SOURCES FAILED:");
+      console.error("  - currentUser:", typeof currentUser, currentUser);
+      console.error("  - window.currentUser:", window.currentUser);
+      console.error(
+        "  - sessionStorage:",
+        sessionStorage.getItem("currentUser")
+      );
+      showToast("Vui lòng đăng nhập", "error");
+      setTimeout(() => showPage("page-login"), 1500);
+      return;
+    }
+
+    // Load profile với user data
+    try {
+      console.log("✅ User loaded:", user);
+      profileData = user; // Lưu vào biến global
+      updateProfileHeader(user);
+      updateProfileForm(user);
+    } catch (e) {
+      console.error("❌ Load profile error:", e);
+      showToast("Lỗi tải profile", "error");
+    }
+  }
+
+  function updateProfileHeader(user) {
+    console.log("Updating header");
+
+    const fullname = document.getElementById("profile-fullname");
+    const email = document.getElementById("profile-email");
+
+    if (fullname) {
+      const name = user.fullName || user.displayName || user.username || "User";
+      fullname.textContent = name;
+      console.log("Fullname updated:", name);
+    }
+
+    if (email) {
+      email.textContent = user.email || "N/A";
+      console.log("Email updated:", user.email);
+    }
+
+    const avatar = document.getElementById("profile-avatar");
+    if (avatar) {
+      if (user.avatarUrl && user.avatarUrl !== "") {
+        avatar.src = user.avatarUrl;
+        console.log("Avatar loaded:", user.avatarUrl);
+      } else {
+        const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+          user.fullName || user.username
+        )}&size=120&background=random`;
+        avatar.src = defaultUrl;
+        console.log("Using default avatar");
+      }
+    }
+
+    const level = document.getElementById("profile-level");
+    const xp = document.getElementById("profile-xp");
+    const mountain = document.getElementById("profile-mountain-stage");
+
+    if (level) level.textContent = user.level || 1;
+    if (xp) xp.textContent = user.totalXP || 0;
+    if (mountain) mountain.textContent = user.mountainStage || 1;
+
+    console.log("Header updated successfully");
+  }
+
+  function updateProfileForm(user) {
+    const displayName = document.getElementById("displayName");
+    const email = document.getElementById("email");
+    const username = document.getElementById("username");
+
+    if (displayName)
+      displayName.value =
+        user.fullName || user.displayName || user.username || "";
+    if (email) email.value = user.email || "";
+    if (username) username.value = user.username || "";
+  }
+
+  function setupEventListeners() {
+    // Password toggle
+    document.querySelectorAll(".password-toggle").forEach((toggle) => {
       toggle.addEventListener("click", function () {
-        const targetId = this.getAttribute("data-target");
-        const input = document.getElementById(targetId);
-        if (input) {
-          if (input.type === "password") {
-            input.type = "text";
-            this.textContent = "👁️‍🗨️";
-          } else {
-            input.type = "password";
-            this.textContent = "👁️";
-          }
+        const input = document.getElementById(this.dataset.target);
+        if (input.type === "password") {
+          input.type = "text";
+          this.textContent = "🙈";
+        } else {
+          input.type = "password";
+          this.textContent = "👁️";
         }
       });
     });
 
-    // Password strength checker
-    const newPasswordInput = document.getElementById("newPassword");
-    const strengthBarFill = document.getElementById("strengthBarFill");
-    const strengthText = document.getElementById("strengthText");
+    // Password strength
+    const newPwd = document.getElementById("newPassword");
+    if (newPwd) newPwd.addEventListener("input", checkPasswordStrength);
 
-    if (newPasswordInput) {
-      newPasswordInput.addEventListener("input", function () {
-        const password = this.value;
-        let strength = 0;
+    // Confirm password
+    const confirmPwd = document.getElementById("confirmPassword");
+    if (confirmPwd) confirmPwd.addEventListener("input", checkPasswordMatch);
 
-        if (password.length >= 6) strength++;
-        if (password.length >= 10) strength++;
-        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
-        if (/[0-9]/.test(password)) strength++;
-        if (/[^a-zA-Z0-9]/.test(password)) strength++;
-
-        strengthBarFill.className = "strength-bar-fill";
-
-        if (strength <= 2) {
-          strengthBarFill.classList.add("strength-weak");
-          strengthText.textContent = "Yếu";
-          strengthText.style.color = "#fc8181";
-        } else if (strength <= 4) {
-          strengthBarFill.classList.add("strength-medium");
-          strengthText.textContent = "Trung bình";
-          strengthText.style.color = "#f6ad55";
-        } else {
-          strengthBarFill.classList.add("strength-strong");
-          strengthText.textContent = "Mạnh";
-          strengthText.style.color = "#48bb78";
-        }
-      });
-    }
-
-    // Confirm password verification
-    const confirmPasswordInput = document.getElementById("confirmPassword");
-    const confirmPasswordCheck = document.getElementById(
-      "confirmPasswordCheck"
-    );
-
-    if (confirmPasswordInput && newPasswordInput) {
-      confirmPasswordInput.addEventListener("input", function () {
-        if (this.value && this.value === newPasswordInput.value) {
-          confirmPasswordCheck.classList.remove("hidden");
-        } else {
-          confirmPasswordCheck.classList.add("hidden");
-        }
-      });
-
-      newPasswordInput.addEventListener("input", function () {
-        if (
-          confirmPasswordInput.value &&
-          confirmPasswordInput.value === this.value
-        ) {
-          confirmPasswordCheck.classList.remove("hidden");
-        } else {
-          confirmPasswordCheck.classList.add("hidden");
-        }
-      });
-    }
-
-    // Profile form submission
+    // Forms
     const profileForm = document.getElementById("profileForm");
-    if (profileForm) {
-      profileForm.addEventListener("submit", function (e) {
-        e.preventDefault();
+    if (profileForm)
+      profileForm.addEventListener("submit", handleProfileUpdate);
 
-        const displayName = document.getElementById("displayName").value.trim();
+    const pwdForm = document.getElementById("passwordForm");
+    if (pwdForm) pwdForm.addEventListener("submit", handlePasswordChange);
+  }
 
-        if (!displayName) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Vui lòng nhập tên hiển thị", "error");
-          }
-          return;
-        }
+  function checkPasswordStrength() {
+    const pwd = this.value;
+    const bar = document.getElementById("strengthBarFill");
+    const text = document.getElementById("strengthText");
 
-        // Get user ID
-        const currentUserData = localStorage.getItem("currentUser");
-        if (!currentUserData) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Không tìm thấy thông tin người dùng", "error");
-          }
-          return;
-        }
+    let strength = 0;
+    if (pwd.length >= 6) strength++;
+    if (pwd.length >= 10) strength++;
+    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) strength++;
+    if (/\d/.test(pwd)) strength++;
+    if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
 
-        const user = JSON.parse(currentUserData);
+    const percent = (strength / 5) * 100;
+    bar.style.width = percent + "%";
 
-        if (typeof window.showToast === "function") {
-          window.showToast("Đang cập nhật hồ sơ...", "info");
-        }
-
-        // Call backend API
-        google.script.run
-          .withSuccessHandler(function (response) {
-            console.log("Update profile response:", response);
-
-            if (response.success) {
-              // Update localStorage with new data
-              localStorage.setItem(
-                "currentUser",
-                JSON.stringify(response.user)
-              );
-
-              if (typeof window.showToast === "function") {
-                window.showToast("Cập nhật hồ sơ thành công!", "success");
-              }
-
-              // Reload profile data
-              loadProfileData();
-            } else {
-              if (typeof window.showToast === "function") {
-                window.showToast(
-                  response.message || "Cập nhật thất bại",
-                  "error"
-                );
-              }
-            }
-          })
-          .withFailureHandler(function (error) {
-            console.error("Update profile error:", error);
-            if (typeof window.showToast === "function") {
-              window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
-            }
-          })
-          .updateProfile({
-            userId: user.userId,
-            displayName: displayName,
-          });
-      });
+    if (strength <= 2) {
+      bar.style.background = "#f87171";
+      text.textContent = "Yếu";
+      text.style.color = "#f87171";
+    } else if (strength <= 3) {
+      bar.style.background = "#fbbf24";
+      text.textContent = "Trung bình";
+      text.style.color = "#fbbf24";
+    } else {
+      bar.style.background = "#34d399";
+      text.textContent = "Mạnh";
+      text.style.color = "#34d399";
     }
+  }
 
-    // Password form submission
-    const passwordForm = document.getElementById("passwordForm");
-    if (passwordForm) {
-      passwordForm.addEventListener("submit", function (e) {
-        e.preventDefault();
+  function checkPasswordMatch() {
+    const newPwd = document.getElementById("newPassword").value;
+    const confirmPwd = this.value;
+    const icon = document.getElementById("confirmPasswordCheck");
 
-        const currentPassword =
-          document.getElementById("currentPassword").value;
-        const newPassword = document.getElementById("newPassword").value;
-        const confirmPassword =
-          document.getElementById("confirmPassword").value;
-
-        if (!currentPassword || !newPassword || !confirmPassword) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Vui lòng điền đầy đủ thông tin", "error");
-          }
-          return;
-        }
-
-        if (newPassword !== confirmPassword) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Mật khẩu xác nhận không khớp", "error");
-          }
-          return;
-        }
-
-        if (newPassword.length < 6) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
-          }
-          return;
-        }
-
-        // Get user ID
-        const currentUserData = localStorage.getItem("currentUser");
-        if (!currentUserData) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Không tìm thấy thông tin người dùng", "error");
-          }
-          return;
-        }
-
-        const user = JSON.parse(currentUserData);
-
-        if (typeof window.showToast === "function") {
-          window.showToast("Đang đổi mật khẩu...", "info");
-        }
-
-        // Call backend API
-        google.script.run
-          .withSuccessHandler(function (response) {
-            console.log("Change password response:", response);
-
-            if (response.success) {
-              if (typeof window.showToast === "function") {
-                window.showToast("Đổi mật khẩu thành công!", "success");
-              }
-
-              // Clear form
-              passwordForm.reset();
-              confirmPasswordCheck.classList.add("hidden");
-              strengthBarFill.className = "strength-bar-fill";
-              strengthText.textContent = "";
-            } else {
-              if (typeof window.showToast === "function") {
-                window.showToast(
-                  response.message || "Đổi mật khẩu thất bại",
-                  "error"
-                );
-              }
-            }
-          })
-          .withFailureHandler(function (error) {
-            console.error("Change password error:", error);
-            if (typeof window.showToast === "function") {
-              window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
-            }
-          })
-          .changePassword({
-            userId: user.userId,
-            currentPassword: currentPassword,
-            newPassword: newPassword,
-          });
-      });
+    if (confirmPwd === "") {
+      icon.classList.add("hidden");
+    } else if (newPwd === confirmPwd) {
+      icon.classList.remove("hidden");
+      icon.style.color = "#34d399";
+      icon.textContent = "✓";
+    } else {
+      icon.classList.remove("hidden");
+      icon.style.color = "#f87171";
+      icon.textContent = "✗";
     }
+  }
 
-    // Avatar upload
-    const avatarUpload = document.getElementById("avatarUpload");
-    const profileAvatar = document.getElementById("profileAvatar");
+  function handleProfileUpdate(e) {
+    e.preventDefault();
+    showToast("Tính năng đang phát triển", "info");
+  }
 
-    if (avatarUpload) {
-      avatarUpload.addEventListener("change", function (e) {
-        const file = e.target.files[0];
-        if (!file) return;
+  function handlePasswordChange(e) {
+    e.preventDefault();
+    showToast("Tính năng đang phát triển", "info");
+  }
 
-        // Validate file type
-        if (!file.type.startsWith("image/")) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Vui lòng chọn file ảnh", "error");
-          }
-          return;
-        }
+  // ⭐ EXPORT FUNCTIONS
+  window.initProfilePage = initProfilePage;
+  window.openAvatarModal = openAvatarModal;
+  window.closeAvatarModal = closeAvatarModal;
+  window.filterAvatars = filterAvatars;
+  window.selectAvatar = selectAvatar;
+  window.updateAllAvatars = updateAllAvatars;
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          if (typeof window.showToast === "function") {
-            window.showToast("Kích thước ảnh không được vượt quá 5MB", "error");
-          }
-          return;
-        }
-
-        // Preview image
-        const reader = new FileReader();
-        reader.onload = function (e) {
-          const imageData = e.target.result;
-
-          // Preview image locally first
-          if (profileAvatar) {
-            profileAvatar.src = imageData;
-          }
-
-          // Get user data
-          const currentUserData = localStorage.getItem("currentUser");
-          if (!currentUserData) {
-            if (typeof window.showToast === "function") {
-              window.showToast("Không tìm thấy thông tin người dùng", "error");
-            }
-            return;
-          }
-
-          const user = JSON.parse(currentUserData);
-
-          if (typeof window.showToast === "function") {
-            window.showToast("Đang tải ảnh lên...", "info");
-          }
-
-          // Upload to server
-          google.script.run
-            .withSuccessHandler(function (response) {
-              console.log("Upload avatar response:", response);
-
-              if (response.success) {
-                if (typeof window.showToast === "function") {
-                  window.showToast("Cập nhật avatar thành công!", "success");
-                }
-
-                // Update localStorage
-                user.avatarUrl = response.avatarUrl;
-                localStorage.setItem("currentUser", JSON.stringify(user));
-
-                // Update avatar display
-                if (profileAvatar) {
-                  profileAvatar.src = response.avatarUrl;
-                }
-              } else {
-                if (typeof window.showToast === "function") {
-                  window.showToast(
-                    response.message || "Tải ảnh thất bại",
-                    "error"
-                  );
-                }
-              }
-            })
-            .withFailureHandler(function (error) {
-              console.error("Upload avatar error:", error);
-              if (typeof window.showToast === "function") {
-                window.showToast("Có lỗi xảy ra. Vui lòng thử lại.", "error");
-              }
-            })
-            .uploadAvatar({
-              userId: user.userId,
-              imageData: imageData,
-              mimeType: file.type,
-            });
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-
-    // Initialize on page load
-    loadProfileData();
-  })();
+  console.log("✅ Profile scripts loaded");
+  console.log("✅ initProfilePage:", typeof window.initProfilePage);
+  console.log("✅ openAvatarModal:", typeof window.openAvatarModal);
 </script>

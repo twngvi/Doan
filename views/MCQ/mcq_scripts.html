@@ -1,0 +1,103 @@
+<script>
+  /**
+   * MCQ Page Scripts
+   */
+
+  let currentQuizData = null;
+  let quizTimer = null;
+  let startTime = null;
+
+  /**
+   * Initialize MCQ Page
+   */
+  function initMCQPage() {
+    console.log("🎯 Initializing MCQ Page...");
+
+    // Get params from window.currentPageParams
+    if (window.currentPageParams) {
+      currentQuizData = window.currentPageParams;
+      console.log("Quiz params:", currentQuizData);
+
+      // Update header
+      document.getElementById("mcq-topic-title").textContent =
+        currentQuizData.topicTitle || "Quiz";
+
+      // Update back button text
+      const backText = currentQuizData.fromLesson
+        ? "Quay lại Lý thuyết"
+        : "Quay lại Topics";
+      document.getElementById("mcq-back-text").textContent = backText;
+
+      // Start quiz
+      startQuizSession();
+    }
+  }
+
+  /**
+   * Start quiz session
+   */
+  function startQuizSession() {
+    console.log("📝 Starting quiz session...");
+
+    // Start timer
+    startTime = new Date();
+    startQuizTimer();
+
+    // Load questions
+    loadQuizQuestions();
+  }
+
+  /**
+   * Start quiz timer
+   */
+  function startQuizTimer() {
+    quizTimer = setInterval(() => {
+      const elapsed = Math.floor((new Date() - startTime) / 1000);
+      const minutes = Math.floor(elapsed / 60);
+      const seconds = elapsed % 60;
+      document.getElementById("quiz-timer").textContent = `${String(
+        minutes
+      ).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }, 1000);
+  }
+
+  /**
+   * Load quiz questions
+   */
+  function loadQuizQuestions() {
+    console.log("Loading quiz questions for topic:", currentQuizData?.topicId);
+
+    // TODO: Implement actual quiz loading
+    document.getElementById("total-questions").textContent = "10";
+    document.getElementById("current-question").textContent = "1";
+    document.getElementById("current-score").textContent = "0";
+  }
+
+  /**
+   * Back from quiz
+   */
+  function backFromQuiz() {
+    // Clear timer
+    if (quizTimer) {
+      clearInterval(quizTimer);
+      quizTimer = null;
+    }
+
+    // Go back based on where user came from
+    if (currentQuizData?.fromLesson) {
+      showPage("page-lesson", {
+        topicId: currentQuizData.topicId,
+        topicTitle: currentQuizData.topicTitle,
+        contentDocId: currentQuizData.contentDocId || "",
+      });
+    } else {
+      showPage("page-topics");
+    }
+  }
+
+  // Make functions globally available
+  window.initMCQPage = initMCQPage;
+  window.backFromQuiz = backFromQuiz;
+
+  console.log("✅ MCQ scripts loaded");
+</script>

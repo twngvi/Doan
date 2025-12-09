@@ -269,4 +269,74 @@
     "%c🎮 CodeQuest Dashboard",
     "background: #2563EB; color: white; font-size: 18px; font-weight: bold; padding: 10px;"
   );
+
+  /**
+   * ⭐ Load Dashboard Data - IMPROVED
+   */
+  function loadDashboardData() {
+    console.log("📊 Loading dashboard data...");
+
+    // Kiểm tra session
+    const savedUser = sessionStorage.getItem("currentUser");
+    const isLoggedIn = sessionStorage.getItem("isLoggedIn");
+
+    if (!savedUser || isLoggedIn !== "true") {
+      console.error("❌ No valid session");
+      showToast("Vui lòng đăng nhập", "error");
+      setTimeout(() => {
+        showPage("page-login");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const user = JSON.parse(savedUser);
+      console.log("✅ User data loaded:", {
+        userId: user.userId,
+        email: user.email,
+        displayName: user.displayName || user.username,
+      });
+
+      // Update UI
+      updateDashboardUserInfo(user);
+    } catch (error) {
+      console.error("❌ Error loading dashboard:", error);
+      showToast("Lỗi tải dữ liệu", "error");
+    }
+  }
+
+  /**
+   * ⭐ Update dashboard user info
+   */
+  function updateDashboardUserInfo(user) {
+    // Update name
+    const nameElements = document.querySelectorAll(
+      "#userName, #userNameWelcome, #dashboard-user-name"
+    );
+    const displayName =
+      user.fullName || user.displayName || user.username || "User";
+
+    nameElements.forEach((el) => {
+      if (el) el.textContent = displayName;
+    });
+
+    // Update avatar
+    const avatarElements = document.querySelectorAll(
+      "#dashboard-avatar, .user-avatar"
+    );
+    const avatarUrl =
+      user.avatarUrl ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        displayName
+      )}&size=120&background=random`;
+
+    avatarElements.forEach((el) => {
+      if (el) el.src = avatarUrl;
+    });
+
+    console.log("✅ Dashboard UI updated");
+  }
+
+  // Initial load
+  loadDashboardData();
 </script>

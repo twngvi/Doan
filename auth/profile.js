@@ -179,64 +179,31 @@ function changeUserPassword(passwordData) {
 }
 
 /**
- * Upload and save user avatar
+ * ⭐ Lưu URL Avatar mới cho user (thay vì upload file)
+ * @param {string} userId - ID của user
+ * @param {string} avatarUrl - URL của avatar được chọn
+ * @returns {object} - {success, avatarUrl, message}
  */
-function uploadUserAvatar(avatarData) {
+function saveUserAvatarUrl(userId, avatarUrl) {
   try {
-    Logger.log("=== UPLOAD USER AVATAR ===");
-    Logger.log("User ID: " + avatarData.userId);
+    Logger.log("=== SAVE USER AVATAR URL ===");
+    Logger.log("User ID: " + userId);
+    Logger.log("Avatar URL: " + avatarUrl);
 
-    if (!avatarData.userId || !avatarData.imageData) {
+    if (!userId) {
       return {
         success: false,
-        message: "User ID và dữ liệu ảnh là bắt buộc",
+        message: "User ID is required",
       };
     }
 
-    // Get or create avatars folder
-    const folderId =
-      PropertiesService.getScriptProperties().getProperty("AVATARS_FOLDER_ID");
-    let folder;
-
-    if (folderId) {
-      try {
-        folder = DriveApp.getFolderById(folderId);
-      } catch (e) {
-        // Folder doesn't exist, create new one
-        folder = DriveApp.createFolder("User_Avatars");
-        PropertiesService.getScriptProperties().setProperty(
-          "AVATARS_FOLDER_ID",
-          folder.getId()
-        );
-      }
-    } else {
-      folder = DriveApp.createFolder("User_Avatars");
-      PropertiesService.getScriptProperties().setProperty(
-        "AVATARS_FOLDER_ID",
-        folder.getId()
-      );
+    if (!avatarUrl) {
+      return {
+        success: false,
+        message: "Avatar URL is required",
+      };
     }
 
-    // Convert base64 to blob
-    const imageBlob = Utilities.newBlob(
-      Utilities.base64Decode(avatarData.imageData.split(",")[1]),
-      avatarData.mimeType || "image/png",
-      "avatar_" + avatarData.userId + "_" + new Date().getTime()
-    );
-
-    // Delete old avatar if exists
-    const files = folder.getFilesByName("avatar_" + avatarData.userId);
-    while (files.hasNext()) {
-      files.next().setTrashed(true);
-    }
-
-    // Upload new avatar
-    const file = folder.createFile(imageBlob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-    const avatarUrl = "https://drive.google.com/uc?id=" + file.getId();
-
-    // Update user's avatarUrl in database
     const usersSheet = getSheet("Users");
     if (!usersSheet) {
       return {
@@ -246,27 +213,36 @@ function uploadUserAvatar(avatarData) {
     }
 
     const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const avatarUrlIndex = headers.indexOf("avatarUrl");
+
+    if (avatarUrlIndex === -1) {
+      return {
+        success: false,
+        message: "Không tìm thấy cột avatarUrl",
+      };
+    }
 
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === avatarData.userId) {
-        // Update avatarUrl (column 6, index 7)
-        usersSheet.getRange(i + 1, 7).setValue(avatarUrl);
+      if (data[i][0] === userId) {
+        // Update avatarUrl (column avatarUrl)
+        usersSheet.getRange(i + 1, avatarUrlIndex + 1).setValue(avatarUrl);
 
         // Log activity
         logActivity({
           level: "INFO",
           category: "USER",
-          userId: avatarData.userId,
-          action: "UPLOAD_AVATAR",
-          details: "Uploaded new avatar: " + file.getId(),
+          userId: userId,
+          action: "UPDATE_AVATAR",
+          details: "Updated avatar URL: " + avatarUrl,
         });
 
-        Logger.log("Avatar uploaded successfully");
+        Logger.log("Avatar URL updated successfully");
 
         return {
           success: true,
-          message: "Cập nhật avatar thành công!",
           avatarUrl: avatarUrl,
+          message: "Cập nhật avatar thành công!",
         };
       }
     }
@@ -276,7 +252,7 @@ function uploadUserAvatar(avatarData) {
       message: "Không tìm thấy người dùng",
     };
   } catch (error) {
-    Logger.log("Error in uploadUserAvatar: " + error.toString());
+    Logger.log("Error in saveUserAvatarUrl: " + error.toString());
     return {
       success: false,
       message: "Lỗi: " + error.toString(),
