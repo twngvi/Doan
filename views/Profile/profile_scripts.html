@@ -273,7 +273,8 @@
     const email = document.getElementById("profile-email");
 
     if (fullname) {
-      const name = user.fullName || user.displayName || user.username || "User";
+      // ⭐ CHỈ lấy displayName từ cột displayName trong database
+      const name = user.displayName || "";
       fullname.textContent = name;
       console.log("Fullname updated:", name);
     }
@@ -289,11 +290,9 @@
         avatar.src = user.avatarUrl;
         console.log("Avatar loaded:", user.avatarUrl);
       } else {
-        const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          user.fullName || user.username
-        )}&size=120&background=random`;
-        avatar.src = defaultUrl;
-        console.log("Using default avatar");
+        // Ẩn avatar nếu không có
+        avatar.style.display = "none";
+        console.log("No avatar, element hidden");
       }
     }
 
@@ -313,9 +312,9 @@
     const email = document.getElementById("email");
     const username = document.getElementById("username");
 
+    // ⭐ Lấy displayName từ cột displayName trong database
     if (displayName)
-      displayName.value =
-        user.fullName || user.displayName || user.username || "";
+      displayName.value = user.displayName || "";
     if (email) email.value = user.email || "";
     if (username) username.value = user.username || "";
   }
@@ -402,7 +401,84 @@
 
   function handleProfileUpdate(e) {
     e.preventDefault();
-    showToast("Tính năng đang phát triển", "info");
+    
+    console.log("💾 Saving profile...");
+    
+    // Lấy giá trị từ form
+    const displayNameInput = document.getElementById("displayName");
+    const newDisplayName = displayNameInput?.value?.trim();
+    
+    if (!newDisplayName) {
+      showToast("Vui lòng nhập tên hiển thị", "error");
+      return;
+    }
+    
+    // Kiểm tra user
+    if (!profileData || !profileData.userId) {
+      showToast("Không tìm thấy thông tin người dùng", "error");
+      return;
+    }
+    
+    // Hiển thị loading
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳</span><span>Đang lưu...</span>';
+    
+    // Gọi backend để cập nhật
+    google.script.run
+      .withSuccessHandler(function(response) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+        
+        if (response.success) {
+          console.log("✅ Profile updated:", response);
+          
+          // Cập nhật profileData và currentUser
+          profileData.displayName = newDisplayName;
+          currentUser.displayName = newDisplayName;
+          window.currentUser.displayName = newDisplayName;
+          
+          // Cập nhật sessionStorage và localStorage
+          sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
+          localStorage.setItem("currentUser", JSON.stringify(currentUser));
+          
+          // Cập nhật UI
+          updateProfileHeader(currentUser);
+          
+          // Cập nhật tất cả nơi hiển thị tên (dashboard, sidebar, etc.)
+          updateAllUserNames(newDisplayName);
+          
+          showToast("Cập nhật thông tin thành công!", "success");
+        } else {
+          console.error("❌ Update failed:", response.message);
+          showToast(response.message || "Lỗi cập nhật thông tin", "error");
+        }
+      })
+      .withFailureHandler(function(error) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+        console.error("❌ Error:", error);
+        showToast("Lỗi kết nối server", "error");
+      })
+      .updateUserProfile({
+        userId: profileData.userId,
+        displayName: newDisplayName
+      });
+  }
+  
+  // Hàm cập nhật tên ở tất cả các nơi
+  function updateAllUserNames(displayName) {
+    const nameElements = document.querySelectorAll(
+      "#userName, #userNameWelcome, #dashboard-user-name, #profile-fullname, #sidebar-user-name"
+    );
+    
+    nameElements.forEach((el) => {
+      if (el) {
+        el.textContent = displayName;
+        console.log("Updated element:", el.id, "→", displayName);
+      }
+    });
   }
 
   function handlePasswordChange(e) {
@@ -417,6 +493,7 @@
   window.filterAvatars = filterAvatars;
   window.selectAvatar = selectAvatar;
   window.updateAllAvatars = updateAllAvatars;
+  window.updateAllUserNames = updateAllUserNames;
 
   console.log("✅ Profile scripts loaded");
   console.log("✅ initProfilePage:", typeof window.initProfilePage);
