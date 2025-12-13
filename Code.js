@@ -26,6 +26,12 @@ function doGet(e) {
     Logger.log("=== doGet called ===");
     Logger.log("Parameters: " + JSON.stringify(e.parameter));
 
+    // --- PHẦN THÊM MỚI: Xử lý Callback Google Login ---
+    if (e.parameter.code && e.parameter.state === 'google_login_flow') {
+      return handleGoogleCallback(e.parameter.code);
+    }
+    // --------------------------------------------------
+
     const template = HtmlService.createTemplateFromFile("views/index");
     
     // ⭐ SERVER-SIDE ROUTING: Truyền tham số 'page' vào template
