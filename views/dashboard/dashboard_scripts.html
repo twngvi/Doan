@@ -306,37 +306,72 @@
   }
 
   /**
-   * ⭐ Update dashboard user info
+   * ⭐ Update dashboard user info - ĐÃ NÂNG CẤP
+   * Hàm này sẽ cập nhật TẤT CẢ các vị trí hiển thị tên
    */
   function updateDashboardUserInfo(user) {
-    // Update name
-    const nameElements = document.querySelectorAll(
-      "#userName, #userNameWelcome, #dashboard-user-name"
-    );
-    const displayName =
-      user.fullName || user.displayName || user.username || "User";
+    if (!user) return;
 
-    nameElements.forEach((el) => {
-      if (el) el.textContent = displayName;
+    // 1. Xác định tên hiển thị ưu tiên
+    const displayName =
+      user.displayName || user.fullName || user.username || "User";
+
+    // 2. Danh sách các ID cần cập nhật tên (bao gồm cả Dashboard và Topbar)
+    const nameSelectors = [
+      "#userName", // Dashboard Sidebar/Header cũ
+      "#userNameWelcome", // Dashboard Welcome Section
+      "#dashboard-user-name", // Dashboard Widget
+      "#profile-fullname", // Topbar & Profile Header
+      "#headerUserName", // Shared header
+    ];
+
+    // 3. Cập nhật Text
+    nameSelectors.forEach((selector) => {
+      // Sử dụng querySelectorAll để xử lý trường hợp ID bị trùng lặp trong DOM
+      document.querySelectorAll(selector).forEach((el) => {
+        el.textContent = displayName;
+      });
     });
 
-    // Update avatar
-    const avatarElements = document.querySelectorAll(
-      "#dashboard-avatar, .user-avatar"
-    );
+    // 4. Cập nhật Avatar (nếu có thay đổi)
     const avatarUrl =
       user.avatarUrl ||
       `https://ui-avatars.com/api/?name=${encodeURIComponent(
         displayName
       )}&size=120&background=random`;
 
-    avatarElements.forEach((el) => {
-      if (el) el.src = avatarUrl;
+    const avatarSelectors = [
+      "#dashboard-avatar",
+      ".user-avatar",
+      "#profile-avatar",
+      "#sidebar-avatar",
+      "#header-avatar",
+    ];
+
+    avatarSelectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        el.src = avatarUrl;
+      });
     });
 
-    console.log("✅ Dashboard UI updated");
+    console.log("✅ UI Synchronized for:", displayName);
   }
 
   // Initial load
   loadDashboardData();
+
+  // ⭐ THÊM PHẦN NÀY VÀO CUỐI SCRIPT ⭐
+  // Lắng nghe sự kiện cập nhật từ trang Profile (hoặc bất kỳ đâu)
+  window.addEventListener("user-info-updated", function (e) {
+    console.log("🔄 Detected user update event:", e.detail);
+    if (e.detail) {
+      // Cập nhật lại biến global
+      if (typeof currentUser !== "undefined") currentUser = e.detail;
+      if (typeof window.currentUser !== "undefined")
+        window.currentUser = e.detail;
+
+      // Chạy hàm cập nhật giao diện
+      updateDashboardUserInfo(e.detail);
+    }
+  });
 </script>

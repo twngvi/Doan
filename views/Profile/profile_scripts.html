@@ -402,7 +402,74 @@
 
   function handleProfileUpdate(e) {
     e.preventDefault();
-    showToast("Tính năng đang phát triển", "info");
+
+    // 1. Lấy dữ liệu từ form
+    const displayNameInput = document.getElementById("displayName");
+    const newName = displayNameInput.value.trim();
+
+    if (!newName) {
+      showToast("Tên hiển thị không được để trống", "error");
+      return;
+    }
+
+    // 2. Lấy user hiện tại
+    let user = window.currentUser || profileData;
+    if (!user) {
+      // Fallback lấy từ session nếu biến global mất
+      const saved = sessionStorage.getItem("currentUser");
+      if (saved) {
+        try {
+          user = JSON.parse(saved);
+        } catch (e) {
+          console.error("Parse error:", e);
+        }
+      }
+    }
+
+    if (!user) {
+      showToast("Phiên đăng nhập hết hạn", "error");
+      setTimeout(() => showPage("page-login"), 1500);
+      return;
+    }
+
+    showToast("Đang lưu thông tin...", "info");
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+
+    // 3. Gửi lên Server (Google Apps Script)
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (submitBtn) submitBtn.disabled = false;
+
+        if (res && res.success) {
+          // A. Cập nhật đối tượng User
+          user.displayName = newName;
+          user.fullName = newName; // Cập nhật cả 2 trường để chắc chắn
+
+          // B. Lưu lại vào Session/Local Storage
+          window.currentUser = user;
+          profileData = user;
+          sessionStorage.setItem("currentUser", JSON.stringify(user));
+
+          // C. Cập nhật giao diện Profile ngay lập tức
+          updateProfileHeader(user);
+
+          // D. ⭐ QUAN TRỌNG: Phát tín hiệu cho Dashboard biết
+          window.dispatchEvent(
+            new CustomEvent("user-info-updated", { detail: user })
+          );
+
+          showToast("Cập nhật thành công!", "success");
+        } else {
+          showToast("Lỗi: " + (res ? res.message : "Unknown error"), "error");
+        }
+      })
+      .withFailureHandler(function (err) {
+        if (submitBtn) submitBtn.disabled = false;
+        console.error("Update error:", err);
+        showToast("Lỗi kết nối server", "error");
+      })
+      .updateUserProfile({ userId: user.userId, displayName: newName });
   }
 
   function handlePasswordChange(e) {
