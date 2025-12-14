@@ -155,19 +155,51 @@
     // Save to server
     google.script.run
       .withSuccessHandler(function (res) {
-        console.log("Save response:", res);
+        console.log("💾 Save avatar response:", res);
         if (res.success) {
+          // 1. Update user object
           user.avatarUrl = url;
-          window.currentUser = user; // Update global
-          profileData = user; // Update local
-          sessionStorage.setItem("currentUser", JSON.stringify(user));
+
+          // 2. Update global variables
+          window.currentUser = user;
+          profileData = user;
+
+          // 3. ⭐ LƯU VÀO CẢ localStorage VÀ sessionStorage
+          try {
+            localStorage.setItem("currentUser", JSON.stringify(user));
+            console.log("✅ Avatar saved to localStorage");
+          } catch (e) {
+            console.warn("⚠️ localStorage blocked:", e);
+          }
+
+          try {
+            sessionStorage.setItem("currentUser", JSON.stringify(user));
+            console.log("✅ Avatar saved to sessionStorage");
+          } catch (e) {
+            console.warn("⚠️ sessionStorage blocked:", e);
+          }
+
+          // 4. Update UI globally
           showToast("Đổi avatar thành công!", "success");
+
+          // 5. Dispatch event để các component khác update
           window.dispatchEvent(
             new CustomEvent("avatar-updated", { detail: { url } })
           );
-          setTimeout(() => updateAllAvatars(url), 100);
+
+          // 6. Update tất cả avatar elements trong DOM
+          setTimeout(() => {
+            updateAllAvatars(url);
+            // Gọi hàm global nếu có
+            if (typeof window.updateAllUserAvatars === "function") {
+              window.updateAllUserAvatars(url);
+            }
+          }, 100);
+
+          console.log("✅ Avatar update complete:", url);
         } else {
           showToast("Lỗi: " + res.message, "error");
+          // Rollback UI
           if (profileAvatar && user.avatarUrl)
             profileAvatar.src = user.avatarUrl;
           if (sidebarAvatar && user.avatarUrl)
@@ -175,8 +207,9 @@
         }
       })
       .withFailureHandler(function (err) {
-        console.error("Save error:", err);
-        showToast("Lỗi kết nối", "error");
+        console.error("❌ Save avatar error:", err);
+        showToast("Lỗi kết nối: " + err.message, "error");
+        // Rollback UI
         if (profileAvatar && user.avatarUrl) profileAvatar.src = user.avatarUrl;
         if (sidebarAvatar && user.avatarUrl) sidebarAvatar.src = user.avatarUrl;
       })
@@ -184,12 +217,45 @@
   }
 
   function updateAllAvatars(url) {
-    console.log("Updating all avatars");
-    ["profile-avatar", "sidebar-avatar", "dashboard-avatar"].forEach((id) => {
+    console.log("🖼️ Updating all avatar elements to:", url);
+
+    // Danh sách tất cả các ID có thể chứa avatar
+    const avatarIds = [
+      "profile-avatar",
+      "sidebar-avatar",
+      "dashboard-avatar",
+      "topbar-avatar",
+      "user-avatar",
+    ];
+
+    let updated = 0;
+
+    // Update by ID
+    avatarIds.forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.src = url;
+      if (el) {
+        el.src = url;
+        el.style.display = "block";
+        updated++;
+        console.log("✅ Updated #" + id);
+      }
     });
-    document.querySelectorAll(".user-avatar").forEach((el) => (el.src = url));
+
+    // Update by class
+    document.querySelectorAll(".user-avatar").forEach((el) => {
+      el.src = url;
+      el.style.display = "block";
+      updated++;
+    });
+
+    // Update by data attribute
+    document.querySelectorAll("[data-user-avatar]").forEach((el) => {
+      el.src = url;
+      el.style.display = "block";
+      updated++;
+    });
+
+    console.log("✅ Total avatar elements updated:", updated);
   }
 
   // ⭐ PROFILE PAGE INITIALIZATION
