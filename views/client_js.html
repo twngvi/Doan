@@ -21,72 +21,92 @@
     // BƯỚC 1: Khôi phục Session NGAY LẬP TỨC
     // Phải làm điều này trước khi quyết định hiển thị trang nào
     try {
-        const savedUserStr = localStorage.getItem("currentUser");
-        const isLoggedInStr = localStorage.getItem("isLoggedIn");
-        
-        if (savedUserStr && isLoggedInStr === "true") {
-            const user = JSON.parse(savedUserStr);
-            // Đồng bộ vào biến toàn cục
-            currentUser = user;
-            window.currentUser = user;
-            console.log(" Session recovered for:", user.email || user.username);
-        } else {
-            console.log("ℹ No active session found");
-            currentUser = null;
-            window.currentUser = null;
-        }
-    } catch (e) {
-        console.error(" Error recovering session:", e);
-        localStorage.clear();
+      const savedUserStr = localStorage.getItem("currentUser");
+      const isLoggedInStr = localStorage.getItem("isLoggedIn");
+
+      if (savedUserStr && isLoggedInStr === "true") {
+        const user = JSON.parse(savedUserStr);
+        // Đồng bộ vào biến toàn cục
+        currentUser = user;
+        window.currentUser = user;
+        console.log(" Session recovered for:", user.email || user.username);
+        console.log("🎭 Display Name:", user.displayName);
+
+        // ⭐ CẬP NHẬT UI NGAY - Tất cả vị trí hiển thị tên
+        setTimeout(() => {
+          if (typeof window.updateAllUserNames === "function") {
+            window.updateAllUserNames(
+              user.displayName || user.username || "User"
+            );
+          }
+          if (typeof window.updateAllUserAvatars === "function") {
+            window.updateAllUserAvatars(user.avatarUrl);
+          }
+        }, 100);
+      } else {
+        console.log("ℹ No active session found");
         currentUser = null;
         window.currentUser = null;
+      }
+    } catch (e) {
+      console.error(" Error recovering session:", e);
+      localStorage.clear();
+      currentUser = null;
+      window.currentUser = null;
     }
 
     // BƯỚC 2: Xác định trang đích (Routing Logic)
-    
+
     // Ưu tiên 1: Link từ email/server (window.SERVER_PARAMS.page)
-    let requestedPageName = window.SERVER_PARAMS?.page || '';
-    
+    let requestedPageName = window.SERVER_PARAMS?.page || "";
+
     // Ưu tiên 2: Trạng thái cũ khi F5 (localStorage)
     if (!requestedPageName) {
-        requestedPageName = localStorage.getItem("lastActivePage");
-        if (requestedPageName) {
-            console.log(" Recovered page from storage:", requestedPageName);
-        }
+      requestedPageName = localStorage.getItem("lastActivePage");
+      if (requestedPageName) {
+        console.log(" Recovered page from storage:", requestedPageName);
+      }
     } else {
-        console.log(" Server requested page:", requestedPageName);
+      console.log(" Server requested page:", requestedPageName);
     }
 
     // Định nghĩa danh sách trang
     const pageMap = {
-      'dashboard': 'page-dashboard',
-      'topics': 'page-topics',
-      'mcq': 'page-mcq',
-      'lesson': 'page-lesson',
-      'matching': 'page-matching',
-      'profile': 'page-profile',
-      'login': 'page-login',
-      'register': 'page-register',
-      'landing': 'page-landing',
-      'verify-email': 'page-verify-email',
-      'forgot-password': 'page-forgot-password'
+      dashboard: "page-dashboard",
+      topics: "page-topics",
+      mcq: "page-mcq",
+      lesson: "page-lesson",
+      matching: "page-matching",
+      profile: "page-profile",
+      login: "page-login",
+      register: "page-register",
+      landing: "page-landing",
+      "verify-email": "page-verify-email",
+      "forgot-password": "page-forgot-password",
     };
 
-    const protectedPages = ['dashboard', 'topics', 'mcq', 'lesson', 'matching', 'profile'];
-    const authPages = ['login', 'register', 'landing', 'forgot-password'];
+    const protectedPages = [
+      "dashboard",
+      "topics",
+      "mcq",
+      "lesson",
+      "matching",
+      "profile",
+    ];
+    const authPages = ["login", "register", "landing", "forgot-password"];
 
     // Mặc định là landing
-    let targetPageId = 'page-landing';
-    let finalPageName = 'landing';
+    let targetPageId = "page-landing";
+    let finalPageName = "landing";
 
     // Logic định tuyến
     if (requestedPageName && pageMap[requestedPageName]) {
-        finalPageName = requestedPageName;
+      finalPageName = requestedPageName;
     } else {
-        // Nếu không có trang yêu cầu, nhưng đã login -> vào dashboard
-        if (window.currentUser) {
-            finalPageName = 'dashboard';
-        }
+      // Nếu không có trang yêu cầu, nhưng đã login -> vào dashboard
+      if (window.currentUser) {
+        finalPageName = "dashboard";
+      }
     }
 
     // BƯỚC 3: Kiểm tra quyền truy cập (Auth Guard)
@@ -94,28 +114,28 @@
     const isAuthPage = authPages.includes(finalPageName);
 
     if (isProtected) {
-        if (window.currentUser) {
-            // Đã login + Trang bảo vệ -> CHO PHÉP
-            targetPageId = pageMap[finalPageName];
-            console.log(" Authenticated access to:", finalPageName);
-        } else {
-            // Chưa login + Trang bảo vệ -> ĐÁ VỀ LOGIN
-            console.warn(" Unauthorized access. Redirecting to Login.");
-            targetPageId = 'page-login';
-            finalPageName = 'login'; 
-        }
+      if (window.currentUser) {
+        // Đã login + Trang bảo vệ -> CHO PHÉP
+        targetPageId = pageMap[finalPageName];
+        console.log(" Authenticated access to:", finalPageName);
+      } else {
+        // Chưa login + Trang bảo vệ -> ĐÁ VỀ LOGIN
+        console.warn(" Unauthorized access. Redirecting to Login.");
+        targetPageId = "page-login";
+        finalPageName = "login";
+      }
     } else if (isAuthPage) {
-        if (window.currentUser && finalPageName !== 'verify-email') {
-            // Đã login mà vào Login/Register/Landing -> ĐẨY VÀO DASHBOARD
-            console.log("ℹ User already logged in. Redirecting to Dashboard.");
-            targetPageId = 'page-dashboard';
-            finalPageName = 'dashboard';
-        } else {
-            // Chưa login + Trang public -> CHO PHÉP
-            targetPageId = pageMap[finalPageName];
-        }
+      if (window.currentUser && finalPageName !== "verify-email") {
+        // Đã login mà vào Login/Register/Landing -> ĐẨY VÀO DASHBOARD
+        console.log("ℹ User already logged in. Redirecting to Dashboard.");
+        targetPageId = "page-dashboard";
+        finalPageName = "dashboard";
+      } else {
+        // Chưa login + Trang public -> CHO PHÉP
+        targetPageId = pageMap[finalPageName];
+      }
     } else {
-        targetPageId = pageMap[finalPageName] || 'page-landing';
+      targetPageId = pageMap[finalPageName] || "page-landing";
     }
 
     console.log(" Final Target Page:", targetPageId);
@@ -124,24 +144,27 @@
     showPage(targetPageId, {}, false);
 
     // Load dữ liệu dashboard nếu cần
-    if (targetPageId === 'page-dashboard' && typeof loadDashboardData === 'function') {
-        setTimeout(loadDashboardData, 100);
+    if (
+      targetPageId === "page-dashboard" &&
+      typeof loadDashboardData === "function"
+    ) {
+      setTimeout(loadDashboardData, 100);
     }
   });
   // ==================== URL State Management ====================
-  
+
   /**
    * Cáº­p nháº­t URL state mÃ  khÃ´ng reload trang
    * @param {string} pageName - TÃªn trang (dashboard, topics, login, etc.)
    */
   function updateURLState(pageName) {
     if (!pageName) return;
-    
-    const newURL = window.location.pathname + '?page=' + pageName;
+
+    const newURL = window.location.pathname + "?page=" + pageName;
     console.log("ðŸ”— Updating URL to:", newURL);
-    
+
     // Sá»­ dá»¥ng replaceState Ä‘á»ƒ khÃ´ng táº¡o entry má»›i trong history
-    window.history.replaceState({ page: pageName }, '', newURL);
+    window.history.replaceState({ page: pageName }, "", newURL);
   }
 
   // ==================== Page Navigation ====================
@@ -154,75 +177,87 @@
    */
   function showPage(pageId, params = {}, addToHistory = true) {
     console.log("Showing page:", pageId);
-    
+
     // Safety check: Nếu pageId không tồn tại trong DOM, về landing
     if (!document.getElementById(pageId)) {
-        console.error("Page ID not found:", pageId);
-        pageId = 'page-landing';
+      console.error("Page ID not found:", pageId);
+      pageId = "page-landing";
     }
 
     // Hide toast when changing pages
-    if (typeof hideToast === 'function') hideToast();
+    if (typeof hideToast === "function") hideToast();
 
     // 1. Ẩn tất cả trang
     const allPages = document.querySelectorAll(".page-content");
-    allPages.forEach(page => page.style.display = "none");
+    allPages.forEach((page) => (page.style.display = "none"));
 
     // 2. Hiện trang đích
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
-        targetPage.style.display = "block"; // Dòng này hiện trang
-        
-        // 3. Lưu trạng thái
-        const pageName = pageId.replace("page-", "");
-        localStorage.setItem("lastActivePage", pageName);
-        
-        // Cập nhật URL ảo
-        if (typeof updateURLState === 'function') updateURLState(pageName);
+      targetPage.style.display = "block"; // Dòng này hiện trang
 
-        // Update browser history
-        if (addToHistory) {
-            const state = { pageId: pageId, params: params };
-            const url = window.location.pathname + "?page=" + pageName;
-            history.pushState(state, "", url);
-        }
+      // 3. Lưu trạng thái
+      const pageName = pageId.replace("page-", "");
+      localStorage.setItem("lastActivePage", pageName);
 
-        // --- KHU VỰC SỬA LỖI (FIX CRASH) ---
-        // Bọc việc update UI trong try-catch để nếu lỗi giao diện thì trang vẫn load được
-        if (pageId === "page-dashboard") {
-            try {
-                // Kiểm tra các biến thể hàm update navbar
-                if (typeof updateNavbarActive === "function") {
-                    updateNavbarActive("page-dashboard");
-                } else if (typeof Sidebar !== 'undefined' && typeof Sidebar.updateActiveNav === 'function') {
-                    Sidebar.updateActiveNav("page-dashboard");
-                }
-            } catch (e) {
-                console.warn("Navbar update failed (ignored to allow page load):", e);
-            }
-        }
-        // --------------------------------------
+      // Cập nhật URL ảo
+      if (typeof updateURLState === "function") updateURLState(pageName);
 
-        // Pass params logic
-        if (Object.keys(params).length > 0) {
-            window.currentPageParams = params;
-        }
+      // Update browser history
+      if (addToHistory) {
+        const state = { pageId: pageId, params: params };
+        const url = window.location.pathname + "?page=" + pageName;
+        history.pushState(state, "", url);
+      }
 
-        // Các xử lý khởi tạo trang con (dùng try-catch để an toàn)
+      // --- KHU VỰC SỬA LỖI (FIX CRASH) ---
+      // Bọc việc update UI trong try-catch để nếu lỗi giao diện thì trang vẫn load được
+      if (pageId === "page-dashboard") {
         try {
-            if (pageId === "page-topics") {
-                 if (typeof initTopicsPage === "function") initTopicsPage();
-                 else if (typeof window.initTopicsPageOnShow === "function") window.initTopicsPageOnShow();
-            }
-            if (pageId === "page-lesson" && typeof window.initLessonPage === "function") window.initLessonPage();
-            if (pageId === "page-mcq" && typeof window.initMCQPage === "function") window.initMCQPage();
-            if (pageId === "page-profile" && typeof window.initProfilePage === "function") setTimeout(() => window.initProfilePage(), 100);
-        } catch (subPageError) {
-            console.error("Error initializing sub-page:", subPageError);
+          // Kiểm tra các biến thể hàm update navbar
+          if (typeof updateNavbarActive === "function") {
+            updateNavbarActive("page-dashboard");
+          } else if (
+            typeof Sidebar !== "undefined" &&
+            typeof Sidebar.updateActiveNav === "function"
+          ) {
+            Sidebar.updateActiveNav("page-dashboard");
+          }
+        } catch (e) {
+          console.warn("Navbar update failed (ignored to allow page load):", e);
         }
+      }
+      // --------------------------------------
 
+      // Pass params logic
+      if (Object.keys(params).length > 0) {
+        window.currentPageParams = params;
+      }
+
+      // Các xử lý khởi tạo trang con (dùng try-catch để an toàn)
+      try {
+        if (pageId === "page-topics") {
+          if (typeof initTopicsPage === "function") initTopicsPage();
+          else if (typeof window.initTopicsPageOnShow === "function")
+            window.initTopicsPageOnShow();
+        }
+        if (
+          pageId === "page-lesson" &&
+          typeof window.initLessonPage === "function"
+        )
+          window.initLessonPage();
+        if (pageId === "page-mcq" && typeof window.initMCQPage === "function")
+          window.initMCQPage();
+        if (
+          pageId === "page-profile" &&
+          typeof window.initProfilePage === "function"
+        )
+          setTimeout(() => window.initProfilePage(), 100);
+      } catch (subPageError) {
+        console.error("Error initializing sub-page:", subPageError);
+      }
     } else {
-        console.error("Page not found:", pageId);
+      console.error("Page not found:", pageId);
     }
   }
   // ==================== Browser History Handling ====================
@@ -424,7 +459,9 @@
 
           // Kiá»ƒm tra xem server cÃ³ yÃªu cáº§u xÃ¡c thá»±c khÃ´ng
           if (response.requiresVerification) {
-            console.log("ðŸ” YÃªu cáº§u xÃ¡c thá»±c email, Ä‘ang chuyá»ƒn hÆ°á»›ng...");
+            console.log(
+              "ðŸ” YÃªu cáº§u xÃ¡c thá»±c email, Ä‘ang chuyá»ƒn hÆ°á»›ng..."
+            );
 
             // 1. LÆ°u email vÃ o localStorage Ä‘á»ƒ trang Verify biáº¿t xÃ¡c thá»±c cho ai
             const verificationData = {
@@ -545,7 +582,10 @@
 
     // Validation
     if (!fullName || !username || !password) {
-      showToast("Vui lÃ²ng nháº­p Ä‘áº§y Ä‘á»§ thÃ´ng tin báº¯t buá»™c", "error");
+      showToast(
+        "Vui lÃ²ng nháº­p Ä‘áº§y Ä‘á»§ thÃ´ng tin báº¯t buá»™c",
+        "error"
+      );
       return false;
     }
 
@@ -603,7 +643,10 @@
       console.log("âœ… Current user synced to window:", currentUser);
 
       // Show success message
-      showToast("ÄÄƒng kÃ½ thÃ nh cÃ´ng! Äang chuyá»ƒn tá»›i trang chá»§...", "success");
+      showToast(
+        "ÄÄƒng kÃ½ thÃ nh cÃ´ng! Äang chuyá»ƒn tá»›i trang chá»§...",
+        "success"
+      );
 
       // Navigate to dashboard
       setTimeout(() => {
@@ -628,10 +671,10 @@
     localStorage.removeItem("userSession");
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("userId");
-    
+
     // â­ FIX F5: XÃ³a trang Ä‘Ã£ lÆ°u Ä‘á»ƒ trÃ¡nh quay láº¡i trang cÅ©
     localStorage.removeItem("lastActivePage");
-    
+
     // Clear localStorage náº¿u cÃ³
     localStorage.removeItem("currentUser");
     localStorage.removeItem("user");
@@ -694,9 +737,16 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
 â€¢ Sá»­ dá»¥ng cháº¿ Ä‘á»™ áº©n danh (Incognito)
 â€¢ Má»Ÿ URL nÃ y trong profile Chrome khÃ¡c`;
 
-    if (confirm(message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?")) {
+    if (
+      confirm(
+        message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?"
+      )
+    ) {
       window.open("https://accounts.google.com/SignOutOptions", "_blank");
-      showToast("Vui lÃ²ng Ä‘Äƒng xuáº¥t Google rá»“i quay láº¡i Ä‘Ã¢y", "info");
+      showToast(
+        "Vui lÃ²ng Ä‘Äƒng xuáº¥t Google rá»“i quay láº¡i Ä‘Ã¢y",
+        "info"
+      );
     }
   }
 
@@ -737,14 +787,19 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
 
-          showToast(response.message || "ÄÄƒng nháº­p thÃ nh cÃ´ng!", "success");
+          showToast(
+            response.message || "ÄÄƒng nháº­p thÃ nh cÃ´ng!",
+            "success"
+          );
 
           setTimeout(() => {
             showPage("page-dashboard");
           }, 1000);
         } else if (response.autoRegister) {
           // TÃ i khoáº£n chÆ°a tá»“n táº¡i - hiá»‡n form Ä‘Äƒng kÃ½
-          console.log("ðŸ“ TÃ i khoáº£n chÆ°a tá»“n táº¡i, chuyá»ƒn sang Ä‘Äƒng kÃ½");
+          console.log(
+            "ðŸ“ TÃ i khoáº£n chÆ°a tá»“n táº¡i, chuyá»ƒn sang Ä‘Äƒng kÃ½"
+          );
           showToast(
             "TÃ i khoáº£n chÆ°a tá»“n táº¡i. Vui lÃ²ng hoÃ n táº¥t Ä‘Äƒng kÃ½.",
             "info"
@@ -912,14 +967,16 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
         showToast(
           "ðŸŽ‰ " +
             (response.message ||
-              "TÃ i khoáº£n má»›i Ä‘Ã£ Ä‘Æ°á»£c táº¡o! ChÃ o má»«ng " + response.user.fullName),
+              "TÃ i khoáº£n má»›i Ä‘Ã£ Ä‘Æ°á»£c táº¡o! ChÃ o má»«ng " +
+                response.user.fullName),
           "success"
         );
         console.log("âœ… New user registered via Google Sign-In");
       } else {
         showToast(
           response.message ||
-            "ÄÄƒng nháº­p thÃ nh cÃ´ng! ChÃ o má»«ng trá»Ÿ láº¡i " + response.user.fullName,
+            "ÄÄƒng nháº­p thÃ nh cÃ´ng! ChÃ o má»«ng trá»Ÿ láº¡i " +
+              response.user.fullName,
           "success"
         );
         console.log("âœ… Existing user logged in via Google Sign-In");
@@ -934,7 +991,10 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
       }, 500);
     } else {
       console.error("Login failed with status:", response.status);
-      showToast(response.message || "ÄÄƒng nháº­p Google tháº¥t báº¡i", "error");
+      showToast(
+        response.message || "ÄÄƒng nháº­p Google tháº¥t báº¡i",
+        "error"
+      );
     }
   }
 
@@ -1177,7 +1237,8 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
       const msg = error.message.toLowerCase();
 
       if (msg.includes("429") || msg.includes("too many requests")) {
-        errorMessage = "QuÃ¡ nhiá»u yÃªu cáº§u. Vui lÃ²ng Ä‘á»£i 1 phÃºt vÃ  thá»­ láº¡i.";
+        errorMessage =
+          "QuÃ¡ nhiá»u yÃªu cáº§u. Vui lÃ²ng Ä‘á»£i 1 phÃºt vÃ  thá»­ láº¡i.";
       } else if (msg.includes("timeout")) {
         errorMessage =
           "Háº¿t thá»i gian chá». Vui lÃ²ng kiá»ƒm tra káº¿t ná»‘i vÃ  thá»­ láº¡i.";
@@ -1232,7 +1293,9 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
    * Show forgot password modal
    */
   function showForgotPasswordModal() {
-    const email = prompt("Nháº­p email cá»§a báº¡n Ä‘á»ƒ nháº­n link reset máº­t kháº©u:");
+    const email = prompt(
+      "Nháº­p email cá»§a báº¡n Ä‘á»ƒ nháº­n link reset máº­t kháº©u:"
+    );
 
     if (!email) {
       return;
@@ -1473,7 +1536,9 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
    * Show reset password form (Legacy - kept for compatibility)
    */
   function showResetPasswordForm(token) {
-    const newPassword = prompt("Nháº­p máº­t kháº©u má»›i (tá»‘i thiá»ƒu 6 kÃ½ tá»±):");
+    const newPassword = prompt(
+      "Nháº­p máº­t kháº©u má»›i (tá»‘i thiá»ƒu 6 kÃ½ tá»±):"
+    );
 
     if (!newPassword) {
       return;

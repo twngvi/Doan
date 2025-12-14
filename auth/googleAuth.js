@@ -4,30 +4,31 @@
  */
 
 const GOOGLE_AUTH_CONFIG = {
-  CLIENT_ID: '781599898111-ookle9f5ejrr545k5hpcoshjv86rk5pr.apps.googleusercontent.com',
-  CLIENT_SECRET: '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',
+  CLIENT_ID:
+    "781599898111-ookle9f5ejrr545k5hpcoshjv86rk5pr.apps.googleusercontent.com",
+  CLIENT_SECRET: "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",
   REDIRECT_URI: ScriptApp.getService().getUrl(), // Tự động lấy URL hiện tại
-  AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
-  TOKEN_URL: 'https://oauth2.googleapis.com/token',
-  USER_INFO_URL: 'https://www.googleapis.com/oauth2/v2/userinfo'
+  AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
+  TOKEN_URL: "https://oauth2.googleapis.com/token",
+  USER_INFO_URL: "https://www.googleapis.com/oauth2/v2/userinfo",
 };
 
 function getGoogleAuthUrl() {
   const params = {
     client_id: GOOGLE_AUTH_CONFIG.CLIENT_ID,
     redirect_uri: GOOGLE_AUTH_CONFIG.REDIRECT_URI,
-    response_type: 'code',
-    scope: 'email profile',
-    access_type: 'online',
-    state: 'google_login_flow',
-    prompt: 'select_account'
+    response_type: "code",
+    scope: "email profile",
+    access_type: "online",
+    state: "google_login_flow",
+    prompt: "select_account",
   };
-  
+
   const queryString = Object.keys(params)
-    .map(key => key + '=' + encodeURIComponent(params[key]))
-    .join('&');
-    
-  return GOOGLE_AUTH_CONFIG.AUTH_URL + '?' + queryString;
+    .map((key) => key + "=" + encodeURIComponent(params[key]))
+    .join("&");
+
+  return GOOGLE_AUTH_CONFIG.AUTH_URL + "?" + queryString;
 }
 
 function handleGoogleCallback(authCode) {
@@ -38,30 +39,30 @@ function handleGoogleCallback(authCode) {
       client_id: GOOGLE_AUTH_CONFIG.CLIENT_ID,
       client_secret: GOOGLE_AUTH_CONFIG.CLIENT_SECRET,
       redirect_uri: GOOGLE_AUTH_CONFIG.REDIRECT_URI,
-      grant_type: 'authorization_code'
+      grant_type: "authorization_code",
     };
 
     const tokenResponse = UrlFetchApp.fetch(GOOGLE_AUTH_CONFIG.TOKEN_URL, {
-      method: 'post',
+      method: "post",
       payload: payload,
-      muteHttpExceptions: true
+      muteHttpExceptions: true,
     });
-    
+
     const tokenData = JSON.parse(tokenResponse.getContentText());
     if (!tokenData.access_token) throw new Error("Failed to get access token");
 
     // 2. Lấy thông tin User
     const userResponse = UrlFetchApp.fetch(GOOGLE_AUTH_CONFIG.USER_INFO_URL, {
-      headers: { Authorization: 'Bearer ' + tokenData.access_token }
+      headers: { Authorization: "Bearer " + tokenData.access_token },
     });
     const googleUser = JSON.parse(userResponse.getContentText());
-    
+
     // 3. Xử lý Logic Database (Tạo user + Tạo Sheet cá nhân)
     const appUser = processGoogleUserLogin(googleUser);
 
     // 4. Trả về HTML với nút bấm chuyển hướng (Fix lỗi SecurityError)
     const dashboardUrl = ScriptApp.getService().getUrl() + "?page=dashboard";
-    
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -83,30 +84,54 @@ function handleGoogleCallback(authCode) {
         <div class="card">
           <div class="icon">🎉</div>
           <h2>Đăng nhập thành công!</h2>
-          <p>Xin chào <strong>${appUser.displayName}</strong>. Tài khoản và dữ liệu học tập của bạn đã sẵn sàng.</p>
+          <p>Xin chào <strong>${
+            appUser.displayName
+          }</strong>. Tài khoản và dữ liệu học tập của bạn đã sẵn sàng.</p>
           
           <a href="${dashboardUrl}" target="_top" class="btn" id="redirectBtn">
             Vào Dashboard ngay
           </a>
 
           <script>
-            // Lưu session vào localStorage
+            // Lưu session vào localStorage và sessionStorage
             const user = ${JSON.stringify(appUser)};
-            localStorage.setItem("currentUser", JSON.stringify(user));
-            localStorage.setItem("isLoggedIn", "true");
-            localStorage.setItem("userId", user.userId);
             
-            // Tự động click sau 1s (nếu trình duyệt cho phép)
+            try {
+              localStorage.setItem("currentUser", JSON.stringify(user));
+              localStorage.setItem("isLoggedIn", "true");
+              localStorage.setItem("userId", user.userId);
+              localStorage.setItem("lastActivePage", "dashboard");
+              console.log("✅ Session saved to localStorage");
+            } catch (e) {
+              console.warn("⚠️ localStorage blocked:", e);
+            }
+            
+            try {
+              sessionStorage.setItem("currentUser", JSON.stringify(user));
+              sessionStorage.setItem("isLoggedIn", "true");
+              sessionStorage.setItem("userId", user.userId);
+              console.log("✅ Session saved to sessionStorage");
+            } catch (e) {
+              console.warn("⚠️ sessionStorage blocked:", e);
+            }
+            
+            // Set biến global
+            if (typeof window !== 'undefined') {
+              window.currentUser = user;
+            }
+            
+            console.log("✅ Google login complete for:", user.displayName);
+            
+            // Tự động redirect sau 1.5s
             setTimeout(() => {
               document.getElementById('redirectBtn').click();
-            }, 1000);
+            }, 1500);
           </script>
         </div>
       </body>
       </html>
     `;
     return HtmlService.createHtmlOutput(htmlContent);
-
   } catch (e) {
     Logger.log("OAuth Error: " + e.toString());
     return HtmlService.createHtmlOutput("Login Failed: " + e.toString());

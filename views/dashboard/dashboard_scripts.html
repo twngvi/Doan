@@ -315,38 +315,48 @@
     const displayName =
       user.displayName || user.fullName || user.username || "User";
 
-    // 2. Danh sách các ID cần cập nhật tên (bao gồm cả Dashboard và Topbar)
-    const nameSelectors = [
-      "#userName", // Dashboard Sidebar/Header cũ
-      "#userNameWelcome", // Dashboard Welcome Section
-      "#dashboard-user-name", // Dashboard Widget
-      "#profile-fullname", // Topbar & Profile Header
-      "#headerUserName", // Shared header
-    ];
+    console.log("🎯 Updating dashboard UI with displayName:", displayName);
 
-    // 3. Cập nhật Text
-    nameSelectors.forEach((selector) => {
-      // Sử dụng querySelectorAll để xử lý trường hợp ID bị trùng lặp trong DOM
-      document.querySelectorAll(selector).forEach((el) => {
-        el.textContent = displayName;
+    // 2. Sử dụng hàm global để update tất cả vị trí
+    if (typeof window.updateAllUserNames === "function") {
+      window.updateAllUserNames(displayName);
+    } else {
+      // Fallback nếu hàm global chưa load
+      const nameSelectors = [
+        "#userName",
+        "#userNameWelcome",
+        "#dashboard-user-name",
+        "#profile-fullname",
+        "#headerUserName",
+      ];
+
+      nameSelectors.forEach((selector) => {
+        document.querySelectorAll(selector).forEach((el) => {
+          if (el) el.textContent = displayName;
+        });
       });
-    });
+    }
 
-    // ⭐ CHỈ hiển thị avatar từ cột avatarUrl (KHÔNG có fallback UI Avatars)
-    const avatarElements = document.querySelectorAll(
-      "#dashboard-avatar, .user-avatar"
-    );
+    // 3. Cập nhật avatar
+    if (typeof window.updateAllUserAvatars === "function") {
+      window.updateAllUserAvatars(user.avatarUrl);
+    } else {
+      // Fallback
+      const avatarElements = document.querySelectorAll(
+        "#dashboard-avatar, .user-avatar"
+      );
 
-    avatarElements.forEach((el) => {
-      if (el) {
-        if (user.avatarUrl) {
-          el.src = user.avatarUrl;
-          el.style.display = "block";
-        } else {
-          el.style.display = "none";
+      avatarElements.forEach((el) => {
+        if (el) {
+          if (user.avatarUrl) {
+            el.src = user.avatarUrl;
+            el.style.display = "block";
+          } else {
+            el.style.display = "none";
+          }
         }
-      }
-    });
+      });
+    }
 
     console.log(
       "✅ Dashboard UI updated (displayName:",
