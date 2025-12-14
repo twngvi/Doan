@@ -273,7 +273,8 @@
     const email = document.getElementById("profile-email");
 
     if (fullname) {
-      const name = user.fullName || user.displayName || user.username || "User";
+      // ⭐ CHỈ lấy displayName từ cột displayName trong database
+      const name = user.displayName || "";
       fullname.textContent = name;
       console.log("Fullname updated:", name);
     }
@@ -289,11 +290,9 @@
         avatar.src = user.avatarUrl;
         console.log("Avatar loaded:", user.avatarUrl);
       } else {
-        const defaultUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          user.fullName || user.username
-        )}&size=120&background=random`;
-        avatar.src = defaultUrl;
-        console.log("Using default avatar");
+        // Ẩn avatar nếu không có
+        avatar.style.display = "none";
+        console.log("No avatar, element hidden");
       }
     }
 
@@ -313,9 +312,8 @@
     const email = document.getElementById("email");
     const username = document.getElementById("username");
 
-    if (displayName)
-      displayName.value =
-        user.fullName || user.displayName || user.username || "";
+    // ⭐ Lấy displayName từ cột displayName trong database
+    if (displayName) displayName.value = user.displayName || "";
     if (email) email.value = user.email || "";
     if (username) username.value = user.username || "";
   }
@@ -403,73 +401,83 @@
   function handleProfileUpdate(e) {
     e.preventDefault();
 
-    // 1. Lấy dữ liệu từ form
+    console.log("💾 Saving profile...");
+
+    // Lấy giá trị từ form
     const displayNameInput = document.getElementById("displayName");
-    const newName = displayNameInput.value.trim();
+    const newDisplayName = displayNameInput?.value?.trim();
 
-    if (!newName) {
-      showToast("Tên hiển thị không được để trống", "error");
+    if (!newDisplayName) {
+      showToast("Vui lòng nhập tên hiển thị", "error");
       return;
     }
 
-    // 2. Lấy user hiện tại
-    let user = window.currentUser || profileData;
-    if (!user) {
-      // Fallback lấy từ session nếu biến global mất
-      const saved = sessionStorage.getItem("currentUser");
-      if (saved) {
-        try {
-          user = JSON.parse(saved);
-        } catch (e) {
-          console.error("Parse error:", e);
-        }
-      }
-    }
-
-    if (!user) {
-      showToast("Phiên đăng nhập hết hạn", "error");
-      setTimeout(() => showPage("page-login"), 1500);
+    // Kiểm tra user
+    if (!profileData || !profileData.userId) {
+      showToast("Không tìm thấy thông tin người dùng", "error");
       return;
     }
 
-    showToast("Đang lưu thông tin...", "info");
+    // Hiển thị loading
     const submitBtn = e.target.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = "<span>⏳</span><span>Đang lưu...</span>";
 
-    // 3. Gửi lên Server (Google Apps Script)
+    // Gọi backend để cập nhật
     google.script.run
-      .withSuccessHandler(function (res) {
-        if (submitBtn) submitBtn.disabled = false;
+      .withSuccessHandler(function (response) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
 
-        if (res && res.success) {
-          // A. Cập nhật đối tượng User
-          user.displayName = newName;
-          user.fullName = newName; // Cập nhật cả 2 trường để chắc chắn
+        if (response.success) {
+          console.log("✅ Profile updated:", response);
 
-          // B. Lưu lại vào Session/Local Storage
-          window.currentUser = user;
-          profileData = user;
-          sessionStorage.setItem("currentUser", JSON.stringify(user));
+          // Cập nhật profileData và currentUser
+          profileData.displayName = newDisplayName;
+          currentUser.displayName = newDisplayName;
+          window.currentUser.displayName = newDisplayName;
 
-          // C. Cập nhật giao diện Profile ngay lập tức
-          updateProfileHeader(user);
+          // Cập nhật sessionStorage và localStorage
+          sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
+          localStorage.setItem("currentUser", JSON.stringify(currentUser));
 
-          // D. ⭐ QUAN TRỌNG: Phát tín hiệu cho Dashboard biết
-          window.dispatchEvent(
-            new CustomEvent("user-info-updated", { detail: user })
-          );
+          // Cập nhật UI
+          updateProfileHeader(currentUser);
 
-          showToast("Cập nhật thành công!", "success");
+          // Cập nhật tất cả nơi hiển thị tên (dashboard, sidebar, etc.)
+          updateAllUserNames(newDisplayName);
+
+          showToast("Cập nhật thông tin thành công!", "success");
         } else {
-          showToast("Lỗi: " + (res ? res.message : "Unknown error"), "error");
+          console.error("❌ Update failed:", response.message);
+          showToast(response.message || "Lỗi cập nhật thông tin", "error");
         }
       })
-      .withFailureHandler(function (err) {
-        if (submitBtn) submitBtn.disabled = false;
-        console.error("Update error:", err);
+      .withFailureHandler(function (error) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+        console.error("❌ Error:", error);
         showToast("Lỗi kết nối server", "error");
       })
-      .updateUserProfile({ userId: user.userId, displayName: newName });
+      .updateUserProfile({
+        userId: profileData.userId,
+        displayName: newDisplayName,
+      });
+  }
+
+  // Hàm cập nhật tên ở tất cả các nơi
+  function updateAllUserNames(displayName) {
+    const nameElements = document.querySelectorAll(
+      "#userName, #userNameWelcome, #dashboard-user-name, #profile-fullname, #sidebar-user-name"
+    );
+
+    nameElements.forEach((el) => {
+      if (el) {
+        el.textContent = displayName;
+        console.log("Updated element:", el.id, "→", displayName);
+      }
+    });
   }
 
   function handlePasswordChange(e) {
@@ -484,6 +492,7 @@
   window.filterAvatars = filterAvatars;
   window.selectAvatar = selectAvatar;
   window.updateAllAvatars = updateAllAvatars;
+  window.updateAllUserNames = updateAllUserNames;
 
   console.log("✅ Profile scripts loaded");
   console.log("✅ initProfilePage:", typeof window.initProfilePage);

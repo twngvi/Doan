@@ -19,15 +19,27 @@
 // ========================================
 
 /**
- * Handle GET requests - Serve the web application
+ * Handle GET requests - Serve the web application with routing support
  */
 function doGet(e) {
   try {
     Logger.log("=== doGet called ===");
     Logger.log("Parameters: " + JSON.stringify(e.parameter));
 
+    // --- PHẦN THÊM MỚI: Xử lý Callback Google Login ---
+    if (e.parameter.code && e.parameter.state === 'google_login_flow') {
+      return handleGoogleCallback(e.parameter.code);
+    }
+    // --------------------------------------------------
+
     const template = HtmlService.createTemplateFromFile("views/index");
+    
+    // ⭐ SERVER-SIDE ROUTING: Truyền tham số 'page' vào template
+    const requestedPage = e.parameter.page || '';
+    template.page = requestedPage;
     template.params = e.parameter || {};
+    
+    Logger.log("Requested page: " + requestedPage);
 
     const htmlOutput = template
       .evaluate()

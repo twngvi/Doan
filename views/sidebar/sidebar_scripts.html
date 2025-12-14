@@ -160,19 +160,24 @@
 
       // Hàm xử lý hiển thị quan trọng nhất
       checkVisibility: function (pageId) {
-        console.log("Checking visibility for:", pageId);
+        try {
+          console.log("Checking visibility for:", pageId);
 
-        // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
-        if (PUBLIC_PAGES.includes(pageId)) {
-          document.body.classList.remove("has-sidebar");
-          document.body.classList.add("hide-sidebar");
-          console.log("Hiding sidebar for public page");
-        } else {
-          // Ngược lại -> Hiện Sidebar
-          document.body.classList.add("has-sidebar");
-          document.body.classList.remove("hide-sidebar");
-          this.updateActiveNav(pageId);
-          console.log("Showing sidebar for authenticated page");
+          // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
+          if (PUBLIC_PAGES.includes(pageId)) {
+            document.body.classList.remove("has-sidebar");
+            document.body.classList.add("hide-sidebar");
+            console.log("Hiding sidebar for public page");
+          } else {
+            // Ngược lại -> Hiện Sidebar
+            document.body.classList.add("has-sidebar");
+            document.body.classList.remove("hide-sidebar");
+            this.updateActiveNav(pageId);
+            console.log("Showing sidebar for authenticated page");
+          }
+        } catch (e) {
+          console.warn("⚠️ Error in checkVisibility (Ignored):", e);
+          // Không làm gì để trang vẫn hiển thị được
         }
       },
 
@@ -181,14 +186,33 @@
       },
 
       updateActiveNav: function (pageId) {
-        const navItems = this.sidebar.querySelectorAll(".nav-item[data-page]");
-        navItems.forEach((item) => {
-          if (item.getAttribute("data-page") === pageId) {
-            item.classList.add("active");
-          } else {
-            item.classList.remove("active");
+        try {
+          // 1. Kiểm tra container trước
+          if (!this.sidebar) {
+            console.warn("⚠️ Sidebar container not found inside updateActiveNav");
+            return;
           }
-        });
+
+          // 2. Nếu có sidebar mới tìm links
+          const navItems = this.sidebar.querySelectorAll(".nav-item[data-page]");
+          
+          if (!navItems || navItems.length === 0) {
+            console.warn("⚠️ No nav items found in sidebar");
+            return;
+          }
+
+          // 3. Cập nhật active state
+          navItems.forEach((item) => {
+            if (item.getAttribute("data-page") === pageId) {
+              item.classList.add("active");
+            } else {
+              item.classList.remove("active");
+            }
+          });
+        } catch (e) {
+          console.warn("⚠️ Error in updateActiveNav (Ignored):", e);
+          // Không làm gì cả để trang vẫn load được
+        }
       },
 
       saveState: function () {
@@ -239,23 +263,28 @@
     window.showPage = function (pageId, params, addToHistory) {
       console.log("Navigating to:", pageId);
 
-      // 1. Xử lý Sidebar NGAY LẬP TỨC (trước khi UI kịp render)
-      if (window.GlobalSidebar) {
-        window.GlobalSidebar.checkVisibility(pageId);
-      } else {
-        // Fallback nếu GlobalSidebar chưa load xong
-        if (PUBLIC_PAGES.includes(pageId)) {
-          document.body.classList.remove("has-sidebar");
-          document.body.classList.add("hide-sidebar");
-        } else {
-          document.body.classList.add("has-sidebar");
-          document.body.classList.remove("hide-sidebar");
-        }
-      }
-
-      // 2. Gọi hàm gốc để chuyển nội dung
+      // 1. Gọi hàm gốc để hiển thị nội dung trang TRƯỚC
       if (typeof originalShowPage === "function") {
         originalShowPage(pageId, params, addToHistory);
+      }
+
+      // 2. Xử lý Sidebar SAU (Bọc trong try-catch)
+      try {
+        if (window.GlobalSidebar) {
+          window.GlobalSidebar.checkVisibility(pageId);
+        } else {
+          // Fallback nếu GlobalSidebar chưa load xong
+          if (PUBLIC_PAGES.includes(pageId)) {
+            document.body.classList.remove("has-sidebar");
+            document.body.classList.add("hide-sidebar");
+          } else {
+            document.body.classList.add("has-sidebar");
+            document.body.classList.remove("hide-sidebar");
+          }
+        }
+      } catch (e) {
+        console.warn("⚠️ Sidebar update error (Ignored):", e);
+        // Không làm gì để trang vẫn hiển thị được
       }
     };
 

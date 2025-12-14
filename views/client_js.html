@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   /**
    * client_js.html - Client-Side JavaScript
    *
@@ -6,75 +6,143 @@
    */
 
   // ==================== Global Variables ====================
-  var currentUser = null; // ⭐ Dùng var để tự động gắn vào window
-  window.currentUser = null; // ⭐ Gán trực tiếp để chắc chắn
+  var currentUser = null; // â­ DÃ¹ng var Ä‘á»ƒ tá»± Ä‘á»™ng gáº¯n vÃ o window
+  window.currentUser = null; // â­ GÃ¡n trá»±c tiáº¿p Ä‘á»ƒ cháº¯c cháº¯n
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
 
   // ==================== Initialization ====================
   document.addEventListener("DOMContentLoaded", function () {
-    console.log("App initialized");
+    console.log("App Initializing...");
 
     // Initialize Google Sign-In
     initGoogleSignIn();
 
-    // Check if user is logged in
-    // Đổi thành sessionStorage để khi tắt tab sẽ tự đăng xuất
-    const savedUser = sessionStorage.getItem("currentUser");
-    if (savedUser) {
-      try {
-        currentUser = JSON.parse(savedUser);
-        console.log("Found saved user:", currentUser.username);
-        showPage("page-dashboard");
-        loadDashboardData();
-      } catch (error) {
-        console.error("Error parsing saved user:", error);
-        sessionStorage.removeItem("currentUser");
-        showPage("page-landing");
-      }
-    } else {
-      // Show landing page for new visitors
-      showPage("page-landing");
+    // BƯỚC 1: Khôi phục Session NGAY LẬP TỨC
+    // Phải làm điều này trước khi quyết định hiển thị trang nào
+    try {
+        const savedUserStr = localStorage.getItem("currentUser");
+        const isLoggedInStr = localStorage.getItem("isLoggedIn");
+        
+        if (savedUserStr && isLoggedInStr === "true") {
+            const user = JSON.parse(savedUserStr);
+            // Đồng bộ vào biến toàn cục
+            currentUser = user;
+            window.currentUser = user;
+            console.log(" Session recovered for:", user.email || user.username);
+        } else {
+            console.log("ℹ No active session found");
+            currentUser = null;
+            window.currentUser = null;
+        }
+    } catch (e) {
+        console.error(" Error recovering session:", e);
+        localStorage.clear();
+        currentUser = null;
+        window.currentUser = null;
     }
 
-    // ⭐ Debug session khi app khởi động
-    console.log("🔍 =".repeat(30));
-    console.log("🔍 APP INITIALIZED - CHECKING SESSION");
-    console.log("🔍 =".repeat(30));
-
-    const isLoggedIn = sessionStorage.getItem("isLoggedIn");
-    const userId = sessionStorage.getItem("userId");
-
-    console.log("📦 Session Storage:");
-    console.log("  - currentUser:", savedUser ? "EXISTS" : "NULL");
-    console.log("  - isLoggedIn:", isLoggedIn);
-    console.log("  - userId:", userId);
-
-    if (savedUser) {
-      try {
-        const user = JSON.parse(savedUser);
-        console.log("✅ User data parsed:");
-        console.log("  - userId:", user.userId);
-        console.log("  - email:", user.email);
-        console.log("  - avatarUrl:", user.avatarUrl);
-
-        currentUser = user;
-        window.currentUser = user; // ⭐ Đồng bộ vào window
-        console.log("✅ Current user synced to window:", currentUser);
-        showPage("page-dashboard");
-        loadDashboardData();
-      } catch (error) {
-        console.error("❌ Error parsing saved user:", error);
-        sessionStorage.clear();
-        showPage("page-landing");
-      }
+    // BƯỚC 2: Xác định trang đích (Routing Logic)
+    
+    // Ưu tiên 1: Link từ email/server (window.SERVER_PARAMS.page)
+    let requestedPageName = window.SERVER_PARAMS?.page || '';
+    
+    // Ưu tiên 2: Trạng thái cũ khi F5 (localStorage)
+    if (!requestedPageName) {
+        requestedPageName = localStorage.getItem("lastActivePage");
+        if (requestedPageName) {
+            console.log(" Recovered page from storage:", requestedPageName);
+        }
     } else {
-      console.log("ℹ️ No saved session, showing landing page");
-      showPage("page-landing");
+        console.log(" Server requested page:", requestedPageName);
     }
 
-    console.log("🔍 =".repeat(30));
+    // Định nghĩa danh sách trang
+    const pageMap = {
+      'dashboard': 'page-dashboard',
+      'topics': 'page-topics',
+      'mcq': 'page-mcq',
+      'lesson': 'page-lesson',
+      'matching': 'page-matching',
+      'profile': 'page-profile',
+      'login': 'page-login',
+      'register': 'page-register',
+      'landing': 'page-landing',
+      'verify-email': 'page-verify-email',
+      'forgot-password': 'page-forgot-password'
+    };
+
+    const protectedPages = ['dashboard', 'topics', 'mcq', 'lesson', 'matching', 'profile'];
+    const authPages = ['login', 'register', 'landing', 'forgot-password'];
+
+    // Mặc định là landing
+    let targetPageId = 'page-landing';
+    let finalPageName = 'landing';
+
+    // Logic định tuyến
+    if (requestedPageName && pageMap[requestedPageName]) {
+        finalPageName = requestedPageName;
+    } else {
+        // Nếu không có trang yêu cầu, nhưng đã login -> vào dashboard
+        if (window.currentUser) {
+            finalPageName = 'dashboard';
+        }
+    }
+
+    // BƯỚC 3: Kiểm tra quyền truy cập (Auth Guard)
+    const isProtected = protectedPages.includes(finalPageName);
+    const isAuthPage = authPages.includes(finalPageName);
+
+    if (isProtected) {
+        if (window.currentUser) {
+            // Đã login + Trang bảo vệ -> CHO PHÉP
+            targetPageId = pageMap[finalPageName];
+            console.log(" Authenticated access to:", finalPageName);
+        } else {
+            // Chưa login + Trang bảo vệ -> ĐÁ VỀ LOGIN
+            console.warn(" Unauthorized access. Redirecting to Login.");
+            targetPageId = 'page-login';
+            finalPageName = 'login'; 
+        }
+    } else if (isAuthPage) {
+        if (window.currentUser && finalPageName !== 'verify-email') {
+            // Đã login mà vào Login/Register/Landing -> ĐẨY VÀO DASHBOARD
+            console.log("ℹ User already logged in. Redirecting to Dashboard.");
+            targetPageId = 'page-dashboard';
+            finalPageName = 'dashboard';
+        } else {
+            // Chưa login + Trang public -> CHO PHÉP
+            targetPageId = pageMap[finalPageName];
+        }
+    } else {
+        targetPageId = pageMap[finalPageName] || 'page-landing';
+    }
+
+    console.log(" Final Target Page:", targetPageId);
+
+    // Hiển thị trang cuối cùng
+    showPage(targetPageId, {}, false);
+
+    // Load dữ liệu dashboard nếu cần
+    if (targetPageId === 'page-dashboard' && typeof loadDashboardData === 'function') {
+        setTimeout(loadDashboardData, 100);
+    }
   });
+  // ==================== URL State Management ====================
+  
+  /**
+   * Cáº­p nháº­t URL state mÃ  khÃ´ng reload trang
+   * @param {string} pageName - TÃªn trang (dashboard, topics, login, etc.)
+   */
+  function updateURLState(pageName) {
+    if (!pageName) return;
+    
+    const newURL = window.location.pathname + '?page=' + pageName;
+    console.log("ðŸ”— Updating URL to:", newURL);
+    
+    // Sá»­ dá»¥ng replaceState Ä‘á»ƒ khÃ´ng táº¡o entry má»›i trong history
+    window.history.replaceState({ page: pageName }, '', newURL);
+  }
 
   // ==================== Page Navigation ====================
 
@@ -85,122 +153,78 @@
    * @param {boolean} addToHistory - Whether to add this navigation to browser history
    */
   function showPage(pageId, params = {}, addToHistory = true) {
-    console.log("Showing page:", pageId, params);
+    console.log("Showing page:", pageId);
+    
+    // Safety check: Nếu pageId không tồn tại trong DOM, về landing
+    if (!document.getElementById(pageId)) {
+        console.error("Page ID not found:", pageId);
+        pageId = 'page-landing';
+    }
 
     // Hide toast when changing pages
-    hideToast();
+    if (typeof hideToast === 'function') hideToast();
 
-    // Hide all pages
+    // 1. Ẩn tất cả trang
     const allPages = document.querySelectorAll(".page-content");
-    allPages.forEach((page) => {
-      page.style.display = "none";
-    });
+    allPages.forEach(page => page.style.display = "none");
 
-    // Show requested page
+    // 2. Hiện trang đích
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
-      targetPage.style.display = "block";
+        targetPage.style.display = "block"; // Dòng này hiện trang
+        
+        // 3. Lưu trạng thái
+        const pageName = pageId.replace("page-", "");
+        localStorage.setItem("lastActivePage", pageName);
+        
+        // Cập nhật URL ảo
+        if (typeof updateURLState === 'function') updateURLState(pageName);
 
-      // Update browser history
-      if (addToHistory) {
-        const state = { pageId: pageId, params: params };
-        const url =
-          window.location.pathname + "#" + pageId.replace("page-", "");
-        history.pushState(state, "", url);
-      }
+        // Update browser history
+        if (addToHistory) {
+            const state = { pageId: pageId, params: params };
+            const url = window.location.pathname + "?page=" + pageName;
+            history.pushState(state, "", url);
+        }
 
-      // Update navbar active state if on dashboard
-      if (pageId === "page-dashboard") {
-        updateNavbarActive("page-dashboard");
-      }
-
-      // Initialize page-specific logic
-      if (pageId === "page-topics") {
-        // Initialize Topics page with retry mechanism
-        const tryInitTopics = (retries = 0) => {
-          if (typeof window.initTopicsPageOnShow === "function") {
-            console.log("Triggering Topics page initialization...");
-            window.initTopicsPageOnShow();
-          } else if (retries < 5) {
-            console.warn(
-              `Topics initialization function not found, retrying... (${
-                retries + 1
-              }/5)`
-            );
-            setTimeout(() => tryInitTopics(retries + 1), 200);
-          } else {
-            console.error(
-              "Topics initialization function not found after 5 retries"
-            );
-            // Fallback: try to call directly
-            if (typeof initTopicsPage === "function") {
-              console.log("Using fallback initTopicsPage");
-              initTopicsPage();
+        // --- KHU VỰC SỬA LỖI (FIX CRASH) ---
+        // Bọc việc update UI trong try-catch để nếu lỗi giao diện thì trang vẫn load được
+        if (pageId === "page-dashboard") {
+            try {
+                // Kiểm tra các biến thể hàm update navbar
+                if (typeof updateNavbarActive === "function") {
+                    updateNavbarActive("page-dashboard");
+                } else if (typeof Sidebar !== 'undefined' && typeof Sidebar.updateActiveNav === 'function') {
+                    Sidebar.updateActiveNav("page-dashboard");
+                }
+            } catch (e) {
+                console.warn("Navbar update failed (ignored to allow page load):", e);
             }
-          }
-        };
-        tryInitTopics();
-      }
-
-      // Initialize verify email page
-      if (pageId === "page-verify-email") {
-        console.log("🔐 Verify email page shown, calling init...");
-        const verifyPageElement = document.getElementById("page-verify-email");
-        console.log("📄 Verify page element:", verifyPageElement);
-        console.log(
-          "👁️ Verify page display:",
-          verifyPageElement?.style.display
-        );
-
-        if (typeof window.initVerifyEmailPage === "function") {
-          window.initVerifyEmailPage();
-        } else {
-          console.error("❌ initVerifyEmailPage function not found");
         }
-      }
+        // --------------------------------------
 
-      // ⭐ Initialize Lesson page
-      if (pageId === "page-lesson") {
-        if (typeof window.initLessonPage === "function") {
-          console.log("Initializing Lesson page...");
-          window.initLessonPage();
-        } else {
-          console.error("initLessonPage function not found");
+        // Pass params logic
+        if (Object.keys(params).length > 0) {
+            window.currentPageParams = params;
         }
-      }
 
-      // ⭐ Initialize MCQ page
-      if (pageId === "page-mcq") {
-        if (typeof window.initMCQPage === "function") {
-          console.log("Initializing MCQ page...");
-          window.initMCQPage();
-        } else {
-          console.error("initMCQPage function not found");
+        // Các xử lý khởi tạo trang con (dùng try-catch để an toàn)
+        try {
+            if (pageId === "page-topics") {
+                 if (typeof initTopicsPage === "function") initTopicsPage();
+                 else if (typeof window.initTopicsPageOnShow === "function") window.initTopicsPageOnShow();
+            }
+            if (pageId === "page-lesson" && typeof window.initLessonPage === "function") window.initLessonPage();
+            if (pageId === "page-mcq" && typeof window.initMCQPage === "function") window.initMCQPage();
+            if (pageId === "page-profile" && typeof window.initProfilePage === "function") setTimeout(() => window.initProfilePage(), 100);
+        } catch (subPageError) {
+            console.error("Error initializing sub-page:", subPageError);
         }
-      }
 
-      // ⭐ Initialize Profile page
-      if (pageId === "page-profile") {
-        if (typeof window.initProfilePage === "function") {
-          console.log("Initializing Profile page...");
-          setTimeout(() => {
-            window.initProfilePage();
-          }, 100);
-        } else {
-          console.error("initProfilePage function not found");
-        }
-      }
-
-      // Pass parameters to page if needed
-      if (Object.keys(params).length > 0) {
-        window.currentPageParams = params;
-        console.log("Page parameters set:", params);
-      }
     } else {
-      console.error("Page not found:", pageId);
+        console.error("Page not found:", pageId);
     }
   }
-
   // ==================== Browser History Handling ====================
 
   /**
@@ -214,7 +238,7 @@
       showPage(event.state.pageId, event.state.params || {}, false);
     } else {
       // No state - go to default page
-      const savedUser = sessionStorage.getItem("currentUser");
+      const savedUser = localStorage.getItem("currentUser");
       if (savedUser) {
         showPage("page-dashboard", {}, false);
       } else {
@@ -226,7 +250,7 @@
   // Initialize history state on first load
   window.addEventListener("load", function () {
     if (!history.state) {
-      const savedUser = sessionStorage.getItem("currentUser");
+      const savedUser = localStorage.getItem("currentUser");
       const initialPage = savedUser ? "page-dashboard" : "page-landing";
       const state = { pageId: initialPage, params: {} };
       history.replaceState(
@@ -251,32 +275,32 @@
 
   /**
    * Initialize Google Sign-In
-   * ⚠️ FIX FedCM Error: Không dùng Google Identity Services trong Apps Script iframe
-   * Chỉ dùng OAuth2 flow truyền thống qua backend
+   * âš ï¸ FIX FedCM Error: KhÃ´ng dÃ¹ng Google Identity Services trong Apps Script iframe
+   * Chá»‰ dÃ¹ng OAuth2 flow truyá»n thá»‘ng qua backend
    */
   function initGoogleSignIn() {
-    // ✅ Đánh dấu đã sẵn sàng (không cần load Google API nữa)
+    // âœ… ÄÃ¡nh dáº¥u Ä‘Ã£ sáºµn sÃ ng (khÃ´ng cáº§n load Google API ná»¯a)
     googleClientInitialized = true;
     console.log(
-      "✅ Google OAuth2 ready (FedCM/One Tap disabled - using backend OAuth2 flow)"
+      "âœ… Google OAuth2 ready (FedCM/One Tap disabled - using backend OAuth2 flow)"
     );
     console.log(
-      "ℹ️ Apps Script runs in iframe - FedCM not supported. Using traditional OAuth2."
+      "â„¹ï¸ Apps Script runs in iframe - FedCM not supported. Using traditional OAuth2."
     );
   }
 
   /**
    * Handle Google credential response
-   * ⚠️ DEPRECATED: Không dùng nữa vì đã tắt Google Identity Services
-   * Giữ lại để tránh lỗi nếu có reference cũ
+   * âš ï¸ DEPRECATED: KhÃ´ng dÃ¹ng ná»¯a vÃ¬ Ä‘Ã£ táº¯t Google Identity Services
+   * Giá»¯ láº¡i Ä‘á»ƒ trÃ¡nh lá»—i náº¿u cÃ³ reference cÅ©
    */
   function handleGoogleCredentialResponse(response) {
     console.warn(
-      "⚠️ handleGoogleCredentialResponse called - this should not happen"
+      "âš ï¸ handleGoogleCredentialResponse called - this should not happen"
     );
     console.log("Falling back to OAuth2 flow...");
 
-    // Fallback: Nếu vẫn được gọi, chuyển sang OAuth2
+    // Fallback: Náº¿u váº«n Ä‘Æ°á»£c gá»i, chuyá»ƒn sang OAuth2
     handleGoogleLogin();
   }
 
@@ -292,7 +316,7 @@
 
     // Validation
     if (!username || !password) {
-      showToast("Vui lòng nhập đầy đủ thông tin", "error");
+      showToast("Vui lÃ²ng nháº­p Ä‘áº§y Ä‘á»§ thÃ´ng tin", "error");
       return false;
     }
 
@@ -326,14 +350,14 @@
     enableButton("btn-login");
 
     if (response.status === "success") {
-      // Save user to sessionStorage (auto logout when closing tab)
+      // Save user to localStorage (auto logout when closing tab)
       currentUser = response.user;
-      window.currentUser = response.user; // ⭐ Đồng bộ vào window
-      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
-      console.log("✅ Current user synced to window:", currentUser);
+      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("âœ… Current user synced to window:", currentUser);
 
       // Show success message
-      showToast("Đăng nhập thành công!", "success");
+      showToast("ÄÄƒng nháº­p thÃ nh cÃ´ng!", "success");
 
       // Navigate to dashboard
       setTimeout(() => {
@@ -341,7 +365,7 @@
         loadDashboardData();
       }, 500);
     } else {
-      showToast(response.message || "Đăng nhập thất bại", "error");
+      showToast(response.message || "ÄÄƒng nháº­p tháº¥t báº¡i", "error");
     }
   }
 
@@ -349,7 +373,7 @@
    * Handle register form submission - NEW VERSION
    */
   function handleRegisterFormSubmit() {
-    console.log("📝 Register form submitted");
+    console.log("ðŸ“ Register form submitted");
 
     // Get form data
     const fullName = document.getElementById("register-fullname").value.trim();
@@ -361,17 +385,17 @@
 
     // Validation
     if (!fullName || !email || !password || !confirmPassword) {
-      showToast("Vui lòng điền đầy đủ thông tin", "error");
+      showToast("Vui lÃ²ng Ä‘iá»n Ä‘áº§y Ä‘á»§ thÃ´ng tin", "error");
       return false;
     }
 
     if (password.length < 6) {
-      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      showToast("Máº­t kháº©u pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±", "error");
       return false;
     }
 
     if (password !== confirmPassword) {
-      showToast("Mật khẩu xác nhận không khớp", "error");
+      showToast("Máº­t kháº©u xÃ¡c nháº­n khÃ´ng khá»›p", "error");
       return false;
     }
 
@@ -390,19 +414,19 @@
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Register Response:", response);
+        console.log("âœ… Register Response:", response);
 
         if (response.success) {
-          // Hiển thị thông báo xác thực email
+          // Hiá»ƒn thá»‹ thÃ´ng bÃ¡o xÃ¡c thá»±c email
           showToast(response.message, "success");
 
-          // --- PHẦN SỬA ĐỔI QUAN TRỌNG Ở ĐÂY ---
+          // --- PHáº¦N Sá»¬A Äá»”I QUAN TRá»ŒNG á»ž ÄÃ‚Y ---
 
-          // Kiểm tra xem server có yêu cầu xác thực không
+          // Kiá»ƒm tra xem server cÃ³ yÃªu cáº§u xÃ¡c thá»±c khÃ´ng
           if (response.requiresVerification) {
-            console.log("🔏 Yêu cầu xác thực email, đang chuyển hướng...");
+            console.log("ðŸ” YÃªu cáº§u xÃ¡c thá»±c email, Ä‘ang chuyá»ƒn hÆ°á»›ng...");
 
-            // 1. Lưu email vào localStorage để trang Verify biết xác thực cho ai
+            // 1. LÆ°u email vÃ o localStorage Ä‘á»ƒ trang Verify biáº¿t xÃ¡c thá»±c cho ai
             const verificationData = {
               email: email,
               timestamp: new Date().getTime(),
@@ -412,12 +436,12 @@
               JSON.stringify(verificationData)
             );
 
-            // 2. Chuyển sang trang Verify thay vì Login
+            // 2. Chuyá»ƒn sang trang Verify thay vÃ¬ Login
             setTimeout(() => {
               showPage("page-verify-email");
             }, 1500);
           } else {
-            // Nếu không cần xác thực thì mới về Login
+            // Náº¿u khÃ´ng cáº§n xÃ¡c thá»±c thÃ¬ má»›i vá» Login
             setTimeout(() => {
               showPage("page-login");
             }, 3000);
@@ -429,8 +453,8 @@
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Register Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Register Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .registerWithEmailPassword(userData);
 
@@ -441,7 +465,7 @@
    * Handle login form submission - NEW VERSION
    */
   function handleLoginFormSubmit() {
-    console.log("🔐 Login form submitted");
+    console.log("ðŸ” Login form submitted");
 
     // Get form data
     const email = document.getElementById("login-email")
@@ -451,7 +475,7 @@
 
     // Validation
     if (!email || !password) {
-      showToast("Vui lòng nhập email và mật khẩu", "error");
+      showToast("Vui lÃ²ng nháº­p email vÃ  máº­t kháº©u", "error");
       return false;
     }
 
@@ -468,16 +492,16 @@
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Login Response:", response);
+        console.log("âœ… Login Response:", response);
 
         if (response.success) {
-          // ⭐ LƯU SESSION ĐẦY ĐỦ
+          // â­ LÆ¯U SESSION Äáº¦Y Äá»¦
           currentUser = response.user;
-          sessionStorage.setItem("currentUser", JSON.stringify(response.user));
-          sessionStorage.setItem("isLoggedIn", "true");
-          sessionStorage.setItem("userId", response.user.userId);
+          localStorage.setItem("currentUser", JSON.stringify(response.user));
+          localStorage.setItem("isLoggedIn", "true");
+          localStorage.setItem("userId", response.user.userId);
 
-          console.log("✅ Session saved:", {
+          console.log("âœ… Session saved:", {
             userId: response.user.userId,
             email: response.user.email,
             avatarUrl: response.user.avatarUrl,
@@ -495,8 +519,8 @@
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Login Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Login Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .loginWithEmailPassword(credentials);
 
@@ -521,22 +545,22 @@
 
     // Validation
     if (!fullName || !username || !password) {
-      showToast("Vui lòng nhập đầy đủ thông tin bắt buộc", "error");
+      showToast("Vui lÃ²ng nháº­p Ä‘áº§y Ä‘á»§ thÃ´ng tin báº¯t buá»™c", "error");
       return false;
     }
 
     if (username.length < 3) {
-      showToast("Tên đăng nhập phải có ít nhất 3 ký tự", "error");
+      showToast("TÃªn Ä‘Äƒng nháº­p pháº£i cÃ³ Ã­t nháº¥t 3 kÃ½ tá»±", "error");
       return false;
     }
 
     if (password.length < 6) {
-      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      showToast("Máº­t kháº©u pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±", "error");
       return false;
     }
 
     if (password !== confirmPassword) {
-      showToast("Mật khẩu xác nhận không khớp", "error");
+      showToast("Máº­t kháº©u xÃ¡c nháº­n khÃ´ng khá»›p", "error");
       return false;
     }
 
@@ -572,14 +596,14 @@
     enableButton("btn-register");
 
     if (response.status === "success") {
-      // Save user to sessionStorage (auto logout when closing tab)
+      // Save user to localStorage (auto logout when closing tab)
       currentUser = response.user;
-      window.currentUser = response.user; // ⭐ Đồng bộ vào window
-      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
-      console.log("✅ Current user synced to window:", currentUser);
+      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("âœ… Current user synced to window:", currentUser);
 
       // Show success message
-      showToast("Đăng ký thành công! Đang chuyển tới trang chủ...", "success");
+      showToast("ÄÄƒng kÃ½ thÃ nh cÃ´ng! Äang chuyá»ƒn tá»›i trang chá»§...", "success");
 
       // Navigate to dashboard
       setTimeout(() => {
@@ -587,7 +611,7 @@
         loadDashboardData();
       }, 1000);
     } else {
-      showToast(response.message || "Đăng ký thất bại", "error");
+      showToast(response.message || "ÄÄƒng kÃ½ tháº¥t báº¡i", "error");
     }
   }
 
@@ -599,9 +623,19 @@
 
     // Clear user data from all storage
     currentUser = null;
-    window.currentUser = null; // ⭐ Xóa khỏi window
-    sessionStorage.removeItem("currentUser");
-    sessionStorage.removeItem("userSession");
+    window.currentUser = null; // â­ XÃ³a khá»i window
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("userSession");
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("userId");
+    
+    // â­ FIX F5: XÃ³a trang Ä‘Ã£ lÆ°u Ä‘á»ƒ trÃ¡nh quay láº¡i trang cÅ©
+    localStorage.removeItem("lastActivePage");
+    
+    // Clear localStorage náº¿u cÃ³
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("user");
+    localStorage.removeItem("authToken");
 
     // Clear Google auth state if needed
     if (
@@ -619,9 +653,9 @@
 
     // Show message
     if (typeof showToast === "function") {
-      showToast("Đã đăng xuất", "info");
+      showToast("ÄÃ£ Ä‘Äƒng xuáº¥t", "info");
     } else {
-      alert("Đã đăng xuất");
+      alert("ÄÃ£ Ä‘Äƒng xuáº¥t");
     }
 
     // Navigate to login
@@ -646,36 +680,36 @@
   }
 
   /**
-   * Show Account Chooser - Hướng dẫn user đăng xuất và chọn tài khoản khác
+   * Show Account Chooser - HÆ°á»›ng dáº«n user Ä‘Äƒng xuáº¥t vÃ  chá»n tÃ i khoáº£n khÃ¡c
    */
   function showAccountChooser() {
-    const message = `Để chọn tài khoản Google khác:
+    const message = `Äá»ƒ chá»n tÃ i khoáº£n Google khÃ¡c:
 
-1. Mở tab mới
-2. Truy cập: https://accounts.google.com
-3. Đăng xuất tài khoản hiện tại
-4. Quay lại đây và nhấn "Đăng nhập với Google"
+1. Má»Ÿ tab má»›i
+2. Truy cáº­p: https://accounts.google.com
+3. ÄÄƒng xuáº¥t tÃ i khoáº£n hiá»‡n táº¡i
+4. Quay láº¡i Ä‘Ã¢y vÃ  nháº¥n "ÄÄƒng nháº­p vá»›i Google"
 
-Hoặc bạn có thể:
-• Sử dụng chế độ ẩn danh (Incognito)
-• Mở URL này trong profile Chrome khác`;
+Hoáº·c báº¡n cÃ³ thá»ƒ:
+â€¢ Sá»­ dá»¥ng cháº¿ Ä‘á»™ áº©n danh (Incognito)
+â€¢ Má»Ÿ URL nÃ y trong profile Chrome khÃ¡c`;
 
-    if (confirm(message + "\n\nBạn có muốn mở trang Google Accounts không?")) {
+    if (confirm(message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?")) {
       window.open("https://accounts.google.com/SignOutOptions", "_blank");
-      showToast("Vui lòng đăng xuất Google rồi quay lại đây", "info");
+      showToast("Vui lÃ²ng Ä‘Äƒng xuáº¥t Google rá»“i quay láº¡i Ä‘Ã¢y", "info");
     }
   }
 
   /**
    * Handle Google Login - Auto detect email from Google Account
-   * Không cần prompt - hệ thống tự động lấy email từ Session.getActiveUser().getEmail()
+   * KhÃ´ng cáº§n prompt - há»‡ thá»‘ng tá»± Ä‘á»™ng láº¥y email tá»« Session.getActiveUser().getEmail()
    */
   function handleGoogleLogin() {
-    console.log("🔐 Google Auto Login - Đang xác thực...");
+    console.log("ðŸ” Google Auto Login - Äang xÃ¡c thá»±c...");
 
     // Prevent multiple simultaneous requests
     if (isGoogleAuthInProgress) {
-      console.log("⚠️ Google auth already in progress");
+      console.log("âš ï¸ Google auth already in progress");
       return;
     }
 
@@ -683,61 +717,61 @@ Hoặc bạn có thể:
     showLoading(true);
 
     const timeoutId = setTimeout(() => {
-      console.error("❌ Google auth timeout");
+      console.error("âŒ Google auth timeout");
       hideLoading();
       isGoogleAuthInProgress = false;
-      showToast("Timeout: Vui lòng thử lại.", "error");
+      showToast("Timeout: Vui lÃ²ng thá»­ láº¡i.", "error");
     }, 30000);
 
-    // ✅ Gọi autoLoginWithGoogle() - tự động lấy email từ Google Account
+    // âœ… Gá»i autoLoginWithGoogle() - tá»± Ä‘á»™ng láº¥y email tá»« Google Account
     google.script.run
       .withSuccessHandler(function (response) {
         clearTimeout(timeoutId);
         isGoogleAuthInProgress = false;
         hideLoading();
 
-        console.log("✅ Auto Login Response:", response);
+        console.log("âœ… Auto Login Response:", response);
 
         if (response.success) {
-          // Đăng nhập thành công
-          sessionStorage.setItem("currentUser", JSON.stringify(response.user));
-          sessionStorage.setItem("isLoggedIn", "true");
+          // ÄÄƒng nháº­p thÃ nh cÃ´ng
+          localStorage.setItem("currentUser", JSON.stringify(response.user));
+          localStorage.setItem("isLoggedIn", "true");
 
-          showToast(response.message || "Đăng nhập thành công!", "success");
+          showToast(response.message || "ÄÄƒng nháº­p thÃ nh cÃ´ng!", "success");
 
           setTimeout(() => {
             showPage("page-dashboard");
           }, 1000);
         } else if (response.autoRegister) {
-          // Tài khoản chưa tồn tại - hiện form đăng ký
-          console.log("📝 Tài khoản chưa tồn tại, chuyển sang đăng ký");
+          // TÃ i khoáº£n chÆ°a tá»“n táº¡i - hiá»‡n form Ä‘Äƒng kÃ½
+          console.log("ðŸ“ TÃ i khoáº£n chÆ°a tá»“n táº¡i, chuyá»ƒn sang Ä‘Äƒng kÃ½");
           showToast(
-            "Tài khoản chưa tồn tại. Vui lòng hoàn tất đăng ký.",
+            "TÃ i khoáº£n chÆ°a tá»“n táº¡i. Vui lÃ²ng hoÃ n táº¥t Ä‘Äƒng kÃ½.",
             "info"
           );
 
-          // Chỉ hỏi tên, email đã được tự động lấy
+          // Chá»‰ há»i tÃªn, email Ä‘Ã£ Ä‘Æ°á»£c tá»± Ä‘á»™ng láº¥y
           const fullName = prompt(
-            "Nhập họ tên của bạn:",
+            "Nháº­p há» tÃªn cá»§a báº¡n:",
             response.email.split("@")[0]
           );
 
           if (fullName) {
             handleAutoRegister({ fullName: fullName.trim() });
           } else {
-            showToast("Đăng ký bị hủy", "warning");
+            showToast("ÄÄƒng kÃ½ bá»‹ há»§y", "warning");
           }
         } else {
-          // Lỗi khác
-          showToast(response.message || "Đăng nhập thất bại", "error");
+          // Lá»—i khÃ¡c
+          showToast(response.message || "ÄÄƒng nháº­p tháº¥t báº¡i", "error");
         }
       })
       .withFailureHandler(function (error) {
         clearTimeout(timeoutId);
         isGoogleAuthInProgress = false;
         hideLoading();
-        console.error("❌ Auto Login Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Auto Login Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .autoLoginWithGoogle();
   }
@@ -766,7 +800,7 @@ Hoặc bạn có thể:
       console.error("Google auth timeout");
       hideLoading();
       isGoogleAuthInProgress = false;
-      showToast("Timeout: Vui lòng thử lại sau.", "error");
+      showToast("Timeout: Vui lÃ²ng thá»­ láº¡i sau.", "error");
     }, 30000); // 30 second timeout
 
     google.script.run
@@ -788,56 +822,56 @@ Hoặc bạn có thể:
    */
   function handleGoogleSignup() {
     console.log("Google signup initiated");
-    // Đăng ký và đăng nhập dùng cùng logic
+    // ÄÄƒng kÃ½ vÃ  Ä‘Äƒng nháº­p dÃ¹ng cÃ¹ng logic
     handleGoogleLogin();
   }
 
   /**
-   * Handle Auto Register - Đăng ký tự động với thông tin bổ sung
+   * Handle Auto Register - ÄÄƒng kÃ½ tá»± Ä‘á»™ng vá»›i thÃ´ng tin bá»• sung
    */
   function handleAutoRegister(userData) {
-    console.log("📝 Auto Register - Đang tạo tài khoản...");
+    console.log("ðŸ“ Auto Register - Äang táº¡o tÃ i khoáº£n...");
 
     if (!userData || !userData.fullName) {
-      showToast("Thiếu thông tin họ tên", "error");
+      showToast("Thiáº¿u thÃ´ng tin há» tÃªn", "error");
       return;
     }
 
     showLoading(true);
 
     const timeoutId = setTimeout(() => {
-      console.error("❌ Auto register timeout");
+      console.error("âŒ Auto register timeout");
       hideLoading();
-      showToast("Timeout: Vui lòng thử lại.", "error");
+      showToast("Timeout: Vui lÃ²ng thá»­ láº¡i.", "error");
     }, 30000);
 
-    // Gọi autoRegisterWithGoogle() - email tự động lấy từ Session
+    // Gá»i autoRegisterWithGoogle() - email tá»± Ä‘á»™ng láº¥y tá»« Session
     google.script.run
       .withSuccessHandler(function (response) {
         clearTimeout(timeoutId);
         hideLoading();
 
-        console.log("✅ Auto Register Response:", response);
+        console.log("âœ… Auto Register Response:", response);
 
         if (response.success) {
-          // Đăng ký thành công
-          sessionStorage.setItem("currentUser", JSON.stringify(response.user));
-          sessionStorage.setItem("isLoggedIn", "true");
+          // ÄÄƒng kÃ½ thÃ nh cÃ´ng
+          localStorage.setItem("currentUser", JSON.stringify(response.user));
+          localStorage.setItem("isLoggedIn", "true");
 
-          showToast(response.message || "Đăng ký thành công!", "success");
+          showToast(response.message || "ÄÄƒng kÃ½ thÃ nh cÃ´ng!", "success");
 
           setTimeout(() => {
             showPage("page-dashboard");
           }, 1500);
         } else {
-          showToast(response.message || "Đăng ký thất bại", "error");
+          showToast(response.message || "ÄÄƒng kÃ½ tháº¥t báº¡i", "error");
         }
       })
       .withFailureHandler(function (error) {
         clearTimeout(timeoutId);
         hideLoading();
-        console.error("❌ Auto Register Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Auto Register Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .autoRegisterWithGoogle(userData);
   }
@@ -853,7 +887,7 @@ Hoặc bạn có thể:
     if (!response) {
       console.error("Response is null or undefined");
       showToast(
-        "Lỗi: Không nhận được phản hồi từ server. Vui lòng thử lại.",
+        "Lá»—i: KhÃ´ng nháº­n Ä‘Æ°á»£c pháº£n há»“i tá»« server. Vui lÃ²ng thá»­ láº¡i.",
         "error"
       );
       return;
@@ -864,31 +898,31 @@ Hoặc bạn có thể:
     if (response.status === "success") {
       console.log("Google auth successful, saving user data...");
 
-      // Save user to sessionStorage (auto logout when closing tab)
+      // Save user to localStorage (auto logout when closing tab)
       currentUser = response.user;
-      window.currentUser = response.user; // ⭐ Đồng bộ vào window
-      sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
-      console.log("✅ Current user synced to window:", currentUser.username);
+      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      console.log("âœ… Current user synced to window:", currentUser.username);
 
-      console.log("User saved to sessionStorage:", currentUser.username);
+      console.log("User saved to localStorage:", currentUser.username);
       console.log("Is new user:", response.isNewUser);
 
       // Show appropriate success message
       if (response.isNewUser) {
         showToast(
-          "🎉 " +
+          "ðŸŽ‰ " +
             (response.message ||
-              "Tài khoản mới đã được tạo! Chào mừng " + response.user.fullName),
+              "TÃ i khoáº£n má»›i Ä‘Ã£ Ä‘Æ°á»£c táº¡o! ChÃ o má»«ng " + response.user.fullName),
           "success"
         );
-        console.log("✅ New user registered via Google Sign-In");
+        console.log("âœ… New user registered via Google Sign-In");
       } else {
         showToast(
           response.message ||
-            "Đăng nhập thành công! Chào mừng trở lại " + response.user.fullName,
+            "ÄÄƒng nháº­p thÃ nh cÃ´ng! ChÃ o má»«ng trá»Ÿ láº¡i " + response.user.fullName,
           "success"
         );
-        console.log("✅ Existing user logged in via Google Sign-In");
+        console.log("âœ… Existing user logged in via Google Sign-In");
       }
 
       // Navigate to dashboard
@@ -900,7 +934,7 @@ Hoặc bạn có thể:
       }, 500);
     } else {
       console.error("Login failed with status:", response.status);
-      showToast(response.message || "Đăng nhập Google thất bại", "error");
+      showToast(response.message || "ÄÄƒng nháº­p Google tháº¥t báº¡i", "error");
     }
   }
 
@@ -982,20 +1016,20 @@ Hoặc bạn có thể:
    */
   function showAccountSwitchHelp() {
     const helpText = `
-Để đổi tài khoản Google khi đăng nhập:
+Äá»ƒ Ä‘á»•i tÃ i khoáº£n Google khi Ä‘Äƒng nháº­p:
 
-1️⃣ Mở ứng dụng trong chế độ Incognito/Ẩn danh:
-   • Chrome: Ctrl+Shift+N
-   • Edge: Ctrl+Shift+P
-   • Firefox: Ctrl+Shift+P
+1ï¸âƒ£ Má»Ÿ á»©ng dá»¥ng trong cháº¿ Ä‘á»™ Incognito/áº¨n danh:
+   â€¢ Chrome: Ctrl+Shift+N
+   â€¢ Edge: Ctrl+Shift+P
+   â€¢ Firefox: Ctrl+Shift+P
 
-2️⃣ Hoặc đăng xuất khỏi tất cả tài khoản Google:
-   • Vào accounts.google.com
-   • Chọn "Đăng xuất"
+2ï¸âƒ£ Hoáº·c Ä‘Äƒng xuáº¥t khá»i táº¥t cáº£ tÃ i khoáº£n Google:
+   â€¢ VÃ o accounts.google.com
+   â€¢ Chá»n "ÄÄƒng xuáº¥t"
 
-3️⃣ Sau đó quay lại và đăng nhập bằng tài khoản mới
+3ï¸âƒ£ Sau Ä‘Ã³ quay láº¡i vÃ  Ä‘Äƒng nháº­p báº±ng tÃ i khoáº£n má»›i
 
-💡 Mẹo: Dùng nhiều Profile trong Chrome để quản lý nhiều tài khoản dễ dàng hơn!
+ðŸ’¡ Máº¹o: DÃ¹ng nhiá»u Profile trong Chrome Ä‘á»ƒ quáº£n lÃ½ nhiá»u tÃ i khoáº£n dá»… dÃ ng hÆ¡n!
     `.trim();
 
     alert(helpText);
@@ -1044,11 +1078,11 @@ Hoặc bạn có thể:
   function showResendVerificationOption(email) {
     const resendHTML = `
       <div id="resend-verification-banner" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">
-        <p class="mb-2">Không nhận được email xác thực?</p>
+        <p class="mb-2">KhÃ´ng nháº­n Ä‘Æ°á»£c email xÃ¡c thá»±c?</p>
         <button 
           onclick="resendVerificationEmail('${email}')" 
           class="bg-white text-yellow-600 px-4 py-2 rounded hover:bg-yellow-50 font-medium">
-          Gửi lại email
+          Gá»­i láº¡i email
         </button>
       </div>
     `;
@@ -1076,7 +1110,7 @@ Hoặc bạn có thể:
    * @param {string} email - User's email
    */
   function resendVerificationEmail(email) {
-    console.log("📧 Resending verification email to:", email);
+    console.log("ðŸ“§ Resending verification email to:", email);
 
     // Remove banner
     const banner = document.getElementById("resend-verification-banner");
@@ -1087,7 +1121,7 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Resend Response:", response);
+        console.log("âœ… Resend Response:", response);
 
         if (response.success) {
           showToast(response.message, "success");
@@ -1097,8 +1131,8 @@ Hoặc bạn có thể:
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Resend Error:", error);
-        showToast("Lỗi khi gửi email: " + error.message, "error");
+        console.error("âŒ Resend Error:", error);
+        showToast("Lá»—i khi gá»­i email: " + error.message, "error");
       })
       .resendVerificationEmailToUser(email);
   }
@@ -1137,21 +1171,21 @@ Hoặc bạn có thể:
     enableButton("btn-register");
 
     // Check for specific error types
-    let errorMessage = "Có lỗi xảy ra";
+    let errorMessage = "CÃ³ lá»—i xáº£y ra";
 
     if (error && error.message) {
       const msg = error.message.toLowerCase();
 
       if (msg.includes("429") || msg.includes("too many requests")) {
-        errorMessage = "Quá nhiều yêu cầu. Vui lòng đợi 1 phút và thử lại.";
+        errorMessage = "QuÃ¡ nhiá»u yÃªu cáº§u. Vui lÃ²ng Ä‘á»£i 1 phÃºt vÃ  thá»­ láº¡i.";
       } else if (msg.includes("timeout")) {
         errorMessage =
-          "Hết thời gian chờ. Vui lòng kiểm tra kết nối và thử lại.";
+          "Háº¿t thá»i gian chá». Vui lÃ²ng kiá»ƒm tra káº¿t ná»‘i vÃ  thá»­ láº¡i.";
       } else if (msg.includes("network")) {
         errorMessage =
-          "Lỗi kết nối mạng. Vui lòng kiểm tra internet và thử lại.";
+          "Lá»—i káº¿t ná»‘i máº¡ng. Vui lÃ²ng kiá»ƒm tra internet vÃ  thá»­ láº¡i.";
       } else {
-        errorMessage = "Có lỗi xảy ra: " + error.message;
+        errorMessage = "CÃ³ lá»—i xáº£y ra: " + error.message;
       }
     }
 
@@ -1198,14 +1232,14 @@ Hoặc bạn có thể:
    * Show forgot password modal
    */
   function showForgotPasswordModal() {
-    const email = prompt("Nhập email của bạn để nhận link reset mật khẩu:");
+    const email = prompt("Nháº­p email cá»§a báº¡n Ä‘á»ƒ nháº­n link reset máº­t kháº©u:");
 
     if (!email) {
       return;
     }
 
     if (!isValidEmail(email)) {
-      showToast("Email không hợp lệ", "error");
+      showToast("Email khÃ´ng há»£p lá»‡", "error");
       return;
     }
 
@@ -1214,7 +1248,7 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Forgot Password Response:", response);
+        console.log("âœ… Forgot Password Response:", response);
 
         if (response.success) {
           showToast(response.message, "success");
@@ -1224,8 +1258,8 @@ Hoặc bạn có thể:
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Forgot Password Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Forgot Password Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .requestResetPassword(email);
   }
@@ -1234,7 +1268,7 @@ Hoặc bạn có thể:
    * Handle email verification from URL
    */
   function handleEmailVerification() {
-    console.log("🔍 Checking for verification/reset action...");
+    console.log("ðŸ” Checking for verification/reset action...");
 
     // Try to get params from server injection first
     let action = window.SERVER_PARAMS?.action || "";
@@ -1247,13 +1281,13 @@ Hoặc bạn có thể:
       token = urlParams.get("token") || "";
     }
 
-    console.log("📦 Server params:", window.SERVER_PARAMS);
-    console.log("🔗 URL search:", window.location.search);
+    console.log("ðŸ“¦ Server params:", window.SERVER_PARAMS);
+    console.log("ðŸ”— URL search:", window.location.search);
     console.log("Action:", action);
     console.log("Token:", token ? token.substring(0, 10) + "..." : "none");
 
     if (action === "verify" && token) {
-      console.log("🔐 Verifying email with token");
+      console.log("ðŸ” Verifying email with token");
       showLoading(true);
 
       // Show login page
@@ -1262,11 +1296,11 @@ Hoặc bạn có thể:
       google.script.run
         .withSuccessHandler(function (response) {
           hideLoading();
-          console.log("✅ Verification Response:", response);
+          console.log("âœ… Verification Response:", response);
 
           if (response.success) {
             showToast(
-              response.message + " Bạn có thể đăng nhập ngay!",
+              response.message + " Báº¡n cÃ³ thá»ƒ Ä‘Äƒng nháº­p ngay!",
               "success"
             );
           } else {
@@ -1275,15 +1309,15 @@ Hoặc bạn có thể:
         })
         .withFailureHandler(function (error) {
           hideLoading();
-          console.error("❌ Verification Error:", error);
-          showToast("Lỗi xác thực: " + error.message, "error");
+          console.error("âŒ Verification Error:", error);
+          showToast("Lá»—i xÃ¡c thá»±c: " + error.message, "error");
         })
         .verifyEmailToken(token);
     } else if (action === "reset" && token) {
-      console.log("🔐 Reset password with token");
+      console.log("ðŸ” Reset password with token");
       showResetPasswordForm(token);
     } else {
-      console.log("ℹ️ No verification or reset action found");
+      console.log("â„¹ï¸ No verification or reset action found");
     }
   }
 
@@ -1294,7 +1328,7 @@ Hoặc bạn có thể:
     const email = document.getElementById("forgot-email").value.trim();
 
     if (!email || !isValidEmail(email)) {
-      showToast("Vui lòng nhập email hợp lệ", "error");
+      showToast("Vui lÃ²ng nháº­p email há»£p lá»‡", "error");
       return;
     }
 
@@ -1303,7 +1337,7 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Request Reset Code Response:", response);
+        console.log("âœ… Request Reset Code Response:", response);
 
         if (response.success) {
           showToast(response.message, "success");
@@ -1319,8 +1353,8 @@ Hoặc bạn có thể:
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Request Reset Code Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Request Reset Code Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .requestResetPassword(email);
   }
@@ -1338,17 +1372,17 @@ Hoặc bạn có thể:
 
     // Validation
     if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
-      showToast("Vui lòng nhập mã xác thực 6 chữ số", "error");
+      showToast("Vui lÃ²ng nháº­p mÃ£ xÃ¡c thá»±c 6 chá»¯ sá»‘", "error");
       return;
     }
 
     if (!newPassword || newPassword.length < 6) {
-      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      showToast("Máº­t kháº©u pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±", "error");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showToast("Mật khẩu xác nhận không khớp", "error");
+      showToast("Máº­t kháº©u xÃ¡c nháº­n khÃ´ng khá»›p", "error");
       return;
     }
 
@@ -1357,7 +1391,7 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Reset Password Response:", response);
+        console.log("âœ… Reset Password Response:", response);
 
         if (response.success) {
           showToast(response.message, "success");
@@ -1374,8 +1408,8 @@ Hoặc bạn có thể:
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Reset Password Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Reset Password Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .resetPasswordWithCode({
         email: email,
@@ -1392,7 +1426,7 @@ Hoặc bạn có thể:
     const email = document.getElementById("reset-email").value;
 
     if (!email) {
-      showToast("Email không hợp lệ", "error");
+      showToast("Email khÃ´ng há»£p lá»‡", "error");
       return;
     }
 
@@ -1401,18 +1435,18 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Resend Code Response:", response);
+        console.log("âœ… Resend Code Response:", response);
 
         if (response.success) {
-          showToast("Mã xác thực mới đã được gửi!", "success");
+          showToast("MÃ£ xÃ¡c thá»±c má»›i Ä‘Ã£ Ä‘Æ°á»£c gá»­i!", "success");
         } else {
           showToast(response.message, "error");
         }
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Resend Code Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Resend Code Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .requestResetPassword(email);
   }
@@ -1439,22 +1473,22 @@ Hoặc bạn có thể:
    * Show reset password form (Legacy - kept for compatibility)
    */
   function showResetPasswordForm(token) {
-    const newPassword = prompt("Nhập mật khẩu mới (tối thiểu 6 ký tự):");
+    const newPassword = prompt("Nháº­p máº­t kháº©u má»›i (tá»‘i thiá»ƒu 6 kÃ½ tá»±):");
 
     if (!newPassword) {
       return;
     }
 
     if (newPassword.length < 6) {
-      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      showToast("Máº­t kháº©u pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±", "error");
       setTimeout(() => showResetPasswordForm(token), 500);
       return;
     }
 
-    const confirmPassword = prompt("Xác nhận mật khẩu mới:");
+    const confirmPassword = prompt("XÃ¡c nháº­n máº­t kháº©u má»›i:");
 
     if (newPassword !== confirmPassword) {
-      showToast("Mật khẩu xác nhận không khớp", "error");
+      showToast("Máº­t kháº©u xÃ¡c nháº­n khÃ´ng khá»›p", "error");
       setTimeout(() => showResetPasswordForm(token), 500);
       return;
     }
@@ -1464,7 +1498,7 @@ Hoặc bạn có thể:
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("✅ Reset Password Response:", response);
+        console.log("âœ… Reset Password Response:", response);
 
         if (response.success) {
           showToast(response.message, "success");
@@ -1477,8 +1511,8 @@ Hoặc bạn có thể:
       })
       .withFailureHandler(function (error) {
         hideLoading();
-        console.error("❌ Reset Password Error:", error);
-        showToast("Lỗi: " + error.message, "error");
+        console.error("âŒ Reset Password Error:", error);
+        showToast("Lá»—i: " + error.message, "error");
       })
       .resetPasswordWithToken({
         token: token,
@@ -1582,7 +1616,7 @@ Hoặc bạn có thể:
     starContainer.style.zIndex = "9999";
     document.body.appendChild(starContainer);
 
-    const stars = ["⭐", "✨", "🌟", "💫"];
+    const stars = ["â­", "âœ¨", "ðŸŒŸ", "ðŸ’«"];
     const starCount = 8;
 
     for (let i = 0; i < starCount; i++) {
@@ -1629,38 +1663,7 @@ Hoặc bạn có thể:
     }, 1000);
   }
 
-  // ==================== Global Notification Flower Effect ====================
-
-  let globalFlowerContainer = document.getElementById("globalFlowerContainer");
-  if (!globalFlowerContainer) {
-    globalFlowerContainer = document.createElement("div");
-    globalFlowerContainer.id = "globalFlowerContainer";
-    globalFlowerContainer.className = "flower-container";
-    globalFlowerContainer.style.display = "none";
-    document.body.appendChild(globalFlowerContainer);
-  }
-
-  window.createFallingFlowers = function () {
-    const flowers = ["🌸", "🌺", "🌼", "🌻", "🌷", "🏵️", "💐", "🌹", "💮", "🪷"];
-    const flowerCount = 20;
-
-    globalFlowerContainer.innerHTML = "";
-    globalFlowerContainer.style.display = "block";
-
-    for (let i = 0; i < flowerCount; i++) {
-      const flower = document.createElement("div");
-      flower.className = "flower";
-      flower.textContent = flowers[Math.floor(Math.random() * flowers.length)];
-      flower.style.left = Math.random() * 100 + "%";
-      flower.style.animationDuration = Math.random() * 2 + 2 + "s";
-      flower.style.animationDelay = Math.random() * 0.5 + "s";
-      globalFlowerContainer.appendChild(flower);
-    }
-
-    setTimeout(() => {
-      globalFlowerContainer.style.display = "none";
-    }, 4500);
-  };
+  // ==================== Notification Panel Toggle ====================
 
   document.addEventListener("click", function (e) {
     const notificationBtn = e.target.closest(
@@ -1674,16 +1677,9 @@ Hoặc bạn có thể:
     if (notificationBtn && notificationPanel) {
       const isVisible = notificationPanel.style.display === "block";
       notificationPanel.style.display = isVisible ? "none" : "block";
-
-      if (!isVisible) {
-        window.createFallingFlowers();
-      } else {
-        globalFlowerContainer.style.display = "none";
-      }
       e.stopPropagation();
     } else if (closeNotifBtn && notificationPanel) {
       notificationPanel.style.display = "none";
-      globalFlowerContainer.style.display = "none";
       e.stopPropagation();
     } else if (
       notificationPanel &&
@@ -1691,7 +1687,6 @@ Hoặc bạn có thể:
     ) {
       if (!notificationPanel.contains(e.target)) {
         notificationPanel.style.display = "none";
-        globalFlowerContainer.style.display = "none";
       }
     }
   });
@@ -1701,7 +1696,7 @@ Hoặc bạn có thể:
   function loadDashboardData() {
     console.log("Loading dashboard data...");
 
-    const savedUser = sessionStorage.getItem("currentUser");
+    const savedUser = localStorage.getItem("currentUser");
     if (savedUser) {
       try {
         currentUser = JSON.parse(savedUser);
@@ -1716,12 +1711,9 @@ Hoặc bạn có thể:
   function updateDashboardUserName() {
     if (!currentUser) return;
 
-    const name =
-      currentUser.fullName ||
-      currentUser.username ||
-      currentUser.email?.split("@")[0] ||
-      "User";
-    console.log("Updating dashboard with name:", name);
+    // â­ CHá»ˆ láº¥y displayName tá»« cá»™t displayName trong sheet Users (KHÃ”NG cÃ³ fallback)
+    const name = currentUser.displayName || "";
+    console.log("Updating dashboard with displayName:", name);
 
     const userNameEl = document.getElementById("userName");
     const userNameWelcomeEl = document.getElementById("userNameWelcome");

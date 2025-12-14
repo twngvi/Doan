@@ -122,13 +122,18 @@
         showSuccess("Đăng nhập Google thành công!");
 
         setTimeout(() => {
+          // ⭐ Cập nhật URL state cho Google login
+          if (typeof updateURLState === "function") {
+            updateURLState('dashboard');
+          }
+
           // Call the existing handleLoginFormSubmit or redirect
           if (typeof handleLoginFormSubmit === "function") {
             handleLoginFormSubmit();
           } else {
             // Fallback: show page-dashboard
             if (typeof showPage === "function") {
-              showPage("page-dashboard");
+              showPage("page-dashboard", {}, false);
             }
           }
         }, 1000);
@@ -205,9 +210,10 @@
             isSubmitting = false;
 
             if (response.status === "success") {
-              // ⭐ Lưu user vào sessionStorage VÀ đồng bộ vào window
+              // ⭐ Lưu user vào localStorage VÀ đồng bộ vào window
               const user = response.user;
-              sessionStorage.setItem("currentUser", JSON.stringify(user));
+              localStorage.setItem("currentUser", JSON.stringify(user));
+              localStorage.setItem("isLoggedIn", "true");
 
               // ⭐ QUAN TRỌNG: Đồng bộ vào biến global
               window.currentUser = user;
@@ -216,17 +222,22 @@
               }
 
               console.log(
-                "✅ User saved to sessionStorage and window:",
+                "✅ User saved to localStorage and window:",
                 user.email
               );
               console.log("✅ window.currentUser:", window.currentUser);
 
               showSuccess("Đăng nhập thành công!");
 
+              // ⭐ Cập nhật URL state TRƯỚC KHI chuyển trang
+              if (typeof updateURLState === "function") {
+                updateURLState('dashboard');
+              }
+
               // Navigate to dashboard
               setTimeout(() => {
                 if (typeof showPage === "function") {
-                  showPage("page-dashboard");
+                  showPage("page-dashboard", {}, false); // false = không tạo history entry mới
                   if (typeof loadDashboardData === "function") {
                     loadDashboardData();
                   }

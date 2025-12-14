@@ -104,7 +104,7 @@ function loginWithEmail(credentials) {
             userId: data[i][0],
             username: data[i][4],
             email: data[i][2],
-            displayName: data[i][3] || data[i][4],
+            displayName: data[i][3],
             avatarUrl: avatarUrl, // ⭐ ENSURE AVATAR URL
             role: data[i][7],
             level: data[i][8],

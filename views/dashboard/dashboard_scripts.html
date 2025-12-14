@@ -35,14 +35,14 @@
   console.log("Dashboard user data:", user);
 
   if (user) {
-    // Try multiple name fields
-    const name =
-      user.displayName ||
-      user.fullName ||
-      user.username ||
-      user.email?.split("@")[0] ||
-      "User";
-    console.log("Display name:", name);
+    // ⭐ CHỈ lấy displayName từ cột displayName trong sheet Users (KHÔNG có fallback)
+    const name = user.displayName || "";
+
+    if (name) {
+      console.log("Display name (from displayName column):", name);
+    } else {
+      console.warn("⚠️ No displayName found in database for user:", user.email);
+    }
 
     const userNameEl = document.getElementById("userName");
     const userNameWelcomeEl = document.getElementById("userNameWelcome");
@@ -56,17 +56,18 @@
       console.log("Updated userNameWelcome:", name);
     }
 
-    // Update avatar
+    // Update avatar - CHỈ hiển thị nếu có avatarUrl từ database
     const userAvatarEl = document.querySelector(".user-avatar");
-    if (userAvatarEl && user.avatarUrl) {
-      userAvatarEl.src = user.avatarUrl;
-      console.log("Updated avatar:", user.avatarUrl);
-    } else if (userAvatarEl) {
-      // Fallback to UI Avatars with user's name
-      userAvatarEl.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        name
-      )}&background=random`;
-      console.log("Using fallback avatar for:", name);
+    if (userAvatarEl) {
+      if (user.avatarUrl) {
+        userAvatarEl.src = user.avatarUrl;
+        userAvatarEl.style.display = "block";
+        console.log("Updated avatar:", user.avatarUrl);
+      } else {
+        // Không có avatar → Ẩn
+        userAvatarEl.style.display = "none";
+        console.log("No avatar in database, element hidden");
+      }
     }
   } else {
     console.warn("No user data found in dashboard");
@@ -294,7 +295,7 @@
       console.log("✅ User data loaded:", {
         userId: user.userId,
         email: user.email,
-        displayName: user.displayName || user.username,
+        displayName: user.displayName,
       });
 
       // Update UI
@@ -310,7 +311,11 @@
    * Hàm này sẽ cập nhật TẤT CẢ các vị trí hiển thị tên
    */
   function updateDashboardUserInfo(user) {
-    if (!user) return;
+    // ⭐ CHỈ lấy displayName từ cột displayName trong sheet Users (KHÔNG fallback)
+    const nameElements = document.querySelectorAll(
+      "#userName, #userNameWelcome, #dashboard-user-name"
+    );
+    const displayName = user.displayName || "";
 
     // 1. Xác định tên hiển thị ưu tiên
     const displayName =
@@ -333,28 +338,29 @@
       });
     });
 
-    // 4. Cập nhật Avatar (nếu có thay đổi)
-    const avatarUrl =
-      user.avatarUrl ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        displayName
-      )}&size=120&background=random`;
+    // ⭐ CHỈ hiển thị avatar từ cột avatarUrl (KHÔNG có fallback UI Avatars)
+    const avatarElements = document.querySelectorAll(
+      "#dashboard-avatar, .user-avatar"
+    );
 
-    const avatarSelectors = [
-      "#dashboard-avatar",
-      ".user-avatar",
-      "#profile-avatar",
-      "#sidebar-avatar",
-      "#header-avatar",
-    ];
-
-    avatarSelectors.forEach((selector) => {
-      document.querySelectorAll(selector).forEach((el) => {
-        el.src = avatarUrl;
-      });
+    avatarElements.forEach((el) => {
+      if (el) {
+        if (user.avatarUrl) {
+          el.src = user.avatarUrl;
+          el.style.display = "block";
+        } else {
+          el.style.display = "none";
+        }
+      }
     });
 
-    console.log("✅ UI Synchronized for:", displayName);
+    console.log(
+      "✅ Dashboard UI updated (displayName:",
+      displayName,
+      ", avatarUrl:",
+      user.avatarUrl || "none",
+      ")"
+    );
   }
 
   // Initial load

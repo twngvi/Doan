@@ -1,0 +1,23 @@
+<script>
+  /**
+   * views/Login/google_auth_js.html
+   * Script xử lý đăng nhập Google OAuth 2.0
+   */
+  function handleGoogleLoginClick() {
+    console.log("Starting Google Auth Redirect...");
+    
+    if (typeof showLoading === "function") showLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function(authUrl) {
+         // Chuyển hướng cửa sổ cha (thoát iframe) sang trang Login Google
+         window.top.location.href = authUrl;
+      })
+      .withFailureHandler(function(error) {
+         console.error("Auth URL Error:", error);
+         if (typeof hideLoading === "function") hideLoading();
+         if (typeof showToast === "function") showToast("Lỗi kết nối: " + error.message, "error");
+      })
+      .getGoogleAuthUrl(); 
+  }
+</script>
