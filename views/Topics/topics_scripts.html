@@ -155,8 +155,14 @@
         return;
       }
 
-      filteredTopics.forEach((topic) => {
+      // Add staggered animation
+      filteredTopics.forEach((topic, index) => {
         const card = createTopicCard(topic);
+        // Reset animation
+        card.style.animation = 'none';
+        setTimeout(() => {
+          card.style.animation = '';
+        }, 10);
         grid.appendChild(card);
       });
 
@@ -535,14 +541,54 @@
     }
 
     // ========================================
+    // SKELETON LOADING
+    // ========================================
+    function createSkeletonCard() {
+      const card = document.createElement("div");
+      card.className = "topic-card skeleton";
+      card.innerHTML = `
+        <div class="topic-card-header">
+          <div class="skeleton-icon"></div>
+          <div>
+            <div class="skeleton-badge"></div>
+            <div class="skeleton-badge" style="width: 60px;"></div>
+          </div>
+        </div>
+        <div class="skeleton-line" style="width: 80%;"></div>
+        <div class="skeleton-line" style="width: 100%;"></div>
+        <div class="skeleton-line" style="width: 90%;"></div>
+        <div class="skeleton-stats">
+          <div class="skeleton-stat"></div>
+          <div class="skeleton-stat"></div>
+          <div class="skeleton-stat"></div>
+        </div>
+        <div class="skeleton-button"></div>
+      `;
+      return card;
+    }
+
+    function showSkeletonLoading() {
+      const grid = document.getElementById("topicsGrid");
+      grid.innerHTML = "";
+      grid.style.display = "grid";
+      
+      // Create 6 skeleton cards
+      for (let i = 0; i < 6; i++) {
+        grid.appendChild(createSkeletonCard());
+      }
+      
+      document.getElementById("topicsLoading").style.display = "none";
+      document.getElementById("topicsJourney").style.display = "none";
+      document.getElementById("topicsError").style.display = "none";
+      document.getElementById("topicsEmpty").style.display = "none";
+    }
+
+    // ========================================
     // UI STATE MANAGEMENT
     // ========================================
     function showLoadingState() {
-      document.getElementById("topicsLoading").style.display = "block";
-      document.getElementById("topicsError").style.display = "none";
-      document.getElementById("topicsEmpty").style.display = "none";
-      document.getElementById("topicsGrid").style.display = "none";
-      document.getElementById("topicsJourney").style.display = "none";
+      // Use skeleton loading instead of spinner
+      showSkeletonLoading();
     }
 
     function hideLoadingState() {
