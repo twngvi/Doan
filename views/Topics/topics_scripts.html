@@ -13,6 +13,12 @@
     let selectedTopic = null;
     let userProgress = {};
 
+    // ⭐ CACHE để tránh reload không cần thiết
+    let topicsCache = null;
+    let progressCache = null;
+    let lastLoadTime = 0;
+    const CACHE_DURATION = 60000; // Cache 1 phút
+
     // ========================================
     // INITIALIZATION
     // ========================================
@@ -35,78 +41,124 @@
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
           searchTopics(e.target.value);
-        }, 300);
+        }, 200); // Giảm debounce từ 300ms xuống 200ms
       });
     }
+
     // ========================================
-    // LOAD TOPICS FROM DATABASE
+    // LOAD TOPICS FROM DATABASE - OPTIMIZED
     // ========================================
-    function loadTopics() {
+    function loadTopics(forceRefresh = false) {
       console.log("Loading topics from database...");
+
+      const now = Date.now();
+
+      // ⭐ Kiểm tra cache - nếu còn hiệu lực thì dùng luôn
+      if (!forceRefresh && topicsCache && now - lastLoadTime < CACHE_DURATION) {
+        console.log("✅ Using cached topics data");
+        allTopics = topicsCache;
+        userProgress = progressCache || {};
+        filteredTopics = [...allTopics];
+        renderTopics();
+        updateProgressStats();
+        return;
+      }
 
       // Show loading state
       showLoadingState();
 
-      // Call server-side function to get topics
+      // ⭐ LOAD SONG SONG: Topics và Progress cùng lúc
+      let topicsLoaded = false;
+      let progressLoaded = false;
+      let topicsResult = null;
+      let progressResult = null;
+
+      function tryRender() {
+        // Chỉ render khi cả 2 đã load xong
+        if (topicsLoaded && progressLoaded) {
+          processAndRender(topicsResult, progressResult);
+        }
+      }
+
+      // Call 1: Get Topics
       google.script.run
-        .withSuccessHandler(onTopicsLoaded)
-        .withFailureHandler(onTopicsLoadError)
+        .withSuccessHandler(function (result) {
+          topicsResult = result;
+          topicsLoaded = true;
+          tryRender();
+        })
+        .withFailureHandler(function (error) {
+          topicsLoaded = true;
+          topicsResult = { success: false, error: error };
+          tryRender();
+        })
         .getAllTopics();
+
+      // Call 2: Get User Progress (song song)
+      google.script.run
+        .withSuccessHandler(function (result) {
+          progressResult = result;
+          progressLoaded = true;
+          tryRender();
+        })
+        .withFailureHandler(function (error) {
+          progressLoaded = true;
+          progressResult = { success: false, progress: {} };
+          tryRender();
+        })
+        .getUserTopicProgress();
     }
 
-    function onTopicsLoaded(result) {
-      console.log("Topics loaded - Raw result:", result);
-      console.log("Result type:", typeof result);
-      console.log("Result is null:", result === null);
-      console.log("Result is undefined:", result === undefined);
+    // ⭐ XỬ LÝ VÀ RENDER - Gộp logic, render 1 lần duy nhất
+    function processAndRender(topicsResult, progressResult) {
+      console.log("Processing topics and progress...");
 
-      // Comprehensive null check
-      if (!result) {
-        console.error("❌ Result is null or undefined");
-        showErrorState(
-          "Lỗi: Server không trả về dữ liệu (Result is null/undefined)."
-        );
+      // Xử lý lỗi topics
+      if (!topicsResult) {
+        console.error("❌ Topics result is null");
+        showErrorState("Lỗi: Server không trả về dữ liệu.");
         return;
       }
 
-      console.log("Result.success:", result.success);
-      console.log("Result.topics:", result.topics);
-
-      if (!result.success) {
-        console.error("❌ Request failed:", result.message);
-        showErrorState(result.message || "Lỗi không xác định từ Server.");
+      if (!topicsResult.success) {
+        console.error("❌ Topics request failed:", topicsResult.message);
+        showErrorState(topicsResult.message || "Lỗi không xác định từ Server.");
         return;
       }
 
-      if (result.success && result.topics && result.topics.length > 0) {
-        console.log(`✅ Successfully loaded ${result.topics.length} topics`);
-        allTopics = result.topics;
-        filteredTopics = [...allTopics];
-
-        // Load user progress
-        loadUserProgress();
-
-        // Render topics
-        renderTopics();
-
-        // Update stats
-        updateProgressStats();
-
-        // Hide loading, show content
-        hideLoadingState();
-      } else {
-        console.warn("⚠️ No topics found in database");
+      if (!topicsResult.topics || topicsResult.topics.length === 0) {
+        console.warn("⚠️ No topics found");
         showEmptyState();
+        return;
       }
+
+      // ⭐ Lưu vào biến và cache
+      allTopics = topicsResult.topics;
+      topicsCache = topicsResult.topics;
+
+      // Xử lý progress
+      if (progressResult && progressResult.success && progressResult.progress) {
+        userProgress = progressResult.progress;
+        progressCache = progressResult.progress;
+      } else {
+        userProgress = {};
+        progressCache = {};
+      }
+
+      lastLoadTime = Date.now();
+
+      console.log(`✅ Loaded ${allTopics.length} topics with progress`);
+
+      filteredTopics = [...allTopics];
+
+      // ⭐ RENDER 1 LẦN DUY NHẤT (không có setTimeout delay)
+      renderTopics();
+      updateProgressStats();
+      hideLoadingState();
     }
 
     function onTopicsLoadError(error) {
       console.error("❌ Error loading topics:", error);
-      console.error("Error details:", {
-        message: error.message,
-        stack: error.stack,
-        toString: error.toString(),
-      });
       showErrorState(
         error.message ||
           error.toString() ||
@@ -115,28 +167,7 @@
     }
 
     // ========================================
-    // LOAD USER PROGRESS
-    // ========================================
-    function loadUserProgress() {
-      google.script.run
-        .withSuccessHandler(onUserProgressLoaded)
-        .withFailureHandler((error) =>
-          console.error("Error loading user progress:", error)
-        )
-        .getUserTopicProgress();
-    }
-
-    function onUserProgressLoaded(result) {
-      if (result.success && result.progress) {
-        userProgress = result.progress;
-        console.log("User progress loaded:", userProgress);
-        // Re-render to show progress
-        renderTopics();
-      }
-    }
-
-    // ========================================
-    // RENDER TOPICS
+    // RENDER TOPICS - OPTIMIZED
     // ========================================
     function renderTopics() {
       if (currentView === "grid") {
@@ -148,23 +179,23 @@
 
     function renderGridView() {
       const grid = document.getElementById("topicsGrid");
-      grid.innerHTML = "";
 
       if (filteredTopics.length === 0) {
         showEmptyState();
         return;
       }
 
-      // Add staggered animation
-      filteredTopics.forEach((topic, index) => {
+      // ⭐ SỬ DỤNG DOCUMENT FRAGMENT để tránh reflow nhiều lần
+      const fragment = document.createDocumentFragment();
+
+      filteredTopics.forEach((topic) => {
         const card = createTopicCard(topic);
-        // Reset animation
-        card.style.animation = 'none';
-        setTimeout(() => {
-          card.style.animation = '';
-        }, 10);
-        grid.appendChild(card);
+        fragment.appendChild(card);
       });
+
+      // ⭐ Clear và append 1 lần duy nhất
+      grid.innerHTML = "";
+      grid.appendChild(fragment);
 
       grid.style.display = "grid";
       document.getElementById("topicsJourney").style.display = "none";
@@ -184,32 +215,41 @@
         (t) => t.journey === "Advanced"
       );
 
-      // Render each journey section
-      document.getElementById("beginnerTopics").innerHTML = "";
+      // ⭐ SỬ DỤNG FRAGMENT cho mỗi section
+      const beginnerFragment = document.createDocumentFragment();
       beginnerTopics.forEach((topic) => {
-        document
-          .getElementById("beginnerTopics")
-          .appendChild(createTopicCard(topic));
+        beginnerFragment.appendChild(createTopicCard(topic));
       });
 
-      document.getElementById("intermediateTopics").innerHTML = "";
+      const intermediateFragment = document.createDocumentFragment();
       intermediateTopics.forEach((topic) => {
-        document
-          .getElementById("intermediateTopics")
-          .appendChild(createTopicCard(topic));
+        intermediateFragment.appendChild(createTopicCard(topic));
       });
 
-      document.getElementById("advancedTopics").innerHTML = "";
+      const advancedFragment = document.createDocumentFragment();
       advancedTopics.forEach((topic) => {
-        document
-          .getElementById("advancedTopics")
-          .appendChild(createTopicCard(topic));
+        advancedFragment.appendChild(createTopicCard(topic));
       });
+
+      // Clear và append 1 lần cho mỗi section
+      const beginnerEl = document.getElementById("beginnerTopics");
+      const intermediateEl = document.getElementById("intermediateTopics");
+      const advancedEl = document.getElementById("advancedTopics");
+
+      beginnerEl.innerHTML = "";
+      beginnerEl.appendChild(beginnerFragment);
+
+      intermediateEl.innerHTML = "";
+      intermediateEl.appendChild(intermediateFragment);
+
+      advancedEl.innerHTML = "";
+      advancedEl.appendChild(advancedFragment);
 
       document.getElementById("topicsGrid").style.display = "none";
       journeyContainer.style.display = "flex";
     }
 
+    // ⭐ TỐI ƯU CARD CREATION - Sử dụng template string tốt hơn
     function createTopicCard(topic) {
       const card = document.createElement("div");
       card.className = "topic-card";
@@ -221,10 +261,12 @@
         progress: 0,
       };
       const isLocked = !checkTopicUnlocked(topic);
+      const journeyIcon = getJourneyIcon(topic.journey);
+      const progressPercent = progress.progress || 0;
 
       card.innerHTML = `
       <div class="topic-card-header">
-        <div class="topic-icon">${getJourneyIcon(topic.journey)}</div>
+        <div class="topic-icon">${journeyIcon}</div>
         <div class="topic-badges">
           <span class="badge badge-journey">${topic.journey}</span>
           ${
@@ -261,11 +303,9 @@
           ? `
         <div class="topic-progress">
           <div class="progress-bar">
-            <div class="progress-fill" style="width: ${
-              progress.progress || 0
-            }%"></div>
+            <div class="progress-fill" style="width: ${progressPercent}%"></div>
           </div>
-          <p class="progress-text">${progress.progress || 0}% completed</p>
+          <p class="progress-text">${progressPercent}% completed</p>
         </div>
       `
           : ""
@@ -571,12 +611,12 @@
       const grid = document.getElementById("topicsGrid");
       grid.innerHTML = "";
       grid.style.display = "grid";
-      
+
       // Create 6 skeleton cards
       for (let i = 0; i < 6; i++) {
         grid.appendChild(createSkeletonCard());
       }
-      
+
       document.getElementById("topicsLoading").style.display = "none";
       document.getElementById("topicsJourney").style.display = "none";
       document.getElementById("topicsError").style.display = "none";
@@ -587,23 +627,35 @@
     // UI STATE MANAGEMENT
     // ========================================
     function showLoadingState() {
-      // Use skeleton loading instead of spinner
-      showSkeletonLoading();
+      // Hiện popup loading O...
+      const overlay = document.getElementById("quizLoadingOverlay");
+      if (overlay) {
+        overlay.classList.add("show");
+      }
+      // Ẩn các container khác
+      document.getElementById("topicsGrid").style.display = "none";
+      document.getElementById("topicsJourney").style.display = "none";
+      document.getElementById("topicsError").style.display = "none";
+      document.getElementById("topicsEmpty").style.display = "none";
     }
 
     function hideLoadingState() {
+      // Ẩn popup loading O...
+      const overlay = document.getElementById("quizLoadingOverlay");
+      if (overlay) {
+        overlay.classList.remove("show");
+      }
       document.getElementById("topicsLoading").style.display = "none";
     }
 
     function showErrorState(message) {
-      document.getElementById("topicsLoading").style.display = "none";
+      hideLoadingState();
       document.getElementById("topicsError").style.display = "block";
       document.querySelector(".error-message").textContent = message;
     }
 
     function showEmptyState() {
-      document.getElementById("topicsLoading").style.display = "none";
-      document.getElementById("topicsError").style.display = "none";
+      hideLoadingState();
       document.getElementById("topicsEmpty").style.display = "block";
     }
 
@@ -647,15 +699,18 @@
       if (!window.topicsPageInitialized) {
         console.log("Initializing Topics Page for the first time...");
         window.topicsPageInitialized = true;
-
-        // Use setTimeout to ensure DOM is ready
-        setTimeout(function () {
-          loadTopics();
-        }, 100);
-      } else {
-        console.log("Topics Page already initialized, refreshing data...");
         loadTopics();
+      } else {
+        console.log("Topics Page already initialized, using cache if valid...");
+        // ⭐ Không reload nếu đã có cache còn hiệu lực
+        loadTopics(false); // false = không force refresh
       }
+    };
+
+    // ⭐ Force refresh function để user có thể reload khi cần
+    window.refreshTopics = function () {
+      console.log("Force refreshing topics...");
+      loadTopics(true); // true = force refresh, bỏ qua cache
     };
 
     // Create aliases for compatibility with different calling patterns

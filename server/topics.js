@@ -4,14 +4,28 @@
  * Handles all topic-related operations: get topics, user progress, unlock logic
  */
 
+// ⭐ CACHE phía server để giảm số lần đọc spreadsheet
+let topicsCacheServer = null;
+let topicsCacheTime = 0;
+const TOPICS_CACHE_DURATION = 300000; // Cache 5 phút
+
 /**
  * Get all topics from MASTER_DB
  * Updated to read 14 columns including contentDocId
+ * ⭐ OPTIMIZED: Thêm cache phía server
  */
 function getAllTopics() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
 
   try {
+    const now = Date.now();
+
+    // ⭐ Kiểm tra cache phía server
+    if (topicsCacheServer && now - topicsCacheTime < TOPICS_CACHE_DURATION) {
+      Logger.log("✅ Using server-side cached topics");
+      return topicsCacheServer;
+    }
+
     const SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
     const SHEET_NAME = "Topics";
 
@@ -61,8 +75,7 @@ function getAllTopics() {
       const row = data[i];
 
       if (!row[0]) {
-        Logger.log("Skipping empty row at index " + i);
-        continue;
+        continue; // Skip empty rows silently for performance
       }
 
       topics.push({
@@ -101,11 +114,17 @@ function getAllTopics() {
 
     Logger.log("✅ Successfully processed " + topics.length + " topics");
 
-    return {
+    const result = {
       success: true,
       topics: topics,
       count: topics.length,
     };
+
+    // ⭐ Lưu vào cache
+    topicsCacheServer = result;
+    topicsCacheTime = now;
+
+    return result;
   } catch (error) {
     Logger.log("❌ LỖI NGHIÊM TRỌNG TRONG getAllTopics: " + error.toString());
     Logger.log("Error stack: " + error.stack);
@@ -116,6 +135,15 @@ function getAllTopics() {
       error: error.stack,
     };
   }
+}
+
+/**
+ * ⭐ Clear topics cache (gọi khi admin cập nhật topics)
+ */
+function clearTopicsCache() {
+  topicsCacheServer = null;
+  topicsCacheTime = 0;
+  Logger.log("✅ Topics cache cleared");
 }
 
 /**

@@ -64,6 +64,21 @@
             e.stopPropagation();
           });
         }
+
+        // Search box - expand sidebar when clicked
+        const searchBox = document.getElementById("sidebarSearchBox");
+        const searchInput = document.getElementById("sidebarSearchInput");
+        if (searchBox && searchInput) {
+          searchBox.addEventListener("click", () => {
+            if (this.isCollapsed) {
+              this.isCollapsed = false;
+              this.updateCollapsedState();
+              this.saveState();
+              // Focus vào input sau khi expand
+              setTimeout(() => searchInput.focus(), 300);
+            }
+          });
+        }
       },
 
       setupNavigation: function () {
@@ -90,19 +105,58 @@
           });
         });
 
-        // Logout button
+        // Logout button - Show confirmation modal
         const logoutBtn = document.getElementById("globalLogoutBtn");
         if (logoutBtn) {
           logoutBtn.addEventListener("click", () => {
+            const modal = document.getElementById("logoutModalOverlay");
+            if (modal) {
+              modal.classList.add("show");
+            }
+          });
+        }
+
+        // Logout Cancel button
+        const logoutCancelBtn = document.getElementById("logoutCancelBtn");
+        if (logoutCancelBtn) {
+          logoutCancelBtn.addEventListener("click", () => {
+            const modal = document.getElementById("logoutModalOverlay");
+            if (modal) {
+              modal.classList.remove("show");
+            }
+          });
+        }
+
+        // Logout Confirm button
+        const logoutConfirmBtn = document.getElementById("logoutConfirmBtn");
+        if (logoutConfirmBtn) {
+          logoutConfirmBtn.addEventListener("click", () => {
+            const modal = document.getElementById("logoutModalOverlay");
+            if (modal) {
+              modal.classList.remove("show");
+            }
+
             if (typeof logout === "function") {
               logout();
             } else {
               // Fallback logout
               localStorage.removeItem("currentUser");
+              sessionStorage.removeItem("currentUser");
               localStorage.removeItem("authToken");
               if (typeof showPage === "function") {
                 showPage("page-login");
               }
+            }
+          });
+        }
+
+        // Close modal when clicking overlay
+        const logoutModalOverlay =
+          document.getElementById("logoutModalOverlay");
+        if (logoutModalOverlay) {
+          logoutModalOverlay.addEventListener("click", (e) => {
+            if (e.target === logoutModalOverlay) {
+              logoutModalOverlay.classList.remove("show");
             }
           });
         }
@@ -189,13 +243,17 @@
         try {
           // 1. Kiểm tra container trước
           if (!this.sidebar) {
-            console.warn("⚠️ Sidebar container not found inside updateActiveNav");
+            console.warn(
+              "⚠️ Sidebar container not found inside updateActiveNav"
+            );
             return;
           }
 
           // 2. Nếu có sidebar mới tìm links
-          const navItems = this.sidebar.querySelectorAll(".nav-item[data-page]");
-          
+          const navItems = this.sidebar.querySelectorAll(
+            ".nav-item[data-page]"
+          );
+
           if (!navItems || navItems.length === 0) {
             console.warn("⚠️ No nav items found in sidebar");
             return;
@@ -316,7 +374,11 @@
      * ⭐ Update sidebar user info - IMPROVED
      */
     function updateSidebarUserInfo() {
-      const savedUser = sessionStorage.getItem("currentUser");
+      // ⭐ Kiểm tra cả localStorage và sessionStorage
+      let savedUser = localStorage.getItem("currentUser");
+      if (!savedUser) {
+        savedUser = sessionStorage.getItem("currentUser");
+      }
 
       if (savedUser) {
         try {
@@ -339,14 +401,19 @@
           // ⭐ Update avatar
           const avatarEl = document.getElementById("sidebar-avatar");
           if (avatarEl) {
-            if (user.avatarUrl && user.avatarUrl !== "") {
+            if (
+              user.avatarUrl &&
+              user.avatarUrl !== "" &&
+              user.avatarUrl !== "undefined" &&
+              user.avatarUrl !== "null"
+            ) {
               avatarEl.src = user.avatarUrl;
               console.log("✅ Sidebar avatar updated:", user.avatarUrl);
             } else {
               // Fallback to default
               const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                user.displayName || user.username
-              )}&size=80&background=random`;
+                user.displayName || user.username || "User"
+              )}&size=80&background=6366f1&color=fff`;
               avatarEl.src = defaultAvatar;
               console.log("⚠️ Using default avatar");
             }
@@ -378,6 +445,17 @@
         console.log("✅ Sidebar avatar updated from event");
       }
     });
+
+    // ⭐ Export function globally
+    window.updateSidebarUserInfo = updateSidebarUserInfo;
+
+    // ⭐ Init sidebar user info on load
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", updateSidebarUserInfo);
+    } else {
+      // DOM already loaded
+      setTimeout(updateSidebarUserInfo, 100);
+    }
 
     console.log("✅ Sidebar scripts loaded");
   })();

@@ -29,8 +29,16 @@ function loginWithEmail(credentials) {
 
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0];
+    const userIdIndex = headers.indexOf("userId");
     const emailIndex = headers.indexOf("email");
+    const displayNameIndex = headers.indexOf("displayName");
+    const usernameIndex = headers.indexOf("username");
     const passwordIndex = headers.indexOf("passwordHash");
+    const avatarUrlIndex = headers.indexOf("avatarUrl");
+    const roleIndex = headers.indexOf("role");
+    const levelIndex = headers.indexOf("level");
+    const totalXPIndex = headers.indexOf("totalXP");
+    const progressSheetIdIndex = headers.indexOf("progressSheetId");
     const verifiedIndex = headers.indexOf("emailVerified");
     const isActiveIndex = headers.indexOf("isActive");
     const lastLoginIndex = headers.indexOf("lastLogin");
@@ -79,19 +87,27 @@ function loginWithEmail(credentials) {
         logActivity({
           level: "INFO",
           category: "USER",
-          userId: data[i][0],
+          userId: data[i][userIdIndex],
           action: "LOGIN",
           details: "Logged in with email: " + credentials.email,
         });
 
         Logger.log("Login successful: " + credentials.email);
 
-        // ⭐ Get avatar URL - ưu tiên stored avatar
-        let avatarUrl = data[i][6]; // Column 6 is avatarUrl
+        // ⭐ Get avatar URL - ưu tiên stored avatar từ đúng cột
+        let avatarUrl = data[i][avatarUrlIndex];
+        Logger.log(
+          "Avatar URL from DB (index " + avatarUrlIndex + "): " + avatarUrl
+        );
 
-        if (!avatarUrl || avatarUrl === "") {
+        if (
+          !avatarUrl ||
+          avatarUrl === "" ||
+          avatarUrl === "undefined" ||
+          avatarUrl === "null"
+        ) {
           // Nếu không có avatar, tạo Gravatar
-          avatarUrl = getGravatarUrl(data[i][2]);
+          avatarUrl = getGravatarUrl(data[i][emailIndex]);
           Logger.log("No avatar found, using Gravatar: " + avatarUrl);
         } else {
           Logger.log("Using stored avatar: " + avatarUrl);
@@ -101,15 +117,15 @@ function loginWithEmail(credentials) {
           success: true,
           message: "Đăng nhập thành công!",
           user: {
-            userId: data[i][0],
-            username: data[i][4],
-            email: data[i][2],
-            displayName: data[i][3],
-            avatarUrl: avatarUrl, // ⭐ ENSURE AVATAR URL
-            role: data[i][7],
-            level: data[i][8],
-            totalXP: data[i][11],
-            progressSheetId: data[i][24],
+            userId: data[i][userIdIndex],
+            username: data[i][usernameIndex],
+            email: data[i][emailIndex],
+            displayName: data[i][displayNameIndex],
+            avatarUrl: avatarUrl,
+            role: data[i][roleIndex],
+            level: data[i][levelIndex],
+            totalXP: data[i][totalXPIndex],
+            progressSheetId: data[i][progressSheetIdIndex],
           },
         };
       }

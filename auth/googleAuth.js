@@ -121,11 +121,6 @@ function handleGoogleCallback(authCode) {
             }
             
             console.log("✅ Google login complete for:", user.displayName);
-            
-            // Tự động redirect sau 1.5s
-            setTimeout(() => {
-              document.getElementById('redirectBtn').click();
-            }, 1500);
           </script>
         </div>
       </body>

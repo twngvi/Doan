@@ -208,35 +208,40 @@ function initializeDatabase() {
  */
 function createUserPersonalSheet(email, displayName) {
   // Folder ID bạn cung cấp
-  const TARGET_FOLDER_ID = "1dlc7DeSDw19J9_38E8cJvV5hNeopO3oS"; 
-  
+  const TARGET_FOLDER_ID = "1dlc7DeSDw19J9_38E8cJvV5hNeopO3oS";
+
   // 1. Tạo Spreadsheet mới trong root
   const sheetName = `UserDB_${displayName}_${email}`;
   const ss = SpreadsheetApp.create(sheetName);
   const ssId = ss.getId();
-  
+
   // 2. Di chuyển vào Folder chỉ định
   const file = DriveApp.getFileById(ssId);
   const folder = DriveApp.getFolderById(TARGET_FOLDER_ID);
   file.moveTo(folder);
-  
+
   // 3. Tạo cấu trúc các sheet con bên trong (dựa theo USER_DB_CONFIG trong schemas.js)
   // Xóa sheet mặc định
   const defaultSheet = ss.getSheetByName("Sheet1");
   if (defaultSheet) ss.deleteSheet(defaultSheet);
-  
+
   // Duyệt qua config để tạo sheet
-  if (typeof USER_DB_CONFIG !== 'undefined' && USER_DB_CONFIG.SHEETS) {
-    Object.values(USER_DB_CONFIG.SHEETS).forEach(sheetConfig => {
+  if (typeof USER_DB_CONFIG !== "undefined" && USER_DB_CONFIG.SHEETS) {
+    Object.values(USER_DB_CONFIG.SHEETS).forEach((sheetConfig) => {
       const newSheet = ss.insertSheet(sheetConfig.name);
       // Tạo header
-      const headerRange = newSheet.getRange(1, 1, 1, sheetConfig.columns.length);
+      const headerRange = newSheet.getRange(
+        1,
+        1,
+        1,
+        sheetConfig.columns.length
+      );
       headerRange.setValues([sheetConfig.columns]);
       headerRange.setFontWeight("bold");
       headerRange.setBackground("#e6f2ff"); // Màu xanh nhạt cho user db
     });
   }
-  
+
   return ssId;
 }
 
@@ -250,12 +255,12 @@ function processGoogleUserLogin(googleProfile) {
   const userSheet = ss.getSheetByName(DB_CONFIG.SHEETS.USERS.name);
   // Lấy toàn bộ dữ liệu (cân nhắc tối ưu nếu data lớn, hiện tại dùng cách này cho đơn giản)
   const data = userSheet.getDataRange().getValues();
-  
+
   const email = googleProfile.email;
   const googleId = googleProfile.id;
   const avatar = googleProfile.picture;
   const name = googleProfile.name;
-  
+
   let userRowIndex = -1;
   let existingUser = null;
   // Cột progressSheetId nằm ở index 24 (theo schemas.js)
@@ -263,7 +268,8 @@ function processGoogleUserLogin(googleProfile) {
 
   // 1. Tìm User
   for (let i = 1; i < data.length; i++) {
-    if (data[i][2] === email) { // Col 2 là email
+    if (data[i][2] === email) {
+      // Col 2 là email
       userRowIndex = i + 1;
       existingUser = data[i];
       break;
@@ -271,13 +277,17 @@ function processGoogleUserLogin(googleProfile) {
   }
 
   // 2. Chuẩn bị thông tin Sheet cá nhân (Nếu chưa có)
-  let progressSheetId = existingUser ? existingUser[PROGRESS_SHEET_COL_INDEX] : "";
+  let progressSheetId = existingUser
+    ? existingUser[PROGRESS_SHEET_COL_INDEX]
+    : "";
 
   // Nếu chưa có sheet cá nhân, tạo mới ngay lập tức
   if (!progressSheetId) {
     try {
       progressSheetId = createUserPersonalSheet(email, name);
-      Logger.log("Created new personal sheet for " + email + ": " + progressSheetId);
+      Logger.log(
+        "Created new personal sheet for " + email + ": " + progressSheetId
+      );
     } catch (e) {
       Logger.log("Error creating personal sheet: " + e.toString());
     }
@@ -286,63 +296,83 @@ function processGoogleUserLogin(googleProfile) {
   if (existingUser) {
     // === CẬP NHẬT USER CŨ ===
     userSheet.getRange(userRowIndex, 2).setValue(googleId); // Update Google ID
-    userSheet.getRange(userRowIndex, 7).setValue(avatar);   // Update Avatar
     userSheet.getRange(userRowIndex, 16).setValue(new Date()); // Last Login
-    
+
+    // ⭐ CHỈ cập nhật avatar nếu user chưa có avatar tùy chỉnh
+    // Cột avatarUrl là index 6 (thứ 7 trong row)
+    const existingAvatar = existingUser[6];
+    let finalAvatar = existingAvatar;
+
+    // Nếu chưa có avatar hoặc avatar là rỗng, mới dùng avatar từ Google
+    if (
+      !existingAvatar ||
+      existingAvatar === "" ||
+      existingAvatar === "undefined" ||
+      existingAvatar === "null"
+    ) {
+      userSheet.getRange(userRowIndex, 7).setValue(avatar); // Update Avatar
+      finalAvatar = avatar;
+      Logger.log("No custom avatar, using Google avatar: " + avatar);
+    } else {
+      Logger.log("Keeping existing custom avatar: " + existingAvatar);
+    }
+
     // ⭐ Update progressSheetId nếu lúc trước chưa có mà giờ mới tạo
     if (!existingUser[PROGRESS_SHEET_COL_INDEX] && progressSheetId) {
-       userSheet.getRange(userRowIndex, PROGRESS_SHEET_COL_INDEX + 1).setValue(progressSheetId);
+      userSheet
+        .getRange(userRowIndex, PROGRESS_SHEET_COL_INDEX + 1)
+        .setValue(progressSheetId);
     }
 
     return {
       userId: existingUser[0],
       email: existingUser[2],
       displayName: existingUser[3],
-      avatarUrl: avatar,
+      avatarUrl: finalAvatar, // ⭐ Trả về avatar đúng (custom hoặc Google)
       role: existingUser[7],
       level: existingUser[8],
       progressSheetId: progressSheetId, // Trả về ID sheet
-      status: "success"
+      status: "success",
     };
   } else {
     // === USER MỚI: Tạo dòng mới ===
     const newUserId = "USR_" + new Date().getTime();
     const now = new Date();
-    
+
     // Mảng dữ liệu khớp 100% với thứ tự cột trong DB_CONFIG.SHEETS.USERS.columns
     const newRow = [
-      newUserId,            // 0: userId
-      googleId,             // 1: googleId
-      email,                // 2: email
-      name,                 // 3: displayName
-      email.split('@')[0],  // 4: username
-      "GOOGLE_OAUTH",       // 5: passwordHash
-      avatar,               // 6: avatarUrl
-      "USER",               // 7: role
-      1,                    // 8: level
-      1,                    // 9: aiLevel
-      0,                    // 10: totalPoints
-      0,                    // 11: totalXP
-      0,                    // 12: currentStreak
-      0,                    // 13: longestStreak
-      now,                  // 14: lastActiveDate
-      now,                  // 15: lastLogin
-      now,                  // 16: createdAt
-      true,                 // 17: isActive
-      0,                    // 18: mountainPosition
-      1,                    // 19: mountainStage
-      0,                    // 20: mountainProgress
-      0,                    // 21: totalQuizAnswered
-      0,                    // 22: totalPuzzleSolved
-      0,                    // 23: totalChallengeCompleted
-      progressSheetId,      // 24: ⭐ LƯU ID SHEET CÁ NHÂN VỪA TẠO
-      true,                 // 25: emailVerified
-      "",                   // 26: verificationToken
-      ""                    // 27: verificationExpires
+      newUserId, // 0: userId
+      googleId, // 1: googleId
+      email, // 2: email
+      name, // 3: displayName
+      email.split("@")[0], // 4: username
+      "GOOGLE_OAUTH", // 5: passwordHash
+      avatar, // 6: avatarUrl
+      "USER", // 7: role
+      1, // 8: level
+      1, // 9: aiLevel
+      0, // 10: totalPoints
+      0, // 11: totalXP
+      0, // 12: currentStreak
+      0, // 13: longestStreak
+      now, // 14: lastActiveDate
+      now, // 15: lastLogin
+      now, // 16: createdAt
+      true, // 17: isActive
+      0, // 18: mountainPosition
+      1, // 19: mountainStage
+      0, // 20: mountainProgress
+      0, // 21: totalQuizAnswered
+      0, // 22: totalPuzzleSolved
+      0, // 23: totalChallengeCompleted
+      progressSheetId, // 24: ⭐ LƯU ID SHEET CÁ NHÂN VỪA TẠO
+      true, // 25: emailVerified
+      "", // 26: verificationToken
+      "", // 27: verificationExpires
     ];
-    
+
     userSheet.appendRow(newRow);
-    
+
     return {
       userId: newUserId,
       email: email,
@@ -352,7 +382,7 @@ function processGoogleUserLogin(googleProfile) {
       level: 1,
       progressSheetId: progressSheetId,
       status: "success",
-      isNewUser: true
+      isNewUser: true,
     };
   }
 }
