@@ -108,12 +108,36 @@
   /**
    * Handle topics loaded
    */
-  function handleTopicsLoaded(topics) {
-    console.log("✅ Topics loaded:", topics);
+  function handleTopicsLoaded(response) {
+    console.log("✅ Topics loaded:", response);
 
     document.getElementById("topics-loading").style.display = "none";
 
-    if (!topics || topics.length === 0) {
+    // Handle response format from getAllTopics()
+    // It returns {success: true, topics: [...], count: N}
+    let topics = [];
+
+    if (response && response.success && Array.isArray(response.topics)) {
+      topics = response.topics;
+    } else if (Array.isArray(response)) {
+      // Direct array response
+      topics = response;
+    } else if (response && !response.success) {
+      // Error response
+      console.error("❌ Server error:", response.message);
+      document.getElementById("topics-empty").style.display = "block";
+      document.getElementById("topics-empty").innerHTML = `
+        <div class="text-6xl mb-4">⚠️</div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Lỗi tải dữ liệu</h3>
+        <p class="text-gray-600">${
+          response.message || "Không thể tải chủ đề"
+        }</p>
+        <button onclick="loadTopicsForQuiz()" class="btn-primary mt-4">Thử lại</button>
+      `;
+      return;
+    }
+
+    if (topics.length === 0) {
       document.getElementById("topics-empty").style.display = "block";
       return;
     }
