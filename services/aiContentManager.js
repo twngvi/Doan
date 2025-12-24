@@ -70,57 +70,140 @@ const AIContentCache = {
   get: function (topicId, contentType) {
     try {
       const sheet = getSheet("AI_Content_Cache");
-      if (!sheet) return null;
+      if (!sheet) {
+        Logger.log("⚠️ AI_Content_Cache sheet not found");
+        return null;
+      }
 
       const data = sheet.getDataRange().getValues();
       const headers = data[0];
 
+      Logger.log("📊 Cache headers: " + JSON.stringify(headers));
+      Logger.log(
+        "📊 Looking for topicId=" + topicId + ", contentType=" + contentType
+      );
+
+      // Get column indices
+      const topicIdCol = headers.indexOf("topicId");
+      const contentTypeCol = headers.indexOf("contentType");
+      const generatedContentCol = headers.indexOf("generatedContent");
+      const isActiveCol = headers.indexOf("isActive");
+      const expiresAtCol = headers.indexOf("expiresAt");
+
+      if (
+        topicIdCol === -1 ||
+        contentTypeCol === -1 ||
+        generatedContentCol === -1
+      ) {
+        Logger.log("⚠️ Required columns not found in cache sheet");
+        return null;
+      }
+
       // Tìm từ dưới lên (mới nhất)
       for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
-        const rowTopicId = row[headers.indexOf("topicId")];
-        const rowContentType = row[headers.indexOf("contentType")];
-        const isActive = row[headers.indexOf("isActive")];
-        const expiresAt = row[headers.indexOf("expiresAt")];
+        const rowTopicId = String(row[topicIdCol]).trim();
+        const rowContentType = String(row[contentTypeCol]).trim();
 
-        if (
-          rowTopicId === topicId &&
-          rowContentType === contentType &&
-          isActive
-        ) {
-          // Check expiry
-          if (isCacheExpired(expiresAt)) {
-            Logger.log(
-              "Cache expired for: " + topicId + " [" + contentType + "]"
-            );
-            return null;
+        // isActive - default to true if column doesn't exist
+        const isActive = isActiveCol === -1 ? true : row[isActiveCol];
+
+        // Check for match
+        if (rowTopicId === topicId && rowContentType === contentType) {
+          Logger.log("✅ Found cache match at row " + (i + 1));
+
+          // Skip if explicitly inactive
+          if (
+            isActive === false ||
+            isActive === "false" ||
+            isActive === "FALSE"
+          ) {
+            Logger.log("⚠️ Cache entry is inactive, skipping");
+            continue;
+          }
+
+          // Check expiry only if column exists
+          if (expiresAtCol !== -1 && row[expiresAtCol]) {
+            if (isCacheExpired(row[expiresAtCol])) {
+              Logger.log(
+                "⚠️ Cache expired for: " + topicId + " [" + contentType + "]"
+              );
+              continue; // Try to find older valid cache
+            }
           }
 
           // Parse content
-          const contentStr = row[headers.indexOf("generatedContent")];
+          const contentStr = row[generatedContentCol];
           let content;
+
+          // Always clean markdown wrapper first
+          let cleanStr = contentStr;
+          if (typeof cleanStr === "string") {
+            // Remove ```json at start and ``` at end (with any whitespace/newlines)
+            cleanStr = cleanStr
+              .replace(/^```json[\s\n]*/, "")
+              .replace(/[\s\n]*```$/, "")
+              .trim();
+            Logger.log(
+              "🧹 Cleaned content preview: " + cleanStr.substring(0, 100)
+            );
+          }
+
+          // Try to parse as JSON
           try {
-            content = JSON.parse(contentStr);
+            content = JSON.parse(cleanStr);
+            Logger.log("✅ Successfully parsed JSON content");
           } catch (e) {
-            content = contentStr;
+            Logger.log("⚠️ JSON parse error: " + e.toString());
+            Logger.log("⚠️ Content may be truncated or invalid JSON");
+
+            // Try to use cleaned string (without markdown)
+            content = cleanStr;
+
+            // Last resort: try to fix common JSON issues
+            if (typeof cleanStr === "string") {
+              try {
+                // Try to complete the JSON if it's truncated
+                let fixedStr = cleanStr.trim();
+                // Count braces to see if incomplete
+                const openBraces = (fixedStr.match(/{/g) || []).length;
+                const closeBraces = (fixedStr.match(/}/g) || []).length;
+
+                if (openBraces > closeBraces) {
+                  Logger.log("⚠️ Detected truncated JSON - attempting fix");
+                  // Add missing closing braces
+                  for (let i = 0; i < openBraces - closeBraces; i++) {
+                    fixedStr += "}";
+                  }
+                  content = JSON.parse(fixedStr);
+                  Logger.log("✅ Successfully repaired and parsed JSON");
+                }
+              } catch (fixError) {
+                Logger.log("⚠️ Could not repair JSON: " + fixError.toString());
+                // Keep the cleaned string
+              }
+            }
           }
 
           return {
-            cacheId: row[headers.indexOf("cacheId")],
+            cacheId: row[headers.indexOf("cacheId")] || "UNKNOWN",
             topicId: rowTopicId,
             contentType: rowContentType,
             content: content,
-            docLastModified: row[headers.indexOf("docLastModified")],
-            version: row[headers.indexOf("version")],
-            createdAt: row[headers.indexOf("createdAt")],
-            expiresAt: expiresAt,
+            docLastModified: row[headers.indexOf("docLastModified")] || null,
+            version: row[headers.indexOf("version")] || "v1",
+            createdAt: row[headers.indexOf("createdAt")] || null,
+            expiresAt: expiresAtCol !== -1 ? row[expiresAtCol] : null,
           };
         }
       }
 
+      Logger.log(
+        "❌ No cache found for: " + topicId + " [" + contentType + "]"
+      );
       return null;
     } catch (error) {
-      Logger.log("Error getting AI content cache: " + error.toString());
+      Logger.log("❌ Error getting AI content cache: " + error.toString());
       return null;
     }
   },
@@ -502,6 +585,44 @@ function generateId(prefix) {
   return prefix + "_" + timestamp + random;
 }
 
+// ========== ADMIN TEST FUNCTIONS ==========
+
+/**
+ * [ADMIN] Test cache retrieval
+ */
+function ADMIN_testCacheGet() {
+  const topicId = "TOP001";
+  const contentType = "mindmap";
+
+  Logger.log("=== TESTING CACHE GET ===");
+  Logger.log("Looking for: " + topicId + " / " + contentType);
+
+  const result = AIContentCache.get(topicId, contentType);
+
+  if (result) {
+    Logger.log("✅ Cache found!");
+    Logger.log("Content type: " + typeof result.content);
+    Logger.log("Content: " + JSON.stringify(result.content).substring(0, 200));
+  } else {
+    Logger.log("❌ Cache NOT found");
+
+    // Debug: show what's in the sheet
+    const sheet = getSheet("AI_Content_Cache");
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      Logger.log("📊 Sheet headers: " + JSON.stringify(data[0]));
+      Logger.log("📊 Total rows: " + (data.length - 1));
+
+      // Show first few data rows
+      for (let i = 1; i < Math.min(4, data.length); i++) {
+        Logger.log("Row " + i + ": " + JSON.stringify(data[i].slice(0, 5)));
+      }
+    }
+  }
+
+  return result;
+}
+
 // ========== ADMIN FUNCTIONS ==========
 
 /**
@@ -548,4 +669,22 @@ function ADMIN_testAIContentCache() {
   Logger.log("Retrieved cache: " + JSON.stringify(cached));
 
   return { testCacheId, cached };
+}
+
+/**
+ * [TEST] Test getAIContent function directly
+ */
+function TEST_getAIContentDirect() {
+  Logger.log("=== TESTING getAIContent ===");
+  const result = getAIContent("TOP001", "mindmap", false);
+  Logger.log("=== RESULT ===");
+  Logger.log("Type: " + typeof result);
+  Logger.log("Success: " + result?.success);
+  Logger.log("Data type: " + typeof result?.data);
+  if (result && result.data) {
+    Logger.log(
+      "Data preview: " + JSON.stringify(result.data).substring(0, 200)
+    );
+  }
+  return result;
 }

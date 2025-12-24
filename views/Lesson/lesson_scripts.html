@@ -1,10 +1,20 @@
 <script>
   /**
    * Lesson Page Scripts
+   * Phase 3: AI Content Integration
    */
 
   let currentLessonData = null;
   let scrollProgress = 0;
+
+  // AI Content State
+  let aiContentLoaded = {
+    mindmap: false,
+    flashcards: false,
+    summary: false,
+  };
+  let flashcardsData = [];
+  let currentFlashcardIndex = 0;
 
   /**
    * Initialize Lesson Page
@@ -16,12 +26,18 @@
     // ⭐ Reset previous lesson data to avoid cache issues
     currentLessonData = null;
     scrollProgress = 0;
-    
+    aiContentLoaded = { mindmap: false, flashcards: false, summary: false };
+    flashcardsData = [];
+    currentFlashcardIndex = 0;
+
     // Clear previous content
     const contentArea = document.getElementById("lesson-content-area");
     if (contentArea) {
       contentArea.innerHTML = "";
     }
+
+    // Reset tabs to default (lesson tab)
+    switchLessonTab("lesson");
 
     // Get params from window.currentPageParams
     if (window.currentPageParams) {
@@ -53,6 +69,48 @@
 
     // Setup scroll tracking
     setupScrollTracking();
+  }
+
+  /**
+   * Switch between lesson tabs
+   */
+  function switchLessonTab(tabName) {
+    console.log("🔄 Switching to tab:", tabName);
+
+    // Update tab buttons
+    document.querySelectorAll(".lesson-tab").forEach((tab) => {
+      tab.classList.remove("active");
+      if (tab.dataset.tab === tabName) {
+        tab.classList.add("active");
+      }
+    });
+
+    // Update tab panels
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.style.display = "none";
+      panel.classList.remove("active");
+    });
+
+    const activePanel = document.getElementById("tab-" + tabName);
+    if (activePanel) {
+      activePanel.style.display = "block";
+      activePanel.classList.add("active");
+    }
+
+    // Show/hide progress bar (only for lesson tab)
+    const progressCard = document.getElementById("lesson-progress-card");
+    if (progressCard) {
+      progressCard.style.display = tabName === "lesson" ? "block" : "none";
+    }
+
+    // Load AI content if not loaded yet
+    if (tabName === "mindmap" && !aiContentLoaded.mindmap) {
+      loadMindmap();
+    } else if (tabName === "flashcards" && !aiContentLoaded.flashcards) {
+      loadFlashcards();
+    } else if (tabName === "summary" && !aiContentLoaded.summary) {
+      loadSummary();
+    }
   }
 
   /**
@@ -120,14 +178,488 @@
       .getTopicContentByDocId(docId);
   }
 
+  // ========== AI CONTENT LOADERS ==========
+
   /**
-   * Show lesson error
+   * Load Mindmap from AI
    */
+  function loadMindmap(forceRegenerate = false) {
+    console.log("🧠 Loading Mindmap...");
+
+    if (!currentLessonData?.topicId) {
+      showMindmapError("Thiếu thông tin topic");
+      return;
+    }
+
+    // Show loading
+    document.getElementById("mindmap-loading").style.display = "block";
+    document.getElementById("mindmap-error").style.display = "none";
+    document.getElementById("mindmap-content").style.display = "none";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Mindmap response:", response);
+        console.log("Response type:", typeof response);
+        console.log("Response.success:", response?.success);
+        console.log("Response.data type:", typeof response?.data);
+        console.log("Response._isStringified:", response?._isStringified);
+
+        document.getElementById("mindmap-loading").style.display = "none";
+
+        if (response === null || response === undefined) {
+          console.error("❌ Response is NULL - Server error occurred");
+          showMindmapError(
+            "Lỗi server: Không nhận được dữ liệu.\n\n" +
+              "Kiểm tra:\n" +
+              "1. API Key đã setup chưa?\n" +
+              "2. Google Doc có quyền truy cập?\n" +
+              "3. Xem Apps Script Logs để biết lỗi chi tiết"
+          );
+          return;
+        }
+
+        if (response && response.success && response.data) {
+          // ⭐ Parse data nếu đã được stringify từ server
+          let mindmapData = response.data;
+          if (typeof mindmapData === "string") {
+            try {
+              mindmapData = JSON.parse(mindmapData);
+              console.log("✅ Parsed mindmap data:", mindmapData);
+            } catch (e) {
+              console.error("❌ Failed to parse mindmap data:", e);
+              showMindmapError("Lỗi parse dữ liệu mindmap");
+              return;
+            }
+          }
+
+          renderMindmap(mindmapData);
+          document.getElementById("mindmap-content").style.display = "block";
+          aiContentLoaded.mindmap = true;
+          showToast("✅ Đã tải Mindmap", "success");
+        } else {
+          console.error("❌ Response failed:", response?.message);
+          showMindmapError(
+            response?.message ||
+              "Không thể tải Mindmap.\n\nKiểm tra Apps Script Logs."
+          );
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Mindmap error:", error);
+        document.getElementById("mindmap-loading").style.display = "none";
+        showMindmapError(
+          "Lỗi kết nối server:\n" +
+            (error?.message || error?.toString() || "Unknown error")
+        );
+      })
+      .getAIContentForWeb(
+        currentLessonData.topicId,
+        "mindmap",
+        forceRegenerate
+      );
+  }
+
+  /**
+   * Load Flashcards from AI
+   */
+  function loadFlashcards(forceRegenerate = false) {
+    console.log("🃏 Loading Flashcards...");
+
+    if (!currentLessonData?.topicId) {
+      showFlashcardsError("Thiếu thông tin topic");
+      return;
+    }
+
+    // Show loading
+    document.getElementById("flashcards-loading").style.display = "block";
+    document.getElementById("flashcards-error").style.display = "none";
+    document.getElementById("flashcards-content").style.display = "none";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Flashcards response:", response);
+        console.log("Response type:", typeof response);
+        console.log("Response.success:", response?.success);
+        console.log("Response.data type:", typeof response?.data);
+        console.log("Response._isStringified:", response?._isStringified);
+
+        document.getElementById("flashcards-loading").style.display = "none";
+
+        if (response === null || response === undefined) {
+          console.error("❌ Response is NULL - Server error occurred");
+          showFlashcardsError(
+            "Lỗi server: Không nhận được dữ liệu.\n\n" +
+              "Kiểm tra:\n" +
+              "1. API Key đã setup chưa?\n" +
+              "2. Google Doc có quyền truy cập?\n" +
+              "3. Xem Apps Script Logs để biết lỗi chi tiết"
+          );
+          return;
+        }
+
+        if (response && response.success && response.data) {
+          // ⭐ Parse data nếu đã được stringify từ server
+          let flashcardsRawData = response.data;
+          if (typeof flashcardsRawData === "string") {
+            try {
+              flashcardsRawData = JSON.parse(flashcardsRawData);
+              console.log("✅ Parsed flashcards data:", flashcardsRawData);
+            } catch (e) {
+              console.error("❌ Failed to parse flashcards data:", e);
+              showFlashcardsError("Lỗi parse dữ liệu flashcards");
+              return;
+            }
+          }
+
+          flashcardsData = flashcardsRawData.cards || flashcardsRawData;
+          if (flashcardsData.length > 0) {
+            currentFlashcardIndex = 0;
+            renderCurrentFlashcard();
+            document.getElementById("flashcard-total").textContent =
+              flashcardsData.length;
+            document.getElementById("flashcards-content").style.display =
+              "block";
+            aiContentLoaded.flashcards = true;
+            showToast(
+              "✅ Đã tải " + flashcardsData.length + " Flashcards",
+              "success"
+            );
+          } else {
+            showFlashcardsError("Không có flashcard nào");
+          }
+        } else {
+          showFlashcardsError(response?.message || "Không thể tải Flashcards");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Flashcards error:", error);
+        document.getElementById("flashcards-loading").style.display = "none";
+        showFlashcardsError(error?.message || "Lỗi kết nối server");
+      })
+      .getAIContentForWeb(
+        currentLessonData.topicId,
+        "flashcards",
+        forceRegenerate
+      );
+  }
+
+  /**
+   * Load Summary from AI
+   */
+  function loadSummary(forceRegenerate = false) {
+    console.log("📋 Loading Summary...");
+
+    if (!currentLessonData?.topicId) {
+      showSummaryError("Thiếu thông tin topic");
+      return;
+    }
+
+    // Show loading
+    document.getElementById("summary-loading").style.display = "block";
+    document.getElementById("summary-error").style.display = "none";
+    document.getElementById("summary-content").style.display = "none";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Summary response:", response);
+        document.getElementById("summary-loading").style.display = "none";
+
+        if (response && response.success && response.data) {
+          // ⭐ Parse data nếu đã được stringify từ server
+          let summaryData = response.data;
+          if (typeof summaryData === "string") {
+            try {
+              summaryData = JSON.parse(summaryData);
+              console.log("✅ Parsed summary data:", summaryData);
+            } catch (e) {
+              console.error("❌ Failed to parse summary data:", e);
+              showSummaryError("Lỗi parse dữ liệu tóm tắt");
+              return;
+            }
+          }
+
+          renderSummary(summaryData);
+          document.getElementById("summary-content").style.display = "block";
+          aiContentLoaded.summary = true;
+          showToast("✅ Đã tải bản tóm tắt", "success");
+        } else {
+          showSummaryError(response?.message || "Không thể tải bản tóm tắt");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Summary error:", error);
+        document.getElementById("summary-loading").style.display = "none";
+        showSummaryError(error?.message || "Lỗi kết nối server");
+      })
+      .getAIContentForWeb(
+        currentLessonData.topicId,
+        "lesson_summary",
+        forceRegenerate
+      );
+  }
+
+  // ========== RENDER FUNCTIONS ==========
+
+  /**
+   * Render Mindmap
+   */
+  function renderMindmap(data) {
+    const container = document.getElementById("mindmap-content");
+
+    // Handle if data is still a string (parse failed on server)
+    if (typeof data === "string") {
+      console.warn("⚠️ Mindmap data is string, attempting to parse");
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        console.error("❌ Cannot parse mindmap data:", e);
+        container.innerHTML =
+          '<p class="text-red-600">Lỗi: Dữ liệu mindmap không hợp lệ</p>';
+        return;
+      }
+    }
+
+    // Validate data structure
+    if (!data || typeof data !== "object") {
+      console.error("❌ Invalid mindmap data structure:", data);
+      container.innerHTML =
+        '<p class="text-red-600">Lỗi: Cấu trúc dữ liệu mindmap không hợp lệ</p>';
+      return;
+    }
+
+    console.log("🧠 Rendering mindmap with data:", data);
+
+    let html = '<div class="mindmap-tree">';
+
+    // Root node (topic title)
+    html +=
+      '<div class="mindmap-root">' +
+      (data.title ||
+        data.centralIdea ||
+        currentLessonData?.topicTitle ||
+        "Chủ đề chính") +
+      "</div>";
+
+    // AI của bạn đang trả về "branches" hoặc "nodes"
+    const branches = data.branches || data.nodes;
+
+    if (branches && branches.length > 0) {
+      html += '<div class="mindmap-branches">';
+      branches.forEach((node) => {
+        html += '<div class="mindmap-branch">';
+        html +=
+          '<div class="mindmap-node" style="border-color: ' +
+          (node.color || "#7c3aed") +
+          '">';
+        // AI trả về .label hoặc .name
+        html += (node.icon || "📌") + " " + (node.label || node.name || "");
+        html += "</div>";
+
+        if (node.children && node.children.length > 0) {
+          html += '<div class="mindmap-subnodes">';
+          node.children.forEach((child) => {
+            // Hỗ trợ child là string hoặc object {label: ...}
+            const childText =
+              typeof child === "string"
+                ? child
+                : child.label || child.name || "";
+            html += '<div class="mindmap-subnode">' + childText + "</div>";
+          });
+          html += "</div>";
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    } else {
+      html += '<p class="text-gray-500">Không có dữ liệu mindmap</p>';
+    }
+
+    html += "</div>";
+    container.innerHTML = html;
+  }
+
+  /**
+   * Render current flashcard
+   */
+  function renderCurrentFlashcard() {
+    if (!flashcardsData || flashcardsData.length === 0) return;
+
+    const card = flashcardsData[currentFlashcardIndex];
+    const flashcardEl = document.getElementById("current-flashcard");
+
+    // Remove flipped state
+    flashcardEl.classList.remove("flipped");
+
+    console.log("🃏 Rendering flashcard:", card);
+
+    // Xử lý dữ liệu lồng nhau từ AI
+    let frontText = "";
+    let backText = "";
+
+    // Xử lý front (mặt trước)
+    if (card.front && typeof card.front === "object") {
+      // Structure lồng nhau: { front: { content: "..." } }
+      frontText = card.front.content || card.front.term || "";
+    } else {
+      // Structure đơn giản: { term: "..." } hoặc { front: "..." }
+      frontText = card.term || card.front || "";
+    }
+
+    // Xử lý back (mặt sau)
+    if (card.back && typeof card.back === "object") {
+      // Structure lồng nhau: { back: { content: "..." } }
+      backText = card.back.content || card.back.definition || "";
+    } else {
+      // Structure đơn giản: { definition: "..." } hoặc { back: "..." }
+      backText = card.definition || card.back || "";
+    }
+
+    // Fallback nếu không có dữ liệu
+    if (!frontText && !backText) {
+      console.error("❌ Unknown flashcard structure:", card);
+      frontText = "Lỗi dữ liệu flashcard";
+      backText = JSON.stringify(card);
+    }
+
+    // Update content
+    document.getElementById("flashcard-front-text").textContent = frontText;
+    document.getElementById("flashcard-back-text").textContent = backText;
+    document.getElementById("flashcard-current").textContent =
+      currentFlashcardIndex + 1;
+  }
+
+  /**
+   * Render Summary
+   */
+  function renderSummary(data) {
+    const container = document.getElementById("summary-content");
+
+    let html = "";
+
+    // Main points
+    if (data.mainPoints && data.mainPoints.length > 0) {
+      html += '<div class="summary-section">';
+      html += "<h3>📌 Điểm chính</h3>";
+      html += '<ul class="summary-points">';
+      data.mainPoints.forEach((point) => {
+        html += "<li>" + point + "</li>";
+      });
+      html += "</ul></div>";
+    }
+
+    // Key concepts
+    if (data.keyConcepts && data.keyConcepts.length > 0) {
+      html += '<div class="summary-section">';
+      html += "<h3>💡 Khái niệm quan trọng</h3>";
+      html += '<ul class="summary-points">';
+      data.keyConcepts.forEach((concept) => {
+        html +=
+          "<li><strong>" +
+          concept.term +
+          ":</strong> " +
+          concept.definition +
+          "</li>";
+      });
+      html += "</ul></div>";
+    }
+
+    // Keywords
+    if (data.keywords && data.keywords.length > 0) {
+      html += '<div class="summary-section">';
+      html += "<h3>🏷️ Từ khóa</h3>";
+      html += '<div class="summary-keywords">';
+      data.keywords.forEach((keyword) => {
+        html += '<span class="keyword-tag">' + keyword + "</span>";
+      });
+      html += "</div></div>";
+    }
+
+    // Tips
+    if (data.studyTips && data.studyTips.length > 0) {
+      html += '<div class="summary-section">';
+      html += "<h3>📚 Mẹo học tập</h3>";
+      html += '<ul class="summary-points">';
+      data.studyTips.forEach((tip) => {
+        html += "<li>" + tip + "</li>";
+      });
+      html += "</ul></div>";
+    }
+
+    container.innerHTML = html;
+  }
+
+  // ========== FLASHCARD CONTROLS ==========
+
+  function flipFlashcard() {
+    document.getElementById("current-flashcard").classList.toggle("flipped");
+  }
+
+  function nextFlashcard() {
+    if (currentFlashcardIndex < flashcardsData.length - 1) {
+      currentFlashcardIndex++;
+      renderCurrentFlashcard();
+    } else {
+      showToast("Đây là thẻ cuối cùng!", "info");
+    }
+  }
+
+  function prevFlashcard() {
+    if (currentFlashcardIndex > 0) {
+      currentFlashcardIndex--;
+      renderCurrentFlashcard();
+    } else {
+      showToast("Đây là thẻ đầu tiên!", "info");
+    }
+  }
+
+  function shuffleFlashcards() {
+    // Fisher-Yates shuffle
+    for (let i = flashcardsData.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [flashcardsData[i], flashcardsData[j]] = [
+        flashcardsData[j],
+        flashcardsData[i],
+      ];
+    }
+    currentFlashcardIndex = 0;
+    renderCurrentFlashcard();
+    showToast("🔀 Đã xáo trộn thẻ", "success");
+  }
+
+  function resetFlashcards() {
+    currentFlashcardIndex = 0;
+    renderCurrentFlashcard();
+    showToast("🔄 Đã reset về thẻ đầu tiên", "success");
+  }
+
+  // ========== ERROR HANDLERS ==========
+
   function showLessonError(message) {
     document.getElementById("lesson-loading").style.display = "none";
     document.getElementById("lesson-content-area").style.display = "none";
     document.getElementById("lesson-error").style.display = "block";
     document.getElementById("lesson-error-message").textContent = message;
+  }
+
+  function showMindmapError(message) {
+    document.getElementById("mindmap-loading").style.display = "none";
+    document.getElementById("mindmap-content").style.display = "none";
+    document.getElementById("mindmap-error").style.display = "block";
+    document.getElementById("mindmap-error-message").textContent = message;
+  }
+
+  function showFlashcardsError(message) {
+    document.getElementById("flashcards-loading").style.display = "none";
+    document.getElementById("flashcards-content").style.display = "none";
+    document.getElementById("flashcards-error").style.display = "block";
+    document.getElementById("flashcards-error-message").textContent = message;
+  }
+
+  function showSummaryError(message) {
+    document.getElementById("summary-loading").style.display = "none";
+    document.getElementById("summary-content").style.display = "none";
+    document.getElementById("summary-error").style.display = "block";
+    document.getElementById("summary-error-message").textContent = message;
   }
 
   /**
@@ -191,6 +723,15 @@
   window.initLessonPage = initLessonPage;
   window.retryLoadLesson = retryLoadLesson;
   window.startQuizFromLesson = startQuizFromLesson;
+  window.switchLessonTab = switchLessonTab;
+  window.loadMindmap = loadMindmap;
+  window.loadFlashcards = loadFlashcards;
+  window.loadSummary = loadSummary;
+  window.flipFlashcard = flipFlashcard;
+  window.nextFlashcard = nextFlashcard;
+  window.prevFlashcard = prevFlashcard;
+  window.shuffleFlashcards = shuffleFlashcards;
+  window.resetFlashcards = resetFlashcards;
 
-  console.log("✅ Lesson scripts loaded");
+  console.log("✅ Lesson scripts loaded (Phase 3: AI Content Integration)");
 </script>

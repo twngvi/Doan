@@ -1,103 +1,850 @@
 <script>
   /**
-   * MCQ Page Scripts
+   * MCQ Page Scripts - Full Implementation
+   * Features:
+   * - Topic selection screen
+   * - AI-generated questions
+   * - Save wrong answers for review
+   * - Different question formats on retry
    */
 
-  let currentQuizData = null;
-  let quizTimer = null;
-  let startTime = null;
+  // Quiz State
+  let quizState = {
+    topicId: null,
+    topicTitle: "",
+    contentDocId: "",
+    questions: [],
+    currentQuestionIndex: 0,
+    userAnswers: [],
+    wrongAnswers: [],
+    score: 0,
+    startTime: null,
+    timerInterval: null,
+    isReviewing: false,
+    allTopics: [],
+  };
 
   /**
    * Initialize MCQ Page
    */
   function initMCQPage() {
     console.log("🎯 Initializing MCQ Page...");
+    console.log("📋 currentPageParams:", window.currentPageParams);
 
-    // Get params from window.currentPageParams
-    if (window.currentPageParams) {
-      currentQuizData = window.currentPageParams;
-      console.log("Quiz params:", currentQuizData);
+    // Reset quiz state when initializing
+    resetQuizState();
 
-      // Update header
-      document.getElementById("mcq-topic-title").textContent =
-        currentQuizData.topicTitle || "Quiz";
+    // Check if we have valid topic params (coming from lesson or topics page)
+    const params = window.currentPageParams;
+    if (params && params.topicId && params.contentDocId) {
+      console.log("📌 Got valid topic params, starting quiz directly");
+      quizState.topicId = params.topicId;
+      quizState.topicTitle = params.topicTitle || "Quiz";
+      quizState.contentDocId = params.contentDocId;
 
-      // Update back button text
-      const backText = currentQuizData.fromLesson
-        ? "Quay lại Lý thuyết"
-        : "Quay lại Topics";
-      document.getElementById("mcq-back-text").textContent = backText;
-
-      // Start quiz
-      startQuizSession();
+      showQuizView();
+      loadQuizQuestions(false);
+    } else {
+      console.log("📋 No valid topic params, showing topic selection");
+      showTopicSelection();
+      loadTopicsForQuiz();
     }
+  }
+
+  /**
+   * Reset quiz state for new quiz
+   */
+  function resetQuizState() {
+    quizState.topicId = null;
+    quizState.topicTitle = "";
+    quizState.contentDocId = "";
+    quizState.questions = [];
+    quizState.currentQuestionIndex = 0;
+    quizState.userAnswers = [];
+    quizState.wrongAnswers = [];
+    quizState.score = 0;
+    quizState.startTime = null;
+    if (quizState.timerInterval) {
+      clearInterval(quizState.timerInterval);
+      quizState.timerInterval = null;
+    }
+    quizState.isReviewing = false;
+  }
+
+  /**
+   * Show topic selection view
+   */
+  function showTopicSelection() {
+    document.getElementById("mcq-topic-selection").style.display = "block";
+    document.getElementById("mcq-quiz-view").style.display = "none";
+  }
+
+  /**
+   * Show quiz view
+   */
+  function showQuizView() {
+    document.getElementById("mcq-topic-selection").style.display = "none";
+    document.getElementById("mcq-quiz-view").style.display = "block";
+    document.getElementById("mcq-topic-title").textContent =
+      quizState.topicTitle;
+  }
+
+  /**
+   * Load topics for quiz selection
+   */
+  function loadTopicsForQuiz() {
+    console.log("📥 Loading topics for quiz...");
+
+    document.getElementById("topics-loading").style.display = "block";
+    document.getElementById("topics-grid").style.display = "none";
+    document.getElementById("topics-empty").style.display = "none";
+
+    google.script.run
+      .withSuccessHandler(handleTopicsLoaded)
+      .withFailureHandler(handleTopicsError)
+      .getAllTopics();
+  }
+
+  /**
+   * Handle topics loaded
+   */
+  function handleTopicsLoaded(topics) {
+    console.log("✅ Topics loaded:", topics);
+
+    document.getElementById("topics-loading").style.display = "none";
+
+    if (!topics || topics.length === 0) {
+      document.getElementById("topics-empty").style.display = "block";
+      return;
+    }
+
+    quizState.allTopics = topics;
+    renderTopicsGrid(topics);
+  }
+
+  /**
+   * Handle topics error
+   */
+  function handleTopicsError(error) {
+    console.error("❌ Error loading topics:", error);
+    document.getElementById("topics-loading").style.display = "none";
+    document.getElementById("topics-empty").style.display = "block";
+    document.getElementById("topics-empty").innerHTML = `
+      <div class="text-6xl mb-4">⚠️</div>
+      <h3 class="text-xl font-bold text-gray-900 mb-2">Lỗi tải dữ liệu</h3>
+      <p class="text-gray-600">${
+        error.message || "Không thể kết nối server"
+      }</p>
+      <button onclick="loadTopicsForQuiz()" class="btn-primary mt-4">Thử lại</button>
+    `;
+  }
+
+  /**
+   * Render topics grid
+   */
+  function renderTopicsGrid(topics) {
+    const container = document.getElementById("topics-grid");
+    container.innerHTML = "";
+    container.style.display = "grid";
+
+    const icons = ["📚", "📖", "📝", "💡", "🎯", "⭐", "🔥", "💻", "🧠", "📊"];
+
+    topics.forEach((topic, index) => {
+      const card = document.createElement("div");
+      card.className =
+        "card hover:shadow-lg transition-all duration-300 cursor-pointer transform hover:-translate-y-1";
+      card.onclick = () => selectTopicForQuiz(topic);
+
+      const icon = icons[index % icons.length];
+      const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
+
+      card.innerHTML = `
+        <div class="flex items-start gap-4">
+          <div class="text-4xl">${icon}</div>
+          <div class="flex-1">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">${topic.title}</h3>
+            <p class="text-sm text-gray-600 mb-3">${
+              topic.description || "Kiểm tra kiến thức về chủ đề này"
+            }</p>
+            <div class="flex items-center gap-2">
+              ${
+                hasDoc
+                  ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">✅ Có nội dung</span>'
+                  : '<span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">⚠️ Chưa có nội dung</span>'
+              }
+              <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">🎯 Quiz</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 pt-4 border-t flex justify-between items-center">
+          <span class="text-sm text-gray-500">ID: ${topic.topicId}</span>
+          <span class="btn-primary text-sm pointer-events-none">Bắt đầu Quiz →</span>
+        </div>
+      `;
+
+      container.appendChild(card);
+    });
+  }
+
+  /**
+   * Select topic and start quiz
+   */
+  function selectTopicForQuiz(topic) {
+    console.log("🎯 Selected topic for quiz:", topic);
+
+    if (!topic.contentDocId || topic.contentDocId.length < 10) {
+      alert("Chủ đề này chưa có nội dung. Vui lòng thêm Google Doc trước.");
+      return;
+    }
+
+    quizState.topicId = topic.topicId;
+    quizState.topicTitle = topic.title;
+    quizState.contentDocId = topic.contentDocId;
+
+    showQuizView();
+    loadQuizQuestions(false);
+  }
+
+  /**
+   * Back to topic selection
+   */
+  function backToTopicSelection() {
+    stopTimer();
+    quizState.questions = [];
+    quizState.currentQuestionIndex = 0;
+    quizState.userAnswers = [];
+    quizState.score = 0;
+    showTopicSelection();
+  }
+
+  /**
+   * Load quiz questions from server
+   */
+  function loadQuizQuestions(forceRegenerate = false) {
+    console.log("📥 Loading quiz questions...", {
+      topicId: quizState.topicId,
+      forceRegenerate,
+    });
+
+    showLoading();
+
+    // Load wrong answers for retry (async)
+    if (!forceRegenerate) {
+      google.script.run
+        .withSuccessHandler((wrongAnswers) => {
+          if (wrongAnswers && wrongAnswers.length > 0) {
+            console.log(
+              "📋 Found wrong answers to retry:",
+              wrongAnswers.length
+            );
+            quizState.wrongAnswers = wrongAnswers;
+          }
+        })
+        .withFailureHandler(() => {})
+        .getWrongAnswersForTopic(quizState.topicId);
+    }
+
+    google.script.run
+      .withSuccessHandler(handleQuestionsLoaded)
+      .withFailureHandler(handleLoadError)
+      .getAIContentForWeb(quizState.topicId, "questions", forceRegenerate);
+  }
+
+  /**
+   * Handle successful questions load
+   */
+  function handleQuestionsLoaded(response) {
+    console.log("✅ Questions loaded:", response);
+
+    if (!response || response.success === false) {
+      showError(response?.error || "Không thể tải câu hỏi");
+      return;
+    }
+
+    try {
+      const parsedData = JSON.parse(response.data);
+      console.log("📊 Parsed questions:", parsedData);
+
+      if (!parsedData.questions || !Array.isArray(parsedData.questions)) {
+        throw new Error("Invalid questions format");
+      }
+
+      // Normalize questions format
+      let questions = parsedData.questions.map((q, index) => {
+        let options = q.options;
+        if (!Array.isArray(options)) {
+          options = [options.A, options.B, options.C, options.D].filter(
+            Boolean
+          );
+        }
+
+        let correctAnswer = q.correctAnswer;
+        if (typeof correctAnswer === "string") {
+          const letterToIndex = { A: 0, B: 1, C: 2, D: 3 };
+          correctAnswer = letterToIndex[correctAnswer.toUpperCase()] || 0;
+        }
+
+        return {
+          id: q.id || `Q${index + 1}`,
+          question: q.question,
+          options: options,
+          correctAnswer: correctAnswer,
+          explanation: q.explanation || "",
+          hint: q.hint || "",
+          difficulty: q.difficulty || "medium",
+        };
+      });
+
+      quizState.questions = questions;
+      quizState.userAnswers = new Array(questions.length).fill(null);
+      startQuizSession();
+    } catch (error) {
+      console.error("❌ Error parsing questions:", error);
+      showError("Lỗi xử lý dữ liệu câu hỏi: " + error.message);
+    }
+  }
+
+  /**
+   * Handle load error
+   */
+  function handleLoadError(error) {
+    console.error("❌ Load error:", error);
+    showError("Lỗi kết nối: " + (error.message || error));
   }
 
   /**
    * Start quiz session
    */
   function startQuizSession() {
-    console.log("📝 Starting quiz session...");
+    console.log(
+      "🎮 Starting quiz session with",
+      quizState.questions.length,
+      "questions"
+    );
 
-    // Start timer
-    startTime = new Date();
-    startQuizTimer();
+    quizState.currentQuestionIndex = 0;
+    quizState.score = 0;
+    quizState.startTime = new Date();
+    quizState.isReviewing = false;
 
-    // Load questions
-    loadQuizQuestions();
+    document.getElementById("quiz-loading").style.display = "none";
+    document.getElementById("quiz-error").style.display = "none";
+    document.getElementById("quiz-stats").style.display = "grid";
+    document.getElementById("quiz-progress-bar").style.display = "block";
+    document.getElementById("quiz-section").style.display = "block";
+    document.getElementById("quiz-results").style.display = "none";
+
+    document.getElementById("total-questions").textContent =
+      quizState.questions.length;
+    document.getElementById("progress-total").textContent =
+      quizState.questions.length;
+
+    startTimer();
+    displayQuestion();
   }
 
   /**
-   * Start quiz timer
+   * Display current question
    */
-  function startQuizTimer() {
-    quizTimer = setInterval(() => {
-      const elapsed = Math.floor((new Date() - startTime) / 1000);
-      const minutes = Math.floor(elapsed / 60);
-      const seconds = elapsed % 60;
-      document.getElementById("quiz-timer").textContent = `${String(
-        minutes
-      ).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  function displayQuestion() {
+    const questionIndex = quizState.currentQuestionIndex;
+    const question = quizState.questions[questionIndex];
+
+    console.log("📝 Displaying question", questionIndex + 1, question);
+
+    document.getElementById("question-number").textContent = questionIndex + 1;
+    document.getElementById("current-question").textContent = questionIndex + 1;
+    document.getElementById("progress-current").textContent = questionIndex + 1;
+
+    const progress = ((questionIndex + 1) / quizState.questions.length) * 100;
+    document.getElementById("progress-fill").style.width = progress + "%";
+
+    document.getElementById("question-text").textContent = question.question;
+
+    const hintElement = document.getElementById("question-hint");
+    const hintBtn = document.getElementById("btn-hint");
+    if (question.hint) {
+      hintElement.textContent = "💡 " + question.hint;
+      hintElement.style.display = "none";
+      hintBtn.style.display = "inline-block";
+      hintBtn.disabled = false;
+    } else {
+      hintBtn.style.display = "none";
+    }
+
+    renderAnswerOptions(question.options, questionIndex);
+    updateNavigationButtons();
+    document.getElementById("answer-feedback").style.display = "none";
+  }
+
+  /**
+   * Render answer options
+   */
+  function renderAnswerOptions(options, questionIndex) {
+    const container = document.getElementById("answer-options");
+    container.innerHTML = "";
+
+    const labels = ["A", "B", "C", "D"];
+    const userAnswer = quizState.userAnswers[questionIndex];
+
+    options.forEach((option, index) => {
+      const button = document.createElement("button");
+      button.className =
+        "w-full text-left p-4 border-2 rounded-lg transition-all duration-200";
+
+      const isSelected = userAnswer === index;
+
+      if (isSelected) {
+        button.classList.add("border-blue-500", "bg-blue-50");
+      } else {
+        button.classList.add(
+          "border-gray-300",
+          "hover:border-blue-400",
+          "hover:bg-gray-50"
+        );
+      }
+
+      button.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
+            isSelected ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-700"
+          }">
+            ${labels[index]}
+          </div>
+          <span class="flex-1">${option}</span>
+        </div>
+      `;
+
+      button.onclick = () => selectAnswer(index);
+      container.appendChild(button);
+    });
+  }
+
+  /**
+   * Select an answer
+   */
+  function selectAnswer(optionIndex) {
+    const questionIndex = quizState.currentQuestionIndex;
+    const question = quizState.questions[questionIndex];
+    const isCorrect = optionIndex === question.correctAnswer;
+
+    console.log("✍️ Answer selected:", {
+      question: questionIndex + 1,
+      selected: optionIndex,
+      correct: question.correctAnswer,
+      isCorrect: isCorrect,
+    });
+
+    quizState.userAnswers[questionIndex] = optionIndex;
+
+    // Track wrong answer for later review
+    if (!isCorrect) {
+      saveWrongAnswer(question, optionIndex);
+    }
+
+    renderAnswerOptions(question.options, questionIndex);
+    showAnswerFeedback(isCorrect, question);
+    document.getElementById("btn-next").disabled = false;
+  }
+
+  /**
+   * Save wrong answer for retry with different format
+   */
+  function saveWrongAnswer(question, selectedAnswer) {
+    const wrongData = {
+      topicId: quizState.topicId,
+      questionId: question.id,
+      question: question.question,
+      selectedAnswer: selectedAnswer,
+      correctAnswer: question.correctAnswer,
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log("💾 Saving wrong answer:", wrongData);
+
+    google.script.run
+      .withSuccessHandler(() => console.log("✅ Wrong answer saved"))
+      .withFailureHandler((err) =>
+        console.error("❌ Error saving wrong answer:", err)
+      )
+      .saveWrongAnswer(wrongData);
+  }
+
+  /**
+   * Show answer feedback
+   */
+  function showAnswerFeedback(isCorrect, question) {
+    const feedbackElement = document.getElementById("answer-feedback");
+    const labels = ["A", "B", "C", "D"];
+
+    if (isCorrect) {
+      feedbackElement.className =
+        "bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-6";
+      feedbackElement.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="text-2xl">✅</div>
+          <div>
+            <p class="font-semibold text-green-900">Chính xác!</p>
+            ${
+              question.explanation
+                ? `<p class="text-sm text-green-700 mt-1">${question.explanation}</p>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+      quizState.score++;
+      document.getElementById("current-score").textContent = quizState.score;
+    } else {
+      feedbackElement.className =
+        "bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6";
+      feedbackElement.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="text-2xl">❌</div>
+          <div>
+            <p class="font-semibold text-red-900">Chưa chính xác</p>
+            <p class="text-sm text-red-700 mt-1">Đáp án đúng: ${
+              labels[question.correctAnswer]
+            }. ${question.options[question.correctAnswer]}</p>
+            ${
+              question.explanation
+                ? `<p class="text-sm text-red-600 mt-2">${question.explanation}</p>`
+                : ""
+            }
+            <p class="text-xs text-gray-500 mt-2 italic">📝 Câu này sẽ được hỏi lại với dạng khác</p>
+          </div>
+        </div>
+      `;
+    }
+
+    feedbackElement.style.display = "block";
+  }
+
+  /**
+   * Show hint
+   */
+  function showHint() {
+    document.getElementById("question-hint").style.display = "block";
+    document.getElementById("btn-hint").disabled = true;
+  }
+
+  /**
+   * Next question
+   */
+  function nextQuestion() {
+    if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
+      quizState.currentQuestionIndex++;
+      displayQuestion();
+    }
+  }
+
+  /**
+   * Previous question
+   */
+  function previousQuestion() {
+    if (quizState.currentQuestionIndex > 0) {
+      quizState.currentQuestionIndex--;
+      displayQuestion();
+    }
+  }
+
+  /**
+   * Update navigation buttons
+   */
+  function updateNavigationButtons() {
+    const prevBtn = document.getElementById("btn-prev");
+    const nextBtn = document.getElementById("btn-next");
+    const submitBtn = document.getElementById("btn-submit");
+
+    prevBtn.style.display =
+      quizState.currentQuestionIndex > 0 ? "inline-block" : "none";
+
+    const isAnswered =
+      quizState.userAnswers[quizState.currentQuestionIndex] !== null;
+    nextBtn.disabled = !isAnswered;
+
+    if (quizState.currentQuestionIndex === quizState.questions.length - 1) {
+      nextBtn.style.display = "none";
+      submitBtn.style.display = "inline-block";
+      submitBtn.disabled = !isAnswered;
+    } else {
+      nextBtn.style.display = "inline-block";
+      submitBtn.style.display = "none";
+    }
+  }
+
+  /**
+   * Submit quiz
+   */
+  function submitQuiz() {
+    const unansweredCount = quizState.userAnswers.filter(
+      (a) => a === null
+    ).length;
+
+    if (unansweredCount > 0) {
+      if (
+        !confirm(
+          `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn có chắc muốn nộp bài?`
+        )
+      ) {
+        return;
+      }
+    }
+
+    console.log("📤 Submitting quiz");
+    stopTimer();
+
+    const finalScore = quizState.score;
+    const totalQuestions = quizState.questions.length;
+    const percentage = Math.round((finalScore / totalQuestions) * 100);
+    const timeTaken = getElapsedTime();
+
+    showResults(finalScore, totalQuestions, percentage, timeTaken);
+    saveQuizResult(finalScore, totalQuestions, percentage, timeTaken);
+  }
+
+  /**
+   * Show quiz results
+   */
+  function showResults(score, total, percentage, timeTaken) {
+    console.log("🎉 Showing results:", { score, total, percentage, timeTaken });
+
+    document.getElementById("quiz-section").style.display = "none";
+    document.getElementById("quiz-stats").style.display = "none";
+    document.getElementById("quiz-progress-bar").style.display = "none";
+    document.getElementById("quiz-results").style.display = "block";
+
+    const resultIcon = document.getElementById("result-icon");
+    if (percentage >= 90) resultIcon.textContent = "🏆";
+    else if (percentage >= 70) resultIcon.textContent = "🎉";
+    else if (percentage >= 50) resultIcon.textContent = "👍";
+    else resultIcon.textContent = "📚";
+
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("final-total").textContent = total;
+    document.getElementById("final-percentage").textContent = percentage;
+    document.getElementById("final-time").textContent = timeTaken;
+
+    const feedbackElement = document
+      .getElementById("performance-feedback")
+      .querySelector("p");
+    if (percentage >= 90) {
+      feedbackElement.textContent = "🌟 Xuất sắc! Bạn đã nắm vững kiến thức!";
+      feedbackElement.className = "text-lg font-semibold text-green-600";
+    } else if (percentage >= 70) {
+      feedbackElement.textContent =
+        "👏 Tốt lắm! Bạn đã hiểu phần lớn nội dung.";
+      feedbackElement.className = "text-lg font-semibold text-blue-600";
+    } else if (percentage >= 50) {
+      feedbackElement.textContent = "💪 Khá ổn! Hãy xem lại một số phần.";
+      feedbackElement.className = "text-lg font-semibold text-yellow-600";
+    } else {
+      feedbackElement.textContent = "📖 Cần ôn tập thêm. Đừng nản chí!";
+      feedbackElement.className = "text-lg font-semibold text-orange-600";
+    }
+
+    generateAnswerReview();
+  }
+
+  /**
+   * Generate answer review
+   */
+  function generateAnswerReview() {
+    const container = document.getElementById("review-answers");
+    container.innerHTML = "";
+    const labels = ["A", "B", "C", "D"];
+
+    quizState.questions.forEach((question, index) => {
+      const userAnswer = quizState.userAnswers[index];
+      const isCorrect = userAnswer === question.correctAnswer;
+
+      const reviewItem = document.createElement("div");
+      reviewItem.className = `border-2 rounded-lg p-4 ${
+        isCorrect ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+      }`;
+
+      reviewItem.innerHTML = `
+        <div class="flex items-start gap-3 mb-2">
+          <div class="flex-shrink-0 text-2xl">${isCorrect ? "✅" : "❌"}</div>
+          <div class="flex-1">
+            <p class="font-semibold text-gray-900">Câu ${index + 1}: ${
+        question.question
+      }</p>
+            <div class="mt-2 space-y-1 text-sm">
+              <p class="text-gray-700">
+                <span class="font-semibold">Bạn chọn:</span> 
+                ${
+                  userAnswer !== null
+                    ? `${labels[userAnswer]}. ${question.options[userAnswer]}`
+                    : "Chưa trả lời"
+                }
+              </p>
+              ${
+                !isCorrect
+                  ? `
+                <p class="text-green-700">
+                  <span class="font-semibold">Đáp án đúng:</span> 
+                  ${labels[question.correctAnswer]}. ${
+                      question.options[question.correctAnswer]
+                    }
+                </p>
+              `
+                  : ""
+              }
+              ${
+                question.explanation
+                  ? `
+                <p class="text-gray-600 mt-2">
+                  <span class="font-semibold">Giải thích:</span> ${question.explanation}
+                </p>
+              `
+                  : ""
+              }
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.appendChild(reviewItem);
+    });
+  }
+
+  /**
+   * Save quiz result to database
+   */
+  function saveQuizResult(score, total, percentage, timeTaken) {
+    console.log("💾 Saving quiz result to database");
+
+    const resultData = {
+      topicId: quizState.topicId,
+      topicTitle: quizState.topicTitle,
+      score: score,
+      totalQuestions: total,
+      percentage: percentage,
+      timeTaken: timeTaken,
+      completedAt: new Date().toISOString(),
+      answers: quizState.userAnswers,
+    };
+
+    console.log("📤 Sending result data:", resultData);
+
+    google.script.run
+      .withSuccessHandler((response) => {
+        console.log("✅ Quiz result saved:", response);
+        showSaveNotification(true, "Kết quả đã được lưu!");
+      })
+      .withFailureHandler((error) => {
+        console.error("❌ Error saving result:", error);
+        showSaveNotification(false, "Không thể lưu kết quả: " + error.message);
+      })
+      .saveQuizResult(resultData);
+  }
+
+  /**
+   * Show notification after saving
+   */
+  function showSaveNotification(success, message) {
+    // Create notification element
+    const notification = document.createElement("div");
+    notification.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 ${
+      success ? "bg-green-500 text-white" : "bg-red-500 text-white"
+    }`;
+    notification.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span>${success ? "✅" : "❌"}</span>
+        <span>${message}</span>
+      </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+      notification.style.opacity = "0";
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
+  }
+
+  /**
+   * Retake quiz
+   */
+  function retakeQuiz() {
+    loadQuizQuestions(false);
+  }
+
+  /**
+   * Timer functions
+   */
+  function startTimer() {
+    quizState.timerInterval = setInterval(() => {
+      document.getElementById("quiz-timer").textContent = getElapsedTime();
     }, 1000);
   }
 
-  /**
-   * Load quiz questions
-   */
-  function loadQuizQuestions() {
-    console.log("Loading quiz questions for topic:", currentQuizData?.topicId);
+  function stopTimer() {
+    if (quizState.timerInterval) {
+      clearInterval(quizState.timerInterval);
+      quizState.timerInterval = null;
+    }
+  }
 
-    // TODO: Implement actual quiz loading
-    document.getElementById("total-questions").textContent = "10";
-    document.getElementById("current-question").textContent = "1";
-    document.getElementById("current-score").textContent = "0";
+  function getElapsedTime() {
+    if (!quizState.startTime) return "00:00";
+    const diff = Math.floor((new Date() - quizState.startTime) / 1000);
+    const minutes = Math.floor(diff / 60);
+    const seconds = diff % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+      2,
+      "0"
+    )}`;
   }
 
   /**
-   * Back from quiz
+   * UI State functions
    */
-  function backFromQuiz() {
-    // Clear timer
-    if (quizTimer) {
-      clearInterval(quizTimer);
-      quizTimer = null;
-    }
+  function showLoading() {
+    document.getElementById("quiz-loading").style.display = "block";
+    document.getElementById("quiz-error").style.display = "none";
+    document.getElementById("quiz-section").style.display = "none";
+    document.getElementById("quiz-stats").style.display = "none";
+    document.getElementById("quiz-progress-bar").style.display = "none";
+    document.getElementById("quiz-results").style.display = "none";
+  }
 
-    // Go back based on where user came from
-    if (currentQuizData?.fromLesson) {
+  function showError(message) {
+    document.getElementById("quiz-loading").style.display = "none";
+    document.getElementById("quiz-error").style.display = "block";
+    document.getElementById("quiz-error-message").textContent = message;
+    document.getElementById("quiz-section").style.display = "none";
+    document.getElementById("quiz-stats").style.display = "none";
+    document.getElementById("quiz-results").style.display = "none";
+  }
+
+  function backFromQuiz() {
+    stopTimer();
+    if (window.currentPageParams?.fromLesson) {
       showPage("page-lesson", {
-        topicId: currentQuizData.topicId,
-        topicTitle: currentQuizData.topicTitle,
-        contentDocId: currentQuizData.contentDocId || "",
+        topicId: quizState.topicId,
+        topicTitle: quizState.topicTitle,
+        contentDocId: quizState.contentDocId,
       });
     } else {
-      showPage("page-topics");
+      backToTopicSelection();
     }
   }
 
   // Make functions globally available
   window.initMCQPage = initMCQPage;
   window.backFromQuiz = backFromQuiz;
+  window.backToTopicSelection = backToTopicSelection;
+  window.selectTopicForQuiz = selectTopicForQuiz;
+  window.loadQuizQuestions = loadQuizQuestions;
+  window.nextQuestion = nextQuestion;
+  window.previousQuestion = previousQuestion;
+  window.selectAnswer = selectAnswer;
+  window.showHint = showHint;
+  window.submitQuiz = submitQuiz;
+  window.retakeQuiz = retakeQuiz;
 
   console.log("✅ MCQ scripts loaded");
 </script>

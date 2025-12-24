@@ -10,8 +10,8 @@
 const AI_CONFIG = {
   // Gemini API Settings
   GEMINI_API_KEY_PROPERTY: "GEMINI_API_KEY", // Lưu trong Script Properties
-  GEMINI_MODEL_DEFAULT: "gemini-2.5-flash",
-  GEMINI_MODEL_ADVANCED: "gemini-2.5-flash",
+  GEMINI_MODEL_DEFAULT: "gemini-2.5-flash-lite",
+  GEMINI_MODEL_ADVANCED: "gemini-2.5-flash-lite",
 
   // Cache Settings
   CACHE_TTL_DAYS: 30, // Cache content trong 30 ngày

@@ -69,7 +69,7 @@ const GeminiService = {
         return {
           success: false,
           message:
-            "API Key chưa được setup. Vui lòng chạy: GeminiService.setupApiKey('YOUR_API_KEY')",
+            "API Key chưa được setup. Vui lòng chạy: ADMIN_setupGeminiApiKey()",
         };
       }
 
@@ -401,4 +401,68 @@ function ADMIN_testReadGoogleDoc() {
   const result = GeminiService.readGoogleDoc(TEST_DOC_ID);
   Logger.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+/**
+ * [ADMIN] Update contentDocId cho một topic trong MASTER_DB
+ * Chạy hàm này để thêm Google Doc ID cho topic
+ */
+function ADMIN_updateTopicContentDocId() {
+  const MASTER_DB_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+  const TOPIC_ID = "TOP001";
+  const CONTENT_DOC_ID = "19UAHFVkxt0K_MrjqlZw0cUGYuULbJG7ak1xYnS0ogMw";
+
+  try {
+    const ss = SpreadsheetApp.openById(MASTER_DB_ID);
+    const sheet = ss.getSheetByName("Topics");
+
+    if (!sheet) {
+      Logger.log("❌ Topics sheet not found");
+      return { success: false, message: "Topics sheet not found" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+
+    // Find topicId column (column A = index 0)
+    let topicIdCol = 0;
+    // contentDocId should be column N (index 13)
+    let contentDocIdCol = 13;
+
+    // Find the header for contentDocId
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i] === "contentDocId") {
+        contentDocIdCol = i;
+        break;
+      }
+    }
+
+    Logger.log("contentDocId column index: " + contentDocIdCol);
+
+    // Find the topic row and update
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdCol] === TOPIC_ID) {
+        // Column N = column 14 (1-indexed)
+        sheet.getRange(i + 1, contentDocIdCol + 1).setValue(CONTENT_DOC_ID);
+        Logger.log(
+          "✅ Updated " + TOPIC_ID + " with contentDocId: " + CONTENT_DOC_ID
+        );
+
+        // Clear server cache
+        topicsCacheServer = null;
+
+        return {
+          success: true,
+          message: "Updated contentDocId for " + TOPIC_ID,
+          docId: CONTENT_DOC_ID,
+        };
+      }
+    }
+
+    Logger.log("❌ Topic not found: " + TOPIC_ID);
+    return { success: false, message: "Topic not found: " + TOPIC_ID };
+  } catch (error) {
+    Logger.log("❌ Error: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
 }

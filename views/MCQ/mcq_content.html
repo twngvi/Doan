@@ -2,98 +2,307 @@
   class="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50"
 >
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Back Button -->
-    <button
-      onclick="backFromQuiz()"
-      class="mb-6 flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-    >
-      <svg
-        class="w-5 h-5 mr-2"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
+    <!-- ========== TOPIC SELECTION VIEW ========== -->
+    <div id="mcq-topic-selection">
+      <!-- Header -->
+      <div
+        class="card mb-8 bg-gradient-to-r from-purple-500 to-indigo-600 text-white"
       >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M15 19l-7-7 7-7"
-        />
-      </svg>
-      <span id="mcq-back-text">Quay lại</span>
-    </button>
-
-    <!-- Quiz Header -->
-    <div
-      class="card mb-8 bg-gradient-to-r from-blue-500 to-indigo-600 text-white"
-    >
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 id="mcq-topic-title" class="text-3xl font-bold mb-2">
-            Loading...
-          </h1>
-          <p class="opacity-90">❓ Kiểm tra kiến thức</p>
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-3xl font-bold mb-2">🎯 Quiz Visual</h1>
+            <p class="opacity-90">Chọn chủ đề để bắt đầu làm quiz</p>
+          </div>
+          <div class="text-6xl">📝</div>
         </div>
-        <div class="text-6xl">🎯</div>
+      </div>
+
+      <!-- Loading Topics -->
+      <div id="topics-loading" class="card text-center py-12">
+        <div
+          class="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto mb-4"
+        ></div>
+        <p class="text-gray-600">Đang tải danh sách chủ đề...</p>
+      </div>
+
+      <!-- Topics Grid -->
+      <div
+        id="topics-grid"
+        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        style="display: none"
+      ></div>
+
+      <!-- Empty State -->
+      <div
+        id="topics-empty"
+        class="card text-center py-12"
+        style="display: none"
+      >
+        <div class="text-6xl mb-4">📚</div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Chưa có chủ đề nào</h3>
+        <p class="text-gray-600">Vui lòng thêm chủ đề trong phần quản lý.</p>
       </div>
     </div>
 
-    <!-- Quiz Progress -->
-    <div class="card mb-6">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <div>
-            <span class="text-sm text-gray-600">Câu hỏi</span>
-            <p class="text-2xl font-bold text-gray-900">
-              <span id="current-question">1</span>/
-              <span id="total-questions">10</span>
-            </p>
-          </div>
-          <div class="h-12 w-px bg-gray-300"></div>
-          <div>
-            <span class="text-sm text-gray-600">Điểm</span>
-            <p class="text-2xl font-bold text-green-600" id="current-score">
-              0
-            </p>
-          </div>
-        </div>
-        <div>
-          <span class="text-sm text-gray-600">Thời gian</span>
-          <p class="text-2xl font-bold text-blue-600" id="quiz-timer">00:00</p>
-        </div>
-      </div>
-    </div>
+    <!-- ========== QUIZ VIEW ========== -->
+    <div id="mcq-quiz-view" style="display: none">
+      <!-- Back Button -->
+      <button
+        onclick="backToTopicSelection()"
+        class="mb-6 flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+      >
+        <svg
+          class="w-5 h-5 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M15 19l-7-7 7-7"
+          />
+        </svg>
+        <span id="mcq-back-text">Quay lại chọn chủ đề</span>
+      </button>
 
-    <!-- Quiz Content -->
-    <div id="quiz-section" class="card">
-      <h2 class="text-2xl font-bold text-gray-900 mb-4">
-        ❓ Câu hỏi trắc nghiệm
-      </h2>
-      <p class="text-gray-600">Quiz content - Coming soon...</p>
-      <div class="mt-6 space-y-3">
-        <button
-          class="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          A. Đáp án A
-        </button>
-        <button
-          class="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          B. Đáp án B
-        </button>
-        <button
-          class="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          C. Đáp án C
-        </button>
-        <button
-          class="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
-        >
-          D. Đáp án D
-        </button>
+      <!-- Quiz Header -->
+      <div
+        class="card mb-8 bg-gradient-to-r from-blue-500 to-indigo-600 text-white"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 id="mcq-topic-title" class="text-3xl font-bold mb-2">
+              Loading...
+            </h1>
+            <p class="opacity-90">❓ Kiểm tra kiến thức</p>
+          </div>
+          <div class="text-6xl">🎯</div>
+        </div>
       </div>
-      <div class="mt-6 flex justify-end">
-        <button class="btn-primary">Câu tiếp theo →</button>
+
+      <!-- Loading State -->
+      <div id="quiz-loading" class="card text-center py-12">
+        <div
+          class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"
+        ></div>
+        <p class="text-gray-600">Đang tải câu hỏi từ AI...</p>
+        <p class="text-sm text-gray-400 mt-2">
+          Có thể mất 10-30 giây nếu tạo mới
+        </p>
+      </div>
+
+      <!-- Error State -->
+      <div
+        id="quiz-error"
+        class="card bg-red-50 border-red-200"
+        style="display: none"
+      >
+        <div class="text-center py-8">
+          <div class="text-6xl mb-4">⚠️</div>
+          <h3 class="text-xl font-bold text-red-900 mb-2">
+            Không thể tải quiz
+          </h3>
+          <p id="quiz-error-message" class="text-red-700 mb-4"></p>
+          <div class="flex gap-3 justify-center">
+            <button onclick="loadQuizQuestions(true)" class="btn-primary">
+              🔄 Tạo lại câu hỏi
+            </button>
+            <button onclick="backToTopicSelection()" class="btn-secondary">
+              ← Quay lại
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quiz Progress Bar -->
+      <div id="quiz-progress-bar" class="mb-6" style="display: none">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm text-gray-600">Tiến độ</span>
+          <span class="text-sm font-semibold text-gray-900">
+            <span id="progress-current">0</span>/<span id="progress-total"
+              >0</span
+            >
+          </span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+          <div
+            id="progress-fill"
+            class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+            style="width: 0%"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Quiz Stats -->
+      <div
+        id="quiz-stats"
+        class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"
+        style="display: none"
+      >
+        <div
+          class="card bg-gradient-to-br from-blue-500 to-blue-600 text-white"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm opacity-90">Câu hỏi</p>
+              <p class="text-3xl font-bold">
+                <span id="current-question">0</span>/<span id="total-questions"
+                  >0</span
+                >
+              </p>
+            </div>
+            <div class="text-4xl">📝</div>
+          </div>
+        </div>
+
+        <div
+          class="card bg-gradient-to-br from-green-500 to-green-600 text-white"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm opacity-90">Điểm</p>
+              <p class="text-3xl font-bold" id="current-score">0</p>
+            </div>
+            <div class="text-4xl">⭐</div>
+          </div>
+        </div>
+
+        <div
+          class="card bg-gradient-to-br from-purple-500 to-purple-600 text-white"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm opacity-90">Thời gian</p>
+              <p class="text-3xl font-bold" id="quiz-timer">00:00</p>
+            </div>
+            <div class="text-4xl">⏱️</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Question Content -->
+      <div id="quiz-section" class="card" style="display: none">
+        <!-- Question Text -->
+        <div class="mb-6">
+          <div class="flex items-start gap-3 mb-4">
+            <div
+              class="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold"
+            >
+              <span id="question-number">1</span>
+            </div>
+            <div class="flex-1">
+              <p
+                id="question-text"
+                class="text-xl font-semibold text-gray-900"
+              ></p>
+              <p
+                id="question-hint"
+                class="text-sm text-gray-500 mt-2"
+                style="display: none"
+              ></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Answer Options -->
+        <div id="answer-options" class="space-y-3 mb-6"></div>
+
+        <!-- Feedback Section -->
+        <div id="answer-feedback" class="mb-6" style="display: none"></div>
+
+        <!-- Navigation Buttons -->
+        <div class="flex items-center justify-between pt-4 border-t">
+          <button
+            id="btn-hint"
+            onclick="showHint()"
+            class="btn-secondary text-sm"
+          >
+            💡 Gợi ý
+          </button>
+
+          <div class="flex gap-3">
+            <button
+              id="btn-prev"
+              onclick="previousQuestion()"
+              class="btn-secondary"
+              style="display: none"
+            >
+              ← Câu trước
+            </button>
+            <button
+              id="btn-next"
+              onclick="nextQuestion()"
+              class="btn-primary"
+              disabled
+            >
+              Câu tiếp theo →
+            </button>
+            <button
+              id="btn-submit"
+              onclick="submitQuiz()"
+              class="btn-primary bg-green-600 hover:bg-green-700"
+              style="display: none"
+            >
+              Nộp bài ✓
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div id="quiz-results" class="card" style="display: none">
+        <div class="text-center py-8">
+          <div id="result-icon" class="text-8xl mb-4">🎉</div>
+          <h2 class="text-3xl font-bold text-gray-900 mb-2">Hoàn thành!</h2>
+          <p class="text-gray-600 mb-6">Bạn đã hoàn thành bài quiz</p>
+
+          <!-- Score Display -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-blue-50 rounded-lg p-6">
+              <p class="text-sm text-gray-600 mb-2">Điểm số</p>
+              <p class="text-4xl font-bold text-blue-600">
+                <span id="final-score">0</span>/<span id="final-total">0</span>
+              </p>
+            </div>
+
+            <div class="bg-green-50 rounded-lg p-6">
+              <p class="text-sm text-gray-600 mb-2">Phần trăm</p>
+              <p class="text-4xl font-bold text-green-600">
+                <span id="final-percentage">0</span>%
+              </p>
+            </div>
+
+            <div class="bg-purple-50 rounded-lg p-6">
+              <p class="text-sm text-gray-600 mb-2">Thời gian</p>
+              <p class="text-4xl font-bold text-purple-600" id="final-time">
+                00:00
+              </p>
+            </div>
+          </div>
+
+          <!-- Performance Feedback -->
+          <div id="performance-feedback" class="bg-gray-50 rounded-lg p-6 mb-6">
+            <p class="text-lg font-semibold text-gray-900"></p>
+          </div>
+
+          <!-- Review Answers -->
+          <div class="text-left mb-6">
+            <h3 class="text-xl font-bold mb-4">📋 Xem lại đáp án</h3>
+            <div id="review-answers" class="space-y-4"></div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <button onclick="retakeQuiz()" class="btn-primary">
+              🔄 Làm lại
+            </button>
+            <button onclick="backToTopicSelection()" class="btn-secondary">
+              ← Chọn chủ đề khác
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

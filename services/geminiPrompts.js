@@ -63,31 +63,31 @@ QUAN TRỌNG:
 
 Phân tích: {analysis}
 
-Trả về CHÍNH XÁC format JSON sau:
+Trả về CHÍNH XÁC format JSON sau (ĐỒNG BỘ với frontend):
 {
   "title": "Tiêu đề chính",
   "centralIdea": "Ý tưởng trung tâm (1 câu)",
-  "branches": [
+  "nodes": [
     {
-      "id": "B1",
-      "label": "Nhánh chính 1",
+      "id": "N1",
+      "name": "Nhánh chính 1",
       "color": "#4285f4",
       "icon": "📚",
       "children": [
         {
-          "id": "B1.1",
-          "label": "Ý con 1",
+          "id": "N1.1",
+          "name": "Ý con 1",
           "note": "Ghi chú ngắn (optional)"
         },
         {
-          "id": "B1.2",
-          "label": "Ý con 2"
+          "id": "N1.2",
+          "name": "Ý con 2"
         }
       ]
     },
     {
-      "id": "B2",
-      "label": "Nhánh chính 2",
+      "id": "N2",
+      "name": "Nhánh chính 2",
       "color": "#34a853",
       "icon": "💡",
       "children": []
@@ -95,16 +95,17 @@ Trả về CHÍNH XÁC format JSON sau:
   ],
   "connections": [
     {
-      "from": "B1.1",
-      "to": "B2",
+      "from": "N1.1",
+      "to": "N2",
       "label": "Liên quan"
     }
   ]
 }
 
 YÊU CẦU:
-- 3-6 nhánh chính
-- Mỗi nhánh có 2-4 ý con
+- 3-6 nhánh chính (dùng key "nodes" thay vì "branches")
+- Mỗi nhánh có "name" thay vì "label"
+- Mỗi nhánh có 2-4 "children" (cũng dùng "name")
 - Dùng emoji phù hợp với nội dung
 - Màu sắc khác nhau cho mỗi nhánh
 - connections là các mối liên hệ giữa các ý (optional)
@@ -171,7 +172,7 @@ YÊU CẦU:
 
 Phân tích: {analysis}
 
-Trả về CHÍNH XÁC format JSON sau:
+Trả về CHÍNH XÁC format JSON sau (ĐỒNG BỘ với frontend):
 {
   "deckTitle": "Tên bộ flashcard",
   "totalCards": 15,
@@ -179,16 +180,11 @@ Trả về CHÍNH XÁC format JSON sau:
     {
       "id": "FC001",
       "conceptId": "CON001",
-      "front": {
-        "type": "term|question|fill_blank",
-        "content": "Nội dung mặt trước (câu hỏi/thuật ngữ)",
-        "hint": "Gợi ý nhỏ (optional)"
-      },
-      "back": {
-        "content": "Nội dung mặt sau (đáp án/giải thích)",
-        "example": "Ví dụ minh họa (optional)",
-        "mnemonic": "Cách ghi nhớ (optional)"
-      },
+      "term": "Thuật ngữ hoặc câu hỏi",
+      "definition": "Định nghĩa hoặc đáp án",
+      "hint": "Gợi ý nhỏ (optional)",
+      "example": "Ví dụ minh họa (optional)",
+      "mnemonic": "Cách ghi nhớ (optional)",
       "difficulty": "easy|medium|hard",
       "tags": ["tag1", "tag2"]
     }
@@ -197,7 +193,9 @@ Trả về CHÍNH XÁC format JSON sau:
 
 YÊU CẦU:
 - Tạo {cardCount} flashcards
-- Đa dạng loại: term (thuật ngữ), question (câu hỏi), fill_blank (điền khuyết)
+- Mỗi card có "term" (mặt trước) và "definition" (mặt sau) - ĐỠN GIẢN
+- KHÔNG dùng cấu trúc phức tạp { front: { content: "..." } }
+- "term" và "definition" là STRING trực tiếp
 - Ưu tiên khái niệm khó, dễ nhầm lẫn
 - Mặt trước ngắn gọn, rõ ràng
 - Mặt sau có giải thích đầy đủ
@@ -230,19 +228,20 @@ Trả về CHÍNH XÁC format JSON sau:
       "difficulty": "easy|medium|hard",
       "questionType": "single_choice|scenario|definition|application",
       "question": "Nội dung câu hỏi?",
-      "options": {
-        "A": "Đáp án A",
-        "B": "Đáp án B",
-        "C": "Đáp án C",
-        "D": "Đáp án D"
-      },
-      "correctAnswer": "B",
-      "explanation": "Giải thích tại sao B đúng và các đáp án khác sai",
+      "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+      "correctAnswer": 1,
+      "explanation": "Giải thích tại sao đáp án số 1 (B) đúng và các đáp án khác sai",
       "hint": "Gợi ý nhẹ nếu học sinh gặp khó khăn",
       "relatedConcepts": ["CON001", "CON002"]
     }
   ]
 }
+
+LƯU Ý FORMAT:
+- "options" phải là mảng 4 chuỗi (không phải object)
+- "correctAnswer" là số từ 0-3 (index của đáp án đúng, không phải chữ A/B/C/D)
+- Ví dụ: correctAnswer = 0 nghĩa là đáp án đầu tiên đúng
+- Ví dụ: correctAnswer = 1 nghĩa là đáp án thứ hai đúng
 
 YÊU CẦU:
 - Tạo {questionCount} câu hỏi
@@ -278,17 +277,16 @@ Trả về CHÍNH XÁC format JSON sau:
 {
   "variantType": "{variantType}",
   "question": "Câu hỏi đã biến đổi",
-  "options": {
-    "A": "Đáp án A mới",
-    "B": "Đáp án B mới",
-    "C": "Đáp án C mới",
-    "D": "Đáp án D mới"
-  },
-  "correctAnswer": "C",
+  "options": ["Đáp án A mới", "Đáp án B mới", "Đáp án C mới", "Đáp án D mới"],
+  "correctAnswer": 2,
   "explanation": "Giải thích chi tiết",
   "hint": "Gợi ý",
   "changeNotes": "Mô tả ngắn về sự thay đổi so với câu gốc"
 }
+
+LƯU Ý FORMAT:
+- "options" phải là mảng 4 chuỗi (không phải object)
+- "correctAnswer" là số từ 0-3 (index của đáp án đúng)
 
 YÊU CẦU:
 - Giữ nguyên khái niệm cốt lõi cần kiểm tra
