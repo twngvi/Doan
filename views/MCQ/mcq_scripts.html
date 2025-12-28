@@ -106,7 +106,7 @@
   }
 
   /**
-   * Handle topics loaded
+   * Handle topics loaded - Professional Design
    */
   function handleTopicsLoaded(response) {
     console.log("✅ Topics loaded:", response);
@@ -127,18 +127,44 @@
       console.error("❌ Server error:", response.message);
       document.getElementById("topics-empty").style.display = "block";
       document.getElementById("topics-empty").innerHTML = `
-        <div class="text-6xl mb-4">⚠️</div>
-        <h3 class="text-xl font-bold text-gray-900 mb-2">Lỗi tải dữ liệu</h3>
-        <p class="text-gray-600">${
-          response.message || "Không thể tải chủ đề"
-        }</p>
-        <button onclick="loadTopicsForQuiz()" class="btn-primary mt-4">Thử lại</button>
+        <div class="mcq-empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <h3>Lỗi tải dữ liệu</h3>
+          <p>${response.message || "Không thể tải chủ đề"}</p>
+          <button onclick="loadTopicsForQuiz()" class="btn-primary" style="margin-top:1rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+              <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+            Thử lại
+          </button>
+        </div>
       `;
       return;
     }
 
     if (topics.length === 0) {
       document.getElementById("topics-empty").style.display = "block";
+      document.getElementById("topics-empty").innerHTML = `
+        <div class="mcq-empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#A0AEC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <h3>Chưa có chủ đề</h3>
+          <p>Hãy tạo chủ đề trước khi làm Quiz</p>
+        </div>
+      `;
       return;
     }
 
@@ -147,62 +173,100 @@
   }
 
   /**
-   * Handle topics error
+   * Handle topics error - Professional Design
    */
   function handleTopicsError(error) {
     console.error("❌ Error loading topics:", error);
     document.getElementById("topics-loading").style.display = "none";
     document.getElementById("topics-empty").style.display = "block";
     document.getElementById("topics-empty").innerHTML = `
-      <div class="text-6xl mb-4">⚠️</div>
-      <h3 class="text-xl font-bold text-gray-900 mb-2">Lỗi tải dữ liệu</h3>
-      <p class="text-gray-600">${
-        error.message || "Không thể kết nối server"
-      }</p>
-      <button onclick="loadTopicsForQuiz()" class="btn-primary mt-4">Thử lại</button>
+      <div class="mcq-empty-state">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <h3>Lỗi tải dữ liệu</h3>
+        <p>${error.message || "Không thể kết nối server"}</p>
+        <button onclick="loadTopicsForQuiz()" class="btn-primary" style="margin-top:1rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+            <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          </svg>
+          Thử lại
+        </button>
+      </div>
     `;
   }
 
   /**
-   * Render topics grid
+   * Render topics grid - Professional Design
    */
   function renderTopicsGrid(topics) {
     const container = document.getElementById("topics-grid");
     container.innerHTML = "";
     container.style.display = "grid";
+    container.className = "mcq-topics-grid";
 
-    const icons = ["📚", "📖", "📝", "💡", "🎯", "⭐", "🔥", "💻", "🧠", "📊"];
+    // Concept-based SVG icons mapping
+    const getTopicIcon = (title) => {
+      const t = title.toLowerCase();
+      if (t.includes("database") || t.includes("sql") || t.includes("dữ liệu")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>';
+      }
+      if (t.includes("web") || t.includes("html") || t.includes("css")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      }
+      if (t.includes("code") || t.includes("lập trình") || t.includes("programming")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>';
+      }
+      if (t.includes("api") || t.includes("server") || t.includes("backend")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+      }
+      if (t.includes("security") || t.includes("bảo mật")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+      }
+      if (t.includes("ai") || t.includes("machine") || t.includes("learning")) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/><path d="M8.5 8.5L4 12l4.5 3.5"/><path d="M15.5 8.5L20 12l-4.5 3.5"/></svg>';
+      }
+      // Default icon
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    };
 
     topics.forEach((topic, index) => {
       const card = document.createElement("div");
-      card.className =
-        "card hover:shadow-lg transition-all duration-300 cursor-pointer transform hover:-translate-y-1";
+      card.className = "mcq-topic-card";
       card.onclick = () => selectTopicForQuiz(topic);
 
-      const icon = icons[index % icons.length];
       const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
+      const icon = getTopicIcon(topic.title);
 
       card.innerHTML = `
-        <div class="flex items-start gap-4">
-          <div class="text-4xl">${icon}</div>
-          <div class="flex-1">
-            <h3 class="text-lg font-bold text-gray-900 mb-2">${topic.title}</h3>
-            <p class="text-sm text-gray-600 mb-3">${
-              topic.description || "Kiểm tra kiến thức về chủ đề này"
-            }</p>
-            <div class="flex items-center gap-2">
-              ${
-                hasDoc
-                  ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">✅ Có nội dung</span>'
-                  : '<span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">⚠️ Chưa có nội dung</span>'
-              }
-              <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">🎯 Quiz</span>
-            </div>
+        <div class="mcq-topic-card-header">
+          <div class="mcq-topic-icon">
+            ${icon}
+          </div>
+          <div class="mcq-topic-info">
+            <h3 class="mcq-topic-title">${topic.title}</h3>
           </div>
         </div>
-        <div class="mt-4 pt-4 border-t flex justify-between items-center">
-          <span class="text-sm text-gray-500">ID: ${topic.topicId}</span>
-          <span class="btn-primary text-sm pointer-events-none">Bắt đầu Quiz →</span>
+        <div class="mcq-topic-badges">
+          ${hasDoc
+            ? '<span class="mcq-badge mcq-badge-content">Có nội dung</span>'
+            : '<span class="mcq-badge mcq-badge-no-content">Chưa có nội dung</span>'
+          }
+          <span class="mcq-badge mcq-badge-quiz">Quiz</span>
+        </div>
+        <div class="mcq-topic-footer">
+          <span class="mcq-topic-id">ID: ${topic.topicId}</span>
+          <span class="mcq-topic-btn">
+            Bắt đầu Quiz
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+            </svg>
+          </span>
         </div>
       `;
 
@@ -402,41 +466,28 @@
   }
 
   /**
-   * Render answer options
+   * Render answer options - Professional Design
    */
   function renderAnswerOptions(options, questionIndex) {
     const container = document.getElementById("answer-options");
     container.innerHTML = "";
+    container.className = "answer-options";
 
     const labels = ["A", "B", "C", "D"];
     const userAnswer = quizState.userAnswers[questionIndex];
 
     options.forEach((option, index) => {
       const button = document.createElement("button");
-      button.className =
-        "w-full text-left p-4 border-2 rounded-lg transition-all duration-200";
+      button.className = "answer-option";
 
       const isSelected = userAnswer === index;
-
       if (isSelected) {
-        button.classList.add("border-blue-500", "bg-blue-50");
-      } else {
-        button.classList.add(
-          "border-gray-300",
-          "hover:border-blue-400",
-          "hover:bg-gray-50"
-        );
+        button.classList.add("selected");
       }
 
       button.innerHTML = `
-        <div class="flex items-center gap-3">
-          <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-            isSelected ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-700"
-          }">
-            ${labels[index]}
-          </div>
-          <span class="flex-1">${option}</span>
-        </div>
+        <div class="option-letter">${labels[index]}</div>
+        <span class="option-text">${option}</span>
       `;
 
       button.onclick = () => selectAnswer(index);
@@ -495,49 +546,42 @@
   }
 
   /**
-   * Show answer feedback
+   * Show answer feedback - Professional Design
    */
   function showAnswerFeedback(isCorrect, question) {
     const feedbackElement = document.getElementById("answer-feedback");
     const labels = ["A", "B", "C", "D"];
 
     if (isCorrect) {
-      feedbackElement.className =
-        "bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-6";
+      feedbackElement.className = "answer-feedback correct";
       feedbackElement.innerHTML = `
-        <div class="flex items-start gap-3">
-          <div class="text-2xl">✅</div>
-          <div>
-            <p class="font-semibold text-green-900">Chính xác!</p>
-            ${
-              question.explanation
-                ? `<p class="text-sm text-green-700 mt-1">${question.explanation}</p>`
-                : ""
-            }
-          </div>
+        <div class="feedback-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2FA36B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:6px;">
+            <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+          </svg>
+          Chính xác!
         </div>
+        ${question.explanation ? `<p class="feedback-text">${question.explanation}</p>` : ""}
       `;
       quizState.score++;
       document.getElementById("current-score").textContent = quizState.score;
     } else {
-      feedbackElement.className =
-        "bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6";
+      feedbackElement.className = "answer-feedback incorrect";
       feedbackElement.innerHTML = `
-        <div class="flex items-start gap-3">
-          <div class="text-2xl">❌</div>
-          <div>
-            <p class="font-semibold text-red-900">Chưa chính xác</p>
-            <p class="text-sm text-red-700 mt-1">Đáp án đúng: ${
-              labels[question.correctAnswer]
-            }. ${question.options[question.correctAnswer]}</p>
-            ${
-              question.explanation
-                ? `<p class="text-sm text-red-600 mt-2">${question.explanation}</p>`
-                : ""
-            }
-            <p class="text-xs text-gray-500 mt-2 italic">📝 Câu này sẽ được hỏi lại với dạng khác</p>
-          </div>
+        <div class="feedback-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:6px;">
+            <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          Chưa chính xác
         </div>
+        <p class="feedback-text">Đáp án đúng: ${labels[question.correctAnswer]}. ${question.options[question.correctAnswer]}</p>
+        ${question.explanation ? `<p class="feedback-text" style="margin-top:0.5rem;">${question.explanation}</p>` : ""}
+        <p class="feedback-text" style="color:#A0AEC0;font-size:0.75rem;margin-top:0.5rem;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+          </svg>
+          Câu này sẽ được hỏi lại với dạng khác
+        </p>
       `;
     }
 
@@ -628,7 +672,7 @@
   }
 
   /**
-   * Show quiz results
+   * Show quiz results - Professional Design
    */
   function showResults(score, total, percentage, timeTaken) {
     console.log("🎉 Showing results:", { score, total, percentage, timeTaken });
@@ -639,43 +683,59 @@
     document.getElementById("quiz-results").style.display = "block";
 
     const resultIcon = document.getElementById("result-icon");
-    if (percentage >= 90) resultIcon.textContent = "🏆";
-    else if (percentage >= 70) resultIcon.textContent = "🎉";
-    else if (percentage >= 50) resultIcon.textContent = "👍";
-    else resultIcon.textContent = "📚";
+    let iconSvg;
+    if (percentage >= 90) {
+      iconSvg = `<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+        <path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+      </svg>`;
+    } else if (percentage >= 70) {
+      iconSvg = `<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#2FA36B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+      </svg>`;
+    } else if (percentage >= 50) {
+      iconSvg = `<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#5B6FF8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+      </svg>`;
+    } else {
+      iconSvg = `<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#FF9800" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>`;
+    }
+    resultIcon.innerHTML = iconSvg;
 
     document.getElementById("final-score").textContent = score;
     document.getElementById("final-total").textContent = total;
     document.getElementById("final-percentage").textContent = percentage;
     document.getElementById("final-time").textContent = timeTaken;
 
-    const feedbackElement = document
-      .getElementById("performance-feedback")
-      .querySelector("p");
+    const feedbackElement = document.getElementById("performance-feedback").querySelector("p");
     if (percentage >= 90) {
-      feedbackElement.textContent = "🌟 Xuất sắc! Bạn đã nắm vững kiến thức!";
-      feedbackElement.className = "text-lg font-semibold text-green-600";
+      feedbackElement.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:6px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Xuất sắc! Bạn đã nắm vững kiến thức!`;
+      feedbackElement.style.color = "#2FA36B";
     } else if (percentage >= 70) {
-      feedbackElement.textContent =
-        "👏 Tốt lắm! Bạn đã hiểu phần lớn nội dung.";
-      feedbackElement.className = "text-lg font-semibold text-blue-600";
+      feedbackElement.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6FF8" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:6px;"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> Tốt lắm! Bạn đã hiểu phần lớn nội dung.`;
+      feedbackElement.style.color = "#5B6FF8";
     } else if (percentage >= 50) {
-      feedbackElement.textContent = "💪 Khá ổn! Hãy xem lại một số phần.";
-      feedbackElement.className = "text-lg font-semibold text-yellow-600";
+      feedbackElement.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF9800" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg> Khá ổn! Hãy xem lại một số phần.`;
+      feedbackElement.style.color = "#FF9800";
     } else {
-      feedbackElement.textContent = "📖 Cần ôn tập thêm. Đừng nản chí!";
-      feedbackElement.className = "text-lg font-semibold text-orange-600";
+      feedbackElement.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Cần ôn tập thêm. Đừng nản chí!`;
+      feedbackElement.style.color = "#DC2626";
     }
 
     generateAnswerReview();
   }
 
   /**
-   * Generate answer review
+   * Generate answer review - Professional Design
    */
   function generateAnswerReview() {
     const container = document.getElementById("review-answers");
     container.innerHTML = "";
+    container.className = "review-answers";
     const labels = ["A", "B", "C", "D"];
 
     quizState.questions.forEach((question, index) => {
@@ -683,50 +743,33 @@
       const isCorrect = userAnswer === question.correctAnswer;
 
       const reviewItem = document.createElement("div");
-      reviewItem.className = `border-2 rounded-lg p-4 ${
-        isCorrect ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
-      }`;
+      reviewItem.className = `review-item ${isCorrect ? "correct" : "incorrect"}`;
 
       reviewItem.innerHTML = `
-        <div class="flex items-start gap-3 mb-2">
-          <div class="flex-shrink-0 text-2xl">${isCorrect ? "✅" : "❌"}</div>
-          <div class="flex-1">
-            <p class="font-semibold text-gray-900">Câu ${index + 1}: ${
-        question.question
-      }</p>
-            <div class="mt-2 space-y-1 text-sm">
-              <p class="text-gray-700">
-                <span class="font-semibold">Bạn chọn:</span> 
-                ${
-                  userAnswer !== null
-                    ? `${labels[userAnswer]}. ${question.options[userAnswer]}`
-                    : "Chưa trả lời"
-                }
-              </p>
-              ${
-                !isCorrect
-                  ? `
-                <p class="text-green-700">
-                  <span class="font-semibold">Đáp án đúng:</span> 
-                  ${labels[question.correctAnswer]}. ${
-                      question.options[question.correctAnswer]
-                    }
-                </p>
-              `
-                  : ""
-              }
-              ${
-                question.explanation
-                  ? `
-                <p class="text-gray-600 mt-2">
-                  <span class="font-semibold">Giải thích:</span> ${question.explanation}
-                </p>
-              `
-                  : ""
-              }
-            </div>
-          </div>
+        <div class="review-question">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isCorrect ? '#2FA36B' : '#DC2626'}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:8px;">
+            ${isCorrect 
+              ? '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>' 
+              : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'
+            }
+          </svg>
+          Câu ${index + 1}: ${question.question}
         </div>
+        <div class="review-answer">
+          <strong>Bạn chọn:</strong> 
+          ${userAnswer !== null ? `${labels[userAnswer]}. ${question.options[userAnswer]}` : "Chưa trả lời"}
+        </div>
+        ${!isCorrect ? `
+          <div class="review-answer" style="color:#2FA36B;">
+            <strong>Đáp án đúng:</strong> 
+            ${labels[question.correctAnswer]}. ${question.options[question.correctAnswer]}
+          </div>
+        ` : ""}
+        ${question.explanation ? `
+          <div class="review-answer" style="margin-top:0.5rem;color:#718096;">
+            <strong>Giải thích:</strong> ${question.explanation}
+          </div>
+        ` : ""}
       `;
 
       container.appendChild(reviewItem);
@@ -765,19 +808,37 @@
   }
 
   /**
-   * Show notification after saving
+   * Show notification after saving - Professional Design
    */
   function showSaveNotification(success, message) {
     // Create notification element
     const notification = document.createElement("div");
-    notification.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 ${
-      success ? "bg-green-500 text-white" : "bg-red-500 text-white"
-    }`;
+    notification.style.cssText = `
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      padding: 0.875rem 1.25rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 50;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      background: ${success ? '#E8F7EE' : '#FEE2E2'};
+      color: ${success ? '#2FA36B' : '#DC2626'};
+      border: 1px solid ${success ? '#2FA36B' : '#DC2626'};
+    `;
     notification.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span>${success ? "✅" : "❌"}</span>
-        <span>${message}</span>
-      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        ${success 
+          ? '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'
+          : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'
+        }
+      </svg>
+      <span>${message}</span>
     `;
 
     document.body.appendChild(notification);
@@ -785,6 +846,7 @@
     // Auto remove after 3 seconds
     setTimeout(() => {
       notification.style.opacity = "0";
+      notification.style.transform = "translateY(10px)";
       setTimeout(() => notification.remove(), 300);
     }, 3000);
   }

@@ -1,235 +1,369 @@
-<div
-  class="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50"
->
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="mcq-container">
+  <div class="mcq-main">
     <!-- ========== TOPIC SELECTION VIEW ========== -->
     <div id="mcq-topic-selection">
       <!-- Header -->
-      <div
-        class="card mb-8 bg-gradient-to-r from-purple-500 to-indigo-600 text-white"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold mb-2">🎯 Quiz Visual</h1>
-            <p class="opacity-90">Chọn chủ đề để bắt đầu làm quiz</p>
+      <div class="mcq-header">
+        <div class="mcq-header-content">
+          <div class="mcq-header-left">
+            <button class="btn-back" onclick="showPage('page-dashboard')">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Quay lại Dashboard
+            </button>
+            <h1 class="mcq-title">
+              <span class="title-icon">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#5B6FF8"
+                  stroke-width="2"
+                >
+                  <path d="M9 11l3 3L22 4" />
+                  <path
+                    d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                  />
+                </svg>
+              </span>
+              Quiz Visual
+            </h1>
+            <p class="mcq-subtitle">Chọn chủ đề để bắt đầu làm quiz</p>
           </div>
-          <div class="text-6xl">📝</div>
+          <div class="mcq-header-right">
+            <div class="mcq-header-icon">
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#5B6FF8"
+                stroke-width="1.5"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Loading Topics -->
-      <div id="topics-loading" class="card text-center py-12">
-        <div
-          class="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto mb-4"
-        ></div>
-        <p class="text-gray-600">Đang tải danh sách chủ đề...</p>
+      <div id="topics-loading" class="mcq-loading">
+        <div class="quiz-loading-popup">
+          <div class="quiz-loading-logo">
+            <span class="logo-o">O</span>
+            <div class="logo-dots">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+          </div>
+          <div class="quiz-loading-text">Đang tải danh sách chủ đề...</div>
+        </div>
       </div>
 
       <!-- Topics Grid -->
-      <div
-        id="topics-grid"
-        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-        style="display: none"
-      ></div>
+      <div id="topics-grid" class="mcq-topics-grid" style="display: none"></div>
 
       <!-- Empty State -->
-      <div
-        id="topics-empty"
-        class="card text-center py-12"
-        style="display: none"
-      >
-        <div class="text-6xl mb-4">📚</div>
-        <h3 class="text-xl font-bold text-gray-900 mb-2">Chưa có chủ đề nào</h3>
-        <p class="text-gray-600">Vui lòng thêm chủ đề trong phần quản lý.</p>
+      <div id="topics-empty" class="mcq-empty-state" style="display: none">
+        <div class="empty-icon">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#A0AEC0"
+            stroke-width="1.5"
+          >
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path
+              d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+            />
+          </svg>
+        </div>
+        <h3>Chưa có chủ đề nào</h3>
+        <p>Vui lòng thêm chủ đề trong phần quản lý.</p>
       </div>
     </div>
 
     <!-- ========== QUIZ VIEW ========== -->
     <div id="mcq-quiz-view" style="display: none">
       <!-- Back Button -->
-      <button
-        onclick="backToTopicSelection()"
-        class="mb-6 flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-      >
+      <button onclick="backToTopicSelection()" class="btn-back mcq-back-btn">
         <svg
-          class="w-5 h-5 mr-2"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          viewBox="0 0 24 24"
+          stroke-width="2"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M15 19l-7-7 7-7"
-          />
+          <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
         <span id="mcq-back-text">Quay lại chọn chủ đề</span>
       </button>
 
       <!-- Quiz Header -->
-      <div
-        class="card mb-8 bg-gradient-to-r from-blue-500 to-indigo-600 text-white"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <h1 id="mcq-topic-title" class="text-3xl font-bold mb-2">
-              Loading...
-            </h1>
-            <p class="opacity-90">❓ Kiểm tra kiến thức</p>
+      <div class="mcq-quiz-header">
+        <div class="quiz-header-content">
+          <div class="quiz-header-icon">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#5B6FF8"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
           </div>
-          <div class="text-6xl">🎯</div>
+          <div>
+            <h1 id="mcq-topic-title" class="quiz-title">Loading...</h1>
+            <p class="quiz-subtitle">Kiểm tra kiến thức</p>
+          </div>
         </div>
       </div>
 
       <!-- Loading State -->
-      <div id="quiz-loading" class="card text-center py-12">
-        <div
-          class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"
-        ></div>
-        <p class="text-gray-600">Đang tải câu hỏi từ AI...</p>
-        <p class="text-sm text-gray-400 mt-2">
-          Có thể mất 10-30 giây nếu tạo mới
-        </p>
+      <div id="quiz-loading" class="mcq-loading">
+        <div class="quiz-loading-popup">
+          <div class="quiz-loading-logo">
+            <span class="logo-o">O</span>
+            <div class="logo-dots">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+          </div>
+          <div class="quiz-loading-text">Đang tải câu hỏi từ AI...</div>
+          <p class="quiz-loading-hint">Có thể mất 10-30 giây nếu tạo mới</p>
+        </div>
       </div>
 
       <!-- Error State -->
-      <div
-        id="quiz-error"
-        class="card bg-red-50 border-red-200"
-        style="display: none"
-      >
-        <div class="text-center py-8">
-          <div class="text-6xl mb-4">⚠️</div>
-          <h3 class="text-xl font-bold text-red-900 mb-2">
-            Không thể tải quiz
-          </h3>
-          <p id="quiz-error-message" class="text-red-700 mb-4"></p>
-          <div class="flex gap-3 justify-center">
-            <button onclick="loadQuizQuestions(true)" class="btn-primary">
-              🔄 Tạo lại câu hỏi
-            </button>
-            <button onclick="backToTopicSelection()" class="btn-secondary">
-              ← Quay lại
-            </button>
-          </div>
+      <div id="quiz-error" class="mcq-error-state" style="display: none">
+        <div class="error-icon">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#EF4444"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </div>
+        <h3>Không thể tải quiz</h3>
+        <p id="quiz-error-message"></p>
+        <div class="error-actions">
+          <button onclick="loadQuizQuestions(true)" class="btn-primary">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Tạo lại câu hỏi
+          </button>
+          <button onclick="backToTopicSelection()" class="btn-secondary">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Quay lại
+          </button>
         </div>
       </div>
 
       <!-- Quiz Progress Bar -->
-      <div id="quiz-progress-bar" class="mb-6" style="display: none">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm text-gray-600">Tiến độ</span>
-          <span class="text-sm font-semibold text-gray-900">
+      <div
+        id="quiz-progress-bar"
+        class="mcq-progress-bar"
+        style="display: none"
+      >
+        <div class="progress-info">
+          <span class="progress-label">Tiến độ</span>
+          <span class="progress-count">
             <span id="progress-current">0</span>/<span id="progress-total"
               >0</span
             >
           </span>
         </div>
-        <div class="w-full bg-gray-200 rounded-full h-2">
-          <div
-            id="progress-fill"
-            class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-            style="width: 0%"
-          ></div>
+        <div class="progress-track">
+          <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
         </div>
       </div>
 
       <!-- Quiz Stats -->
-      <div
-        id="quiz-stats"
-        class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"
-        style="display: none"
-      >
-        <div
-          class="card bg-gradient-to-br from-blue-500 to-blue-600 text-white"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm opacity-90">Câu hỏi</p>
-              <p class="text-3xl font-bold">
-                <span id="current-question">0</span>/<span id="total-questions"
-                  >0</span
-                >
-              </p>
+      <div id="quiz-stats" class="mcq-stats-grid" style="display: none">
+        <div class="stat-card stat-questions">
+          <div class="stat-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value">
+              <span id="current-question">0</span>/<span id="total-questions"
+                >0</span
+              >
             </div>
-            <div class="text-4xl">📝</div>
+            <div class="stat-label">Câu hỏi</div>
           </div>
         </div>
 
-        <div
-          class="card bg-gradient-to-br from-green-500 to-green-600 text-white"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm opacity-90">Điểm</p>
-              <p class="text-3xl font-bold" id="current-score">0</p>
-            </div>
-            <div class="text-4xl">⭐</div>
+        <div class="stat-card stat-score">
+          <div class="stat-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="current-score">0</div>
+            <div class="stat-label">Điểm</div>
           </div>
         </div>
 
-        <div
-          class="card bg-gradient-to-br from-purple-500 to-purple-600 text-white"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm opacity-90">Thời gian</p>
-              <p class="text-3xl font-bold" id="quiz-timer">00:00</p>
-            </div>
-            <div class="text-4xl">⏱️</div>
+        <div class="stat-card stat-time">
+          <div class="stat-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="quiz-timer">00:00</div>
+            <div class="stat-label">Thời gian</div>
           </div>
         </div>
       </div>
 
       <!-- Question Content -->
-      <div id="quiz-section" class="card" style="display: none">
+      <div id="quiz-section" class="mcq-question-card" style="display: none">
         <!-- Question Text -->
-        <div class="mb-6">
-          <div class="flex items-start gap-3 mb-4">
-            <div
-              class="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold"
-            >
-              <span id="question-number">1</span>
-            </div>
-            <div class="flex-1">
-              <p
-                id="question-text"
-                class="text-xl font-semibold text-gray-900"
-              ></p>
-              <p
-                id="question-hint"
-                class="text-sm text-gray-500 mt-2"
-                style="display: none"
-              ></p>
-            </div>
+        <div class="question-header">
+          <div class="question-number-badge" id="question-number">1</div>
+          <div class="question-content">
+            <p id="question-text" class="question-text"></p>
+            <p
+              id="question-hint"
+              class="question-hint"
+              style="display: none"
+            ></p>
           </div>
         </div>
 
         <!-- Answer Options -->
-        <div id="answer-options" class="space-y-3 mb-6"></div>
+        <div id="answer-options" class="answer-options"></div>
 
         <!-- Feedback Section -->
-        <div id="answer-feedback" class="mb-6" style="display: none"></div>
+        <div
+          id="answer-feedback"
+          class="answer-feedback"
+          style="display: none"
+        ></div>
 
         <!-- Navigation Buttons -->
-        <div class="flex items-center justify-between pt-4 border-t">
+        <div class="question-nav">
           <button
             id="btn-hint"
             onclick="showHint()"
-            class="btn-secondary text-sm"
+            class="btn-secondary btn-hint"
           >
-            💡 Gợi ý
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            Gợi ý
           </button>
 
-          <div class="flex gap-3">
+          <div class="nav-buttons">
             <button
               id="btn-prev"
               onclick="previousQuestion()"
               class="btn-secondary"
               style="display: none"
             >
-              ← Câu trước
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Câu trước
             </button>
             <button
               id="btn-next"
@@ -237,69 +371,188 @@
               class="btn-primary"
               disabled
             >
-              Câu tiếp theo →
+              Câu tiếp theo
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
             </button>
             <button
               id="btn-submit"
               onclick="submitQuiz()"
-              class="btn-primary bg-green-600 hover:bg-green-700"
+              class="btn-primary btn-success"
               style="display: none"
             >
-              Nộp bài ✓
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              Nộp bài
             </button>
           </div>
         </div>
       </div>
 
       <!-- Results Section -->
-      <div id="quiz-results" class="card" style="display: none">
-        <div class="text-center py-8">
-          <div id="result-icon" class="text-8xl mb-4">🎉</div>
-          <h2 class="text-3xl font-bold text-gray-900 mb-2">Hoàn thành!</h2>
-          <p class="text-gray-600 mb-6">Bạn đã hoàn thành bài quiz</p>
+      <div id="quiz-results" class="mcq-results-card" style="display: none">
+        <div class="results-content">
+          <div class="results-icon" id="result-icon">
+            <svg
+              width="64"
+              height="64"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#2FA36B"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 12l3 3 5-6" />
+            </svg>
+          </div>
+          <h2 class="results-title">Hoàn thành!</h2>
+          <p class="results-subtitle">Bạn đã hoàn thành bài quiz</p>
 
           <!-- Score Display -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div class="bg-blue-50 rounded-lg p-6">
-              <p class="text-sm text-gray-600 mb-2">Điểm số</p>
-              <p class="text-4xl font-bold text-blue-600">
-                <span id="final-score">0</span>/<span id="final-total">0</span>
-              </p>
+          <div class="results-stats-grid">
+            <div class="result-stat result-stat-score">
+              <div class="result-stat-icon">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polygon
+                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                  />
+                </svg>
+              </div>
+              <div class="result-stat-info">
+                <div class="result-stat-value">
+                  <span id="final-score">0</span>/<span id="final-total"
+                    >0</span
+                  >
+                </div>
+                <div class="result-stat-label">Điểm số</div>
+              </div>
             </div>
 
-            <div class="bg-green-50 rounded-lg p-6">
-              <p class="text-sm text-gray-600 mb-2">Phần trăm</p>
-              <p class="text-4xl font-bold text-green-600">
-                <span id="final-percentage">0</span>%
-              </p>
+            <div class="result-stat result-stat-percent">
+              <div class="result-stat-icon">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                  <line x1="9" y1="9" x2="9.01" y2="9" />
+                  <line x1="15" y1="9" x2="15.01" y2="9" />
+                </svg>
+              </div>
+              <div class="result-stat-info">
+                <div class="result-stat-value">
+                  <span id="final-percentage">0</span>%
+                </div>
+                <div class="result-stat-label">Phần trăm</div>
+              </div>
             </div>
 
-            <div class="bg-purple-50 rounded-lg p-6">
-              <p class="text-sm text-gray-600 mb-2">Thời gian</p>
-              <p class="text-4xl font-bold text-purple-600" id="final-time">
-                00:00
-              </p>
+            <div class="result-stat result-stat-time">
+              <div class="result-stat-icon">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <div class="result-stat-info">
+                <div class="result-stat-value" id="final-time">00:00</div>
+                <div class="result-stat-label">Thời gian</div>
+              </div>
             </div>
           </div>
 
           <!-- Performance Feedback -->
-          <div id="performance-feedback" class="bg-gray-50 rounded-lg p-6 mb-6">
-            <p class="text-lg font-semibold text-gray-900"></p>
+          <div id="performance-feedback" class="performance-feedback">
+            <p></p>
           </div>
 
           <!-- Review Answers -->
-          <div class="text-left mb-6">
-            <h3 class="text-xl font-bold mb-4">📋 Xem lại đáp án</h3>
-            <div id="review-answers" class="space-y-4"></div>
+          <div class="review-section">
+            <h3 class="review-title">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              Xem lại đáp án
+            </h3>
+            <div id="review-answers" class="review-answers"></div>
           </div>
 
           <!-- Action Buttons -->
-          <div class="flex flex-col sm:flex-row gap-4 justify-center">
+          <div class="results-actions">
             <button onclick="retakeQuiz()" class="btn-primary">
-              🔄 Làm lại
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              Làm lại
             </button>
             <button onclick="backToTopicSelection()" class="btn-secondary">
-              ← Chọn chủ đề khác
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Chọn chủ đề khác
             </button>
           </div>
         </div>

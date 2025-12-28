@@ -249,7 +249,7 @@
       journeyContainer.style.display = "flex";
     }
 
-    // ⭐ TỐI ƯU CARD CREATION - Sử dụng template string tốt hơn
+    // ⭐ TỐI ƯU CARD CREATION - Professional Design with SVG Icons
     function createTopicCard(topic) {
       const card = document.createElement("div");
       card.className = "topic-card";
@@ -261,14 +261,24 @@
         progress: 0,
       };
       const isLocked = !checkTopicUnlocked(topic);
-      const journeyIcon = getJourneyIcon(topic.journey);
+      const topicIcon = getTopicIcon(topic);
+      const journeyClass = getJourneyClass(topic.journey);
       const progressPercent = progress.progress || 0;
+
+      // SVG icons for buttons
+      const playIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      const lockIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+      const checkIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
 
       card.innerHTML = `
       <div class="topic-card-header">
-        <div class="topic-icon">${journeyIcon}</div>
+        <div class="topic-icon-wrapper">
+          <div class="topic-icon">${topicIcon}</div>
+        </div>
         <div class="topic-badges">
-          <span class="badge badge-journey">${topic.journey}</span>
+          <span class="badge badge-journey ${journeyClass}">${
+        topic.journey
+      }</span>
           ${
             topic.category
               ? `<span class="badge badge-category">${topic.category}</span>`
@@ -276,10 +286,10 @@
           }
           ${
             progress.completed
-              ? '<span class="badge badge-completed">✓ Completed</span>'
+              ? '<span class="badge badge-completed">Hoàn thành</span>'
               : ""
           }
-          ${isLocked ? '<span class="badge badge-locked">🔒 Locked</span>' : ""}
+          ${isLocked ? '<span class="badge badge-locked">Khoá</span>' : ""}
         </div>
       </div>
       <h3 class="topic-title">${topic.title}</h3>
@@ -291,11 +301,11 @@
         </div>
         <div class="stat">
           <div class="stat-value">${topic.minAILevel || 1}</div>
-          <div class="stat-label">Min AI</div>
+          <div class="stat-label">AI Level</div>
         </div>
         <div class="stat">
           <div class="stat-value">${topic.minAccuracy || 0}%</div>
-          <div class="stat-label">Min Acc</div>
+          <div class="stat-label">Độ chính xác</div>
         </div>
       </div>
       ${
@@ -305,21 +315,23 @@
           <div class="progress-bar">
             <div class="progress-fill" style="width: ${progressPercent}%"></div>
           </div>
-          <p class="progress-text">${progressPercent}% completed</p>
+          <p class="progress-text">${progressPercent}% hoàn thành</p>
         </div>
       `
           : ""
       }
-      <button class="topic-action ${isLocked ? "locked" : ""}"
+      <button class="topic-action ${isLocked ? "locked" : ""} ${
+        progress.completed ? "completed" : ""
+      }"
               onclick="event.stopPropagation(); ${
                 isLocked ? "" : `startTopic('${topic.topicId}')`
               }">
         ${
           isLocked
-            ? "🔒 Locked"
+            ? `${lockIcon} Đang khoá`
             : progress.completed
-            ? "🔄 Review"
-            : "🚀 Start Learning"
+            ? `${checkIcon} Ôn tập`
+            : `${playIcon} Bắt đầu học`
         }
       </button>
     `;
@@ -382,18 +394,26 @@
     }
 
     // ========================================
-    // VIEW TOGGLE
+    // VIEW TOGGLE - Toggle Switch with Animation
     // ========================================
     function toggleView(view) {
       currentView = view;
 
       // Update active button
-      document.querySelectorAll(".toggle-btn").forEach((btn) => {
-        btn.classList.remove("active");
-        if (btn.dataset.view === view) {
-          btn.classList.add("active");
-        }
-      });
+      document
+        .querySelectorAll(".view-switch-btn, .view-btn, .toggle-btn")
+        .forEach((btn) => {
+          btn.classList.remove("active");
+          if (btn.dataset.view === view) {
+            btn.classList.add("active");
+          }
+        });
+
+      // Update toggle slider position
+      const toggleSwitch = document.querySelector(".view-toggle-switch");
+      if (toggleSwitch) {
+        toggleSwitch.setAttribute("data-active", view);
+      }
 
       renderTopics();
     }
@@ -432,18 +452,36 @@
       // Update start button
       const startBtn = document.getElementById("modalStartBtn");
       if (isLocked) {
-        startBtn.innerHTML = "<span>🔒</span> Locked";
+        startBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Đang khoá`;
         startBtn.disabled = true;
-        startBtn.style.background = "#cbd5e0";
+        startBtn.style.background = "#E6E8F0";
+        startBtn.style.color = "#A0AEC0";
         startBtn.style.cursor = "not-allowed";
       } else {
+        const btnIcon = progress.completed
+          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         startBtn.innerHTML = progress.completed
-          ? "<span>🔄</span> Review Topic"
-          : "<span>🚀</span> Bắt đầu học";
+          ? `${btnIcon} Ôn tập`
+          : `${btnIcon} Bắt đầu học`;
         startBtn.disabled = false;
-        startBtn.style.background =
-          "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+        startBtn.style.background = "#5B6FF8";
+        startBtn.style.color = "white";
         startBtn.style.cursor = "pointer";
+      }
+
+      // Update modal icon based on topic
+      const modalIcon = document.getElementById("modalIcon");
+      if (modalIcon) {
+        modalIcon.innerHTML = getTopicIcon(topic);
+      }
+
+      // Update level badge class
+      const journeyBadge = document.getElementById("modalJourney");
+      if (journeyBadge) {
+        journeyBadge.className = `level-badge ${getJourneyClass(
+          topic.journey
+        )}`;
       }
 
       // Show modal
@@ -554,13 +592,135 @@
       return true;
     }
 
-    function getJourneyIcon(journey) {
-      const icons = {
-        Beginner: "🌱",
-        Intermediate: "🌿",
-        Advanced: "🌳",
+    /**
+     * Get concept-based SVG icon for topic
+     * Icons represent the concept/function, not decorative elements
+     */
+    function getTopicIcon(topic) {
+      const title = (topic.title || "").toLowerCase();
+      const category = (topic.category || "").toLowerCase();
+
+      // Icon mapping based on topic concepts
+      const iconMap = {
+        // Programming & I/O
+        terminal: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+        code: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+
+        // Variables & Data Types
+        database: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
+        layers: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+
+        // Operators & Logic
+        calculator: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="16" y2="18"/></svg>`,
+        sigma: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 4H6l6 8-6 8h12"/></svg>`,
+
+        // Conditions (If-Else)
+        "git-branch": `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>`,
+        split: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22V8L3 3"/><path d="M12 8l9-5"/></svg>`,
+
+        // Loops
+        repeat: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`,
+        loop: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a10 10 0 1 0 10 10"/><polyline points="12 2 12 8 18 8"/></svg>`,
+
+        // Arrays & Lists
+        list: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+        table: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
+
+        // Functions
+        function: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4h4l-1 8h5l-7 9v-7h-4l3-10z"/></svg>`,
+        box: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+
+        // Default/Book icon
+        book: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
       };
-      return icons[journey] || "📚";
+
+      // Match topic title/category to icon
+      if (
+        title.includes("lập trình") ||
+        title.includes("i/o") ||
+        title.includes("input") ||
+        title.includes("output") ||
+        title.includes("nhập") ||
+        title.includes("xuất")
+      ) {
+        return iconMap["terminal"];
+      }
+      if (
+        title.includes("biến") ||
+        title.includes("kiểu") ||
+        title.includes("variable") ||
+        title.includes("data type")
+      ) {
+        return iconMap["database"];
+      }
+      if (
+        title.includes("toán tử") ||
+        title.includes("logic") ||
+        title.includes("operator") ||
+        title.includes("phép tính")
+      ) {
+        return iconMap["calculator"];
+      }
+      if (
+        title.includes("if") ||
+        title.includes("else") ||
+        title.includes("điều kiện") ||
+        title.includes("condition") ||
+        title.includes("rẽ nhánh")
+      ) {
+        return iconMap["git-branch"];
+      }
+      if (
+        title.includes("vòng lặp") ||
+        title.includes("loop") ||
+        title.includes("for") ||
+        title.includes("while") ||
+        title.includes("lặp")
+      ) {
+        return iconMap["repeat"];
+      }
+      if (
+        title.includes("mảng") ||
+        title.includes("danh sách") ||
+        title.includes("array") ||
+        title.includes("list")
+      ) {
+        return iconMap["list"];
+      }
+      if (
+        title.includes("hàm") ||
+        title.includes("function") ||
+        title.includes("chương trình con")
+      ) {
+        return iconMap["function"];
+      }
+      if (
+        title.includes("chuỗi") ||
+        title.includes("string") ||
+        title.includes("ký tự")
+      ) {
+        return iconMap["code"];
+      }
+
+      // Category-based fallback
+      if (category.includes("programming") || category.includes("lập trình")) {
+        return iconMap["code"];
+      }
+      if (category.includes("data") || category.includes("dữ liệu")) {
+        return iconMap["layers"];
+      }
+
+      // Default icon
+      return iconMap["book"];
+    }
+
+    function getJourneyClass(journey) {
+      const classes = {
+        Beginner: "beginner",
+        Intermediate: "intermediate",
+        Advanced: "advanced",
+      };
+      return classes[journey] || "";
     }
 
     function truncateText(text, maxLength) {
