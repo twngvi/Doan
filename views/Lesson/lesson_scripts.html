@@ -11,7 +11,6 @@
   let aiContentLoaded = {
     mindmap: false,
     flashcards: false,
-    summary: false,
   };
   let flashcardsData = [];
   let currentFlashcardIndex = 0;
@@ -26,7 +25,7 @@
     // ⭐ Reset previous lesson data to avoid cache issues
     currentLessonData = null;
     scrollProgress = 0;
-    aiContentLoaded = { mindmap: false, flashcards: false, summary: false };
+    aiContentLoaded = { mindmap: false, flashcards: false };
     flashcardsData = [];
     currentFlashcardIndex = 0;
 
@@ -108,8 +107,6 @@
       loadMindmap();
     } else if (tabName === "flashcards" && !aiContentLoaded.flashcards) {
       loadFlashcards();
-    } else if (tabName === "summary" && !aiContentLoaded.summary) {
-      loadSummary();
     }
   }
 
@@ -343,61 +340,6 @@
       );
   }
 
-  /**
-   * Load Summary from AI
-   */
-  function loadSummary(forceRegenerate = false) {
-    console.log("📋 Loading Summary...");
-
-    if (!currentLessonData?.topicId) {
-      showSummaryError("Thiếu thông tin topic");
-      return;
-    }
-
-    // Show loading
-    document.getElementById("summary-loading").style.display = "block";
-    document.getElementById("summary-error").style.display = "none";
-    document.getElementById("summary-content").style.display = "none";
-
-    google.script.run
-      .withSuccessHandler(function (response) {
-        console.log("✅ Summary response:", response);
-        document.getElementById("summary-loading").style.display = "none";
-
-        if (response && response.success && response.data) {
-          // ⭐ Parse data nếu đã được stringify từ server
-          let summaryData = response.data;
-          if (typeof summaryData === "string") {
-            try {
-              summaryData = JSON.parse(summaryData);
-              console.log("✅ Parsed summary data:", summaryData);
-            } catch (e) {
-              console.error("❌ Failed to parse summary data:", e);
-              showSummaryError("Lỗi parse dữ liệu tóm tắt");
-              return;
-            }
-          }
-
-          renderSummary(summaryData);
-          document.getElementById("summary-content").style.display = "block";
-          aiContentLoaded.summary = true;
-          showToast("✅ Đã tải bản tóm tắt", "success");
-        } else {
-          showSummaryError(response?.message || "Không thể tải bản tóm tắt");
-        }
-      })
-      .withFailureHandler(function (error) {
-        console.error("❌ Summary error:", error);
-        document.getElementById("summary-loading").style.display = "none";
-        showSummaryError(error?.message || "Lỗi kết nối server");
-      })
-      .getAIContentForWeb(
-        currentLessonData.topicId,
-        "lesson_summary",
-        forceRegenerate
-      );
-  }
-
   // ========== RENDER FUNCTIONS ==========
 
   /**
@@ -528,66 +470,6 @@
       currentFlashcardIndex + 1;
   }
 
-  /**
-   * Render Summary
-   */
-  function renderSummary(data) {
-    const container = document.getElementById("summary-content");
-
-    let html = "";
-
-    // Main points
-    if (data.mainPoints && data.mainPoints.length > 0) {
-      html += '<div class="summary-section">';
-      html += "<h3>📌 Điểm chính</h3>";
-      html += '<ul class="summary-points">';
-      data.mainPoints.forEach((point) => {
-        html += "<li>" + point + "</li>";
-      });
-      html += "</ul></div>";
-    }
-
-    // Key concepts
-    if (data.keyConcepts && data.keyConcepts.length > 0) {
-      html += '<div class="summary-section">';
-      html += "<h3>💡 Khái niệm quan trọng</h3>";
-      html += '<ul class="summary-points">';
-      data.keyConcepts.forEach((concept) => {
-        html +=
-          "<li><strong>" +
-          concept.term +
-          ":</strong> " +
-          concept.definition +
-          "</li>";
-      });
-      html += "</ul></div>";
-    }
-
-    // Keywords
-    if (data.keywords && data.keywords.length > 0) {
-      html += '<div class="summary-section">';
-      html += "<h3>🏷️ Từ khóa</h3>";
-      html += '<div class="summary-keywords">';
-      data.keywords.forEach((keyword) => {
-        html += '<span class="keyword-tag">' + keyword + "</span>";
-      });
-      html += "</div></div>";
-    }
-
-    // Tips
-    if (data.studyTips && data.studyTips.length > 0) {
-      html += '<div class="summary-section">';
-      html += "<h3>📚 Mẹo học tập</h3>";
-      html += '<ul class="summary-points">';
-      data.studyTips.forEach((tip) => {
-        html += "<li>" + tip + "</li>";
-      });
-      html += "</ul></div>";
-    }
-
-    container.innerHTML = html;
-  }
-
   // ========== FLASHCARD CONTROLS ==========
 
   function flipFlashcard() {
@@ -655,13 +537,6 @@
     document.getElementById("flashcards-error-message").textContent = message;
   }
 
-  function showSummaryError(message) {
-    document.getElementById("summary-loading").style.display = "none";
-    document.getElementById("summary-content").style.display = "none";
-    document.getElementById("summary-error").style.display = "block";
-    document.getElementById("summary-error-message").textContent = message;
-  }
-
   /**
    * Retry loading lesson
    */
@@ -726,7 +601,6 @@
   window.switchLessonTab = switchLessonTab;
   window.loadMindmap = loadMindmap;
   window.loadFlashcards = loadFlashcards;
-  window.loadSummary = loadSummary;
   window.flipFlashcard = flipFlashcard;
   window.nextFlashcard = nextFlashcard;
   window.prevFlashcard = prevFlashcard;
