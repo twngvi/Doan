@@ -2,6 +2,36 @@
   /**
    * Lesson Page Scripts
    * Phase 3: AI Content Integration
+   *
+   * ======================================
+   * 🧠 INTERACTIVE NETWORK MINDMAP v2.0
+   * ======================================
+   *
+   * Visual Structure:
+   *
+   *           Detail Pills (Level 2)
+   *              ┌─────┐
+   *              │ RAM │
+   *              └─────┘
+   *                  ╲
+   *                   ╲
+   *        📚───────── 🔵 Biến ──────╱──── ┌────────┐
+   *      Khái niệm    (Satellite)          │ Gán (=)│
+   *                         │              └────────┘
+   *                         │
+   *                    🧠 Center
+   *                   (Tư Duy LT)
+   *                    ╱       ╲
+   *                   ╱         ╲
+   *            🟣 Quy trình    🟢 Thuật toán
+   *
+   * Features:
+   * - Radial layout (center + satellites)
+   * - Progressive disclosure (click to expand)
+   * - Animated SVG connections
+   * - Pulse effects on center node
+   * - Detail pills appear on click
+   *
    */
 
   let currentLessonData = null;
@@ -151,6 +181,9 @@
           const contentArea = document.getElementById("lesson-content-area");
           contentArea.innerHTML = response.content;
           contentArea.style.display = "block";
+
+          // ⭐ ENHANCE CONTENT WITH FEATURES
+          enhanceLessonContent();
 
           // Show actions after a delay
           setTimeout(() => {
@@ -311,12 +344,23 @@
           flashcardsData = flashcardsRawData.cards || flashcardsRawData;
           if (flashcardsData.length > 0) {
             currentFlashcardIndex = 0;
-            renderCurrentFlashcard();
+            initDeckState(); // Initialize deck tracking
+
+            // Show content FIRST before rendering
+            document.getElementById("flashcards-content").style.display =
+              "flex";
             document.getElementById("flashcard-total").textContent =
               flashcardsData.length;
-            document.getElementById("flashcards-content").style.display =
-              "block";
+
+            // Then render flashcard
+            renderCurrentFlashcard();
             aiContentLoaded.flashcards = true;
+
+            // Setup swipe gestures after content is visible
+            setTimeout(() => {
+              setupSwipeGestures();
+            }, 100);
+
             showToast(
               "✅ Đã tải " + flashcardsData.length + " Flashcards",
               "success"
@@ -340,23 +384,56 @@
       );
   }
 
-  // ========== RENDER FUNCTIONS ==========
+  // ========== INTERACTIVE NETWORK MINDMAP ==========
+
+  // Color palette for nodes
+  const branchColors = [
+    "purple",
+    "pink",
+    "blue",
+    "cyan",
+    "green",
+    "yellow",
+    "red",
+    "indigo",
+  ];
+
+  // State management for Multi-Branch Organic Mindmap
+  let networkState = {
+    expandedNodes: new Set(), // Track which nodes are expanded
+    expandedDetails: {}, // Store detail positions per node { nodeIndex: [positions] }
+    // Pan & Zoom state
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    // Auto-fit control
+    autoFitEnabled: true,
+    // Node positions for physics & bounding box
+    nodePositions: [],
+    // Physics simulation
+    physicsEnabled: true,
+    baseRadius: 32, // Dynamic radius adjusts based on expanded nodes
+  };
 
   /**
-   * Render Mindmap
+   * Render Interactive Network Mindmap
    */
   function renderMindmap(data) {
-    const container = document.getElementById("mindmap-content");
+    const centerContainer = document.getElementById("mindmap-center");
+    const nodesContainer = document.getElementById("mindmap-nodes");
+    const connectionsLayer = document.getElementById("mindmap-connections");
 
-    // Handle if data is still a string (parse failed on server)
+    // Handle if data is still a string
     if (typeof data === "string") {
       console.warn("⚠️ Mindmap data is string, attempting to parse");
       try {
         data = JSON.parse(data);
       } catch (e) {
         console.error("❌ Cannot parse mindmap data:", e);
-        container.innerHTML =
-          '<p class="text-red-600">Lỗi: Dữ liệu mindmap không hợp lệ</p>';
+        showMindmapError("Lỗi: Dữ liệu mindmap không hợp lệ");
         return;
       }
     }
@@ -364,61 +441,788 @@
     // Validate data structure
     if (!data || typeof data !== "object") {
       console.error("❌ Invalid mindmap data structure:", data);
-      container.innerHTML =
-        '<p class="text-red-600">Lỗi: Cấu trúc dữ liệu mindmap không hợp lệ</p>';
+      showMindmapError("Lỗi: Cấu trúc dữ liệu mindmap không hợp lệ");
       return;
     }
 
-    console.log("🧠 Rendering mindmap with data:", data);
+    console.log("🧠 Rendering network mindmap with data:", data);
 
-    let html = '<div class="mindmap-tree">';
+    // Get root title
+    const rootTitle =
+      data.title ||
+      data.centralIdea ||
+      currentLessonData?.topicTitle ||
+      "Chủ đề chính";
 
-    // Root node (topic title)
-    html +=
-      '<div class="mindmap-root">' +
-      (data.title ||
-        data.centralIdea ||
-        currentLessonData?.topicTitle ||
-        "Chủ đề chính") +
-      "</div>";
+    // Get branches
+    const branches = data.branches || data.nodes || [];
 
-    // AI của bạn đang trả về "branches" hoặc "nodes"
-    const branches = data.branches || data.nodes;
+    // Render root node (center) - NO ICON
+    centerContainer.innerHTML = `
+      <div class="mindmap-root-node" onclick="resetMindmapView()">
+        <span>${rootTitle}</span>
+      </div>
+    `;
 
-    if (branches && branches.length > 0) {
-      html += '<div class="mindmap-branches">';
-      branches.forEach((node) => {
-        html += '<div class="mindmap-branch">';
-        html +=
-          '<div class="mindmap-node" style="border-color: ' +
-          (node.color || "#7c3aed") +
-          '">';
-        // AI trả về .label hoặc .name
-        html += (node.icon || "📌") + " " + (node.label || node.name || "");
-        html += "</div>";
+    // Clear containers
+    nodesContainer.innerHTML = "";
+    connectionsLayer.innerHTML = "";
+    document.getElementById("mindmap-details").innerHTML = "";
+    networkState.focusedNodeIndex = null;
+    networkState.expandedNodes.clear();
+    networkState.nodePositions = [];
 
-        if (node.children && node.children.length > 0) {
-          html += '<div class="mindmap-subnodes">';
-          node.children.forEach((child) => {
-            // Hỗ trợ child là string hoặc object {label: ...}
-            const childText =
-              typeof child === "string"
-                ? child
-                : child.label || child.name || "";
-            html += '<div class="mindmap-subnode">' + childText + "</div>";
-          });
-          html += "</div>";
-        }
-        html += "</div>";
-      });
-      html += "</div>";
-    } else {
-      html += '<p class="text-gray-500">Không có dữ liệu mindmap</p>';
+    if (branches.length === 0) {
+      nodesContainer.innerHTML = `
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: rgba(255,255,255,0.6);">
+          <p>Không có dữ liệu mindmap</p>
+        </div>
+      `;
+      return;
     }
 
-    html += "</div>";
-    container.innerHTML = html;
+    // ========== COMPACT BALANCED TREE LAYOUT ==========
+    // Root ở giữa (50%, 50%), satellites chia 2 bên trái/phải
+    const rootX = 50; // Root node chính giữa
+    const rootY = 50; // Centered vertically
+    const horizontalSpacing = 22; // GIẢM khoảng cách ngang (trước là 35)
+
+    // Chia branches thành 2 nhóm: trái (lẻ) và phải (chẵn)
+    const leftBranches = branches.filter((_, i) => i % 2 !== 0); // Odd indices → Left
+    const rightBranches = branches.filter((_, i) => i % 2 === 0); // Even indices → Right
+
+    const totalLeft = leftBranches.length;
+    const totalRight = rightBranches.length;
+
+    // Hàm tính Y để các node nằm sát nhau hơn ở giữa
+    const calculateY = (groupIndex, total) => {
+      if (total === 1) return 50;
+      // Khoảng cách giữa các node là 14% chiều cao màn hình
+      const gap = 14;
+      // Tính vị trí bắt đầu để cụm node nằm giữa màn hình
+      const startY = 50 - ((total - 1) * gap) / 2;
+      return startY + groupIndex * gap;
+    };
+
+    // Store center position
+    networkState.nodePositions.push({ x: rootX, y: rootY, type: "center" });
+
+    branches.forEach((branch, index) => {
+      const branchLabel = branch.label || branch.name || "Nhánh " + (index + 1);
+      const branchIcon = branch.icon || getDefaultIcon(index);
+      const branchColor = branchColors[index % branchColors.length];
+      const children = branch.children || [];
+
+      // Xác định vị trí: lẻ bên trái, chẵn bên phải
+      const isLeft = index % 2 !== 0;
+      const direction = isLeft ? -1 : 1; // -1: Left, 1: Right
+
+      // Tính vị trí trong nhóm của nó
+      const groupIndex = isLeft
+        ? leftBranches.indexOf(branch)
+        : rightBranches.indexOf(branch);
+      const groupLength = isLeft ? totalLeft : totalRight;
+
+      // Calculate position với hàm calculateY mới
+      const x = rootX + direction * horizontalSpacing;
+      const y = calculateY(groupIndex, groupLength);
+
+      // Create satellite node
+      const nodeEl = document.createElement("div");
+      nodeEl.className = "satellite-node";
+      nodeEl.setAttribute("data-color", branchColor);
+      nodeEl.setAttribute("data-index", index);
+      nodeEl.setAttribute("data-base-x", x); // Store original position
+      nodeEl.setAttribute("data-base-y", y);
+      nodeEl.setAttribute("data-direction", direction); // -1: left, 1: right
+      nodeEl.setAttribute("data-group-index", groupIndex); // Lưu thứ tự trong nhóm
+      nodeEl.setAttribute("data-is-left", isLeft); // Lưu phía (trái/phải)
+      nodeEl.style.left = x + "%";
+      nodeEl.style.top = y + "%";
+      nodeEl.style.transform = "translate(-50%, -50%)";
+      nodeEl.style.transition = "all 0.4s ease"; // Smooth sliding
+
+      nodeEl.innerHTML = `
+        <div class="node-circle">
+          <span class="node-label">${branchLabel}</span>
+        </div>
+      `;
+
+      // Store children data for later expansion
+      nodeEl.dataset.children = JSON.stringify(children);
+
+      // Store position for bounding box calculation
+      networkState.nodePositions.push({
+        x,
+        y,
+        type: "satellite",
+        index,
+        direction,
+      });
+
+      // Click handler for expansion
+      nodeEl.onclick = () => toggleNodeExpansion(index, nodeEl, branchColor);
+
+      nodesContainer.appendChild(nodeEl);
+
+      // Draw connection line from root to satellite (horizontal flow)
+      drawConnection(connectionsLayer, rootX, rootY, x, y, branchColor, index);
+    });
+
+    // Initialize pan & zoom controls
+    initPanZoomControls();
+
+    // Auto-fit to screen after initial render
+    setTimeout(() => {
+      fitToScreen(true); // Smooth animation on first load
+    }, 100);
   }
+
+  /**
+   * Draw SVG connection line between two points
+   */
+  /**
+   * Draw Smooth Connection - Màu xám đậm rõ trên nền sáng
+   */
+  function drawConnection(svg, x1, y1, x2, y2, color, index) {
+    const svgNS = "http://www.w3.org/2000/svg";
+
+    // Create smooth bezier curve path
+    const path = document.createElementNS(svgNS, "path");
+
+    // Calculate control points for smooth S-curve
+    const deltaX = x2 - x1;
+
+    // Bezier curve: đường cong mềm mại từ root đến satellite
+    const ctrlX1 = x1 + deltaX * 0.5;
+    const ctrlY1 = y1;
+    const ctrlX2 = x2 - deltaX * 0.5;
+    const ctrlY2 = y2;
+
+    const pathData = `M ${x1}% ${y1}% C ${ctrlX1}% ${ctrlY1}%, ${ctrlX2}% ${ctrlY2}%, ${x2}% ${y2}%`;
+
+    path.setAttribute("d", pathData);
+    path.setAttribute("class", "connection-line");
+    path.setAttribute("data-index", index);
+    path.setAttribute("stroke", "#94a3b8"); // Màu xám đậm cố định
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+
+    svg.appendChild(path);
+  }
+
+  /**
+   * Get hex color from color name
+   */
+  function getColorHex(colorName) {
+    const colorMap = {
+      purple: "#7c3aed",
+      pink: "#ec4899",
+      blue: "#3b82f6",
+      cyan: "#06b6d4",
+      green: "#10b981",
+      yellow: "#f59e0b",
+      red: "#ef4444",
+      indigo: "#6366f1",
+    };
+    return colorMap[colorName] || "#7c3aed";
+  }
+
+  /**
+   * Toggle node expansion - Multi-Branch Organic Mindmap
+   * Each node can be independently expanded/collapsed
+   */
+  function toggleNodeExpansion(nodeIndex, nodeEl, color) {
+    const isExpanded = networkState.expandedNodes.has(nodeIndex);
+
+    if (isExpanded) {
+      // Collapse this node
+      collapseNode(nodeIndex);
+    } else {
+      // Expand this node
+      expandNode(nodeIndex, nodeEl, color);
+    }
+
+    // Apply physics-based re-layout if multiple nodes are expanded
+    if (networkState.physicsEnabled && networkState.expandedNodes.size > 0) {
+      setTimeout(() => {
+        applyPhysicsLayout();
+      }, 50);
+    }
+
+    // Auto-fit to show all content (The Breathing Map!)
+    setTimeout(() => {
+      fitToScreen(true);
+    }, 150);
+  }
+
+  /**
+   * Expand a single node
+   */
+  function expandNode(nodeIndex, nodeEl, color) {
+    networkState.expandedNodes.add(nodeIndex);
+
+    // Add visual indicator that this node is expanded
+    nodeEl.classList.add("expanded");
+
+    // Get children data
+    const children = JSON.parse(nodeEl.dataset.children || "[]");
+
+    if (children.length === 0) {
+      showToast("Không có chi tiết cho mục này", "info");
+      networkState.expandedNodes.delete(nodeIndex);
+      return;
+    }
+
+    const detailsContainer = document.getElementById("mindmap-details");
+
+    // Get node position
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const containerRect = nodeEl.parentElement.getBoundingClientRect();
+
+    const nodeX =
+      ((nodeRect.left + nodeRect.width / 2 - containerRect.left) /
+        containerRect.width) *
+      100;
+    const nodeY =
+      ((nodeRect.top + nodeRect.height / 2 - containerRect.top) /
+        containerRect.height) *
+      100;
+
+    // Get direction from node: -1 = left side, 1 = right side
+    const direction = parseInt(nodeEl.getAttribute("data-direction")) || 1;
+
+    // Details xổ ra phía ngoài (xa tâm): left node -> details bên trái, right node -> details bên phải
+    const detailOffset = 22; // Khoảng cách từ satellite đến details
+    const detailStartX = nodeX + direction * detailOffset; // Xa tâm theo hướng của node
+    const detailVerticalSpacing = 5.5; // Spacing giữa các detail cards
+    const gridColumns = 1; // Single column
+
+    children.forEach((child, i) => {
+      const childText =
+        typeof child === "string" ? child : child.label || child.name || "";
+
+      // Grid layout: vertical column xa phía ngoài
+      const col = i % gridColumns;
+      const row = Math.floor(i / gridColumns);
+      const detailX = detailStartX + col * 18 * direction; // Multi-column cũng theo hướng
+      const detailY =
+        nodeY -
+        ((children.length - 1) * detailVerticalSpacing) / 2 +
+        row * detailVerticalSpacing;
+
+      const detailNode = document.createElement("div");
+      detailNode.className = "detail-node";
+      detailNode.setAttribute("data-parent", nodeIndex); // Track parent
+      detailNode.style.left = detailX + "%";
+      detailNode.style.top = detailY + "%";
+      detailNode.style.transform = "translate(-50%, -50%)";
+      detailNode.style.animationDelay = i * 0.06 + "s"; // Staggered animation
+
+      // Detail pill KHÔNG CÓ BULLET
+      detailNode.innerHTML = `
+        <div class="detail-pill" style="--node-color: ${getColorHex(color)}">
+          <span>${childText}</span>
+        </div>
+      `;
+
+      detailsContainer.appendChild(detailNode);
+
+      // Store detail positions for this node
+      if (!networkState.expandedDetails[nodeIndex]) {
+        networkState.expandedDetails[nodeIndex] = [];
+      }
+      networkState.expandedDetails[nodeIndex].push({
+        x: detailX,
+        y: detailY,
+        type: "detail",
+        parentIndex: nodeIndex,
+      });
+
+      // Draw elbow connection from parent node to detail
+      const connectionsLayer = document.getElementById("mindmap-connections");
+      const detailPath = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path"
+      );
+
+      // Smooth elbow connector theo hướng của node
+      const elbowX = nodeX + (detailX - nodeX) * 0.5;
+      const pathData = `M ${nodeX}% ${nodeY}% L ${elbowX}% ${nodeY}% L ${elbowX}% ${detailY}% L ${detailX}% ${detailY}%`;
+
+      detailPath.setAttribute("d", pathData);
+      detailPath.setAttribute("class", "connection-line detail-connection");
+      detailPath.setAttribute("data-parent", nodeIndex); // Track parent
+      detailPath.setAttribute("stroke", getColorHex(color));
+      detailPath.setAttribute("stroke-width", "2");
+      detailPath.setAttribute("stroke-dasharray", "6 4"); // Dashed line
+      detailPath.setAttribute("fill", "none");
+      connectionsLayer.appendChild(detailPath);
+    });
+
+    showToast(
+      `✨ Mở: ${nodeEl.querySelector(".node-label").textContent} (${
+        children.length
+      } mục)`,
+      "success"
+    );
+  }
+
+  /**
+   * Collapse a single node
+   */
+  function collapseNode(nodeIndex) {
+    networkState.expandedNodes.delete(nodeIndex);
+
+    // Remove visual indicator
+    const allNodes = document.querySelectorAll(".satellite-node");
+    if (allNodes[nodeIndex]) {
+      allNodes[nodeIndex].classList.remove("expanded");
+    }
+
+    // Remove detail nodes for this parent
+    const detailNodes = document.querySelectorAll(
+      `.detail-node[data-parent="${nodeIndex}"]`
+    );
+    detailNodes.forEach((node) => node.remove());
+
+    // Remove detail connections for this parent
+    const detailConnections = document.querySelectorAll(
+      `.detail-connection[data-parent="${nodeIndex}"]`
+    );
+    detailConnections.forEach((conn) => conn.remove());
+
+    // Clear detail positions for this node
+    delete networkState.expandedDetails[nodeIndex];
+
+    showToast("🗙 Đã đóng nhánh", "info");
+  }
+
+  /**
+   * Reset mindmap view - Multi-Branch version
+   */
+  function resetMindmapView() {
+    const detailsContainer = document.getElementById("mindmap-details");
+    const allNodes = document.querySelectorAll(".satellite-node");
+    const connectionsLayer = document.getElementById("mindmap-connections");
+
+    // Remove ALL detail nodes
+    detailsContainer.innerHTML = "";
+
+    // Remove ALL detail connections
+    connectionsLayer
+      .querySelectorAll(".detail-connection")
+      .forEach((el) => el.remove());
+
+    // Clear expanded state
+    networkState.expandedNodes.clear();
+    networkState.expandedDetails = {};
+
+    // Remove expanded class from all nodes
+    allNodes.forEach((n) => n.classList.remove("expanded"));
+
+    // Re-fit to screen
+    setTimeout(() => {
+      fitToScreen(true);
+    }, 100);
+
+    showToast("Đã đóng tất cả nhánh", "info");
+  }
+
+  // ========== PHYSICS-BASED LAYOUT ==========
+
+  /**
+   * Smart Sliding: Apply intelligent repositioning when nodes expand
+   * ĐẨY CÁC NODE BÊN DƯỚI xuống để không bị đè
+   */
+  function applySmartSliding() {
+    const allNodes = document.querySelectorAll(".satellite-node");
+
+    // Reset tất cả về vị trí gốc trước khi tính toán lại
+    allNodes.forEach((node) => {
+      const baseY = parseFloat(node.getAttribute("data-base-y"));
+      node.style.top = baseY + "%";
+    });
+
+    // Lặp qua từng node để xem node nào đang mở
+    allNodes.forEach((activeNode) => {
+      // Nếu node này đang mở (có class expanded)
+      if (activeNode.classList.contains("expanded")) {
+        const isLeft = activeNode.getAttribute("data-is-left") === "true";
+        const groupIndex = parseInt(
+          activeNode.getAttribute("data-group-index")
+        );
+
+        // Lấy số lượng con để tính khoảng cách cần đẩy
+        const children = JSON.parse(activeNode.dataset.children || "[]");
+        // Công thức: Mỗi child tốn khoảng 5% chiều cao + 3% padding
+        const pushHeight = children.length * 5 + 3;
+
+        // ĐẨY CÁC NODE BÊN DƯỚI NÓ (cùng phía)
+        allNodes.forEach((siblingNode) => {
+          const siblingLeft =
+            siblingNode.getAttribute("data-is-left") === "true";
+          const siblingIndex = parseInt(
+            siblingNode.getAttribute("data-group-index")
+          );
+
+          // Nếu cùng phía và nằm bên dưới (index lớn hơn)
+          if (siblingLeft === isLeft && siblingIndex > groupIndex) {
+            let currentTop = parseFloat(siblingNode.style.top);
+            siblingNode.style.top = currentTop + pushHeight + "%";
+          }
+        });
+      }
+    });
+
+    console.log("↕️ Smart Sliding applied");
+
+    // Vẽ lại đường dây sau khi các node đã di chuyển
+    updateAllConnections();
+  }
+
+  /**
+   * Update all connection lines after nodes have moved
+   */
+  function updateAllConnections() {
+    const connectionsLayer = document.getElementById("mindmap-connections");
+    const allNodes = document.querySelectorAll(".satellite-node");
+    const rootNode = document.querySelector(".mindmap-root-node");
+
+    if (!connectionsLayer || !rootNode) return;
+
+    // Clear only main connections (keep detail connections)
+    const mainConnections = connectionsLayer.querySelectorAll(
+      "path:not(.detail-connection)"
+    );
+    mainConnections.forEach((conn) => conn.remove());
+
+    // Also clear pulses
+    const pulses = connectionsLayer.querySelectorAll("circle");
+    pulses.forEach((p) => p.remove());
+
+    // Redraw connections with current positions
+    const rootRect = rootNode.getBoundingClientRect();
+    const containerRect = rootNode.parentElement.getBoundingClientRect();
+    const rootX =
+      ((rootRect.left + rootRect.width / 2 - containerRect.left) /
+        containerRect.width) *
+      100;
+    const rootY =
+      ((rootRect.top + rootRect.height / 2 - containerRect.top) /
+        containerRect.height) *
+      100;
+
+    allNodes.forEach((node, index) => {
+      const nodeRect = node.getBoundingClientRect();
+      const nodeX =
+        ((nodeRect.left + nodeRect.width / 2 - containerRect.left) /
+          containerRect.width) *
+        100;
+      const nodeY =
+        ((nodeRect.top + nodeRect.height / 2 - containerRect.top) /
+          containerRect.height) *
+        100;
+
+      const color = node.getAttribute("data-color");
+      drawConnection(
+        connectionsLayer,
+        rootX,
+        rootY,
+        nodeX,
+        nodeY,
+        color,
+        index
+      );
+    });
+  }
+
+  /**
+   * Apply physics-based layout (for future advanced features)
+   */
+  function applyPhysicsLayout() {
+    // Currently using Smart Sliding instead
+    applySmartSliding();
+  }
+
+  /**
+   * Expand all nodes at once
+   */
+  function expandAllNodes() {
+    const allNodes = document.querySelectorAll(".satellite-node");
+
+    allNodes.forEach((node, index) => {
+      if (!networkState.expandedNodes.has(index)) {
+        const color = node.getAttribute("data-color");
+        // Delay each expansion slightly for animation effect
+        setTimeout(() => {
+          toggleNodeExpansion(index, node, color);
+        }, index * 150);
+      }
+    });
+
+    showToast("🌳 Đang mở tất cả nhánh...", "info");
+  }
+
+  /**
+   * Collapse all nodes
+   */
+  function collapseAllNodes() {
+    resetMindmapView();
+  }
+
+  // ========== THE BREATHING MAP: PAN & ZOOM SYSTEM ==========
+
+  /**
+   * Initialize pan & zoom controls
+   */
+  function initPanZoomControls() {
+    const networkContainer = document.querySelector(".network-container");
+    if (!networkContainer) return;
+
+    // Mouse wheel zoom
+    const mindmapNetwork = document.querySelector(".mindmap-network");
+    if (mindmapNetwork) {
+      mindmapNetwork.addEventListener("wheel", handleMouseWheel, {
+        passive: false,
+      });
+    }
+
+    // Drag to pan
+    networkContainer.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    // Touch support
+    networkContainer.addEventListener("touchstart", handleTouchStart, {
+      passive: false,
+    });
+    networkContainer.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    });
+    networkContainer.addEventListener("touchend", handleTouchEnd);
+  }
+
+  /**
+   * Mouse wheel zoom handler
+   */
+  function handleMouseWheel(e) {
+    e.preventDefault();
+    networkState.autoFitEnabled = false; // Disable auto-fit when user zooms manually
+
+    const delta = -e.deltaY / 1000;
+    const newZoom = Math.max(0.3, Math.min(3, networkState.zoom + delta));
+
+    setZoom(newZoom);
+  }
+
+  /**
+   * Mouse drag handlers
+   */
+  function handleMouseDown(e) {
+    // Only pan on background (not on nodes)
+    if (e.target.closest(".satellite-node, .mindmap-root-node, .detail-node")) {
+      return;
+    }
+
+    networkState.isDragging = true;
+    networkState.dragStartX = e.clientX - networkState.panX;
+    networkState.dragStartY = e.clientY - networkState.panY;
+    networkState.autoFitEnabled = false; // Disable auto-fit when user pans manually
+
+    e.preventDefault();
+  }
+
+  function handleMouseMove(e) {
+    if (!networkState.isDragging) return;
+
+    networkState.panX = e.clientX - networkState.dragStartX;
+    networkState.panY = e.clientY - networkState.dragStartY;
+
+    applyTransform();
+  }
+
+  function handleMouseUp(e) {
+    networkState.isDragging = false;
+  }
+
+  /**
+   * Touch handlers for mobile
+   */
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  function handleTouchStart(e) {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      touchStartX = touch.clientX - networkState.panX;
+      touchStartY = touch.clientY - networkState.panY;
+      networkState.autoFitEnabled = false;
+    }
+  }
+
+  function handleTouchMove(e) {
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      networkState.panX = touch.clientX - touchStartX;
+      networkState.panY = touch.clientY - touchStartY;
+      applyTransform();
+    }
+  }
+
+  function handleTouchEnd(e) {
+    // Touch ended
+  }
+
+  /**
+   * Set zoom level
+   */
+  function setZoom(zoom) {
+    networkState.zoom = zoom;
+    applyTransform();
+  }
+
+  /**
+   * Apply transform to network container
+   */
+  function applyTransform(animate = false) {
+    const networkContainer = document.querySelector(".network-container");
+    if (!networkContainer) return;
+
+    const transform = `translate(${networkState.panX}px, ${networkState.panY}px) scale(${networkState.zoom})`;
+
+    if (animate) {
+      networkContainer.style.transition =
+        "transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)";
+    } else {
+      networkContainer.style.transition = "none";
+    }
+
+    networkContainer.style.transform = transform;
+
+    // Remove transition after animation completes
+    if (animate) {
+      setTimeout(() => {
+        networkContainer.style.transition = "none";
+      }, 600);
+    }
+  }
+
+  /**
+   * Fit to screen - Multi-Branch Organic Mindmap version
+   * Calculates bounding box including ALL expanded details
+   */
+  function fitToScreen(animate = true) {
+    const mindmapNetwork = document.querySelector(".mindmap-network");
+    if (!mindmapNetwork) return;
+
+    const containerWidth = mindmapNetwork.offsetWidth;
+    const containerHeight = mindmapNetwork.offsetHeight;
+
+    // Collect ALL positions: center + satellites + all expanded details
+    const allPositions = [...networkState.nodePositions];
+
+    // Add all expanded detail positions
+    Object.values(networkState.expandedDetails).forEach((detailArray) => {
+      allPositions.push(...detailArray);
+    });
+
+    if (allPositions.length === 0) return;
+
+    // Calculate bounding box of all nodes
+    let minX = 100,
+      maxX = 0,
+      minY = 100,
+      maxY = 0;
+
+    allPositions.forEach((pos) => {
+      minX = Math.min(minX, pos.x);
+      maxX = Math.max(maxX, pos.x);
+      minY = Math.min(minY, pos.y);
+      maxY = Math.max(maxY, pos.y);
+    });
+
+    // Dynamic padding based on number of expanded nodes
+    const basePadding = 8;
+    const expandedCount = networkState.expandedNodes.size;
+    const dynamicPadding = basePadding + expandedCount * 1; // More padding with more nodes
+
+    minX -= dynamicPadding;
+    maxX += dynamicPadding;
+    minY -= dynamicPadding;
+    maxY += dynamicPadding;
+
+    // Calculate required zoom to fit bounding box
+    const contentWidth = maxX - minX;
+    const contentHeight = maxY - minY;
+
+    const zoomX = 100 / contentWidth;
+    const zoomY = 100 / contentHeight;
+    const optimalZoom = Math.min(zoomX, zoomY, 1.2); // Cap at 1.2x
+
+    // Calculate center of bounding box
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    // Calculate pan to center the content
+    const targetCenterX = containerWidth / 2;
+    const targetCenterY = containerHeight / 2;
+
+    const panX = targetCenterX - (centerX / 100) * containerWidth * optimalZoom;
+    const panY =
+      targetCenterY - (centerY / 100) * containerHeight * optimalZoom;
+
+    // Apply new transform
+    networkState.zoom = optimalZoom;
+    networkState.panX = panX;
+    networkState.panY = panY;
+
+    applyTransform(animate);
+
+    console.log("🫁 Multi-Branch Breathing:", {
+      zoom: optimalZoom.toFixed(2),
+      expandedNodes: expandedCount,
+      totalPositions: allPositions.length,
+    });
+  }
+
+  /**
+   * Expand all nodes at once
+   */
+  function expandAllNodes() {
+    showToast("Chức năng này sẽ được bổ sung sau", "info");
+    // TODO: Implement expand all logic
+  }
+
+  /**
+   * Collapse all nodes
+   */
+  function collapseAllNodes() {
+    resetMindmapView();
+  }
+
+  /**
+   * Get default icon based on index
+   */
+  function getDefaultIcon(index) {
+    const icons = ["📚", "💡", "🎯", "📝", "🔑", "⭐", "📌", "🏷️"];
+    return icons[index % icons.length];
+  }
+
+  // Make functions global - The Breathing Map controls
+  window.resetMindmapView = resetMindmapView;
+  window.fitToScreen = fitToScreen;
+  window.setZoom = setZoom;
+  window.expandAllNodes = expandAllNodes;
+  window.collapseAllNodes = collapseAllNodes;
+
+  // ========== RENDER FUNCTIONS ==========
+
+  // Flashcard state variables
+  let learnedCount = 0;
+  let reviewCount = 0;
+  let flashcardResults = []; // Track learned/review status for each card
 
   /**
    * Render current flashcard
@@ -427,6 +1231,7 @@
     if (!flashcardsData || flashcardsData.length === 0) return;
 
     const card = flashcardsData[currentFlashcardIndex];
+    const flashcardWrapper = document.getElementById("flashcard-wrapper");
     const flashcardEl = document.getElementById("current-flashcard");
 
     // Remove flipped state
@@ -440,19 +1245,15 @@
 
     // Xử lý front (mặt trước)
     if (card.front && typeof card.front === "object") {
-      // Structure lồng nhau: { front: { content: "..." } }
       frontText = card.front.content || card.front.term || "";
     } else {
-      // Structure đơn giản: { term: "..." } hoặc { front: "..." }
       frontText = card.term || card.front || "";
     }
 
     // Xử lý back (mặt sau)
     if (card.back && typeof card.back === "object") {
-      // Structure lồng nhau: { back: { content: "..." } }
       backText = card.back.content || card.back.definition || "";
     } else {
-      // Structure đơn giản: { definition: "..." } hoặc { back: "..." }
       backText = card.definition || card.back || "";
     }
 
@@ -468,6 +1269,46 @@
     document.getElementById("flashcard-back-text").textContent = backText;
     document.getElementById("flashcard-current").textContent =
       currentFlashcardIndex + 1;
+
+    // Update progress bar
+    updateDeckProgress();
+  }
+
+  /**
+   * Update deck progress UI
+   */
+  function updateDeckProgress() {
+    const total = flashcardsData.length;
+    const completed = learnedCount + reviewCount;
+    const progressPercent = total > 0 ? (completed / total) * 100 : 0;
+
+    // Update progress bar
+    const progressFill = document.getElementById("deck-progress-bar");
+    if (progressFill) {
+      progressFill.style.width = progressPercent + "%";
+    }
+
+    // Update counter
+    const progressCounter = document.querySelector(".progress-counter");
+    if (progressCounter) {
+      progressCounter.textContent = `${currentFlashcardIndex + 1}/${total}`;
+    }
+
+    // Update stats
+    const statLearned = document.getElementById("learned-count");
+    const statReview = document.getElementById("review-count");
+    if (statLearned) statLearned.textContent = learnedCount;
+    if (statReview) statReview.textContent = reviewCount;
+  }
+
+  /**
+   * Initialize deck state
+   */
+  function initDeckState() {
+    learnedCount = 0;
+    reviewCount = 0;
+    flashcardResults = new Array(flashcardsData.length).fill(null);
+    updateDeckProgress();
   }
 
   // ========== FLASHCARD CONTROLS ==========
@@ -479,19 +1320,392 @@
   function nextFlashcard() {
     if (currentFlashcardIndex < flashcardsData.length - 1) {
       currentFlashcardIndex++;
+      animateCardIn();
       renderCurrentFlashcard();
     } else {
-      showToast("Đây là thẻ cuối cùng!", "info");
+      showDeckComplete();
     }
   }
 
   function prevFlashcard() {
     if (currentFlashcardIndex > 0) {
       currentFlashcardIndex--;
+      animateCardIn();
       renderCurrentFlashcard();
     } else {
       showToast("Đây là thẻ đầu tiên!", "info");
     }
+  }
+
+  /**
+   * Mark current card as learned and go to next
+   */
+  function markAsLearned() {
+    if (flashcardResults[currentFlashcardIndex] !== "learned") {
+      // Remove from review if it was there
+      if (flashcardResults[currentFlashcardIndex] === "review") {
+        reviewCount--;
+      }
+      flashcardResults[currentFlashcardIndex] = "learned";
+      learnedCount++;
+      updateDeckProgress(); // Update progress bar immediately
+    }
+
+    // Animate card flying right
+    animateCardOut("right", () => {
+      if (currentFlashcardIndex < flashcardsData.length - 1) {
+        currentFlashcardIndex++;
+        animateCardIn();
+        renderCurrentFlashcard();
+      } else {
+        showDeckComplete();
+      }
+    });
+  }
+
+  /**
+   * Mark current card as review and go to next
+   */
+  function markAsReview() {
+    if (flashcardResults[currentFlashcardIndex] !== "review") {
+      // Remove from learned if it was there
+      if (flashcardResults[currentFlashcardIndex] === "learned") {
+        learnedCount--;
+      }
+      flashcardResults[currentFlashcardIndex] = "review";
+      reviewCount++;
+      updateDeckProgress(); // Update progress bar immediately
+    }
+
+    // Animate card flying left
+    animateCardOut("left", () => {
+      if (currentFlashcardIndex < flashcardsData.length - 1) {
+        currentFlashcardIndex++;
+        animateCardIn();
+        renderCurrentFlashcard();
+      } else {
+        showDeckComplete();
+      }
+    });
+  }
+
+  /**
+   * Animate card flying out
+   */
+  function animateCardOut(direction, callback) {
+    const wrapper = document.getElementById("flashcard-wrapper");
+    if (!wrapper) return callback && callback();
+
+    wrapper.classList.add(direction === "right" ? "fly-right" : "fly-left");
+
+    setTimeout(() => {
+      wrapper.classList.remove("fly-right", "fly-left");
+      if (callback) callback();
+    }, 500);
+  }
+
+  /**
+   * Animate card flying in
+   */
+  function animateCardIn() {
+    const wrapper = document.getElementById("flashcard-wrapper");
+    if (!wrapper) return;
+
+    wrapper.classList.add("fly-in");
+    setTimeout(() => {
+      wrapper.classList.remove("fly-in");
+    }, 600);
+  }
+
+  /**
+   * Show deck completion screen
+   */
+  function showDeckComplete() {
+    const deckArea = document.getElementById("deck-area");
+    const deckActions = document.querySelector(".deck-actions");
+    const deckControls = document.querySelector(".deck-controls");
+    const keyboardHints = document.querySelector(".keyboard-hints");
+
+    // Save progress to Google Sheet
+    saveFlashcardProgress();
+
+    // Update final progress bar
+    updateDeckProgress();
+
+    if (deckArea) {
+      const hasReviewCards = reviewCount > 0;
+      deckArea.innerHTML = `
+        <div class="deck-complete">
+          <div class="complete-icon">🎉</div>
+          <h3 class="complete-title">Hoàn thành!</h3>
+          <p style="opacity: 0.7; margin-bottom: 1rem;">Bạn đã xem hết tất cả các thẻ</p>
+          <div class="complete-stats">
+            <div class="complete-stat learned">
+              <div class="complete-stat-value">${learnedCount}</div>
+              <div class="complete-stat-label">Đã thuộc</div>
+            </div>
+            <div class="complete-stat review">
+              <div class="complete-stat-value">${reviewCount}</div>
+              <div class="complete-stat-label">Cần ôn lại</div>
+            </div>
+          </div>
+          <div class="complete-actions" style="display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; justify-content: center;">
+            ${
+              hasReviewCards
+                ? `
+            <button onclick="reviewWrongCards()" class="action-btn btn-review" style="min-width: 140px;">
+              <span class="btn-icon">↻</span>
+              <span class="btn-text">Ôn ${reviewCount} thẻ sai</span>
+            </button>
+            `
+                : ""
+            }
+            <button onclick="restartDeck()" class="action-btn btn-flip" style="min-width: 140px;">
+              <span class="btn-icon">🔄</span>
+              <span class="btn-text">Học lại từ đầu</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (deckActions) deckActions.style.display = "none";
+    if (deckControls) deckControls.style.display = "none";
+    if (keyboardHints) keyboardHints.style.display = "none";
+
+    // Update progress to 100%
+    const progressFill = document.getElementById("deck-progress-bar");
+    if (progressFill) progressFill.style.width = "100%";
+  }
+
+  /**
+   * Save flashcard progress to user's Google Sheet
+   */
+  function saveFlashcardProgress() {
+    if (!currentLessonData?.topicId) return;
+
+    const progressData = {
+      topicId: currentLessonData.topicId,
+      totalCards: flashcardsData.length,
+      learnedCount: learnedCount,
+      reviewCount: reviewCount,
+      results: flashcardResults.map((result, index) => ({
+        cardId: flashcardsData[index]?.id || index,
+        status: result || "not-reviewed",
+      })),
+      completedAt: new Date().toISOString(),
+    };
+
+    console.log("💾 Saving flashcard progress:", progressData);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response?.success) {
+          console.log("✅ Progress saved successfully");
+        } else {
+          console.error("❌ Failed to save progress:", response?.message);
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving progress:", error);
+      })
+      .saveFlashcardProgress(JSON.stringify(progressData));
+  }
+
+  /**
+   * Load saved flashcard progress
+   */
+  function loadFlashcardProgress(callback) {
+    if (!currentLessonData?.topicId) {
+      if (callback) callback(null);
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response?.success && response.data) {
+          let progressData = response.data;
+          if (typeof progressData === "string") {
+            try {
+              progressData = JSON.parse(progressData);
+            } catch (e) {
+              console.error("Failed to parse progress data");
+            }
+          }
+          console.log("📥 Loaded flashcard progress:", progressData);
+          if (callback) callback(progressData);
+        } else {
+          if (callback) callback(null);
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error loading progress:", error);
+        if (callback) callback(null);
+      })
+      .getFlashcardProgress(currentLessonData.topicId);
+  }
+
+  /**
+   * Review only wrong/review cards
+   */
+  function reviewWrongCards() {
+    // Filter flashcards to only include review cards
+    const reviewCardIndexes = [];
+    flashcardResults.forEach((result, index) => {
+      if (result === "review") {
+        reviewCardIndexes.push(index);
+      }
+    });
+
+    if (reviewCardIndexes.length === 0) {
+      showToast("Không có thẻ nào cần ôn lại!", "info");
+      return;
+    }
+
+    // Create a subset of cards to review
+    const originalFlashcards = [...flashcardsData];
+    flashcardsData = reviewCardIndexes.map((i) => originalFlashcards[i]);
+
+    // Reset state for review session
+    currentFlashcardIndex = 0;
+    learnedCount = 0;
+    reviewCount = 0;
+    flashcardResults = new Array(flashcardsData.length).fill(null);
+
+    // Reload UI
+    reloadFlashcardUI();
+    showToast(`📚 Ôn lại ${flashcardsData.length} thẻ`, "info");
+  }
+
+  /**
+   * Reload flashcard UI without fetching data
+   */
+  function reloadFlashcardUI() {
+    // Reset deck area HTML
+    const deckArea = document.getElementById("deck-area");
+    if (deckArea) {
+      deckArea.innerHTML = `
+        <!-- Background cards (stacking effect) -->
+        <div class="deck-stack">
+          <div class="stack-card stack-3"></div>
+          <div class="stack-card stack-2"></div>
+          <div class="stack-card stack-1"></div>
+        </div>
+
+        <!-- Main Flashcard -->
+        <div class="flashcard-wrapper" id="flashcard-wrapper">
+          <div class="flashcard" id="current-flashcard" onclick="flipFlashcard()">
+            <div class="flashcard-inner">
+              <!-- Front Side -->
+              <div class="flashcard-front">
+                <div class="card-shine"></div>
+                <div class="card-pattern"></div>
+                <div class="flashcard-label">
+                  <span class="label-icon">❓</span>
+                  Thuật ngữ
+                </div>
+                <div class="flashcard-text" id="flashcard-front-text">
+                  Loading...
+                </div>
+              </div>
+              <!-- Back Side -->
+              <div class="flashcard-back">
+                <div class="card-shine"></div>
+                <div class="flashcard-label">
+                  <span class="label-icon">💡</span>
+                  Định nghĩa
+                </div>
+                <div class="flashcard-text flashcard-answer" id="flashcard-back-text">
+                  Loading...
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Swipe Indicators -->
+        <div class="swipe-indicator swipe-left" id="swipe-left-indicator">
+          <span>↻ Học lại</span>
+        </div>
+        <div class="swipe-indicator swipe-right" id="swipe-right-indicator">
+          <span>✓ Đã thuộc</span>
+        </div>
+      `;
+    }
+
+    // Show action buttons again
+    const deckActions = document.querySelector(".deck-actions");
+    const deckControls = document.querySelector(".deck-controls");
+    const keyboardHints = document.querySelector(".keyboard-hints");
+    if (deckActions) deckActions.style.display = "flex";
+    if (deckControls) deckControls.style.display = "flex";
+    if (keyboardHints) keyboardHints.style.display = "flex";
+
+    // Update total and render
+    document.getElementById("flashcard-total").textContent =
+      flashcardsData.length;
+    renderCurrentFlashcard();
+    updateDeckProgress();
+
+    // Re-setup swipe gestures
+    setTimeout(() => {
+      setupSwipeGestures();
+    }, 100);
+  }
+
+  /**
+   * Restart deck from beginning
+   */
+  function restartDeck() {
+    console.log("🔄 Restarting deck from beginning...");
+
+    // Reset state
+    currentFlashcardIndex = 0;
+    learnedCount = 0;
+    reviewCount = 0;
+    flashcardResults = [];
+
+    // Show loading state
+    document.getElementById("flashcards-loading").style.display = "block";
+    document.getElementById("flashcards-content").style.display = "none";
+
+    // Reload flashcards (force from cache is fine, just reset progress)
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Flashcards reloaded:", response);
+        document.getElementById("flashcards-loading").style.display = "none";
+
+        if (response && response.success && response.data) {
+          let flashcardsRawData = response.data;
+          if (typeof flashcardsRawData === "string") {
+            try {
+              flashcardsRawData = JSON.parse(flashcardsRawData);
+            } catch (e) {
+              console.error("❌ Failed to parse flashcards data:", e);
+              showFlashcardsError("Lỗi parse dữ liệu flashcards");
+              return;
+            }
+          }
+
+          flashcardsData = flashcardsRawData.cards || flashcardsRawData;
+          if (flashcardsData.length > 0) {
+            currentFlashcardIndex = 0;
+            flashcardResults = new Array(flashcardsData.length).fill(null);
+
+            // Rebuild deck UI
+            reloadFlashcardUI();
+            showToast("🔄 Bắt đầu lại từ đầu", "success");
+          }
+        } else {
+          showFlashcardsError(response?.message || "Không thể tải Flashcards");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Flashcards reload error:", error);
+        document.getElementById("flashcards-loading").style.display = "none";
+        showFlashcardsError(error?.message || "Lỗi kết nối server");
+      })
+      .getAIContentForWeb(currentLessonData.topicId, "flashcards", false);
   }
 
   function shuffleFlashcards() {
@@ -504,15 +1718,133 @@
       ];
     }
     currentFlashcardIndex = 0;
+    initDeckState();
     renderCurrentFlashcard();
     showToast("🔀 Đã xáo trộn thẻ", "success");
   }
 
   function resetFlashcards() {
     currentFlashcardIndex = 0;
+    initDeckState();
     renderCurrentFlashcard();
     showToast("🔄 Đã reset về thẻ đầu tiên", "success");
   }
+
+  /**
+   * Setup swipe gestures for flashcards
+   */
+  function setupSwipeGestures() {
+    const flashcardWrapper = document.getElementById("flashcard-wrapper");
+    if (!flashcardWrapper) return;
+
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let isDragging = false;
+
+    const swipeLeftIndicator = document.getElementById("swipe-left-indicator");
+    const swipeRightIndicator = document.getElementById(
+      "swipe-right-indicator"
+    );
+
+    flashcardWrapper.addEventListener(
+      "touchstart",
+      (e) => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        isDragging = true;
+        flashcardWrapper.classList.add("dragging");
+      },
+      { passive: true }
+    );
+
+    flashcardWrapper.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!isDragging) return;
+
+        currentX = e.touches[0].clientX - startX;
+        const currentY = e.touches[0].clientY - startY;
+
+        // Only handle horizontal swipes
+        if (Math.abs(currentX) > Math.abs(currentY)) {
+          flashcardWrapper.style.transform = `translateX(${currentX}px) rotate(${
+            currentX * 0.05
+          }deg)`;
+
+          // Show swipe indicators
+          if (currentX < -50 && swipeLeftIndicator) {
+            swipeLeftIndicator.classList.add("visible");
+            swipeRightIndicator?.classList.remove("visible");
+          } else if (currentX > 50 && swipeRightIndicator) {
+            swipeRightIndicator.classList.add("visible");
+            swipeLeftIndicator?.classList.remove("visible");
+          } else {
+            swipeLeftIndicator?.classList.remove("visible");
+            swipeRightIndicator?.classList.remove("visible");
+          }
+        }
+      },
+      { passive: true }
+    );
+
+    flashcardWrapper.addEventListener("touchend", () => {
+      isDragging = false;
+      flashcardWrapper.classList.remove("dragging");
+      flashcardWrapper.style.transform = "";
+
+      swipeLeftIndicator?.classList.remove("visible");
+      swipeRightIndicator?.classList.remove("visible");
+
+      // Trigger action based on swipe distance
+      if (currentX < -100) {
+        markAsReview();
+      } else if (currentX > 100) {
+        markAsLearned();
+      }
+
+      currentX = 0;
+    });
+  }
+
+  /**
+   * Setup keyboard shortcuts for flashcards
+   */
+  function setupFlashcardKeyboard() {
+    document.addEventListener("keydown", (e) => {
+      // Only handle if flashcards tab is active
+      const flashcardsTab = document.getElementById("tab-flashcards");
+      if (!flashcardsTab || !flashcardsTab.classList.contains("active")) return;
+      if (!flashcardsData || flashcardsData.length === 0) return;
+
+      switch (e.key) {
+        case " ":
+        case "Enter":
+          e.preventDefault();
+          flipFlashcard();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          markAsReview();
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          markAsLearned();
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          prevFlashcard();
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          nextFlashcard();
+          break;
+      }
+    });
+  }
+
+  // Initialize keyboard shortcuts when page loads
+  setupFlashcardKeyboard();
 
   // ========== ERROR HANDLERS ==========
 
@@ -606,6 +1938,801 @@
   window.prevFlashcard = prevFlashcard;
   window.shuffleFlashcards = shuffleFlashcards;
   window.resetFlashcards = resetFlashcards;
+  window.markAsLearned = markAsLearned;
+  window.markAsReview = markAsReview;
+  window.restartDeck = restartDeck;
+  window.reviewWrongCards = reviewWrongCards;
+  window.reloadFlashcardUI = reloadFlashcardUI;
+  window.copyCodeToClipboard = copyCodeToClipboard;
+  window.handleMiniQuizAnswer = handleMiniQuizAnswer;
+  window.toggleSpoiler = toggleSpoiler;
+  window.toggleTOC = toggleTOC;
 
   console.log("✅ Lesson scripts loaded (Phase 3: AI Content Integration)");
+
+  // ========================================
+  // 🎨 ENHANCED LESSON CONTENT FEATURES
+  // ========================================
+
+  /**
+   * Main function to enhance lesson content after loading
+   */
+  function enhanceLessonContent() {
+    console.log("🎨 Enhancing lesson content...");
+
+    const contentArea = document.getElementById("lesson-content-area");
+    if (!contentArea) return;
+
+    // Apply all enhancements
+    enhanceSyntaxHighlighting(contentArea);
+    enhanceCalloutBlocks(contentArea);
+    enhanceShortLists(contentArea);
+    enhanceYouTubeLinks(contentArea);
+    enhanceMiniQuizzes(contentArea);
+    enhanceSpoilers(contentArea);
+
+    // Generate TOC after all content is enhanced
+    generateTableOfContents(contentArea);
+
+    console.log("✅ Content enhancement complete!");
+  }
+
+  // ========================================
+  // 1️⃣ SYNTAX HIGHLIGHTING
+  // ========================================
+
+  /**
+   * Detect and enhance code blocks with Prism.js highlighting
+   */
+  function enhanceSyntaxHighlighting(container) {
+    console.log("📝 Enhancing code blocks...");
+
+    // Method 1: Find existing <pre><code> blocks
+    const existingCodeBlocks = container.querySelectorAll(
+      "pre:not(.code-block-wrapper pre), code:not(.code-block-wrapper code)"
+    );
+
+    // Method 2: Find monospace font spans (from Google Docs)
+    const monoSpans = container.querySelectorAll("span");
+    let codeBuffer = [];
+    let lastCodeParent = null;
+
+    monoSpans.forEach((span) => {
+      const style = span.getAttribute("style") || "";
+      const isMonospace =
+        style.includes("Courier") ||
+        style.includes("Consolas") ||
+        style.includes("monospace") ||
+        style.includes("Monaco") ||
+        style.includes("Source Code");
+
+      if (isMonospace && span.textContent.trim()) {
+        // Check if it's a substantial code block (not just inline code)
+        const text = span.textContent;
+        if (text.includes("\n") || text.length > 50 || codeBuffer.length > 0) {
+          codeBuffer.push(span.textContent);
+          if (!lastCodeParent) lastCodeParent = span.parentElement;
+        }
+      } else if (codeBuffer.length > 0 && lastCodeParent) {
+        // End of code block detected
+        createCodeBlock(lastCodeParent, codeBuffer.join(""));
+        codeBuffer = [];
+        lastCodeParent = null;
+      }
+    });
+
+    // Handle remaining buffer
+    if (codeBuffer.length > 0 && lastCodeParent) {
+      createCodeBlock(lastCodeParent, codeBuffer.join(""));
+    }
+
+    // Enhance existing code blocks
+    existingCodeBlocks.forEach((el) => {
+      if (el.closest(".code-block-wrapper")) return; // Skip already enhanced
+
+      const isPreTag = el.tagName === "PRE";
+      const code = isPreTag
+        ? el.querySelector("code")?.textContent || el.textContent
+        : el.textContent;
+
+      if (code.trim().length > 20) {
+        createCodeBlock(el, code);
+      }
+    });
+  }
+
+  /**
+   * Create a styled code block with copy button
+   */
+  function createCodeBlock(targetElement, code) {
+    const language = detectLanguage(code);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "code-block-wrapper";
+    wrapper.innerHTML = `
+      <div class="code-block-header">
+        <span class="code-block-lang">${language}</span>
+        <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy
+        </button>
+      </div>
+      <pre><code class="language-${language}">${escapeHtml(
+      code.trim()
+    )}</code></pre>
+    `;
+
+    // Replace target element
+    if (targetElement.parentElement) {
+      targetElement.parentElement.replaceChild(wrapper, targetElement);
+    }
+  }
+
+  /**
+   * Detect programming language from code content
+   */
+  function detectLanguage(code) {
+    const patterns = {
+      python: [
+        /\bdef\s+\w+\(/,
+        /\bimport\s+\w+/,
+        /\bprint\s*\(/,
+        /\bclass\s+\w+:/,
+        /\bif\s+__name__/,
+      ],
+      javascript: [
+        /\bfunction\s+\w+/,
+        /\bconst\s+\w+/,
+        /\blet\s+\w+/,
+        /=>/,
+        /\bconsole\.log/,
+      ],
+      java: [
+        /\bpublic\s+class/,
+        /\bpublic\s+static\s+void/,
+        /System\.out\.println/,
+      ],
+      csharp: [/\busing\s+System/, /\bnamespace\s+\w+/, /Console\.WriteLine/],
+      html: [/<\/?[a-z][\s\S]*>/i, /<!DOCTYPE/i],
+      css: [/\{[\s\S]*:[\s\S]*;[\s\S]*\}/, /@media/, /@keyframes/],
+      sql: [/\bSELECT\b/i, /\bFROM\b/i, /\bWHERE\b/i, /\bINSERT\b/i],
+      bash: [/^\s*#!\/bin\/bash/, /\$\(/, /\becho\s+/],
+    };
+
+    for (const [lang, regexps] of Object.entries(patterns)) {
+      if (regexps.some((regex) => regex.test(code))) {
+        return lang;
+      }
+    }
+    return "plaintext";
+  }
+
+  /**
+   * Copy code to clipboard
+   */
+  function copyCodeToClipboard(button) {
+    const wrapper = button.closest(".code-block-wrapper");
+    const code = wrapper.querySelector("code").textContent;
+
+    navigator.clipboard.writeText(code).then(() => {
+      button.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        Copied!
+      `;
+      button.classList.add("copied");
+
+      setTimeout(() => {
+        button.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy
+        `;
+        button.classList.remove("copied");
+      }, 2000);
+    });
+  }
+
+  // ========================================
+  // 2️⃣ CALLOUT BLOCKS
+  // ========================================
+
+  /**
+   * Transform blockquotes with emojis into styled callout blocks
+   */
+  function enhanceCalloutBlocks(container) {
+    console.log("📦 Enhancing callout blocks...");
+
+    // Find blockquotes or indented paragraphs
+    const blockquotes = container.querySelectorAll(
+      'blockquote, [style*="margin-left"]'
+    );
+
+    blockquotes.forEach((block) => {
+      const text = block.textContent.trim();
+      const firstChar = text.charAt(0);
+
+      let calloutType = null;
+      let title = "";
+      let icon = "";
+
+      // Detect callout type by emoji
+      if (
+        text.startsWith("💡") ||
+        text.toLowerCase().includes("tip:") ||
+        text.toLowerCase().includes("mẹo:")
+      ) {
+        calloutType = "tip";
+        title = "Mẹo hay";
+        icon = "💡";
+      } else if (
+        text.startsWith("⚠️") ||
+        text.toLowerCase().includes("warning:") ||
+        text.toLowerCase().includes("cảnh báo:")
+      ) {
+        calloutType = "warning";
+        title = "Lưu ý";
+        icon = "⚠️";
+      } else if (
+        text.startsWith("📝") ||
+        text.toLowerCase().includes("note:") ||
+        text.toLowerCase().includes("ghi chú:")
+      ) {
+        calloutType = "note";
+        title = "Ghi nhớ";
+        icon = "📝";
+      } else if (
+        text.startsWith("ℹ️") ||
+        text.toLowerCase().includes("info:") ||
+        text.toLowerCase().includes("thông tin:")
+      ) {
+        calloutType = "info";
+        title = "Thông tin";
+        icon = "ℹ️";
+      }
+
+      if (calloutType) {
+        // Remove emoji from content
+        let content = block.innerHTML.replace(/^[💡⚠️📝ℹ️]\s*/, "");
+        content = content.replace(
+          /^(tip|warning|note|info|mẹo|cảnh báo|ghi chú|thông tin):\s*/i,
+          ""
+        );
+
+        const callout = document.createElement("div");
+        callout.className = `callout-block callout-${calloutType}`;
+        callout.innerHTML = `
+          <span class="callout-icon">${icon}</span>
+          <div class="callout-title">${title}</div>
+          <div class="callout-content">${content}</div>
+        `;
+
+        block.replaceWith(callout);
+      }
+    });
+  }
+
+  // ========================================
+  // 3️⃣ GRID CARDS FOR SHORT LISTS
+  // ========================================
+
+  /**
+   * Transform short lists into grid cards
+   */
+  function enhanceShortLists(container) {
+    console.log("📊 Enhancing short lists...");
+
+    const lists = container.querySelectorAll("ul, ol");
+
+    lists.forEach((list) => {
+      const items = list.querySelectorAll("li");
+
+      // Only transform short lists (2-6 items) with short content
+      if (items.length >= 2 && items.length <= 6) {
+        const allShort = Array.from(items).every((item) => {
+          const text = item.textContent.trim();
+          return text.length < 80 && !text.includes("\n");
+        });
+
+        if (allShort) {
+          list.classList.add("list-grid-cards");
+        }
+      }
+    });
+  }
+
+  // ========================================
+  // 4️⃣ AUTO-EMBED YOUTUBE
+  // ========================================
+
+  /**
+   * Auto-embed YouTube links as iframes
+   */
+  function enhanceYouTubeLinks(container) {
+    console.log("🎬 Enhancing YouTube links...");
+
+    const youtubeRegex =
+      /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})(?:[^\s<]*)?/g;
+
+    // Find text nodes containing YouTube links
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    const nodesToReplace = [];
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (youtubeRegex.test(node.textContent)) {
+        nodesToReplace.push(node);
+      }
+      youtubeRegex.lastIndex = 0;
+    }
+
+    nodesToReplace.forEach((node) => {
+      const text = node.textContent;
+      const matches = text.matchAll(youtubeRegex);
+
+      for (const match of matches) {
+        const videoId = match[1];
+        const fullUrl = match[0];
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "youtube-embed-wrapper";
+        wrapper.innerHTML = `
+          <iframe 
+            src="https://www.youtube.com/embed/${videoId}" 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+            allowfullscreen>
+          </iframe>
+        `;
+
+        // Replace link with embed
+        const parent = node.parentNode;
+        if (parent) {
+          const newText = document.createTextNode(text.replace(fullUrl, ""));
+          parent.replaceChild(wrapper, node);
+          if (newText.textContent.trim()) {
+            parent.insertBefore(newText, wrapper);
+          }
+        }
+      }
+    });
+
+    // Also handle <a> tags with YouTube links
+    const links = container.querySelectorAll(
+      'a[href*="youtube.com"], a[href*="youtu.be"]'
+    );
+    links.forEach((link) => {
+      const href = link.href;
+      const match = href.match(
+        /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/
+      );
+
+      if (match) {
+        const videoId = match[1];
+        const wrapper = document.createElement("div");
+        wrapper.className = "youtube-embed-wrapper";
+        wrapper.innerHTML = `
+          <iframe 
+            src="https://www.youtube.com/embed/${videoId}" 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+            allowfullscreen>
+          </iframe>
+        `;
+        link.replaceWith(wrapper);
+      }
+    });
+  }
+
+  // ========================================
+  // 5️⃣ TABLE OF CONTENTS
+  // ========================================
+
+  /**
+   * Generate sticky Table of Contents with ScrollSpy - Premium Design
+   */
+  function generateTableOfContents(container) {
+    console.log("📚 Generating Table of Contents...");
+
+    const headings = container.querySelectorAll("h1, h2, h3");
+    if (headings.length < 3) return; // Don't show TOC for very short content
+
+    // Add IDs to headings
+    headings.forEach((heading, index) => {
+      if (!heading.id) {
+        heading.id = `heading-${index}`;
+      }
+    });
+
+    // Create TOC element
+    const toc = document.createElement("div");
+    toc.className = "lesson-toc";
+    toc.innerHTML = `
+      <div class="toc-header">
+        <span class="toc-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h16"/>
+            <path d="M4 12h12"/>
+            <path d="M4 18h8"/>
+          </svg>
+          <span class="toc-title-text">MỤC LỤC</span>
+        </span>
+        <button class="toc-toggle" onclick="toggleTOC()" title="Thu gọn">
+          <svg class="toc-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+      </div>
+      <div class="toc-content">
+        <ul class="toc-list">
+          ${Array.from(headings)
+            .map((h, i) => {
+              const level = parseInt(h.tagName.charAt(1));
+              const icon = level === 1 ? "📑" : level === 2 ? "📄" : "📝";
+              return `
+              <li class="toc-item">
+                <a href="#${h.id}" class="toc-link level-${level}" data-target="${h.id}" onclick="smoothScrollToHeading(event, '${h.id}')">
+                  ${h.textContent}
+                </a>
+              </li>
+            `;
+            })
+            .join("")}
+        </ul>
+      </div>
+      <div class="toc-progress">
+        <div class="toc-progress-bar" id="toc-progress-bar"></div>
+      </div>
+    `;
+
+    // Add to page
+    document.querySelector(".lesson-container").appendChild(toc);
+
+    // Setup ScrollSpy
+    setupScrollSpy(headings);
+
+    // Setup progress tracking
+    setupTocProgress();
+  }
+
+  /**
+   * Smooth scroll to heading
+   */
+  function smoothScrollToHeading(event, targetId) {
+    event.preventDefault();
+    const target = document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  /**
+   * Setup ScrollSpy for TOC highlighting
+   */
+  function setupScrollSpy(headings) {
+    const tocLinks = document.querySelectorAll(".toc-link");
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            tocLinks.forEach((link) => link.classList.remove("active"));
+            const activeLink = document.querySelector(
+              `.toc-link[data-target="${entry.target.id}"]`
+            );
+            if (activeLink) {
+              activeLink.classList.add("active");
+              // Scroll TOC to show active item
+              activeLink.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest",
+              });
+            }
+          }
+        });
+      },
+      {
+        rootMargin: "-20% 0px -70% 0px",
+      }
+    );
+
+    headings.forEach((heading) => observer.observe(heading));
+  }
+
+  /**
+   * Setup TOC progress bar
+   */
+  function setupTocProgress() {
+    const progressBar = document.getElementById("toc-progress-bar");
+    if (!progressBar) return;
+
+    window.addEventListener("scroll", () => {
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop =
+        window.pageYOffset || document.documentElement.scrollTop;
+      const scrollable = documentHeight - windowHeight;
+      const progress = scrollable > 0 ? (scrollTop / scrollable) * 100 : 0;
+      progressBar.style.width = Math.min(progress, 100) + "%";
+    });
+  }
+
+  /**
+   * Toggle TOC collapse
+   */
+  function toggleTOC() {
+    const toc = document.querySelector(".lesson-toc");
+    if (toc) {
+      toc.classList.toggle("collapsed");
+    }
+  }
+
+  // Expose to global
+  window.smoothScrollToHeading = smoothScrollToHeading;
+
+  // ========================================
+  // 6️⃣ MINI-QUIZ CHECKPOINTS
+  // ========================================
+
+  /**
+   * Parse and create mini-quiz widgets
+   * Format: [QUIZ: Question? | Option1 | Option2 | Option3*]
+   * Asterisk (*) marks the correct answer
+   */
+  function enhanceMiniQuizzes(container) {
+    console.log("🎯 Enhancing mini-quizzes...");
+
+    const quizRegex = /\[QUIZ:\s*(.+?)\s*\|\s*(.+?)\]/g;
+
+    // Find text containing quiz format
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    const nodesToReplace = [];
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (quizRegex.test(node.textContent)) {
+        nodesToReplace.push(node);
+      }
+      quizRegex.lastIndex = 0;
+    }
+
+    nodesToReplace.forEach((node) => {
+      const text = node.textContent;
+      const match = text.match(/\[QUIZ:\s*(.+?)\s*\|\s*(.+?)\]/);
+
+      if (match) {
+        const question = match[1].trim();
+        const optionsStr = match[2];
+        const options = optionsStr.split("|").map((opt) => {
+          const isCorrect = opt.trim().endsWith("*");
+          return {
+            text: opt.trim().replace(/\*$/, ""),
+            correct: isCorrect,
+          };
+        });
+
+        const quizId = "quiz-" + Math.random().toString(36).substr(2, 9);
+
+        const quiz = document.createElement("div");
+        quiz.className = "mini-quiz";
+        quiz.id = quizId;
+        quiz.innerHTML = `
+          <div class="mini-quiz-header">
+            <div class="mini-quiz-icon">❓</div>
+            <span class="mini-quiz-label">Kiểm tra nhanh</span>
+          </div>
+          <p class="mini-quiz-question">${question}</p>
+          <div class="mini-quiz-options">
+            ${options
+              .map(
+                (opt, i) => `
+              <div class="mini-quiz-option" onclick="handleMiniQuizAnswer(this, ${opt.correct}, '${quizId}')" data-correct="${opt.correct}">
+                <div class="mini-quiz-radio"></div>
+                <span class="mini-quiz-text">${opt.text}</span>
+              </div>
+            `
+              )
+              .join("")}
+          </div>
+          <div class="mini-quiz-feedback"></div>
+        `;
+
+        const parent = node.parentNode;
+        if (parent) {
+          const remaining = text.replace(match[0], "");
+          if (remaining.trim()) {
+            const textNode = document.createTextNode(remaining);
+            parent.insertBefore(textNode, node);
+          }
+          parent.replaceChild(quiz, node);
+        }
+      }
+    });
+  }
+
+  /**
+   * Handle mini-quiz answer selection
+   */
+  function handleMiniQuizAnswer(option, isCorrect, quizId) {
+    const quiz = document.getElementById(quizId);
+    if (!quiz) return;
+
+    // Check if already answered
+    if (quiz.dataset.answered === "true") return;
+
+    const options = quiz.querySelectorAll(".mini-quiz-option");
+    const feedback = quiz.querySelector(".mini-quiz-feedback");
+
+    // Mark as answered
+    quiz.dataset.answered = "true";
+
+    // Clear previous selections
+    options.forEach((opt) => {
+      opt.classList.remove("selected", "correct", "incorrect");
+    });
+
+    // Show result
+    option.classList.add("selected");
+
+    if (isCorrect) {
+      option.classList.add("correct");
+      feedback.className = "mini-quiz-feedback show correct";
+      feedback.innerHTML = "🎉 Chính xác! Bạn đã hiểu đúng rồi!";
+
+      // Confetti effect
+      createConfetti();
+    } else {
+      option.classList.add("incorrect");
+      feedback.className = "mini-quiz-feedback show incorrect";
+
+      // Show correct answer
+      options.forEach((opt) => {
+        if (opt.dataset.correct === "true") {
+          opt.classList.add("correct");
+        }
+      });
+      feedback.innerHTML = "❌ Chưa chính xác. Hãy xem lại đáp án đúng nhé!";
+    }
+  }
+
+  /**
+   * Create confetti celebration effect
+   */
+  function createConfetti() {
+    const colors = ["#5b6ff8", "#f59e0b", "#22c55e", "#ec4899", "#8b5cf6"];
+    const container = document.createElement("div");
+    container.className = "confetti-container";
+    document.body.appendChild(container);
+
+    for (let i = 0; i < 50; i++) {
+      const confetti = document.createElement("div");
+      confetti.style.cssText = `
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        left: ${Math.random() * 100}%;
+        top: -10px;
+        border-radius: ${Math.random() > 0.5 ? "50%" : "0"};
+        animation: confetti-fall ${1 + Math.random() * 2}s linear forwards;
+      `;
+      container.appendChild(confetti);
+    }
+
+    // Add keyframes dynamically
+    if (!document.getElementById("confetti-keyframes")) {
+      const style = document.createElement("style");
+      style.id = "confetti-keyframes";
+      style.textContent = `
+        @keyframes confetti-fall {
+          to {
+            top: 100vh;
+            transform: rotate(${Math.random() * 720}deg);
+            opacity: 0;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    setTimeout(() => container.remove(), 3000);
+  }
+
+  // ========================================
+  // 7️⃣ SPOILER EFFECTS
+  // ========================================
+
+  /**
+   * Transform highlighted (black background) text into spoilers
+   */
+  function enhanceSpoilers(container) {
+    console.log("🔒 Enhancing spoilers...");
+
+    // Find spans with black background
+    const spans = container.querySelectorAll('span[style*="background"]');
+
+    spans.forEach((span) => {
+      const style = span.getAttribute("style") || "";
+      const hasBlackBg =
+        style.includes("background-color: rgb(0, 0, 0)") ||
+        style.includes("background-color:#000") ||
+        style.includes("background:black") ||
+        style.includes("background: black") ||
+        style.includes("background-color: black");
+
+      if (hasBlackBg && span.textContent.trim()) {
+        const spoiler = document.createElement("span");
+        spoiler.className = "spoiler";
+        spoiler.textContent = span.textContent;
+        spoiler.onclick = () => toggleSpoiler(spoiler);
+        span.replaceWith(spoiler);
+      }
+    });
+
+    // Also look for [SPOILER: text] format
+    const spoilerRegex = /\[SPOILER:\s*(.+?)\]/g;
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    const nodesToReplace = [];
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (spoilerRegex.test(node.textContent)) {
+        nodesToReplace.push(node);
+      }
+      spoilerRegex.lastIndex = 0;
+    }
+
+    nodesToReplace.forEach((node) => {
+      const text = node.textContent;
+      const newHtml = text.replace(
+        /\[SPOILER:\s*(.+?)\]/g,
+        (match, content) => {
+          return `<span class="spoiler" onclick="toggleSpoiler(this)">${content}</span>`;
+        }
+      );
+
+      const temp = document.createElement("span");
+      temp.innerHTML = newHtml;
+      node.parentNode.replaceChild(temp, node);
+    });
+  }
+
+  /**
+   * Toggle spoiler visibility
+   */
+  function toggleSpoiler(element) {
+    element.classList.toggle("revealed");
+  }
+
+  // ========================================
+  // UTILITY FUNCTIONS
+  // ========================================
+
+  /**
+   * Escape HTML to prevent XSS in code blocks
+   */
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
 </script>

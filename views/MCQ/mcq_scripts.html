@@ -893,10 +893,94 @@
   }
 
   /**
-   * Retake quiz
+   * Retake quiz - Shuffle questions and options for variety
    */
   function retakeQuiz() {
-    loadQuizQuestions(false);
+    console.log("🔄 Retaking quiz with shuffled questions...");
+
+    // Track retry count for this topic
+    const retryKey = `quiz_retry_${quizState.topicId}`;
+    let retryCount = parseInt(sessionStorage.getItem(retryKey) || "0") + 1;
+    sessionStorage.setItem(retryKey, retryCount.toString());
+
+    console.log(`📊 Retry count for topic ${quizState.topicId}: ${retryCount}`);
+
+    // Option 1: Shuffle existing questions (faster, same questions different order)
+    if (quizState.questions && quizState.questions.length > 0) {
+      shuffleQuestionsAndOptions();
+      resetQuizForRetry();
+      startQuizSession();
+    } else {
+      // Fallback: reload questions if somehow cleared
+      loadQuizQuestions(false);
+    }
+  }
+
+  /**
+   * Fisher-Yates shuffle algorithm
+   */
+  function shuffleArray(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  /**
+   * Shuffle questions order AND shuffle answer options within each question
+   */
+  function shuffleQuestionsAndOptions() {
+    console.log("🎲 Shuffling questions and options...");
+
+    // 1. Shuffle questions order
+    quizState.questions = shuffleArray(quizState.questions);
+
+    // 2. Shuffle options within each question
+    quizState.questions = quizState.questions.map((question, qIndex) => {
+      const options = [...question.options];
+      const correctOption = options[question.correctAnswer];
+
+      // Shuffle options
+      const shuffledOptions = shuffleArray(options);
+
+      // Find new index of correct answer
+      const newCorrectIndex = shuffledOptions.indexOf(correctOption);
+
+      console.log(
+        `  Q${qIndex + 1}: Correct answer moved from ${
+          question.correctAnswer
+        } to ${newCorrectIndex}`
+      );
+
+      return {
+        ...question,
+        options: shuffledOptions,
+        correctAnswer: newCorrectIndex,
+      };
+    });
+
+    console.log("✅ Questions and options shuffled!");
+  }
+
+  /**
+   * Reset quiz state for retry (keep questions, clear answers)
+   */
+  function resetQuizForRetry() {
+    quizState.currentQuestionIndex = 0;
+    quizState.userAnswers = new Array(quizState.questions.length).fill(null);
+    quizState.score = 0;
+    quizState.startTime = null;
+    quizState.isReviewing = false;
+  }
+
+  /**
+   * Retake with NEW questions (force AI to regenerate)
+   */
+  function retakeWithNewQuestions() {
+    console.log("🆕 Generating completely new questions...");
+    loadQuizQuestions(true); // forceRegenerate = true
   }
 
   /**
@@ -972,6 +1056,7 @@
   window.showHint = showHint;
   window.submitQuiz = submitQuiz;
   window.retakeQuiz = retakeQuiz;
+  window.retakeWithNewQuestions = retakeWithNewQuestions;
 
   console.log("✅ MCQ scripts loaded");
 </script>

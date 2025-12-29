@@ -119,7 +119,7 @@
 
     <!-- Tab 2: Mindmap -->
     <div id="tab-mindmap" class="tab-panel" style="display: none">
-      <div class="lesson-card">
+      <div class="lesson-card mindmap-card">
         <!-- Loading State -->
         <div id="mindmap-loading" class="lesson-loading">
           <div class="quiz-loading-popup">
@@ -146,20 +146,100 @@
           </button>
         </div>
 
-        <!-- Mindmap Content -->
-        <div
-          id="mindmap-content"
-          class="mindmap-container"
-          style="display: none"
-        >
-          <!-- Mindmap will be rendered here -->
+        <!-- Interactive Network Graph Mindmap -->
+        <div id="mindmap-content" class="mindmap-network" style="display: none">
+          <!-- SVG for connection lines -->
+          <svg id="mindmap-connections" class="connections-layer"></svg>
+
+          <!-- Network Container -->
+          <div id="network-container" class="network-container">
+            <!-- Central node will be rendered here -->
+            <div id="mindmap-center" class="center-node-wrapper">
+              <!-- Root node -->
+            </div>
+
+            <!-- Satellite nodes container -->
+            <div id="mindmap-nodes" class="nodes-container">
+              <!-- Branch nodes will be rendered here -->
+            </div>
+
+            <!-- Detail nodes container (Level 2) -->
+            <div id="mindmap-details" class="details-container">
+              <!-- Detail nodes appear on click -->
+            </div>
+          </div>
+
+          <!-- Control buttons -->
+          <div class="mindmap-controls">
+            <button
+              onclick="fitToScreen(true)"
+              class="control-btn"
+              title="Fit to Screen (Vừa màn hình)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                />
+              </svg>
+            </button>
+            <button
+              onclick="resetMindmapView()"
+              class="control-btn"
+              title="Reset (Đóng tất cả)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+            <button
+              onclick="setZoom(networkState.zoom + 0.2)"
+              class="control-btn"
+              title="Zoom In"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35M11 8v6m-3-3h6" />
+              </svg>
+            </button>
+            <button
+              onclick="setZoom(networkState.zoom - 0.2)"
+              class="control-btn"
+              title="Zoom Out"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35M8 11h6" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Tab 3: Flashcards -->
+    <!-- Tab 3: Flashcards - The Infinite Deck -->
     <div id="tab-flashcards" class="tab-panel" style="display: none">
-      <div class="lesson-card">
+      <div class="lesson-card flashcards-card">
         <!-- Loading State -->
         <div id="flashcards-loading" class="lesson-loading">
           <div class="quiz-loading-popup">
@@ -186,65 +266,140 @@
           </button>
         </div>
 
-        <!-- Flashcards Content -->
-        <div id="flashcards-content" style="display: none">
-          <!-- Progress -->
-          <div class="flex items-center justify-between mb-6">
-            <span class="text-gray-600 font-medium">
-              <span id="flashcard-current">1</span> /
-              <span id="flashcard-total">0</span>
-            </span>
-            <div class="flex gap-2">
-              <button
-                onclick="shuffleFlashcards()"
-                class="btn-secondary text-sm"
-              >
-                🔀 Xáo trộn
-              </button>
-              <button onclick="resetFlashcards()" class="btn-secondary text-sm">
-                🔄 Reset
-              </button>
+        <!-- Flashcards Content - The Infinite Deck -->
+        <div
+          id="flashcards-content"
+          class="deck-container"
+          style="display: none"
+        >
+          <!-- Progress Bar -->
+          <div class="deck-progress">
+            <div class="progress-info">
+              <span class="progress-counter">
+                <span id="flashcard-current">1</span> /
+                <span id="flashcard-total">0</span>
+              </span>
+              <span class="progress-label">thẻ</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="deck-progress-bar"></div>
+            </div>
+            <div class="deck-stats">
+              <span class="stat-item stat-learned">
+                <span class="stat-icon">✓</span>
+                <span id="learned-count">0</span>
+              </span>
+              <span class="stat-item stat-review">
+                <span class="stat-icon">↻</span>
+                <span id="review-count">0</span>
+              </span>
             </div>
           </div>
 
-          <!-- Flashcard Deck -->
-          <div class="flashcard-deck">
-            <div
-              class="flashcard"
-              id="current-flashcard"
-              onclick="flipFlashcard()"
-            >
-              <div class="flashcard-inner">
-                <div class="flashcard-front">
-                  <div class="flashcard-label">Thuật ngữ</div>
-                  <div class="flashcard-text" id="flashcard-front-text">
-                    Loading...
+          <!-- Deck Area -->
+          <div class="deck-area" id="deck-area">
+            <!-- Background cards (stacking effect) -->
+            <div class="deck-stack">
+              <div class="stack-card stack-3"></div>
+              <div class="stack-card stack-2"></div>
+              <div class="stack-card stack-1"></div>
+            </div>
+
+            <!-- Main Flashcard -->
+            <div class="flashcard-wrapper" id="flashcard-wrapper">
+              <div
+                class="flashcard"
+                id="current-flashcard"
+                onclick="flipFlashcard()"
+              >
+                <div class="flashcard-inner">
+                  <!-- Front Side -->
+                  <div class="flashcard-front">
+                    <div class="card-shine"></div>
+                    <div class="card-pattern"></div>
+                    <div class="flashcard-label">
+                      <span class="label-icon">❓</span>
+                      Thuật ngữ
+                    </div>
+                    <div class="flashcard-text" id="flashcard-front-text">
+                      Loading...
+                    </div>
                   </div>
-                </div>
-                <div class="flashcard-back">
-                  <div class="flashcard-label">Định nghĩa</div>
-                  <div class="flashcard-text" id="flashcard-back-text">
-                    Loading...
+                  <!-- Back Side -->
+                  <div class="flashcard-back">
+                    <div class="card-shine"></div>
+                    <div class="flashcard-label">
+                      <span class="label-icon">💡</span>
+                      Định nghĩa
+                    </div>
+                    <div
+                      class="flashcard-text flashcard-answer"
+                      id="flashcard-back-text"
+                    >
+                      Loading...
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            <!-- Swipe Indicators -->
+            <div class="swipe-indicator swipe-left" id="swipe-left-indicator">
+              <span>↻ Học lại</span>
+            </div>
+            <div class="swipe-indicator swipe-right" id="swipe-right-indicator">
+              <span>✓ Đã thuộc</span>
+            </div>
           </div>
 
-          <!-- Navigation -->
-          <div class="flex justify-center gap-4 mt-6">
-            <button onclick="prevFlashcard()" class="btn-secondary px-8">
-              ← Trước
+          <!-- Action Buttons (Gamification) -->
+          <div class="deck-actions">
+            <button
+              class="action-btn btn-review"
+              id="btn-review"
+              onclick="markAsReview()"
+            >
+              <span class="btn-icon">↻</span>
+              <span class="btn-text">Chưa thuộc</span>
             </button>
-            <button onclick="nextFlashcard()" class="btn-primary px-8">
-              Tiếp →
+            <button class="action-btn btn-flip" onclick="flipFlashcard()">
+              <span class="btn-icon">🔄</span>
+              <span class="btn-text">Lật thẻ</span>
+            </button>
+            <button
+              class="action-btn btn-learned"
+              id="btn-learned"
+              onclick="markAsLearned()"
+            >
+              <span class="btn-icon">✓</span>
+              <span class="btn-text">Đã thuộc</span>
             </button>
           </div>
 
-          <!-- Tip -->
-          <p class="text-center text-gray-500 text-sm mt-4">
-            💡 Click vào thẻ để lật xem định nghĩa
-          </p>
+          <!-- Controls -->
+          <div class="deck-controls">
+            <button
+              onclick="shuffleFlashcards()"
+              class="control-btn"
+              title="Xáo trộn"
+            >
+              🔀
+            </button>
+            <button
+              onclick="resetFlashcards()"
+              class="control-btn"
+              title="Reset"
+            >
+              🔄
+            </button>
+          </div>
+
+          <!-- Keyboard Hints -->
+          <div class="keyboard-hints">
+            <span class="hint-item"><kbd>Space</kbd> Lật thẻ</span>
+            <span class="hint-item"><kbd>←</kbd> Chưa thuộc</span>
+            <span class="hint-item"><kbd>→</kbd> Đã thuộc</span>
+          </div>
         </div>
       </div>
     </div>

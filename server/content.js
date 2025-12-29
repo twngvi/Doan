@@ -886,3 +886,332 @@ function markQuestionMastered(topicId, questionId) {
     return { success: false, message: error.toString() };
   }
 }
+
+// ========== FLASHCARD PROGRESS MANAGEMENT ==========
+
+/**
+ * Save flashcard learning progress to user's personal sheet
+ * @param {string} progressDataJson - JSON string of progress data
+ */
+function saveFlashcardProgress(progressDataJson) {
+  try {
+    Logger.log("=== SAVE FLASHCARD PROGRESS ===");
+
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !currentUser.userId) {
+      Logger.log("❌ User not logged in");
+      return { success: false, message: "User not logged in" };
+    }
+
+    Logger.log("User ID: " + currentUser.userId);
+
+    let progressData;
+    try {
+      progressData = JSON.parse(progressDataJson);
+    } catch (e) {
+      return { success: false, message: "Invalid progress data format" };
+    }
+
+    Logger.log("Saving progress for topic: " + progressData.topicId);
+    Logger.log(
+      "Learned: " +
+        progressData.learnedCount +
+        ", Review: " +
+        progressData.reviewCount
+    );
+
+    // Get or CREATE user spreadsheet if not exists
+    let spreadsheet = getUserSpreadsheet(currentUser.userId);
+    if (!spreadsheet) {
+      Logger.log("⚠️ User spreadsheet not found, creating new one...");
+      try {
+        const newSheetId = createUserPersonalSheet(
+          currentUser.userId,
+          currentUser.username || currentUser.email
+        );
+        if (newSheetId) {
+          spreadsheet = SpreadsheetApp.openById(newSheetId);
+          Logger.log("✅ Created new user spreadsheet: " + newSheetId);
+        }
+      } catch (createError) {
+        Logger.log(
+          "❌ Failed to create user spreadsheet: " + createError.toString()
+        );
+        return { success: false, message: "Cannot create user spreadsheet" };
+      }
+    }
+
+    if (!spreadsheet) {
+      return { success: false, message: "User spreadsheet not found" };
+    }
+
+    Logger.log("📁 Using spreadsheet: " + spreadsheet.getName());
+
+    // Ensure FlashcardSessions sheet exists
+    let sessionsSheet = spreadsheet.getSheetByName("FlashcardSessions");
+    if (!sessionsSheet) {
+      sessionsSheet = spreadsheet.insertSheet("FlashcardSessions");
+      sessionsSheet
+        .getRange(1, 1, 1, 8)
+        .setValues([
+          [
+            "sessionId",
+            "topicId",
+            "totalCards",
+            "learnedCount",
+            "reviewCount",
+            "resultsJson",
+            "completedAt",
+            "createdAt",
+          ],
+        ]);
+      sessionsSheet
+        .getRange(1, 1, 1, 8)
+        .setFontWeight("bold")
+        .setBackground("#4285f4")
+        .setFontColor("white");
+    }
+
+    // Generate session ID
+    const sessionId =
+      "FCS_" +
+      Date.now().toString(36) +
+      Math.random().toString(36).substring(2, 6);
+
+    // Save session
+    sessionsSheet.appendRow([
+      sessionId,
+      progressData.topicId,
+      progressData.totalCards,
+      progressData.learnedCount,
+      progressData.reviewCount,
+      JSON.stringify(progressData.results),
+      progressData.completedAt,
+      new Date().toISOString(),
+    ]);
+
+    // Also update individual card progress
+    saveIndividualCardProgress(spreadsheet, progressData);
+
+    Logger.log("✅ Flashcard progress saved: " + sessionId);
+    return {
+      success: true,
+      sessionId: sessionId,
+      message: "Progress saved successfully",
+    };
+  } catch (error) {
+    Logger.log("❌ Error saving flashcard progress: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Save individual card progress for spaced repetition
+ */
+function saveIndividualCardProgress(spreadsheet, progressData) {
+  try {
+    // Ensure CardProgress sheet exists
+    let cardSheet = spreadsheet.getSheetByName("CardProgress");
+    if (!cardSheet) {
+      cardSheet = spreadsheet.insertSheet("CardProgress");
+      cardSheet
+        .getRange(1, 1, 1, 7)
+        .setValues([
+          [
+            "cardId",
+            "topicId",
+            "status",
+            "timesReviewed",
+            "timesCorrect",
+            "lastReviewed",
+            "nextReview",
+          ],
+        ]);
+      cardSheet
+        .getRange(1, 1, 1, 7)
+        .setFontWeight("bold")
+        .setBackground("#34a853")
+        .setFontColor("white");
+    }
+
+    const data = cardSheet.getDataRange().getValues();
+    const existingCards = {};
+
+    // Build map of existing cards
+    for (let i = 1; i < data.length; i++) {
+      const key = data[i][0] + "_" + data[i][1]; // cardId_topicId
+      existingCards[key] = i + 1; // row number (1-based)
+    }
+
+    const now = new Date();
+
+    // Process each card result
+    progressData.results.forEach((result) => {
+      const key = result.cardId + "_" + progressData.topicId;
+      const isCorrect = result.status === "learned";
+
+      if (existingCards[key]) {
+        // Update existing row
+        const rowNum = existingCards[key];
+        const currentData = cardSheet.getRange(rowNum, 1, 1, 7).getValues()[0];
+
+        const timesReviewed = (currentData[3] || 0) + 1;
+        const timesCorrect = (currentData[4] || 0) + (isCorrect ? 1 : 0);
+        const nextReview = calculateNextReviewDate(timesCorrect, isCorrect);
+
+        cardSheet
+          .getRange(rowNum, 3, 1, 5)
+          .setValues([
+            [result.status, timesReviewed, timesCorrect, now, nextReview],
+          ]);
+      } else {
+        // Add new row
+        const nextReview = calculateNextReviewDate(0, isCorrect);
+        cardSheet.appendRow([
+          result.cardId,
+          progressData.topicId,
+          result.status,
+          1,
+          isCorrect ? 1 : 0,
+          now,
+          nextReview,
+        ]);
+      }
+    });
+  } catch (error) {
+    Logger.log("Error saving individual card progress: " + error.toString());
+  }
+}
+
+/**
+ * Calculate next review date based on spaced repetition
+ */
+function calculateNextReviewDate(timesCorrect, wasCorrect) {
+  const now = new Date();
+  let daysToAdd = 1;
+
+  if (wasCorrect) {
+    // Spaced repetition intervals: 1, 3, 7, 14, 30 days
+    const intervals = [1, 3, 7, 14, 30, 60];
+    daysToAdd = intervals[Math.min(timesCorrect, intervals.length - 1)];
+  }
+
+  now.setDate(now.getDate() + daysToAdd);
+  return now;
+}
+
+/**
+ * Get flashcard progress for a specific topic
+ * @param {string} topicId - Topic ID
+ */
+function getFlashcardProgress(topicId) {
+  try {
+    Logger.log("=== GET FLASHCARD PROGRESS ===");
+    Logger.log("Topic ID: " + topicId);
+
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !currentUser.userId) {
+      return { success: false, message: "User not logged in" };
+    }
+
+    const spreadsheet = getUserSpreadsheet(currentUser.userId);
+    if (!spreadsheet) {
+      return { success: false, data: null, message: "No progress found" };
+    }
+
+    // Get latest session for this topic
+    const sessionsSheet = spreadsheet.getSheetByName("FlashcardSessions");
+    if (!sessionsSheet) {
+      return { success: false, data: null, message: "No sessions found" };
+    }
+
+    const data = sessionsSheet.getDataRange().getValues();
+    let latestSession = null;
+
+    for (let i = data.length - 1; i > 0; i--) {
+      if (data[i][1] === topicId) {
+        latestSession = {
+          sessionId: data[i][0],
+          topicId: data[i][1],
+          totalCards: data[i][2],
+          learnedCount: data[i][3],
+          reviewCount: data[i][4],
+          results: JSON.parse(data[i][5] || "[]"),
+          completedAt: data[i][6],
+        };
+        break;
+      }
+    }
+
+    if (latestSession) {
+      Logger.log("✅ Found progress: " + JSON.stringify(latestSession));
+      return {
+        success: true,
+        data: JSON.stringify(latestSession),
+        message: "Progress loaded",
+      };
+    }
+
+    return {
+      success: false,
+      data: null,
+      message: "No progress found for this topic",
+    };
+  } catch (error) {
+    Logger.log("❌ Error getting flashcard progress: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get cards that need review (due for spaced repetition)
+ * @param {string} topicId - Topic ID
+ */
+function getCardsForReview(topicId) {
+  try {
+    const currentUser = AuthService.getCurrentUser();
+    if (!currentUser || !currentUser.userId) {
+      return { success: false, message: "User not logged in" };
+    }
+
+    const spreadsheet = getUserSpreadsheet(currentUser.userId);
+    if (!spreadsheet) {
+      return { success: false, data: [], message: "No cards found" };
+    }
+
+    const cardSheet = spreadsheet.getSheetByName("CardProgress");
+    if (!cardSheet) {
+      return { success: false, data: [], message: "No card progress found" };
+    }
+
+    const data = cardSheet.getDataRange().getValues();
+    const now = new Date();
+    const cardsForReview = [];
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === topicId) {
+        const nextReview = new Date(data[i][6]);
+        const status = data[i][2];
+
+        // Include cards that are due for review or marked as "review"
+        if (status === "review" || nextReview <= now) {
+          cardsForReview.push({
+            cardId: data[i][0],
+            status: status,
+            timesReviewed: data[i][3],
+            timesCorrect: data[i][4],
+          });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      data: JSON.stringify(cardsForReview),
+      count: cardsForReview.length,
+    };
+  } catch (error) {
+    Logger.log("❌ Error getting cards for review: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
