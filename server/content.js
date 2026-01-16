@@ -619,65 +619,175 @@ function getDocMetadata(docId) {
 }
 
 /**
- * Save quiz result to User_Progress sheet
+ * Get user's personal sheet ID by email
+ * @param {string} email - User email
+ * @returns {string|null} - progressSheetId or null
+ */
+function getUserProgressSheetIdByEmail(email) {
+  try {
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+
+    if (!usersSheet) {
+      Logger.log("Users sheet not found");
+      return null;
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+    const progressSheetIdIndex = headers.indexOf("progressSheetId");
+
+    if (emailIndex === -1 || progressSheetIdIndex === -1) {
+      Logger.log("Required columns not found");
+      return null;
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === email) {
+        const sheetId = data[i][progressSheetIdIndex];
+        Logger.log("Found progressSheetId for " + email + ": " + sheetId);
+        return sheetId || null;
+      }
+    }
+
+    Logger.log("User not found: " + email);
+    return null;
+  } catch (error) {
+    Logger.log("Error getting progressSheetId: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Get or create Quiz_Results sheet in user's personal sheet
+ * @param {Spreadsheet} spreadsheet - User's spreadsheet
+ * @returns {Sheet} - Quiz_Results sheet
+ */
+function getOrCreateQuizResultsSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName("Quiz_Results");
+
+  if (!sheet) {
+    Logger.log("Creating Quiz_Results sheet...");
+    sheet = spreadsheet.insertSheet("Quiz_Results");
+    sheet.appendRow([
+      "id",
+      "topicId",
+      "topicTitle",
+      "score",
+      "totalQuestions",
+      "percentage",
+      "timeTaken",
+      "gameMode",
+      "status",
+      "currentQuestionIndex",
+      "completedAt",
+      "questionDetails",
+    ]);
+
+    // Style header
+    const headerRange = sheet.getRange(1, 1, 1, 12);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#5B6FF8");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+/**
+ * Get or create Wrong_Answers sheet in user's personal sheet
+ * @param {Spreadsheet} spreadsheet - User's spreadsheet
+ * @returns {Sheet} - Wrong_Answers sheet
+ */
+function getOrCreateWrongAnswersSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName("Wrong_Answers");
+
+  if (!sheet) {
+    Logger.log("Creating Wrong_Answers sheet...");
+    sheet = spreadsheet.insertSheet("Wrong_Answers");
+    sheet.appendRow([
+      "id",
+      "topicId",
+      "questionId",
+      "question",
+      "selectedAnswer",
+      "correctAnswer",
+      "retryCount",
+      "lastRetry",
+      "mastered",
+      "createdAt",
+    ]);
+
+    // Style header
+    const headerRange = sheet.getRange(1, 1, 1, 10);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#DC2626");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+/**
+ * Save quiz result to user's PERSONAL Google Sheet
  * @param {object} resultData - Quiz result data
  * @returns {object} - {success, message}
  */
 function saveQuizResult(resultData) {
   try {
-    Logger.log("=== SAVE QUIZ RESULT ===");
+    Logger.log("=== SAVE QUIZ RESULT TO PERSONAL SHEET ===");
     Logger.log("Result data: " + JSON.stringify(resultData));
 
-    const masterDbId =
-      DB_CONFIG.SPREADSHEET_ID ||
-      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
-    const ss = SpreadsheetApp.openById(masterDbId);
-    let progressSheet = ss.getSheetByName("User_Progress");
-
-    // Create sheet if not exists
-    if (!progressSheet) {
-      Logger.log("Creating User_Progress sheet...");
-      progressSheet = ss.insertSheet("User_Progress");
-      progressSheet.appendRow([
-        "userEmail",
-        "topicId",
-        "topicTitle",
-        "activityType",
-        "score",
-        "totalQuestions",
-        "percentage",
-        "timeTaken",
-        "completedAt",
-        "answers",
-      ]);
+    // Get current user email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      Logger.log("⚠️ No user email, cannot save to personal sheet");
+      return { success: false, message: "User not logged in" };
     }
-
-    // Get current user
-    const userEmail = Session.getActiveUser().getEmail() || "anonymous";
     Logger.log("User email: " + userEmail);
 
-    // Create progress entry
-    const progressEntry = [
-      userEmail,
-      resultData.topicId,
-      resultData.topicTitle,
-      "quiz",
-      resultData.score,
-      resultData.totalQuestions,
-      resultData.percentage,
-      resultData.timeTaken,
-      new Date().toISOString(),
-      JSON.stringify(resultData.answers),
+    // Get user's personal sheet ID
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      Logger.log("⚠️ User doesn't have personal sheet");
+      return { success: false, message: "User personal sheet not found" };
+    }
+    Logger.log("Personal sheet ID: " + progressSheetId);
+
+    // Open user's personal spreadsheet
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = getOrCreateQuizResultsSheet(userSpreadsheet);
+
+    // Create result entry
+    const resultEntry = [
+      "QR_" + Date.now(), // id
+      resultData.topicId, // topicId
+      resultData.topicTitle, // topicTitle
+      resultData.score, // score
+      resultData.totalQuestions, // totalQuestions
+      resultData.percentage, // percentage
+      resultData.timeTaken, // timeTaken
+      resultData.gameMode || "instant", // gameMode
+      resultData.status || "complete", // status (partial/complete)
+      resultData.currentQuestionIndex || 0, // currentQuestionIndex
+      new Date().toISOString(), // completedAt
+      JSON.stringify(resultData.answers || resultData.questionDetails || []), // questionDetails
     ];
 
     // Append to sheet
-    progressSheet.appendRow(progressEntry);
+    quizSheet.appendRow(resultEntry);
 
-    Logger.log("✅ Quiz result saved successfully");
+    Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
 
     return {
       success: true,
-      message: "Quiz result saved",
+      message: "Quiz result saved to personal sheet",
     };
   } catch (error) {
     Logger.log("❌ Error saving quiz result: " + error.toString());
@@ -689,46 +799,155 @@ function saveQuizResult(resultData) {
 }
 
 /**
- * Save wrong answer for later review with different question format
+ * Get saved progress for a topic (partial quiz)
+ * @param {string} topicId - Topic ID
+ * @returns {object} - Saved progress or null
+ */
+function getSavedQuizProgress(topicId) {
+  try {
+    Logger.log("=== GET SAVED QUIZ PROGRESS ===");
+    Logger.log("Topic ID: " + topicId);
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return null;
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return null;
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+
+    if (!quizSheet) {
+      return null;
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    const headers = data[0];
+
+    const topicIdCol = headers.indexOf("topicId");
+    const statusCol = headers.indexOf("status");
+    const currentIndexCol = headers.indexOf("currentQuestionIndex");
+    const questionDetailsCol = headers.indexOf("questionDetails");
+    const gameModeCol = headers.indexOf("gameMode");
+    const scoreCol = headers.indexOf("score");
+
+    // Find the latest partial progress for this topic
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][topicIdCol] === topicId && data[i][statusCol] === "partial") {
+        Logger.log("✅ Found saved progress at row " + (i + 1));
+
+        let questionDetails = [];
+        try {
+          questionDetails = JSON.parse(data[i][questionDetailsCol] || "[]");
+        } catch (e) {
+          Logger.log("Error parsing questionDetails: " + e);
+        }
+
+        return {
+          rowIndex: i + 1, // For deletion later
+          topicId: data[i][topicIdCol],
+          currentQuestionIndex: data[i][currentIndexCol] || 0,
+          gameMode: data[i][gameModeCol] || "instant",
+          score: data[i][scoreCol] || 0,
+          questionDetails: questionDetails,
+        };
+      }
+    }
+
+    Logger.log("No saved progress found");
+    return null;
+  } catch (error) {
+    Logger.log("❌ Error getting saved progress: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Delete saved progress after resuming or completing
+ * @param {string} topicId - Topic ID
+ * @returns {object} - Result
+ */
+function deleteSavedQuizProgress(topicId) {
+  try {
+    Logger.log("=== DELETE SAVED QUIZ PROGRESS ===");
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "Not logged in" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+
+    if (!quizSheet) {
+      return { success: false, message: "No Quiz_Results sheet" };
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    const headers = data[0];
+
+    const topicIdCol = headers.indexOf("topicId");
+    const statusCol = headers.indexOf("status");
+
+    // Find and delete partial progress rows (from bottom to top to avoid index issues)
+    let deletedCount = 0;
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][topicIdCol] === topicId && data[i][statusCol] === "partial") {
+        quizSheet.deleteRow(i + 1);
+        deletedCount++;
+        Logger.log("Deleted row " + (i + 1));
+      }
+    }
+
+    Logger.log("✅ Deleted " + deletedCount + " partial progress entries");
+    return { success: true, deletedCount: deletedCount };
+  } catch (error) {
+    Logger.log("❌ Error deleting saved progress: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Save wrong answer to user's PERSONAL Google Sheet for later review
  * @param {object} wrongData - Wrong answer data
  * @returns {object} - {success, message}
  */
 function saveWrongAnswer(wrongData) {
   try {
-    Logger.log("=== SAVE WRONG ANSWER ===");
+    Logger.log("=== SAVE WRONG ANSWER TO PERSONAL SHEET ===");
     Logger.log("Wrong data: " + JSON.stringify(wrongData));
 
-    const masterDbId =
-      DB_CONFIG.SPREADSHEET_ID ||
-      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
-    const ss = SpreadsheetApp.openById(masterDbId);
-    let wrongSheet = ss.getSheetByName("Wrong_Answers");
-
-    // Create sheet if not exists
-    if (!wrongSheet) {
-      Logger.log("Creating Wrong_Answers sheet...");
-      wrongSheet = ss.insertSheet("Wrong_Answers");
-      wrongSheet.appendRow([
-        "id",
-        "userEmail",
-        "topicId",
-        "questionId",
-        "question",
-        "selectedAnswer",
-        "correctAnswer",
-        "retryCount",
-        "lastRetry",
-        "mastered",
-        "createdAt",
-      ]);
+    // Get current user email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      Logger.log("⚠️ No user email, cannot save to personal sheet");
+      return { success: false, message: "User not logged in" };
     }
 
-    const userEmail = Session.getActiveUser().getEmail() || "anonymous";
+    // Get user's personal sheet ID
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      Logger.log("⚠️ User doesn't have personal sheet");
+      return { success: false, message: "User personal sheet not found" };
+    }
+    Logger.log("Personal sheet ID: " + progressSheetId);
 
-    // Check if this question already exists for this user
+    // Open user's personal spreadsheet
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const wrongSheet = getOrCreateWrongAnswersSheet(userSpreadsheet);
+
+    // Check if this question already exists
     const data = wrongSheet.getDataRange().getValues();
     const headers = data[0];
-    const userEmailCol = headers.indexOf("userEmail");
     const topicIdCol = headers.indexOf("topicId");
     const questionIdCol = headers.indexOf("questionId");
     const retryCountCol = headers.indexOf("retryCount");
@@ -737,7 +956,6 @@ function saveWrongAnswer(wrongData) {
     let existingRow = -1;
     for (let i = 1; i < data.length; i++) {
       if (
-        data[i][userEmailCol] === userEmail &&
         data[i][topicIdCol] === wrongData.topicId &&
         data[i][questionIdCol] === wrongData.questionId
       ) {
@@ -758,25 +976,24 @@ function saveWrongAnswer(wrongData) {
         .setValue(new Date().toISOString());
       Logger.log("✅ Updated existing wrong answer entry");
     } else {
-      // Create new entry
+      // Create new entry (không cần userEmail vì đã là sheet cá nhân)
       const wrongEntry = [
-        "WA" + Date.now(),
-        userEmail,
-        wrongData.topicId,
-        wrongData.questionId,
-        wrongData.question,
-        wrongData.selectedAnswer,
-        wrongData.correctAnswer,
+        "WA_" + Date.now(), // id
+        wrongData.topicId, // topicId
+        wrongData.questionId, // questionId
+        wrongData.question, // question
+        wrongData.selectedAnswer, // selectedAnswer
+        wrongData.correctAnswer, // correctAnswer
         1, // retryCount
         new Date().toISOString(), // lastRetry
         false, // mastered
         new Date().toISOString(), // createdAt
       ];
       wrongSheet.appendRow(wrongEntry);
-      Logger.log("✅ New wrong answer saved");
+      Logger.log("✅ New wrong answer saved to PERSONAL sheet");
     }
 
-    return { success: true, message: "Wrong answer saved" };
+    return { success: true, message: "Wrong answer saved to personal sheet" };
   } catch (error) {
     Logger.log("❌ Error saving wrong answer: " + error.toString());
     return { success: false, message: error.toString() };
@@ -784,31 +1001,41 @@ function saveWrongAnswer(wrongData) {
 }
 
 /**
- * Get wrong answers for a topic to retry
+ * Get wrong answers for a topic from user's PERSONAL sheet to retry
  * @param {string} topicId - Topic ID
  * @returns {Array} - Array of wrong answer questions
  */
 function getWrongAnswersForTopic(topicId) {
   try {
-    Logger.log("=== GET WRONG ANSWERS FOR TOPIC ===");
+    Logger.log("=== GET WRONG ANSWERS FOR TOPIC FROM PERSONAL SHEET ===");
     Logger.log("Topic ID: " + topicId);
 
-    const masterDbId =
-      DB_CONFIG.SPREADSHEET_ID ||
-      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
-    const ss = SpreadsheetApp.openById(masterDbId);
-    const wrongSheet = ss.getSheetByName("Wrong_Answers");
-
-    if (!wrongSheet) {
-      Logger.log("Wrong_Answers sheet not found");
+    // Get current user email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      Logger.log("⚠️ No user email");
       return [];
     }
 
-    const userEmail = Session.getActiveUser().getEmail() || "anonymous";
+    // Get user's personal sheet ID
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      Logger.log("⚠️ User doesn't have personal sheet");
+      return [];
+    }
+
+    // Open user's personal spreadsheet
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const wrongSheet = userSpreadsheet.getSheetByName("Wrong_Answers");
+
+    if (!wrongSheet) {
+      Logger.log("Wrong_Answers sheet not found in personal sheet");
+      return [];
+    }
+
     const data = wrongSheet.getDataRange().getValues();
     const headers = data[0];
 
-    const userEmailCol = headers.indexOf("userEmail");
     const topicIdCol = headers.indexOf("topicId");
     const questionIdCol = headers.indexOf("questionId");
     const questionCol = headers.indexOf("question");
@@ -818,11 +1045,7 @@ function getWrongAnswersForTopic(topicId) {
     const wrongAnswers = [];
 
     for (let i = 1; i < data.length; i++) {
-      if (
-        data[i][userEmailCol] === userEmail &&
-        data[i][topicIdCol] === topicId &&
-        data[i][masteredCol] !== true
-      ) {
+      if (data[i][topicIdCol] === topicId && data[i][masteredCol] !== true) {
         wrongAnswers.push({
           questionId: data[i][questionIdCol],
           question: data[i][questionCol],
@@ -840,42 +1063,49 @@ function getWrongAnswersForTopic(topicId) {
 }
 
 /**
- * Mark a question as mastered (user answered correctly on retry)
+ * Mark a question as mastered in user's PERSONAL sheet
  * @param {string} topicId - Topic ID
  * @param {string} questionId - Question ID
  * @returns {object} - {success, message}
  */
 function markQuestionMastered(topicId, questionId) {
   try {
-    Logger.log("=== MARK QUESTION MASTERED ===");
+    Logger.log("=== MARK QUESTION MASTERED IN PERSONAL SHEET ===");
 
-    const masterDbId =
-      DB_CONFIG.SPREADSHEET_ID ||
-      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
-    const ss = SpreadsheetApp.openById(masterDbId);
-    const wrongSheet = ss.getSheetByName("Wrong_Answers");
-
-    if (!wrongSheet) {
-      return { success: false, message: "Sheet not found" };
+    // Get current user email
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "User not logged in" };
     }
 
-    const userEmail = Session.getActiveUser().getEmail() || "anonymous";
+    // Get user's personal sheet ID
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "User personal sheet not found" };
+    }
+
+    // Open user's personal spreadsheet
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const wrongSheet = userSpreadsheet.getSheetByName("Wrong_Answers");
+
+    if (!wrongSheet) {
+      return { success: false, message: "Wrong_Answers sheet not found" };
+    }
+
     const data = wrongSheet.getDataRange().getValues();
     const headers = data[0];
 
-    const userEmailCol = headers.indexOf("userEmail");
     const topicIdCol = headers.indexOf("topicId");
     const questionIdCol = headers.indexOf("questionId");
     const masteredCol = headers.indexOf("mastered");
 
     for (let i = 1; i < data.length; i++) {
       if (
-        data[i][userEmailCol] === userEmail &&
         data[i][topicIdCol] === topicId &&
         data[i][questionIdCol] === questionId
       ) {
         wrongSheet.getRange(i + 1, masteredCol + 1).setValue(true);
-        Logger.log("✅ Question marked as mastered");
+        Logger.log("✅ Question marked as mastered in PERSONAL sheet");
         return { success: true, message: "Question mastered" };
       }
     }
@@ -884,6 +1114,140 @@ function markQuestionMastered(topicId, questionId) {
   } catch (error) {
     Logger.log("❌ Error marking mastered: " + error.toString());
     return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Save correct answer (mastered question) to user's personal sheet
+ * @param {object} masteredData - {topicId, questionId, question}
+ * @returns {object} - Result
+ */
+function saveMasteredQuestion(masteredData) {
+  try {
+    Logger.log("=== SAVE MASTERED QUESTION ===");
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "Not logged in" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    let masteredSheet = userSpreadsheet.getSheetByName("Mastered_Questions");
+
+    // Create sheet if not exists
+    if (!masteredSheet) {
+      Logger.log("Creating Mastered_Questions sheet...");
+      masteredSheet = userSpreadsheet.insertSheet("Mastered_Questions");
+      masteredSheet.appendRow([
+        "id",
+        "topicId",
+        "questionId",
+        "question",
+        "masteredAt",
+        "timesCorrect",
+      ]);
+
+      const headerRange = masteredSheet.getRange(1, 1, 1, 6);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#10b981");
+      headerRange.setFontColor("white");
+      masteredSheet.setFrozenRows(1);
+    }
+
+    // Check if already mastered
+    const data = masteredSheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const questionIdCol = headers.indexOf("questionId");
+    const timesCorrectCol = headers.indexOf("timesCorrect");
+
+    for (let i = 1; i < data.length; i++) {
+      if (
+        data[i][topicIdCol] === masteredData.topicId &&
+        data[i][questionIdCol] === masteredData.questionId
+      ) {
+        // Already mastered, increment counter
+        const currentCount = data[i][timesCorrectCol] || 1;
+        masteredSheet
+          .getRange(i + 1, timesCorrectCol + 1)
+          .setValue(currentCount + 1);
+        Logger.log("✅ Updated existing mastered question");
+        return { success: true, message: "Updated mastered count" };
+      }
+    }
+
+    // Add new mastered question
+    masteredSheet.appendRow([
+      "MQ_" + Date.now(),
+      masteredData.topicId,
+      masteredData.questionId,
+      masteredData.question,
+      new Date().toISOString(),
+      1,
+    ]);
+
+    // Also remove from Wrong_Answers if exists
+    markQuestionMastered(masteredData.topicId, masteredData.questionId);
+
+    Logger.log("✅ Saved new mastered question");
+    return { success: true, message: "Question mastered" };
+  } catch (error) {
+    Logger.log("❌ Error saving mastered question: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get mastered question IDs for a topic
+ * @param {string} topicId - Topic ID
+ * @returns {Array} - Array of mastered questionIds
+ */
+function getMasteredQuestionIds(topicId) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return [];
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return [];
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const masteredSheet = userSpreadsheet.getSheetByName("Mastered_Questions");
+
+    if (!masteredSheet) {
+      return [];
+    }
+
+    const data = masteredSheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const questionIdCol = headers.indexOf("questionId");
+
+    const masteredIds = [];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdCol] === topicId) {
+        masteredIds.push(data[i][questionIdCol]);
+      }
+    }
+
+    Logger.log(
+      "✅ Found " +
+        masteredIds.length +
+        " mastered questions for topic " +
+        topicId
+    );
+    return masteredIds;
+  } catch (error) {
+    Logger.log("❌ Error getting mastered questions: " + error.toString());
+    return [];
   }
 }
 

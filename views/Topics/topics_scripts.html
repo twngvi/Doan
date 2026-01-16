@@ -53,9 +53,30 @@
 
       const now = Date.now();
 
-      // ⭐ Kiểm tra cache - nếu còn hiệu lực thì dùng luôn
+      // ⭐ ƯU TIÊN 1: Kiểm tra GLOBAL cache (có thể đã load từ MCQ page)
+      const globalCache = window.globalTopicsCache;
+      if (
+        !forceRefresh &&
+        globalCache &&
+        globalCache.data &&
+        now - globalCache.lastLoadTime <
+          (globalCache.cacheDuration || CACHE_DURATION)
+      ) {
+        console.log("✅ Using GLOBAL cached topics data");
+        allTopics = globalCache.data;
+        userProgress = globalCache.progress || {};
+        topicsCache = globalCache.data; // Sync với local cache
+        progressCache = globalCache.progress || {};
+        lastLoadTime = globalCache.lastLoadTime;
+        filteredTopics = [...allTopics];
+        renderTopics();
+        updateProgressStats();
+        return;
+      }
+
+      // ⭐ ƯU TIÊN 2: Kiểm tra LOCAL cache - nếu còn hiệu lực thì dùng luôn
       if (!forceRefresh && topicsCache && now - lastLoadTime < CACHE_DURATION) {
-        console.log("✅ Using cached topics data");
+        console.log("✅ Using LOCAL cached topics data");
         allTopics = topicsCache;
         userProgress = progressCache || {};
         filteredTopics = [...allTopics];
@@ -64,6 +85,7 @@
         return;
       }
 
+      // ⭐ ƯU TIÊN 3: Load từ server
       // Show loading state
       showLoadingState();
 
@@ -132,7 +154,7 @@
         return;
       }
 
-      // ⭐ Lưu vào biến và cache
+      // ⭐ Lưu vào biến và LOCAL cache
       allTopics = topicsResult.topics;
       topicsCache = topicsResult.topics;
 
@@ -146,6 +168,20 @@
       }
 
       lastLoadTime = Date.now();
+
+      // ⭐ Lưu vào GLOBAL cache (để chia sẻ với MCQ, Matching và các page khác)
+      if (!window.globalTopicsCache) {
+        window.globalTopicsCache = {
+          data: null,
+          progress: null,
+          lastLoadTime: 0,
+          cacheDuration: 60000,
+        };
+      }
+      window.globalTopicsCache.data = topicsResult.topics;
+      window.globalTopicsCache.progress = userProgress;
+      window.globalTopicsCache.lastLoadTime = Date.now();
+      console.log(`✅ Saved ${allTopics.length} topics to GLOBAL cache`);
 
       console.log(`✅ Loaded ${allTopics.length} topics with progress`);
 

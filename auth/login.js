@@ -83,6 +83,12 @@ function loginWithEmail(credentials) {
         const now = new Date();
         usersSheet.getRange(i + 1, lastLoginIndex + 1).setValue(now);
 
+        // ⭐ Also save login to user's personal sheet
+        const progressSheetId = data[i][progressSheetIdIndex];
+        if (progressSheetId) {
+          saveLoginToPersonalSheet(progressSheetId, data[i][emailIndex], now);
+        }
+
         // Log activity
         logActivity({
           level: "INFO",
@@ -184,5 +190,55 @@ function getUserSession(userId) {
   } catch (error) {
     Logger.log("Error in getUserSession: " + error.toString());
     return { status: "error", message: error.toString() };
+  }
+}
+
+/**
+ * Save login history to user's personal sheet
+ * @param {string} progressSheetId - User's personal sheet ID
+ * @param {string} email - User email
+ * @param {Date} loginTime - Login timestamp
+ */
+function saveLoginToPersonalSheet(progressSheetId, email, loginTime) {
+  try {
+    Logger.log("=== SAVE LOGIN TO PERSONAL SHEET ===");
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    let loginSheet = userSpreadsheet.getSheetByName("Login_History");
+
+    // Create sheet if not exists
+    if (!loginSheet) {
+      Logger.log("Creating Login_History sheet...");
+      loginSheet = userSpreadsheet.insertSheet("Login_History");
+      loginSheet.appendRow([
+        "id",
+        "loginTime",
+        "device",
+        "ipAddress",
+        "sessionDuration",
+      ]);
+
+      // Style header
+      const headerRange = loginSheet.getRange(1, 1, 1, 5);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#10B981");
+      headerRange.setFontColor("white");
+      loginSheet.setFrozenRows(1);
+    }
+
+    // Add login entry
+    const loginEntry = [
+      "LG_" + Date.now(),
+      loginTime.toISOString(),
+      "Web Browser",
+      "N/A",
+      "", // Session duration - will be updated on logout
+    ];
+
+    loginSheet.appendRow(loginEntry);
+    Logger.log("✅ Login saved to personal sheet");
+  } catch (error) {
+    Logger.log("⚠️ Error saving login to personal sheet: " + error.toString());
+    // Don't throw - this is optional functionality
   }
 }

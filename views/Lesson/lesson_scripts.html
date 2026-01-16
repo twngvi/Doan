@@ -177,12 +177,12 @@
           // Hide loading
           document.getElementById("lesson-loading").style.display = "none";
 
-          // Show content
+          // Show content - Render Google Doc then enhance
           const contentArea = document.getElementById("lesson-content-area");
           contentArea.innerHTML = response.content;
           contentArea.style.display = "block";
 
-          // ⭐ ENHANCE CONTENT WITH FEATURES
+          // ⭐ ENHANCE LESSON CONTENT - Apply all enhancements
           enhanceLessonContent();
 
           // Show actions after a delay
@@ -384,46 +384,27 @@
       );
   }
 
-  // ========== INTERACTIVE NETWORK MINDMAP ==========
+  // ========== SIMPLE TREE MINDMAP ==========
 
-  // Color palette for nodes
+  // Color palette for branches
   const branchColors = [
     "purple",
-    "pink",
     "blue",
-    "cyan",
     "green",
+    "pink",
+    "cyan",
     "yellow",
     "red",
     "indigo",
   ];
 
-  // State management for Multi-Branch Organic Mindmap
-  let networkState = {
-    expandedNodes: new Set(), // Track which nodes are expanded
-    expandedDetails: {}, // Store detail positions per node { nodeIndex: [positions] }
-    // Pan & Zoom state
-    zoom: 1,
-    panX: 0,
-    panY: 0,
-    isDragging: false,
-    dragStartX: 0,
-    dragStartY: 0,
-    // Auto-fit control
-    autoFitEnabled: true,
-    // Node positions for physics & bounding box
-    nodePositions: [],
-    // Physics simulation
-    physicsEnabled: true,
-    baseRadius: 32, // Dynamic radius adjusts based on expanded nodes
-  };
-
   /**
-   * Render Interactive Network Mindmap
+   * Render Simple Tree Mindmap
+   * Layout: Root (left) → Branches (middle) → Children (right)
+   * All content displayed at once, smooth curved connections
    */
   function renderMindmap(data) {
-    const centerContainer = document.getElementById("mindmap-center");
-    const nodesContainer = document.getElementById("mindmap-nodes");
+    const treeContainer = document.getElementById("tree-container");
     const connectionsLayer = document.getElementById("mindmap-connections");
 
     // Handle if data is still a string
@@ -445,7 +426,7 @@
       return;
     }
 
-    console.log("🧠 Rendering network mindmap with data:", data);
+    console.log("🌳 Rendering tree mindmap with data:", data);
 
     // Get root title
     const rootTitle =
@@ -457,769 +438,238 @@
     // Get branches
     const branches = data.branches || data.nodes || [];
 
-    // Render root node (center) - NO ICON
-    centerContainer.innerHTML = `
-      <div class="mindmap-root-node" onclick="resetMindmapView()">
-        <span>${rootTitle}</span>
-      </div>
-    `;
-
     // Clear containers
-    nodesContainer.innerHTML = "";
+    treeContainer.innerHTML = "";
     connectionsLayer.innerHTML = "";
-    document.getElementById("mindmap-details").innerHTML = "";
-    networkState.focusedNodeIndex = null;
-    networkState.expandedNodes.clear();
-    networkState.nodePositions = [];
 
     if (branches.length === 0) {
-      nodesContainer.innerHTML = `
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: rgba(255,255,255,0.6);">
+      treeContainer.innerHTML = `
+        <div style="text-align: center; color: #64748b; padding: 2rem;">
           <p>Không có dữ liệu mindmap</p>
         </div>
       `;
       return;
     }
 
-    // ========== COMPACT BALANCED TREE LAYOUT ==========
-    // Root ở giữa (50%, 50%), satellites chia 2 bên trái/phải
-    const rootX = 50; // Root node chính giữa
-    const rootY = 50; // Centered vertically
-    const horizontalSpacing = 22; // GIẢM khoảng cách ngang (trước là 35)
+    // Build tree structure
+    // 1. Root node
+    const rootEl = document.createElement("div");
+    rootEl.className = "tree-root";
+    rootEl.innerHTML = `<div class="root-node" id="root-node">${rootTitle}</div>`;
+    treeContainer.appendChild(rootEl);
 
-    // Chia branches thành 2 nhóm: trái (lẻ) và phải (chẵn)
-    const leftBranches = branches.filter((_, i) => i % 2 !== 0); // Odd indices → Left
-    const rightBranches = branches.filter((_, i) => i % 2 === 0); // Even indices → Right
-
-    const totalLeft = leftBranches.length;
-    const totalRight = rightBranches.length;
-
-    // Hàm tính Y để các node nằm sát nhau hơn ở giữa
-    const calculateY = (groupIndex, total) => {
-      if (total === 1) return 50;
-      // Khoảng cách giữa các node là 14% chiều cao màn hình
-      const gap = 14;
-      // Tính vị trí bắt đầu để cụm node nằm giữa màn hình
-      const startY = 50 - ((total - 1) * gap) / 2;
-      return startY + groupIndex * gap;
-    };
-
-    // Store center position
-    networkState.nodePositions.push({ x: rootX, y: rootY, type: "center" });
+    // 2. Branches column
+    const branchesEl = document.createElement("div");
+    branchesEl.className = "tree-branches";
 
     branches.forEach((branch, index) => {
       const branchLabel = branch.label || branch.name || "Nhánh " + (index + 1);
-      const branchIcon = branch.icon || getDefaultIcon(index);
       const branchColor = branchColors[index % branchColors.length];
       const children = branch.children || [];
 
-      // Xác định vị trí: lẻ bên trái, chẵn bên phải
-      const isLeft = index % 2 !== 0;
-      const direction = isLeft ? -1 : 1; // -1: Left, 1: Right
+      // Create branch row
+      const branchRow = document.createElement("div");
+      branchRow.className = "tree-branch";
+      branchRow.setAttribute("data-color", branchColor);
+      branchRow.setAttribute("data-index", index);
 
-      // Tính vị trí trong nhóm của nó
-      const groupIndex = isLeft
-        ? leftBranches.indexOf(branch)
-        : rightBranches.indexOf(branch);
-      const groupLength = isLeft ? totalLeft : totalRight;
+      // Branch node
+      const branchNodeEl = document.createElement("div");
+      branchNodeEl.className = "branch-node";
+      branchNodeEl.id = `branch-${index}`;
+      branchNodeEl.textContent = branchLabel;
+      branchRow.appendChild(branchNodeEl);
 
-      // Calculate position với hàm calculateY mới
-      const x = rootX + direction * horizontalSpacing;
-      const y = calculateY(groupIndex, groupLength);
+      // Children column (if any)
+      if (children.length > 0) {
+        const childrenEl = document.createElement("div");
+        childrenEl.className = "branch-children";
+        childrenEl.id = `children-${index}`;
 
-      // Create satellite node
-      const nodeEl = document.createElement("div");
-      nodeEl.className = "satellite-node";
-      nodeEl.setAttribute("data-color", branchColor);
-      nodeEl.setAttribute("data-index", index);
-      nodeEl.setAttribute("data-base-x", x); // Store original position
-      nodeEl.setAttribute("data-base-y", y);
-      nodeEl.setAttribute("data-direction", direction); // -1: left, 1: right
-      nodeEl.setAttribute("data-group-index", groupIndex); // Lưu thứ tự trong nhóm
-      nodeEl.setAttribute("data-is-left", isLeft); // Lưu phía (trái/phải)
-      nodeEl.style.left = x + "%";
-      nodeEl.style.top = y + "%";
-      nodeEl.style.transform = "translate(-50%, -50%)";
-      nodeEl.style.transition = "all 0.4s ease"; // Smooth sliding
+        children.forEach((child, childIdx) => {
+          const childText =
+            typeof child === "string" ? child : child.label || child.name || "";
 
-      nodeEl.innerHTML = `
-        <div class="node-circle">
-          <span class="node-label">${branchLabel}</span>
-        </div>
-      `;
-
-      // Store children data for later expansion
-      nodeEl.dataset.children = JSON.stringify(children);
-
-      // Store position for bounding box calculation
-      networkState.nodePositions.push({
-        x,
-        y,
-        type: "satellite",
-        index,
-        direction,
-      });
-
-      // Click handler for expansion
-      nodeEl.onclick = () => toggleNodeExpansion(index, nodeEl, branchColor);
-
-      nodesContainer.appendChild(nodeEl);
-
-      // Draw connection line from root to satellite (horizontal flow)
-      drawConnection(connectionsLayer, rootX, rootY, x, y, branchColor, index);
-    });
-
-    // Initialize pan & zoom controls
-    initPanZoomControls();
-
-    // Auto-fit to screen after initial render
-    setTimeout(() => {
-      fitToScreen(true); // Smooth animation on first load
-    }, 100);
-  }
-
-  /**
-   * Draw SVG connection line between two points
-   */
-  /**
-   * Draw Smooth Connection - Màu xám đậm rõ trên nền sáng
-   */
-  function drawConnection(svg, x1, y1, x2, y2, color, index) {
-    const svgNS = "http://www.w3.org/2000/svg";
-
-    // Create smooth bezier curve path
-    const path = document.createElementNS(svgNS, "path");
-
-    // Calculate control points for smooth S-curve
-    const deltaX = x2 - x1;
-
-    // Bezier curve: đường cong mềm mại từ root đến satellite
-    const ctrlX1 = x1 + deltaX * 0.5;
-    const ctrlY1 = y1;
-    const ctrlX2 = x2 - deltaX * 0.5;
-    const ctrlY2 = y2;
-
-    const pathData = `M ${x1}% ${y1}% C ${ctrlX1}% ${ctrlY1}%, ${ctrlX2}% ${ctrlY2}%, ${x2}% ${y2}%`;
-
-    path.setAttribute("d", pathData);
-    path.setAttribute("class", "connection-line");
-    path.setAttribute("data-index", index);
-    path.setAttribute("stroke", "#94a3b8"); // Màu xám đậm cố định
-    path.setAttribute("stroke-width", "2");
-    path.setAttribute("fill", "none");
-
-    svg.appendChild(path);
-  }
-
-  /**
-   * Get hex color from color name
-   */
-  function getColorHex(colorName) {
-    const colorMap = {
-      purple: "#7c3aed",
-      pink: "#ec4899",
-      blue: "#3b82f6",
-      cyan: "#06b6d4",
-      green: "#10b981",
-      yellow: "#f59e0b",
-      red: "#ef4444",
-      indigo: "#6366f1",
-    };
-    return colorMap[colorName] || "#7c3aed";
-  }
-
-  /**
-   * Toggle node expansion - Multi-Branch Organic Mindmap
-   * Each node can be independently expanded/collapsed
-   */
-  function toggleNodeExpansion(nodeIndex, nodeEl, color) {
-    const isExpanded = networkState.expandedNodes.has(nodeIndex);
-
-    if (isExpanded) {
-      // Collapse this node
-      collapseNode(nodeIndex);
-    } else {
-      // Expand this node
-      expandNode(nodeIndex, nodeEl, color);
-    }
-
-    // Apply physics-based re-layout if multiple nodes are expanded
-    if (networkState.physicsEnabled && networkState.expandedNodes.size > 0) {
-      setTimeout(() => {
-        applyPhysicsLayout();
-      }, 50);
-    }
-
-    // Auto-fit to show all content (The Breathing Map!)
-    setTimeout(() => {
-      fitToScreen(true);
-    }, 150);
-  }
-
-  /**
-   * Expand a single node
-   */
-  function expandNode(nodeIndex, nodeEl, color) {
-    networkState.expandedNodes.add(nodeIndex);
-
-    // Add visual indicator that this node is expanded
-    nodeEl.classList.add("expanded");
-
-    // Get children data
-    const children = JSON.parse(nodeEl.dataset.children || "[]");
-
-    if (children.length === 0) {
-      showToast("Không có chi tiết cho mục này", "info");
-      networkState.expandedNodes.delete(nodeIndex);
-      return;
-    }
-
-    const detailsContainer = document.getElementById("mindmap-details");
-
-    // Get node position
-    const nodeRect = nodeEl.getBoundingClientRect();
-    const containerRect = nodeEl.parentElement.getBoundingClientRect();
-
-    const nodeX =
-      ((nodeRect.left + nodeRect.width / 2 - containerRect.left) /
-        containerRect.width) *
-      100;
-    const nodeY =
-      ((nodeRect.top + nodeRect.height / 2 - containerRect.top) /
-        containerRect.height) *
-      100;
-
-    // Get direction from node: -1 = left side, 1 = right side
-    const direction = parseInt(nodeEl.getAttribute("data-direction")) || 1;
-
-    // Details xổ ra phía ngoài (xa tâm): left node -> details bên trái, right node -> details bên phải
-    const detailOffset = 22; // Khoảng cách từ satellite đến details
-    const detailStartX = nodeX + direction * detailOffset; // Xa tâm theo hướng của node
-    const detailVerticalSpacing = 5.5; // Spacing giữa các detail cards
-    const gridColumns = 1; // Single column
-
-    children.forEach((child, i) => {
-      const childText =
-        typeof child === "string" ? child : child.label || child.name || "";
-
-      // Grid layout: vertical column xa phía ngoài
-      const col = i % gridColumns;
-      const row = Math.floor(i / gridColumns);
-      const detailX = detailStartX + col * 18 * direction; // Multi-column cũng theo hướng
-      const detailY =
-        nodeY -
-        ((children.length - 1) * detailVerticalSpacing) / 2 +
-        row * detailVerticalSpacing;
-
-      const detailNode = document.createElement("div");
-      detailNode.className = "detail-node";
-      detailNode.setAttribute("data-parent", nodeIndex); // Track parent
-      detailNode.style.left = detailX + "%";
-      detailNode.style.top = detailY + "%";
-      detailNode.style.transform = "translate(-50%, -50%)";
-      detailNode.style.animationDelay = i * 0.06 + "s"; // Staggered animation
-
-      // Detail pill KHÔNG CÓ BULLET
-      detailNode.innerHTML = `
-        <div class="detail-pill" style="--node-color: ${getColorHex(color)}">
-          <span>${childText}</span>
-        </div>
-      `;
-
-      detailsContainer.appendChild(detailNode);
-
-      // Store detail positions for this node
-      if (!networkState.expandedDetails[nodeIndex]) {
-        networkState.expandedDetails[nodeIndex] = [];
-      }
-      networkState.expandedDetails[nodeIndex].push({
-        x: detailX,
-        y: detailY,
-        type: "detail",
-        parentIndex: nodeIndex,
-      });
-
-      // Draw elbow connection from parent node to detail
-      const connectionsLayer = document.getElementById("mindmap-connections");
-      const detailPath = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "path"
-      );
-
-      // Smooth elbow connector theo hướng của node
-      const elbowX = nodeX + (detailX - nodeX) * 0.5;
-      const pathData = `M ${nodeX}% ${nodeY}% L ${elbowX}% ${nodeY}% L ${elbowX}% ${detailY}% L ${detailX}% ${detailY}%`;
-
-      detailPath.setAttribute("d", pathData);
-      detailPath.setAttribute("class", "connection-line detail-connection");
-      detailPath.setAttribute("data-parent", nodeIndex); // Track parent
-      detailPath.setAttribute("stroke", getColorHex(color));
-      detailPath.setAttribute("stroke-width", "2");
-      detailPath.setAttribute("stroke-dasharray", "6 4"); // Dashed line
-      detailPath.setAttribute("fill", "none");
-      connectionsLayer.appendChild(detailPath);
-    });
-
-    showToast(
-      `✨ Mở: ${nodeEl.querySelector(".node-label").textContent} (${
-        children.length
-      } mục)`,
-      "success"
-    );
-  }
-
-  /**
-   * Collapse a single node
-   */
-  function collapseNode(nodeIndex) {
-    networkState.expandedNodes.delete(nodeIndex);
-
-    // Remove visual indicator
-    const allNodes = document.querySelectorAll(".satellite-node");
-    if (allNodes[nodeIndex]) {
-      allNodes[nodeIndex].classList.remove("expanded");
-    }
-
-    // Remove detail nodes for this parent
-    const detailNodes = document.querySelectorAll(
-      `.detail-node[data-parent="${nodeIndex}"]`
-    );
-    detailNodes.forEach((node) => node.remove());
-
-    // Remove detail connections for this parent
-    const detailConnections = document.querySelectorAll(
-      `.detail-connection[data-parent="${nodeIndex}"]`
-    );
-    detailConnections.forEach((conn) => conn.remove());
-
-    // Clear detail positions for this node
-    delete networkState.expandedDetails[nodeIndex];
-
-    showToast("🗙 Đã đóng nhánh", "info");
-  }
-
-  /**
-   * Reset mindmap view - Multi-Branch version
-   */
-  function resetMindmapView() {
-    const detailsContainer = document.getElementById("mindmap-details");
-    const allNodes = document.querySelectorAll(".satellite-node");
-    const connectionsLayer = document.getElementById("mindmap-connections");
-
-    // Remove ALL detail nodes
-    detailsContainer.innerHTML = "";
-
-    // Remove ALL detail connections
-    connectionsLayer
-      .querySelectorAll(".detail-connection")
-      .forEach((el) => el.remove());
-
-    // Clear expanded state
-    networkState.expandedNodes.clear();
-    networkState.expandedDetails = {};
-
-    // Remove expanded class from all nodes
-    allNodes.forEach((n) => n.classList.remove("expanded"));
-
-    // Re-fit to screen
-    setTimeout(() => {
-      fitToScreen(true);
-    }, 100);
-
-    showToast("Đã đóng tất cả nhánh", "info");
-  }
-
-  // ========== PHYSICS-BASED LAYOUT ==========
-
-  /**
-   * Smart Sliding: Apply intelligent repositioning when nodes expand
-   * ĐẨY CÁC NODE BÊN DƯỚI xuống để không bị đè
-   */
-  function applySmartSliding() {
-    const allNodes = document.querySelectorAll(".satellite-node");
-
-    // Reset tất cả về vị trí gốc trước khi tính toán lại
-    allNodes.forEach((node) => {
-      const baseY = parseFloat(node.getAttribute("data-base-y"));
-      node.style.top = baseY + "%";
-    });
-
-    // Lặp qua từng node để xem node nào đang mở
-    allNodes.forEach((activeNode) => {
-      // Nếu node này đang mở (có class expanded)
-      if (activeNode.classList.contains("expanded")) {
-        const isLeft = activeNode.getAttribute("data-is-left") === "true";
-        const groupIndex = parseInt(
-          activeNode.getAttribute("data-group-index")
-        );
-
-        // Lấy số lượng con để tính khoảng cách cần đẩy
-        const children = JSON.parse(activeNode.dataset.children || "[]");
-        // Công thức: Mỗi child tốn khoảng 5% chiều cao + 3% padding
-        const pushHeight = children.length * 5 + 3;
-
-        // ĐẨY CÁC NODE BÊN DƯỚI NÓ (cùng phía)
-        allNodes.forEach((siblingNode) => {
-          const siblingLeft =
-            siblingNode.getAttribute("data-is-left") === "true";
-          const siblingIndex = parseInt(
-            siblingNode.getAttribute("data-group-index")
-          );
-
-          // Nếu cùng phía và nằm bên dưới (index lớn hơn)
-          if (siblingLeft === isLeft && siblingIndex > groupIndex) {
-            let currentTop = parseFloat(siblingNode.style.top);
-            siblingNode.style.top = currentTop + pushHeight + "%";
-          }
+          const childNode = document.createElement("div");
+          childNode.className = "child-node";
+          childNode.id = `child-${index}-${childIdx}`;
+          childNode.textContent = childText;
+          childrenEl.appendChild(childNode);
         });
+
+        branchRow.appendChild(childrenEl);
       }
+
+      branchesEl.appendChild(branchRow);
     });
 
-    console.log("↕️ Smart Sliding applied");
+    treeContainer.appendChild(branchesEl);
 
-    // Vẽ lại đường dây sau khi các node đã di chuyển
-    updateAllConnections();
+    // Draw connection lines after DOM renders
+    setTimeout(() => {
+      drawTreeConnections(branches);
+    }, 50);
   }
 
   /**
-   * Update all connection lines after nodes have moved
+   * Draw smooth curved connections between nodes
    */
-  function updateAllConnections() {
-    const connectionsLayer = document.getElementById("mindmap-connections");
-    const allNodes = document.querySelectorAll(".satellite-node");
-    const rootNode = document.querySelector(".mindmap-root-node");
+  function drawTreeConnections(branches) {
+    const svg = document.getElementById("mindmap-connections");
+    const container = document.querySelector(".mindmap-tree");
 
-    if (!connectionsLayer || !rootNode) return;
+    if (!svg || !container) return;
 
-    // Clear only main connections (keep detail connections)
-    const mainConnections = connectionsLayer.querySelectorAll(
-      "path:not(.detail-connection)"
-    );
-    mainConnections.forEach((conn) => conn.remove());
+    svg.innerHTML = "";
 
-    // Also clear pulses
-    const pulses = connectionsLayer.querySelectorAll("circle");
-    pulses.forEach((p) => p.remove());
+    // Get container bounds for relative positioning
+    const containerRect = container.getBoundingClientRect();
 
-    // Redraw connections with current positions
+    // Get root node position
+    const rootNode = document.getElementById("root-node");
+    if (!rootNode) return;
+
     const rootRect = rootNode.getBoundingClientRect();
-    const containerRect = rootNode.parentElement.getBoundingClientRect();
-    const rootX =
-      ((rootRect.left + rootRect.width / 2 - containerRect.left) /
-        containerRect.width) *
-      100;
-    const rootY =
-      ((rootRect.top + rootRect.height / 2 - containerRect.top) /
-        containerRect.height) *
-      100;
+    const rootX = rootRect.right - containerRect.left;
+    const rootCenterY = rootRect.top + rootRect.height / 2 - containerRect.top;
 
-    allNodes.forEach((node, index) => {
-      const nodeRect = node.getBoundingClientRect();
-      const nodeX =
-        ((nodeRect.left + nodeRect.width / 2 - containerRect.left) /
-          containerRect.width) *
-        100;
-      const nodeY =
-        ((nodeRect.top + nodeRect.height / 2 - containerRect.top) /
-          containerRect.height) *
-        100;
+    // Draw connections for each branch
+    branches.forEach((branch, index) => {
+      const branchNode = document.getElementById(`branch-${index}`);
+      if (!branchNode) return;
 
-      const color = node.getAttribute("data-color");
-      drawConnection(
-        connectionsLayer,
+      const branchRect = branchNode.getBoundingClientRect();
+      const branchX = branchRect.left - containerRect.left;
+      const branchCenterY =
+        branchRect.top + branchRect.height / 2 - containerRect.top;
+
+      // Get color for this branch
+      const branchColor = branchColors[index % branchColors.length];
+      const lineColor = getLineColor(branchColor);
+
+      // Draw root → branch curved line
+      const rootPath = createCurvedPath(
         rootX,
-        rootY,
-        nodeX,
-        nodeY,
-        color,
-        index
+        rootCenterY,
+        branchX,
+        branchCenterY,
+        lineColor,
+        2,
+        "root-branch"
       );
-    });
-  }
+      svg.appendChild(rootPath);
 
-  /**
-   * Apply physics-based layout (for future advanced features)
-   */
-  function applyPhysicsLayout() {
-    // Currently using Smart Sliding instead
-    applySmartSliding();
-  }
+      // Draw branch → children connections
+      const children = branch.children || [];
+      children.forEach((child, childIdx) => {
+        const childNode = document.getElementById(`child-${index}-${childIdx}`);
+        if (!childNode) return;
 
-  /**
-   * Expand all nodes at once
-   */
-  function expandAllNodes() {
-    const allNodes = document.querySelectorAll(".satellite-node");
+        const childRect = childNode.getBoundingClientRect();
+        const branchRightX = branchRect.right - containerRect.left;
+        const childX = childRect.left - containerRect.left;
+        const childCenterY =
+          childRect.top + childRect.height / 2 - containerRect.top;
 
-    allNodes.forEach((node, index) => {
-      if (!networkState.expandedNodes.has(index)) {
-        const color = node.getAttribute("data-color");
-        // Delay each expansion slightly for animation effect
-        setTimeout(() => {
-          toggleNodeExpansion(index, node, color);
-        }, index * 150);
-      }
-    });
-
-    showToast("🌳 Đang mở tất cả nhánh...", "info");
-  }
-
-  /**
-   * Collapse all nodes
-   */
-  function collapseAllNodes() {
-    resetMindmapView();
-  }
-
-  // ========== THE BREATHING MAP: PAN & ZOOM SYSTEM ==========
-
-  /**
-   * Initialize pan & zoom controls
-   */
-  function initPanZoomControls() {
-    const networkContainer = document.querySelector(".network-container");
-    if (!networkContainer) return;
-
-    // Mouse wheel zoom
-    const mindmapNetwork = document.querySelector(".mindmap-network");
-    if (mindmapNetwork) {
-      mindmapNetwork.addEventListener("wheel", handleMouseWheel, {
-        passive: false,
+        const childPath = createCurvedPath(
+          branchRightX,
+          branchCenterY,
+          childX,
+          childCenterY,
+          lineColor,
+          1.5,
+          "branch-child"
+        );
+        svg.appendChild(childPath);
       });
-    }
-
-    // Drag to pan
-    networkContainer.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    // Touch support
-    networkContainer.addEventListener("touchstart", handleTouchStart, {
-      passive: false,
-    });
-    networkContainer.addEventListener("touchmove", handleTouchMove, {
-      passive: false,
-    });
-    networkContainer.addEventListener("touchend", handleTouchEnd);
-  }
-
-  /**
-   * Mouse wheel zoom handler
-   */
-  function handleMouseWheel(e) {
-    e.preventDefault();
-    networkState.autoFitEnabled = false; // Disable auto-fit when user zooms manually
-
-    const delta = -e.deltaY / 1000;
-    const newZoom = Math.max(0.3, Math.min(3, networkState.zoom + delta));
-
-    setZoom(newZoom);
-  }
-
-  /**
-   * Mouse drag handlers
-   */
-  function handleMouseDown(e) {
-    // Only pan on background (not on nodes)
-    if (e.target.closest(".satellite-node, .mindmap-root-node, .detail-node")) {
-      return;
-    }
-
-    networkState.isDragging = true;
-    networkState.dragStartX = e.clientX - networkState.panX;
-    networkState.dragStartY = e.clientY - networkState.panY;
-    networkState.autoFitEnabled = false; // Disable auto-fit when user pans manually
-
-    e.preventDefault();
-  }
-
-  function handleMouseMove(e) {
-    if (!networkState.isDragging) return;
-
-    networkState.panX = e.clientX - networkState.dragStartX;
-    networkState.panY = e.clientY - networkState.dragStartY;
-
-    applyTransform();
-  }
-
-  function handleMouseUp(e) {
-    networkState.isDragging = false;
-  }
-
-  /**
-   * Touch handlers for mobile
-   */
-  let touchStartX = 0;
-  let touchStartY = 0;
-
-  function handleTouchStart(e) {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0];
-      touchStartX = touch.clientX - networkState.panX;
-      touchStartY = touch.clientY - networkState.panY;
-      networkState.autoFitEnabled = false;
-    }
-  }
-
-  function handleTouchMove(e) {
-    if (e.touches.length === 1) {
-      e.preventDefault();
-      const touch = e.touches[0];
-      networkState.panX = touch.clientX - touchStartX;
-      networkState.panY = touch.clientY - touchStartY;
-      applyTransform();
-    }
-  }
-
-  function handleTouchEnd(e) {
-    // Touch ended
-  }
-
-  /**
-   * Set zoom level
-   */
-  function setZoom(zoom) {
-    networkState.zoom = zoom;
-    applyTransform();
-  }
-
-  /**
-   * Apply transform to network container
-   */
-  function applyTransform(animate = false) {
-    const networkContainer = document.querySelector(".network-container");
-    if (!networkContainer) return;
-
-    const transform = `translate(${networkState.panX}px, ${networkState.panY}px) scale(${networkState.zoom})`;
-
-    if (animate) {
-      networkContainer.style.transition =
-        "transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)";
-    } else {
-      networkContainer.style.transition = "none";
-    }
-
-    networkContainer.style.transform = transform;
-
-    // Remove transition after animation completes
-    if (animate) {
-      setTimeout(() => {
-        networkContainer.style.transition = "none";
-      }, 600);
-    }
-  }
-
-  /**
-   * Fit to screen - Multi-Branch Organic Mindmap version
-   * Calculates bounding box including ALL expanded details
-   */
-  function fitToScreen(animate = true) {
-    const mindmapNetwork = document.querySelector(".mindmap-network");
-    if (!mindmapNetwork) return;
-
-    const containerWidth = mindmapNetwork.offsetWidth;
-    const containerHeight = mindmapNetwork.offsetHeight;
-
-    // Collect ALL positions: center + satellites + all expanded details
-    const allPositions = [...networkState.nodePositions];
-
-    // Add all expanded detail positions
-    Object.values(networkState.expandedDetails).forEach((detailArray) => {
-      allPositions.push(...detailArray);
-    });
-
-    if (allPositions.length === 0) return;
-
-    // Calculate bounding box of all nodes
-    let minX = 100,
-      maxX = 0,
-      minY = 100,
-      maxY = 0;
-
-    allPositions.forEach((pos) => {
-      minX = Math.min(minX, pos.x);
-      maxX = Math.max(maxX, pos.x);
-      minY = Math.min(minY, pos.y);
-      maxY = Math.max(maxY, pos.y);
-    });
-
-    // Dynamic padding based on number of expanded nodes
-    const basePadding = 8;
-    const expandedCount = networkState.expandedNodes.size;
-    const dynamicPadding = basePadding + expandedCount * 1; // More padding with more nodes
-
-    minX -= dynamicPadding;
-    maxX += dynamicPadding;
-    minY -= dynamicPadding;
-    maxY += dynamicPadding;
-
-    // Calculate required zoom to fit bounding box
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
-
-    const zoomX = 100 / contentWidth;
-    const zoomY = 100 / contentHeight;
-    const optimalZoom = Math.min(zoomX, zoomY, 1.2); // Cap at 1.2x
-
-    // Calculate center of bounding box
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    // Calculate pan to center the content
-    const targetCenterX = containerWidth / 2;
-    const targetCenterY = containerHeight / 2;
-
-    const panX = targetCenterX - (centerX / 100) * containerWidth * optimalZoom;
-    const panY =
-      targetCenterY - (centerY / 100) * containerHeight * optimalZoom;
-
-    // Apply new transform
-    networkState.zoom = optimalZoom;
-    networkState.panX = panX;
-    networkState.panY = panY;
-
-    applyTransform(animate);
-
-    console.log("🫁 Multi-Branch Breathing:", {
-      zoom: optimalZoom.toFixed(2),
-      expandedNodes: expandedCount,
-      totalPositions: allPositions.length,
     });
   }
 
   /**
-   * Expand all nodes at once
+   * Create a smooth curved SVG path
    */
-  function expandAllNodes() {
-    showToast("Chức năng này sẽ được bổ sung sau", "info");
-    // TODO: Implement expand all logic
+  function createCurvedPath(x1, y1, x2, y2, color, strokeWidth, className) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+    // Control point offset for smooth S-curve
+    const cpOffset = (x2 - x1) * 0.5;
+
+    // Path: start → curve → end
+    const d = `M ${x1} ${y1} C ${x1 + cpOffset} ${y1}, ${
+      x2 - cpOffset
+    } ${y2}, ${x2} ${y2}`;
+
+    path.setAttribute("d", d);
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", strokeWidth);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("class", `tree-line ${className}`);
+
+    return path;
   }
 
   /**
-   * Collapse all nodes
+   * Get line color based on branch color name
    */
-  function collapseAllNodes() {
-    resetMindmapView();
+  function getLineColor(colorName) {
+    const colorMap = {
+      purple: "#a78bfa",
+      blue: "#93c5fd",
+      green: "#86efac",
+      pink: "#f9a8d4",
+      cyan: "#67e8f9",
+      yellow: "#fde047",
+      red: "#fca5a5",
+      indigo: "#a5b4fc",
+    };
+    return colorMap[colorName] || "#94a3b8";
   }
 
   /**
-   * Get default icon based on index
+   * Redraw connections on window resize
    */
-  function getDefaultIcon(index) {
-    const icons = ["📚", "💡", "🎯", "📝", "🔑", "⭐", "📌", "🏷️"];
-    return icons[index % icons.length];
+  let resizeTimeout;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      // Get branches from current tree
+      const branchEls = document.querySelectorAll(".tree-branch");
+      if (branchEls.length > 0) {
+        // Reconstruct branches data for redraw
+        const branches = Array.from(branchEls).map((el, idx) => {
+          const childrenContainer = el.querySelector(".branch-children");
+          const childNodes = childrenContainer
+            ? childrenContainer.querySelectorAll(".child-node")
+            : [];
+          return {
+            children: Array.from(childNodes).map(() => ({})),
+          };
+        });
+        drawTreeConnections(branches);
+      }
+    }, 100);
+  });
+
+  // Legacy functions (keep for compatibility but they do nothing)
+  function resetMindmapView() {
+    console.log("Tree mindmap - no reset needed");
+  }
+  function fitToScreen() {
+    console.log("Tree mindmap - auto-fits");
+  }
+  function setZoom() {
+    console.log("Tree mindmap - no zoom");
   }
 
-  // Make functions global - The Breathing Map controls
+  // Make functions global
   window.resetMindmapView = resetMindmapView;
   window.fitToScreen = fitToScreen;
   window.setZoom = setZoom;
-  window.expandAllNodes = expandAllNodes;
-  window.collapseAllNodes = collapseAllNodes;
 
   // ========== RENDER FUNCTIONS ==========
 
-  // Flashcard state variables
+  // Flashcard state variablesv
   let learnedCount = 0;
   let reviewCount = 0;
   let flashcardResults = []; // Track learned/review status for each card
@@ -1956,6 +1406,7 @@
 
   /**
    * Main function to enhance lesson content after loading
+   * Focus on clean typography, readable layout - like a course note
    */
   function enhanceLessonContent() {
     console.log("🎨 Enhancing lesson content...");
@@ -1963,18 +1414,161 @@
     const contentArea = document.getElementById("lesson-content-area");
     if (!contentArea) return;
 
-    // Apply all enhancements
+    // 1) Normalize HTML from Google Doc first
+    normalizeDocContent(contentArea);
+
+    // 2) Apply semantic enhancements
     enhanceSyntaxHighlighting(contentArea);
     enhanceCalloutBlocks(contentArea);
+    enhanceDefinitionBlocks(contentArea);
     enhanceShortLists(contentArea);
     enhanceYouTubeLinks(contentArea);
-    enhanceMiniQuizzes(contentArea);
     enhanceSpoilers(contentArea);
 
-    // Generate TOC after all content is enhanced
-    generateTableOfContents(contentArea);
+    // Note: TOC removed per user request - keep content clean and focused
 
     console.log("✅ Content enhancement complete!");
+  }
+
+  // ========================================
+  // 📄 NORMALIZE GOOGLE DOC CONTENT
+  // ========================================
+
+  /**
+   * Clean and normalize HTML from Google Doc
+   * Remove inline styles, fix spacing, standardize elements
+   */
+  function normalizeDocContent(container) {
+    console.log("📄 Normalizing Google Doc content...");
+
+    // Remove all inline font styles (Google Docs adds lots of these)
+    const allElements = container.querySelectorAll("*");
+    allElements.forEach((el) => {
+      // Remove inline style except for specific allowed properties
+      const style = el.getAttribute("style");
+      if (style) {
+        // Keep only essential styles like text-align, width for images
+        const allowedProps = ["text-align", "width", "height", "max-width"];
+        const newStyle = allowedProps
+          .map((prop) => {
+            const match = style.match(new RegExp(`${prop}\\s*:\\s*[^;]+`, "i"));
+            return match ? match[0] : null;
+          })
+          .filter(Boolean)
+          .join("; ");
+        if (newStyle) {
+          el.setAttribute("style", newStyle);
+        } else {
+          el.removeAttribute("style");
+        }
+      }
+    });
+
+    // Normalize empty paragraphs (often used as spacers)
+    const paragraphs = container.querySelectorAll("p");
+    paragraphs.forEach((p) => {
+      if (!p.textContent.trim() && !p.querySelector("img")) {
+        p.classList.add("spacer");
+      }
+    });
+
+    // Ensure headings have proper structure
+    const headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    headings.forEach((h, index) => {
+      // Add ID for potential linking
+      if (!h.id) {
+        h.id = `heading-${index}`;
+      }
+    });
+
+    // Normalize lists - ensure proper nesting
+    const lists = container.querySelectorAll("ul, ol");
+    lists.forEach((list) => {
+      // Remove empty list items
+      const items = list.querySelectorAll("li");
+      items.forEach((li) => {
+        if (!li.textContent.trim()) {
+          li.remove();
+        }
+      });
+    });
+
+    console.log("✅ Content normalized");
+  }
+
+  // ========================================
+  // 🏷️ DEFINITION / EXAMPLE / NOTE BADGES
+  // ========================================
+
+  /**
+   * Transform lines starting with "Định nghĩa:", "Ví dụ:", "Lưu ý:", etc.
+   */
+  function enhanceDefinitionBlocks(container) {
+    console.log("🏷️ Enhancing definition blocks...");
+
+    const patterns = [
+      {
+        regex: /^(Định nghĩa|Definition)\s*:/i,
+        type: "definition",
+        icon: "📖",
+        label: "Định nghĩa",
+      },
+      {
+        regex: /^(Ví dụ|Example)\s*:/i,
+        type: "example",
+        icon: "💡",
+        label: "Ví dụ",
+      },
+      {
+        regex: /^(Lưu ý|Note|Chú ý)\s*:/i,
+        type: "note",
+        icon: "📝",
+        label: "Lưu ý",
+      },
+      {
+        regex: /^(Quan trọng|Important)\s*:/i,
+        type: "important",
+        icon: "⚠️",
+        label: "Quan trọng",
+      },
+      {
+        regex: /^(Cú pháp|Syntax)\s*:/i,
+        type: "definition",
+        icon: "📐",
+        label: "Cú pháp",
+      },
+    ];
+
+    // Find all paragraphs and list items
+    const elements = container.querySelectorAll("p, li");
+
+    elements.forEach((el) => {
+      const text = el.textContent.trim();
+
+      for (const pattern of patterns) {
+        if (pattern.regex.test(text)) {
+          // Extract content after the label
+          const content = text.replace(pattern.regex, "").trim();
+
+          // Create badge block
+          const badgeBlock = document.createElement("div");
+          badgeBlock.className = `lesson-badge-block ${pattern.type}`;
+          badgeBlock.innerHTML = `
+            <div class="lesson-badge">
+              <span>${pattern.icon}</span>
+              <span>${pattern.label}</span>
+            </div>
+            <div class="lesson-badge-content">${
+              content || el.innerHTML.replace(pattern.regex, "")
+            }</div>
+          `;
+
+          // Replace original element
+          el.replaceWith(badgeBlock);
+          break;
+        }
+      }
+    });
   }
 
   // ========================================
@@ -2288,9 +1882,9 @@
         const wrapper = document.createElement("div");
         wrapper.className = "youtube-embed-wrapper";
         wrapper.innerHTML = `
-          <iframe 
-            src="https://www.youtube.com/embed/${videoId}" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+          <iframe
+            src="https://www.youtube.com/embed/${videoId}"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen>
           </iframe>
         `;
@@ -2322,9 +1916,9 @@
         const wrapper = document.createElement("div");
         wrapper.className = "youtube-embed-wrapper";
         wrapper.innerHTML = `
-          <iframe 
-            src="https://www.youtube.com/embed/${videoId}" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+          <iframe
+            src="https://www.youtube.com/embed/${videoId}"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen>
           </iframe>
         `;
