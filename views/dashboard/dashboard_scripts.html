@@ -1,5 +1,5 @@
 <script>
-  // ===== DASHBOARD DATA & UI =====
+  // ===== DASHBOARD - KNOWLEDGE STUDIO =====
 
   /**
    * Get user data from storage
@@ -19,10 +19,38 @@
   }
 
   /**
+   * Get streak data from localStorage
+   */
+  function getStreakData() {
+    const streakData = localStorage.getItem("streakData");
+    if (streakData) {
+      try {
+        return JSON.parse(streakData);
+      } catch (e) {
+        console.error("Error parsing streakData:", e);
+      }
+    }
+    return {
+      currentStreak: 0,
+      longestStreak: 0,
+      lastActiveDate: null,
+      dailyActiveMinutes: 0,
+      sessionStartTime: null,
+    };
+  }
+
+  /**
+   * Save streak data to localStorage
+   */
+  function saveStreakData(data) {
+    localStorage.setItem("streakData", JSON.stringify(data));
+  }
+
+  /**
    * Initialize Dashboard
    */
   function initDashboard() {
-    console.log("📊 Initializing Dashboard...");
+    console.log("📊 Initializing Dashboard (Knowledge Studio)...");
 
     const user = getUserData();
     if (user) {
@@ -30,9 +58,10 @@
     }
 
     updateGreeting();
-    loadDashboardStats();
-    loadRecentActivity();
-    loadLearningProgress();
+    initStreakTracking();
+    loadRecentTopics();
+    loadProgressByTopic();
+    loadKPIs();
   }
 
   /**
@@ -52,12 +81,12 @@
       greeting = "Chúc ngủ ngon";
     }
 
-    const welcomeTitle = document.querySelector(".welcome-title");
+    const greetingEl = document.getElementById("greeting-text");
     const userNameEl = document.getElementById("userNameWelcome");
 
-    if (welcomeTitle && userNameEl) {
+    if (greetingEl && userNameEl) {
       const userName = userNameEl.textContent || "User";
-      welcomeTitle.innerHTML = `${greeting}, <span id="userNameWelcome">${userName}</span>! 👋`;
+      greetingEl.innerHTML = `${greeting}, <span id="userNameWelcome">${userName}</span>`;
     }
   }
 
@@ -73,7 +102,6 @@
       userNameEl.textContent = displayName;
     }
 
-    // Update using global function if available
     if (typeof window.updateAllUserNames === "function") {
       window.updateAllUserNames(displayName);
     }
@@ -83,29 +111,263 @@
   }
 
   /**
-   * Load dashboard stats from server
+   * Initialize streak tracking system
    */
-  function loadDashboardStats() {
-    console.log("📈 Loading dashboard stats...");
+  function initStreakTracking() {
+    const streakData = getStreakData();
+    const today = new Date().toISOString().split("T")[0];
 
-    // Load topics count
-    google.script.run
-      .withSuccessHandler(handleTopicsStats)
-      .withFailureHandler(handleStatsError)
-      .getAllTopics();
+    // Check if it's a new day
+    if (streakData.lastActiveDate !== today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-    // Load quiz results for user stats
+      // If last active was not yesterday, reset streak (unless we had ≥5 min yesterday)
+      if (
+        streakData.lastActiveDate !== yesterdayStr &&
+        streakData.dailyActiveMinutes < 5
+      ) {
+        streakData.currentStreak = 0;
+      }
+
+      // Reset daily minutes for new day
+      streakData.dailyActiveMinutes = 0;
+    }
+
+    // Start session timer
+    streakData.sessionStartTime = Date.now();
+    saveStreakData(streakData);
+
+    // Update UI
+    updateStreakUI(streakData);
+
+    // Track active time every minute
+    setInterval(trackActiveTime, 60000);
+  }
+
+  /**
+   * Track active time (called every minute)
+   */
+  function trackActiveTime() {
+    if (document.hidden) return; // Don't count if tab is hidden
+
+    const streakData = getStreakData();
+    const today = new Date().toISOString().split("T")[0];
+
+    // Add 1 minute to daily active time
+    streakData.dailyActiveMinutes = (streakData.dailyActiveMinutes || 0) + 1;
+    streakData.lastActiveDate = today;
+
+    // Check if reached 5 minutes today (streak milestone)
+    if (streakData.dailyActiveMinutes === 5) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+      // Check if we maintained streak from yesterday
+      const prevStreak = streakData.currentStreak || 0;
+      streakData.currentStreak = prevStreak + 1;
+
+      // Update longest streak
+      if (streakData.currentStreak > (streakData.longestStreak || 0)) {
+        streakData.longestStreak = streakData.currentStreak;
+      }
+    }
+
+    saveStreakData(streakData);
+    updateStreakUI(streakData);
+  }
+
+  /**
+   * Update streak UI elements
+   */
+  function updateStreakUI(streakData) {
+    const streakDaysEl = document.getElementById("streak-days");
+    const todayTimeEl = document.getElementById("today-time");
+    const todayMinutesEl = document.getElementById("today-minutes");
+    const timeStatusEl = document.getElementById("time-status");
+    const timeStatEl = document.getElementById("time-stat");
+
+    if (streakDaysEl) {
+      streakDaysEl.textContent = `${streakData.currentStreak || 0} ngày`;
+    }
+
+    const dailyMinutes = streakData.dailyActiveMinutes || 0;
+
+    if (todayTimeEl) {
+      todayTimeEl.textContent = dailyMinutes;
+    }
+
+    if (todayMinutesEl) {
+      todayMinutesEl.textContent = dailyMinutes;
+    }
+
+    if (timeStatusEl && timeStatEl) {
+      if (dailyMinutes >= 5) {
+        timeStatusEl.textContent = "Đã đạt";
+        timeStatusEl.classList.add("achieved");
+      } else {
+        timeStatusEl.textContent = "Chưa đạt";
+        timeStatusEl.classList.remove("achieved");
+      }
+    }
+
+    // Update KPI longest streak
+    const kpiLongestStreak = document.getElementById("kpi-longest-streak");
+    if (kpiLongestStreak) {
+      kpiLongestStreak.textContent = `${streakData.longestStreak || 0} ngày`;
+    }
+  }
+
+  /**
+   * Load recent topics (activity cards)
+   */
+  function loadRecentTopics() {
+    console.log("📋 Loading recent topics...");
+
     google.script.run
-      .withSuccessHandler(handleQuizStats)
-      .withFailureHandler(handleStatsError)
+      .withSuccessHandler(handleRecentTopicsLoaded)
+      .withFailureHandler(handleRecentTopicsError)
       .getUserQuizResults();
   }
 
   /**
-   * Handle topics stats response
+   * Handle recent topics loaded
    */
-  function handleTopicsStats(response) {
-    console.log("✅ Topics stats:", response);
+  function handleRecentTopicsLoaded(response) {
+    const gridEl = document.getElementById("recent-topics-grid");
+    if (!gridEl) return;
+
+    let results = [];
+    if (response && response.success && Array.isArray(response.results)) {
+      results = response.results;
+    } else if (Array.isArray(response)) {
+      results = response;
+    }
+
+    if (results.length === 0) {
+      gridEl.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <div class="empty-state-icon">📚</div>
+          <div class="empty-state-title">Bạn chưa có hoạt động nào gần đây</div>
+          <div class="empty-state-text">Bắt đầu một bài luyện để hệ thống ghi nhận tiến độ.</div>
+        </div>
+      `;
+      return;
+    }
+
+    // Group by topic and get recent unique topics
+    const topicMap = new Map();
+    results.forEach((result) => {
+      const topicId = result.topicId || result.topicTitle;
+      if (!topicMap.has(topicId)) {
+        topicMap.set(topicId, result);
+      }
+    });
+
+    const recentTopics = Array.from(topicMap.values()).slice(0, 6);
+    const today = new Date().toISOString().split("T")[0];
+
+    gridEl.innerHTML = recentTopics
+      .map((topic) => {
+        const isToday =
+          topic.completedAt && topic.completedAt.startsWith(today);
+        const timeAgo = getTimeAgo(topic.completedAt);
+        const score = topic.score || 0;
+        const total = topic.totalQuestions || 10;
+        const percentage =
+          topic.percentage || Math.round((score / total) * 100);
+        const progress = Math.min(100, percentage);
+
+        // Determine quiz type tag
+        let tagClass = "";
+        let tagText = "Quiz Visual";
+        if (topic.quizType === "matching") {
+          tagClass = "matching";
+          tagText = "Matching";
+        } else if (topic.quizType === "code") {
+          tagClass = "code";
+          tagText = "Code Puzzle";
+        }
+
+        return `
+        <div class="topic-card ${isToday ? "today" : ""}">
+          <div class="topic-card-header">
+            <div>
+              <div class="topic-title">${topic.topicTitle || "Chủ đề"}</div>
+              <div class="topic-tags">
+                <span class="topic-tag ${tagClass}">${tagText}</span>
+              </div>
+            </div>
+            ${isToday ? '<span class="today-chip">Hôm nay</span>' : ""}
+          </div>
+          <div class="topic-progress">
+            <div class="topic-progress-bar">
+              <div class="topic-progress-fill" style="width: ${progress}%"></div>
+            </div>
+          </div>
+          <div class="topic-meta">
+            <span>Lần chơi: ${timeAgo}</span>
+            <span class="topic-result">${score}/${total} · ${percentage}%</span>
+          </div>
+          <div class="topic-actions">
+            <button class="topic-btn topic-btn-primary" onclick="continueQuiz('${
+              topic.topicId || ""
+            }')">Tiếp tục</button>
+            <button class="topic-btn topic-btn-secondary">Xem báo cáo</button>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+  }
+
+  /**
+   * Handle recent topics error
+   */
+  function handleRecentTopicsError(error) {
+    console.error("❌ Recent topics error:", error);
+    const gridEl = document.getElementById("recent-topics-grid");
+    if (gridEl) {
+      gridEl.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <div class="empty-state-icon">⚠️</div>
+          <div class="empty-state-text">Không thể tải hoạt động gần đây</div>
+        </div>
+      `;
+    }
+  }
+
+  /**
+   * Continue quiz for a topic
+   */
+  function continueQuiz(topicId) {
+    if (topicId && typeof showPage === "function") {
+      // Store topic ID and navigate to quiz
+      localStorage.setItem("selectedTopicId", topicId);
+      showPage("page-mcq");
+    }
+  }
+
+  /**
+   * Load progress by topic
+   */
+  function loadProgressByTopic() {
+    console.log("📈 Loading progress by topic...");
+
+    google.script.run
+      .withSuccessHandler(handleProgressLoaded)
+      .withFailureHandler(handleProgressError)
+      .getAllTopics();
+  }
+
+  /**
+   * Handle progress loaded
+   */
+  function handleProgressLoaded(response) {
+    const progressList = document.getElementById("progress-list");
+    if (!progressList) return;
 
     let topics = [];
     if (response && response.success && Array.isArray(response.topics)) {
@@ -114,123 +376,37 @@
       topics = response;
     }
 
-    const totalTopics = topics.length;
-    document.getElementById("total-topics").textContent = totalTopics;
-    document.getElementById("topics-change").innerHTML = `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-        <polyline points="17 6 23 6 23 12"/>
-      </svg>
-      <span>+${Math.floor(Math.random() * 5)} tuần này</span>
-    `;
-
-    // Update learning progress with topics
-    updateLearningProgress(topics);
-  }
-
-  /**
-   * Handle quiz stats response
-   */
-  function handleQuizStats(response) {
-    console.log("✅ Quiz stats:", response);
-
-    let quizResults = [];
-    if (response && response.success && Array.isArray(response.results)) {
-      quizResults = response.results;
-    } else if (Array.isArray(response)) {
-      quizResults = response;
-    }
-
-    // Calculate stats
-    const completedCount = quizResults.length;
-    const avgScore =
-      completedCount > 0
-        ? (
-            quizResults.reduce((sum, r) => sum + (r.percentage || 0), 0) /
-            completedCount
-          ).toFixed(1)
-        : 0;
-
-    document.getElementById("completed-topics").textContent = completedCount;
-    document.getElementById("completed-change").innerHTML = `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-        <polyline points="17 6 23 6 23 12"/>
-      </svg>
-      <span>+${Math.floor(Math.random() * 3)} tuần này</span>
-    `;
-
-    document.getElementById("avg-score").textContent =
-      avgScore > 0 ? avgScore : "--";
-    document.getElementById("score-change").innerHTML =
-      avgScore > 0
-        ? `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-        <polyline points="17 6 23 6 23 12"/>
-      </svg>
-      <span>+0.5 tuần này</span>
-    `
-        : `<span style="color:#A0AEC0;">Chưa có dữ liệu</span>`;
-
-    // Simulated rank (would need backend support for real ranking)
-    const rank =
-      completedCount > 0 ? Math.max(1, 50 - completedCount * 2) : "--";
-    document.getElementById("user-rank").textContent =
-      rank !== "--" ? `#${rank}` : "#--";
-    document.getElementById("rank-change").innerHTML =
-      rank !== "--"
-        ? `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-        <polyline points="17 6 23 6 23 12"/>
-      </svg>
-      <span>Tăng ${Math.floor(Math.random() * 5) + 1} bậc</span>
-    `
-        : `<span style="color:#A0AEC0;">Chưa xếp hạng</span>`;
-
-    // Update streak (simulated)
-    document.getElementById("streak-days").textContent =
-      Math.floor(Math.random() * 15) + 1;
-  }
-
-  /**
-   * Handle stats error
-   */
-  function handleStatsError(error) {
-    console.error("❌ Stats error:", error);
-  }
-
-  /**
-   * Update learning progress with topics
-   */
-  function updateLearningProgress(topics) {
-    const progressList = document.getElementById("progress-list");
-    if (!progressList) return;
-
     if (topics.length === 0) {
       progressList.innerHTML = `
         <div class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#A0AEC0" stroke-width="1.5">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-          </svg>
-          <p>Chưa có chủ đề nào</p>
+          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-text">Chưa có dữ liệu tiến độ</div>
         </div>
       `;
       return;
     }
 
-    // Show first 3 topics with simulated progress
-    const displayTopics = topics.slice(0, 3);
+    // Show first 5 topics with simulated progress
+    const displayTopics = topics.slice(0, 5);
     progressList.innerHTML = displayTopics
-      .map((topic, index) => {
+      .map((topic) => {
         const progress = Math.floor(Math.random() * 80) + 10; // 10-90%
+        let statusClass = "needs-work";
+        let statusText = "Cần luyện thêm";
+
+        if (progress >= 75) {
+          statusClass = "strong";
+          statusText = "Mạnh";
+        } else if (progress >= 50) {
+          statusClass = "improving";
+          statusText = "Đang cải thiện";
+        }
+
         return `
         <div class="progress-item">
           <div class="progress-header">
             <span class="progress-label">${topic.title}</span>
-            <span class="progress-percent">${progress}%</span>
+            <span class="progress-status ${statusClass}">${statusText}</span>
           </div>
           <div class="progress-bar">
             <div class="progress-fill" style="width: ${progress}%"></div>
@@ -242,31 +418,36 @@
   }
 
   /**
-   * Load learning progress
+   * Handle progress error
    */
-  function loadLearningProgress() {
-    // This is handled by handleTopicsStats
+  function handleProgressError(error) {
+    console.error("❌ Progress error:", error);
+    const progressList = document.getElementById("progress-list");
+    if (progressList) {
+      progressList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-text">Không thể tải tiến độ</div>
+        </div>
+      `;
+    }
   }
 
   /**
-   * Load recent activity
+   * Load KPIs
    */
-  function loadRecentActivity() {
-    console.log("📋 Loading recent activity...");
+  function loadKPIs() {
+    console.log("📊 Loading KPIs...");
 
     google.script.run
-      .withSuccessHandler(handleActivityLoaded)
-      .withFailureHandler(handleActivityError)
+      .withSuccessHandler(handleKPIsLoaded)
+      .withFailureHandler(handleKPIsError)
       .getUserQuizResults();
   }
 
   /**
-   * Handle activity loaded
+   * Handle KPIs loaded
    */
-  function handleActivityLoaded(response) {
-    const activityList = document.getElementById("activity-list");
-    if (!activityList) return;
-
+  function handleKPIsLoaded(response) {
     let results = [];
     if (response && response.success && Array.isArray(response.results)) {
       results = response.results;
@@ -274,60 +455,35 @@
       results = response;
     }
 
-    if (results.length === 0) {
-      activityList.innerHTML = `
-        <div class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#A0AEC0" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-          <p>Chưa có hoạt động nào</p>
-        </div>
-      `;
-      return;
-    }
+    // Calculate KPIs
+    const uniqueTopics = new Set(results.map((r) => r.topicId || r.topicTitle))
+      .size;
+    const avgAccuracy =
+      results.length > 0
+        ? Math.round(
+            results.reduce((sum, r) => sum + (r.percentage || 0), 0) /
+              results.length
+          )
+        : 0;
+    const rank =
+      results.length > 0 ? Math.max(1, 50 - results.length * 2) : "--";
 
-    // Show recent 3 activities
-    const recentResults = results.slice(0, 3);
-    activityList.innerHTML = recentResults
-      .map((result) => {
-        const xp = Math.round((result.percentage || 0) / 2);
-        const timeAgo = getTimeAgo(result.completedAt);
+    // Update UI
+    const kpiTopics = document.getElementById("kpi-topics");
+    const kpiAccuracy = document.getElementById("kpi-accuracy");
+    const kpiRank = document.getElementById("kpi-rank");
 
-        return `
-        <div class="activity-item">
-          <span class="activity-icon quiz">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 11l3 3L22 4"/>
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-            </svg>
-          </span>
-          <div class="activity-content">
-            <div class="activity-title">Quiz: ${
-              result.topicTitle || "Không rõ"
-            }</div>
-            <div class="activity-time">${timeAgo}</div>
-          </div>
-          <div class="activity-points">+${xp} XP</div>
-        </div>
-      `;
-      })
-      .join("");
+    if (kpiTopics) kpiTopics.textContent = uniqueTopics;
+    if (kpiAccuracy)
+      kpiAccuracy.textContent = avgAccuracy > 0 ? `${avgAccuracy}%` : "--";
+    if (kpiRank) kpiRank.textContent = rank !== "--" ? `#${rank}` : "#--";
   }
 
   /**
-   * Handle activity error
+   * Handle KPIs error
    */
-  function handleActivityError(error) {
-    console.error("❌ Activity error:", error);
-    const activityList = document.getElementById("activity-list");
-    if (activityList) {
-      activityList.innerHTML = `
-        <div class="empty-state">
-          <p>Không thể tải hoạt động</p>
-        </div>
-      `;
-    }
+  function handleKPIsError(error) {
+    console.error("❌ KPIs error:", error);
   }
 
   /**
@@ -366,5 +522,15 @@
     }
   });
 
-  console.log("✅ Dashboard scripts loaded");
+  // Track visibility changes for accurate time tracking
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      // User came back to tab, update session
+      const streakData = getStreakData();
+      streakData.sessionStartTime = Date.now();
+      saveStreakData(streakData);
+    }
+  });
+
+  console.log("✅ Dashboard scripts loaded (Knowledge Studio)");
 </script>

@@ -284,21 +284,60 @@ function getUserTopicProgress() {
     const headers = data[0];
     const rows = data.slice(1);
 
-    // Map progress data
+    // Map progress data - support both old and new schema
     const progress = {};
     rows.forEach((row) => {
-      if (row[0]) {
-        // Has topicId
-        const topicId = row[0];
-        progress[topicId] = {
-          topicId: topicId,
-          completed: row[1] === true || row[1] === "TRUE",
-          progress: parseFloat(row[2]) || 0,
-          stagesCompleted: parseInt(row[3]) || 0,
-          totalStages: parseInt(row[4]) || 0,
-          lastAccessed: row[5],
-          completedAt: row[6],
-        };
+      const topicIdIdx = headers.indexOf("topicId");
+      const topicId = topicIdIdx >= 0 ? row[topicIdIdx] : row[0];
+
+      if (topicId) {
+        // Check for new schema columns
+        const lessonCompletedIdx = headers.indexOf("lessonCompleted");
+        const mindmapViewedIdx = headers.indexOf("mindmapViewed");
+        const flashcardsCompletedIdx = headers.indexOf("flashcardsCompleted");
+        const statusIdx = headers.indexOf("status");
+        const completedAtIdx = headers.indexOf("completedAt");
+
+        if (lessonCompletedIdx >= 0) {
+          // New schema
+          const lessonDone =
+            row[lessonCompletedIdx] === 1 || row[lessonCompletedIdx] === true;
+          const mindmapDone =
+            row[mindmapViewedIdx] === 1 || row[mindmapViewedIdx] === true;
+          const flashcardsDone =
+            row[flashcardsCompletedIdx] === 1 ||
+            row[flashcardsCompletedIdx] === true;
+
+          // Calculate progress percentage
+          let progressPercent = 0;
+          let completed = 0;
+          if (lessonDone) completed++;
+          if (mindmapDone) completed++;
+          if (flashcardsDone) completed++;
+          progressPercent = Math.round((completed / 3) * 100);
+
+          progress[topicId] = {
+            topicId: topicId,
+            completed: lessonDone && mindmapDone && flashcardsDone,
+            progress: progressPercent,
+            lessonCompleted: lessonDone,
+            mindmapViewed: mindmapDone,
+            flashcardsCompleted: flashcardsDone,
+            status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
+            completedAt: completedAtIdx >= 0 ? row[completedAtIdx] : null,
+          };
+        } else {
+          // Old schema fallback
+          progress[topicId] = {
+            topicId: topicId,
+            completed: row[1] === true || row[1] === "TRUE",
+            progress: parseFloat(row[2]) || 0,
+            stagesCompleted: parseInt(row[3]) || 0,
+            totalStages: parseInt(row[4]) || 0,
+            lastAccessed: row[5],
+            completedAt: row[6],
+          };
+        }
       }
     });
 

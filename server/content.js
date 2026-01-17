@@ -1579,3 +1579,340 @@ function getCardsForReview(topicId) {
     return { success: false, message: error.toString() };
   }
 }
+
+// ========== LEARNING PROGRESS API ==========
+
+/**
+ * Lưu tiến trình học tập của user
+ * @param {string} topicId - ID của topic
+ * @param {string} progressType - 'lesson', 'mindmap', 'flashcards'
+ * @param {Object} progressData - Dữ liệu tiến trình
+ * @returns {Object} - {success, message}
+ */
+function saveLearningProgressForWeb(topicId, progressType, progressData) {
+  Logger.log("📚 saveLearningProgressForWeb CALLED");
+  Logger.log("Args: topicId=" + topicId + ", type=" + progressType);
+  Logger.log("Data: " + JSON.stringify(progressData));
+
+  try {
+    // Lấy thông tin user hiện tại
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "User not authenticated" };
+    }
+
+    // Lấy userId từ email
+    const userId = getUserIdByEmail(userEmail);
+    if (!userId) {
+      return { success: false, message: "User not found" };
+    }
+
+    // Lấy hoặc tạo session cho topic này
+    let session = AILearningSessions.getLastSession(userId, topicId);
+    let sessionId;
+
+    if (!session || session.completedAt) {
+      // Tạo session mới nếu chưa có hoặc session cũ đã hoàn thành
+      sessionId = AILearningSessions.start(userId, topicId);
+    } else {
+      sessionId = session.sessionId;
+    }
+
+    // Update session dựa trên loại tiến trình
+    const updateData = {};
+
+    switch (progressType) {
+      case "lesson":
+        updateData.lessonViewed = 1;
+        if (progressData.scrollDepth) {
+          updateData.scrollDepth = progressData.scrollDepth;
+        }
+        if (progressData.completed) {
+          updateData.completedAt = new Date();
+        }
+        break;
+
+      case "mindmap":
+        updateData.mindmapViewed = 1;
+        break;
+
+      case "flashcards":
+        if (progressData.total) {
+          updateData.flashcardsTotal = progressData.total;
+        }
+        if (progressData.reviewed) {
+          updateData.flashcardsReviewed = progressData.reviewed;
+        }
+        // Nếu đã xem hết flashcards
+        if (progressData.completed) {
+          updateData.completedAt = new Date();
+        }
+        break;
+    }
+
+    // Cập nhật session
+    AILearningSessions.update(userId, sessionId, updateData);
+
+    // Cập nhật Topic_Progress
+    updateTopicProgress(userId, topicId, progressType, progressData);
+
+    Logger.log("✅ Learning progress saved successfully");
+    return {
+      success: true,
+      message: "Progress saved",
+      sessionId: sessionId,
+    };
+  } catch (error) {
+    Logger.log("❌ Error saving learning progress: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Update Topic_Progress sheet
+ */
+function updateTopicProgress(userId, topicId, progressType, progressData) {
+  try {
+    const spreadsheet = getUserSpreadsheet(userId);
+    if (!spreadsheet) return;
+
+    let sheet = spreadsheet.getSheetByName("Topic_Progress");
+
+    // Tạo sheet nếu chưa có
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet("Topic_Progress");
+      const headers = [
+        "progressId",
+        "topicId",
+        "topicTitle",
+        "lessonCompleted",
+        "mindmapViewed",
+        "flashcardsCompleted",
+        "quizDone",
+        "matchingDone",
+        "challengeDone",
+        "attempts",
+        "accuracy",
+        "bestScore",
+        "xpEarned",
+        "status",
+        "unlockedAt",
+        "completedAt",
+        "lastUpdated",
+      ];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+
+    // Tìm row cho topic này
+    let rowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][headers.indexOf("topicId")] === topicId) {
+        rowIndex = i + 1; // +1 vì 1-indexed
+        break;
+      }
+    }
+
+    const now = new Date();
+
+    if (rowIndex === -1) {
+      // Tạo row mới
+      const progressId = "PRG_" + Date.now().toString(36);
+      const newRow = new Array(headers.length).fill("");
+      newRow[headers.indexOf("progressId")] = progressId;
+      newRow[headers.indexOf("topicId")] = topicId;
+      newRow[headers.indexOf("topicTitle")] = progressData.topicTitle || "";
+      newRow[headers.indexOf("status")] = "in_progress";
+      newRow[headers.indexOf("unlockedAt")] = now;
+      newRow[headers.indexOf("lastUpdated")] = now;
+
+      // Set theo loại
+      if (progressType === "lesson") {
+        newRow[headers.indexOf("lessonCompleted")] = progressData.completed
+          ? 1
+          : 0;
+      } else if (progressType === "mindmap") {
+        newRow[headers.indexOf("mindmapViewed")] = 1;
+      } else if (progressType === "flashcards") {
+        newRow[headers.indexOf("flashcardsCompleted")] = progressData.completed
+          ? 1
+          : 0;
+      }
+
+      sheet.appendRow(newRow);
+    } else {
+      // Update row hiện có
+      if (progressType === "lesson" && progressData.completed) {
+        const colIdx = headers.indexOf("lessonCompleted");
+        if (colIdx >= 0) sheet.getRange(rowIndex, colIdx + 1).setValue(1);
+      }
+      if (progressType === "mindmap") {
+        const colIdx = headers.indexOf("mindmapViewed");
+        if (colIdx >= 0) sheet.getRange(rowIndex, colIdx + 1).setValue(1);
+      }
+      if (progressType === "flashcards" && progressData.completed) {
+        const colIdx = headers.indexOf("flashcardsCompleted");
+        if (colIdx >= 0) sheet.getRange(rowIndex, colIdx + 1).setValue(1);
+      }
+
+      // Update lastUpdated
+      const lastUpdatedCol = headers.indexOf("lastUpdated");
+      if (lastUpdatedCol >= 0)
+        sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
+
+      // Check if all completed -> update status
+      const lessonCol = headers.indexOf("lessonCompleted");
+      const mindmapCol = headers.indexOf("mindmapViewed");
+      const flashcardsCol = headers.indexOf("flashcardsCompleted");
+
+      const currentData = sheet
+        .getRange(rowIndex, 1, 1, headers.length)
+        .getValues()[0];
+      const lessonDone = currentData[lessonCol] === 1;
+      const mindmapDone = currentData[mindmapCol] === 1;
+      const flashcardsDone = currentData[flashcardsCol] === 1;
+
+      if (lessonDone && mindmapDone && flashcardsDone) {
+        const statusCol = headers.indexOf("status");
+        const completedAtCol = headers.indexOf("completedAt");
+        if (statusCol >= 0)
+          sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
+        if (completedAtCol >= 0)
+          sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+      }
+    }
+
+    Logger.log("✅ Topic progress updated for: " + topicId);
+  } catch (error) {
+    Logger.log("❌ Error updating topic progress: " + error.toString());
+  }
+}
+
+/**
+ * Lấy tiến trình học tập của user cho tất cả topics
+ * @returns {Object} - {success, data: {topicId: progressData}}
+ */
+function getLearningProgressForWeb() {
+  Logger.log("📊 getLearningProgressForWeb CALLED");
+
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "User not authenticated", data: {} };
+    }
+
+    const userId = getUserIdByEmail(userEmail);
+    if (!userId) {
+      return { success: false, message: "User not found", data: {} };
+    }
+
+    const spreadsheet = getUserSpreadsheet(userId);
+    if (!spreadsheet) {
+      return { success: true, data: {} }; // No data yet
+    }
+
+    const sheet = spreadsheet.getSheetByName("Topic_Progress");
+    if (!sheet) {
+      return { success: true, data: {} }; // No progress yet
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const progressMap = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const topicId = row[headers.indexOf("topicId")];
+
+      if (topicId) {
+        progressMap[topicId] = {
+          lessonCompleted: row[headers.indexOf("lessonCompleted")] === 1,
+          mindmapViewed: row[headers.indexOf("mindmapViewed")] === 1,
+          flashcardsCompleted:
+            row[headers.indexOf("flashcardsCompleted")] === 1,
+          quizDone: row[headers.indexOf("quizDone")] === 1,
+          status: row[headers.indexOf("status")] || "not_started",
+          completedAt: row[headers.indexOf("completedAt")] || null,
+          // Tính progress %
+          progress: calculateProgressPercent(row, headers),
+        };
+      }
+    }
+
+    Logger.log(
+      "✅ Loaded progress for " + Object.keys(progressMap).length + " topics"
+    );
+    return { success: true, data: progressMap };
+  } catch (error) {
+    Logger.log("❌ Error getting learning progress: " + error.toString());
+    return { success: false, message: error.toString(), data: {} };
+  }
+}
+
+/**
+ * Calculate progress percentage
+ */
+function calculateProgressPercent(row, headers) {
+  let completed = 0;
+  const total = 4; // lesson, mindmap, flashcards, quiz
+
+  if (row[headers.indexOf("lessonCompleted")] === 1) completed++;
+  if (row[headers.indexOf("mindmapViewed")] === 1) completed++;
+  if (row[headers.indexOf("flashcardsCompleted")] === 1) completed++;
+  if (row[headers.indexOf("quizDone")] === 1) completed++;
+
+  return Math.round((completed / total) * 100);
+}
+
+/**
+ * Helper: Get userId by email
+ */
+function getUserIdByEmail(email) {
+  try {
+    const masterDb = SpreadsheetApp.openById(MASTER_DB_ID);
+    const usersSheet = masterDb.getSheetByName("Users");
+    if (!usersSheet) return null;
+
+    const data = usersSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === email) {
+        // email is column B (index 1)
+        return data[i][0]; // userId is column A (index 0)
+      }
+    }
+    return null;
+  } catch (error) {
+    Logger.log("Error getting userId: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Helper: Get user spreadsheet
+ */
+function getUserSpreadsheet(userId) {
+  try {
+    const masterDb = SpreadsheetApp.openById(MASTER_DB_ID);
+    const usersSheet = masterDb.getSheetByName("Users");
+    if (!usersSheet) return null;
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const progressSheetIdCol = headers.indexOf("progressSheetId");
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === userId) {
+        const sheetId = data[i][progressSheetIdCol];
+        if (sheetId) {
+          return SpreadsheetApp.openById(sheetId);
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    Logger.log("Error getting user spreadsheet: " + error.toString());
+    return null;
+  }
+}

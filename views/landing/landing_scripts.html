@@ -1,55 +1,763 @@
 <script>
-// ===== NAVIGATION FUNCTIONS =====
-function navigateToLogin() {
-    showPage('page-login');
-}
+  // ===== O.UIZ GALAXY LANDING - INTERACTIVE SCRIPTS =====
 
-function navigateToRegister() {
-    showPage('page-register');
-}
+  // State Management
+  const GalaxyState = {
+    focusedPlanet: null,
+    isDemoOpen: false,
+    demoType: null,
+    isLegalOpen: false,
+    legalType: null,
+  };
 
-function scrollToSection(sectionId) {
-    const section = document.getElementById(sectionId);
-    if (section) {
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        
-        // Update active nav link
-        document.querySelectorAll('.landing-nav-link').forEach(link => {
-            link.classList.remove('active');
-        });
-        event.target.classList.add('active');
+  // ===== METEOR SHOWER EFFECT =====
+  function createMeteorShower() {
+    const container = document.getElementById("meteor-shower");
+    if (!container) return;
+
+    // Create 8-15 meteors per shower
+    const meteorCount = Math.floor(Math.random() * 8) + 8;
+
+    for (let i = 0; i < meteorCount; i++) {
+      setTimeout(() => {
+        const meteor = document.createElement("div");
+        meteor.className = "meteor";
+
+        // Random position across the screen
+        meteor.style.left = Math.random() * 100 + "%";
+        meteor.style.top = Math.random() * 40 + "%";
+
+        // Random delay and duration
+        meteor.style.animationDelay = Math.random() * 0.5 + "s";
+        meteor.style.animationDuration = 0.8 + Math.random() * 0.5 + "s";
+
+        container.appendChild(meteor);
+
+        // Remove meteor after animation
+        setTimeout(() => {
+          meteor.remove();
+        }, 2000);
+      }, i * 100); // Stagger meteor creation
     }
-}
+  }
 
-// ===== NAVIGATION SCROLL EFFECT =====
-window.addEventListener('scroll', () => {
-    const navbar = document.querySelector('.landing-navbar');
-    if (navbar) {
-        if (window.pageYOffset > 50) {
-            navbar.classList.add('scrolled');
-        } else {
-            navbar.classList.remove('scrolled');
+  // Start meteor shower every 10 seconds
+  setInterval(createMeteorShower, 10000);
+  // Initial shower after 2 seconds
+  setTimeout(createMeteorShower, 2000);
+
+  // ===== NAVIGATION FUNCTIONS =====
+  function navigateToLogin() {
+    if (typeof showPage === "function") {
+      showPage("page-login");
+    }
+  }
+
+  function navigateToRegister() {
+    if (typeof showPage === "function") {
+      showPage("page-register");
+    }
+  }
+
+  // ===== SPLIT AUTH PANEL SYSTEM =====
+  let isAuthPanelOpen = false;
+  let currentAuthForm = "login";
+
+  function openAuthPanel(formType = "login") {
+    const landing = document.getElementById("galaxy-landing");
+    const authLayer = document.getElementById("auth-layer");
+
+    if (!landing || !authLayer) return;
+
+    isAuthPanelOpen = true;
+    currentAuthForm = formType;
+
+    // Add split mode to landing
+    landing.classList.add("split-mode");
+
+    // Show auth layer
+    authLayer.classList.add("active");
+
+    // Show correct form
+    switchAuthForm(formType);
+
+    // Focus first input after animation
+    setTimeout(() => {
+      const firstInput = authLayer.querySelector(
+        'input:not([type="checkbox"])'
+      );
+      if (firstInput) firstInput.focus();
+    }, 550);
+
+    console.log("🚀 Auth panel opened:", formType);
+  }
+
+  function closeAuthPanel() {
+    const landing = document.getElementById("galaxy-landing");
+    const authLayer = document.getElementById("auth-layer");
+
+    if (!landing || !authLayer) return;
+
+    isAuthPanelOpen = false;
+
+    // Remove split mode
+    landing.classList.remove("split-mode");
+
+    // Hide auth layer
+    authLayer.classList.remove("active");
+
+    console.log("← Auth panel closed");
+  }
+
+  function switchAuthForm(formType) {
+    const loginForm = document.getElementById("auth-login-form");
+    const registerForm = document.getElementById("auth-register-form");
+
+    if (!loginForm || !registerForm) return;
+
+    currentAuthForm = formType;
+
+    if (formType === "login") {
+      loginForm.style.display = "block";
+      registerForm.style.display = "none";
+      // Re-trigger animation
+      loginForm.style.animation = "none";
+      loginForm.offsetHeight; // Trigger reflow
+      loginForm.style.animation = "authFadeIn 0.4s ease-out";
+    } else {
+      loginForm.style.display = "none";
+      registerForm.style.display = "block";
+      // Re-trigger animation
+      registerForm.style.animation = "none";
+      registerForm.offsetHeight; // Trigger reflow
+      registerForm.style.animation = "authFadeIn 0.4s ease-out";
+    }
+  }
+
+  function toggleSplitPassword(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) {
+      input.type = input.type === "password" ? "text" : "password";
+    }
+  }
+
+  // ===== GOOGLE LOGIN HANDLER =====
+  function handleGoogleLoginClick() {
+    const loadingOverlay = document.getElementById("auth-loading-overlay");
+
+    // Show loading overlay
+    if (loadingOverlay) {
+      loadingOverlay.classList.add("active");
+    }
+
+    // Call Google Sign-In
+    if (typeof google !== "undefined" && google.script) {
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            // Hide loading
+            if (loadingOverlay) {
+              loadingOverlay.classList.remove("active");
+            }
+            closeAuthPanel();
+            if (typeof showPage === "function") {
+              showPage("page-dashboard");
+            }
+          } else {
+            if (loadingOverlay) {
+              loadingOverlay.classList.remove("active");
+            }
+            alert(result.message || "Đăng nhập Google thất bại!");
+          }
+        })
+        .withFailureHandler((error) => {
+          if (loadingOverlay) {
+            loadingOverlay.classList.remove("active");
+          }
+          alert("Lỗi: " + error.message);
+        })
+        .signInWithGoogle();
+    } else if (typeof signInWithGoogle === "function") {
+      // Use existing signInWithGoogle function
+      signInWithGoogle();
+    } else {
+      // Fallback for testing - hide loading after 2 seconds
+      setTimeout(() => {
+        if (loadingOverlay) {
+          loadingOverlay.classList.remove("active");
         }
+        alert("Đăng nhập Google thành công (demo)!");
+        closeAuthPanel();
+      }, 2000);
     }
-});
+  }
 
-// ===== PARALLAX EFFECT FOR HERO SHAPES =====
-window.addEventListener('mousemove', (e) => {
-    const shapes = document.querySelectorAll('.landing-hero-shape');
-    const mouseX = e.clientX / window.innerWidth;
-    const mouseY = e.clientY / window.innerHeight;
-    
-    shapes.forEach((shape, index) => {
-        const speed = (index + 1) * 0.5;
-        const x = (mouseX - 0.5) * speed * 50;
-        const y = (mouseY - 0.5) * speed * 50;
-        
-        shape.style.transform = `translate(${x}px, ${y}px)`;
+  // ===== SPLIT AUTH FORM HANDLERS =====
+  async function handleSplitLogin() {
+    const email = document.getElementById("split-login-email")?.value;
+    const password = document.getElementById("split-login-password")?.value;
+    const remember = document.getElementById("split-remember")?.checked;
+
+    if (!email || !password) {
+      alert("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#auth-login-form .auth-submit-btn"
+    );
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>Đang đăng nhập...</span>";
+    }
+
+    try {
+      // Call existing login function if available
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (result.success) {
+              closeAuthPanel();
+              if (typeof showPage === "function") {
+                showPage("page-dashboard");
+              }
+            } else {
+              alert(result.message || "Đăng nhập thất bại!");
+            }
+          })
+          .withFailureHandler((error) => {
+            alert("Lỗi: " + error.message);
+          })
+          .loginUser({ email, password, remember });
+      } else {
+        // Fallback for testing
+        console.log("Login attempt:", { email, remember });
+        alert("Đăng nhập thành công (demo)!");
+        closeAuthPanel();
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      alert("Có lỗi xảy ra!");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "<span>Đăng nhập</span>";
+      }
+    }
+  }
+
+  async function handleSplitRegister() {
+    const name = document.getElementById("split-register-name")?.value;
+    const email = document.getElementById("split-register-email")?.value;
+    const password = document.getElementById("split-register-password")?.value;
+    const confirm = document.getElementById("split-register-confirm")?.value;
+    const terms = document.getElementById("split-terms")?.checked;
+
+    if (!name || !email || !password || !confirm) {
+      alert("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
+
+    if (password !== confirm) {
+      alert("Mật khẩu xác nhận không khớp!");
+      return;
+    }
+
+    if (!terms) {
+      alert("Vui lòng đồng ý với Điều khoản sử dụng!");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#auth-register-form .auth-submit-btn"
+    );
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>Đang tạo tài khoản...</span>";
+    }
+
+    try {
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (result.success) {
+              alert("Đăng ký thành công! Vui lòng kiểm tra email để xác thực.");
+              switchAuthForm("login");
+            } else {
+              alert(result.message || "Đăng ký thất bại!");
+            }
+          })
+          .withFailureHandler((error) => {
+            alert("Lỗi: " + error.message);
+          })
+          .registerUser({ fullName: name, email, password });
+      } else {
+        // Fallback for testing
+        console.log("Register attempt:", { name, email });
+        alert("Đăng ký thành công (demo)!");
+        switchAuthForm("login");
+      }
+    } catch (error) {
+      console.error("Register error:", error);
+      alert("Có lỗi xảy ra!");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "<span>Tạo tài khoản</span>";
+      }
+    }
+  }
+
+  // ===== PLANET FOCUS SYSTEM =====
+  function focusPlanet(planetId) {
+    const landing = document.getElementById("galaxy-landing");
+    const capsules = document.querySelectorAll(".info-capsule");
+
+    // If clicking the same planet, close it
+    if (GalaxyState.focusedPlanet === planetId) {
+      resetFocus();
+      return;
+    }
+
+    GalaxyState.focusedPlanet = planetId;
+
+    // Add focus mode
+    landing.classList.add("focus-mode");
+
+    // Slow down the focused planet's orbit
+    const planetWrapper = document.querySelector(`[data-planet="${planetId}"]`);
+    if (planetWrapper) {
+      planetWrapper.style.animationPlayState = "paused";
+    }
+
+    // Show corresponding capsule
+    capsules.forEach((capsule) => {
+      capsule.classList.remove("active");
+      if (capsule.dataset.capsule === planetId) {
+        capsule.classList.add("active");
+      }
     });
-});
 
-// ===== CONSOLE WELCOME MESSAGE =====
-console.log('%c🎮 CodeQuest ', 'background: #2563EB; color: white; font-size: 20px; font-weight: bold; padding: 10px;');
-console.log('%cChào mừng bạn đến với CodeQuest! 🚀', 'font-size: 14px; color: #2563EB;');
-console.log('%cHọc lập trình qua trò chơi - Vui học, Hiệu quả cao!', 'font-size: 12px; color: #6B7280;');
+    // Track event
+    trackEvent("planet_focus", { planet: planetId });
+  }
+
+  function resetFocus() {
+    const landing = document.getElementById("galaxy-landing");
+    const capsules = document.querySelectorAll(".info-capsule");
+    const planetWrappers = document.querySelectorAll(".planet-wrapper");
+
+    GalaxyState.focusedPlanet = null;
+
+    // Remove focus mode
+    landing.classList.remove("focus-mode");
+
+    // Resume all orbits
+    planetWrappers.forEach((wrapper) => {
+      wrapper.style.animationPlayState = "running";
+    });
+
+    // Hide all capsules
+    capsules.forEach((capsule) => {
+      capsule.classList.remove("active");
+    });
+  }
+
+  // ===== DEMO MODAL SYSTEM =====
+  function openDemo(type) {
+    const overlay = document.getElementById("demo-modal-overlay");
+    const demoContents = document.querySelectorAll(".demo-content");
+
+    GalaxyState.isDemoOpen = true;
+    GalaxyState.demoType = type;
+
+    // Reset all demo states
+    resetDemoStates();
+
+    // Show overlay
+    overlay.classList.add("active");
+
+    // Show specific demo content
+    demoContents.forEach((content) => {
+      content.classList.remove("active");
+      if (content.id === `demo-${type}`) {
+        content.classList.add("active");
+      }
+    });
+
+    // Track event
+    trackEvent("demo_open", { type: type });
+  }
+
+  function closeDemoModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+
+    const overlay = document.getElementById("demo-modal-overlay");
+    overlay.classList.remove("active");
+
+    GalaxyState.isDemoOpen = false;
+    GalaxyState.demoType = null;
+  }
+
+  function resetDemoStates() {
+    // Reset MCQ options
+    document.querySelectorAll(".demo-option").forEach((option) => {
+      option.classList.remove("correct", "incorrect", "disabled");
+    });
+
+    // Hide all feedback
+    document.querySelectorAll(".demo-feedback").forEach((feedback) => {
+      feedback.classList.remove("show", "correct", "incorrect");
+      feedback.textContent = "";
+    });
+
+    // Reset matching
+    document.querySelectorAll(".matching-slot").forEach((slot) => {
+      slot.classList.remove("matched", "dragover");
+    });
+    document.querySelectorAll(".matching-term").forEach((term) => {
+      term.classList.remove("dragging");
+      term.style.display = "";
+    });
+  }
+
+  // ===== DEMO ANSWER CHECKING =====
+  function checkDemoAnswer(button) {
+    const isCorrect = button.dataset.correct === "true";
+    const container = button.closest(".demo-content");
+    const feedbackId = `demo-feedback-${container.id.replace("demo-", "")}`;
+    const feedback = document.getElementById(feedbackId);
+    const allOptions = container.querySelectorAll(".demo-option");
+
+    // Disable all options
+    allOptions.forEach((opt) => {
+      opt.classList.add("disabled");
+      if (opt.dataset.correct === "true") {
+        opt.classList.add("correct");
+      }
+    });
+
+    // Mark selected answer
+    if (!isCorrect) {
+      button.classList.add("incorrect");
+    }
+
+    // Show feedback
+    if (feedback) {
+      feedback.classList.add("show");
+      if (isCorrect) {
+        feedback.classList.add("correct");
+        feedback.innerHTML =
+          "✅ <strong>Chính xác!</strong> Biến trong Python phải bắt đầu bằng chữ cái hoặc dấu gạch dưới (_).";
+      } else {
+        feedback.classList.add("incorrect");
+        feedback.innerHTML =
+          "❌ <strong>Chưa đúng.</strong> Đáp án đúng là B. Biến không thể bắt đầu bằng số hoặc ký tự đặc biệt.";
+      }
+    }
+
+    // Track event
+    trackEvent("demo_complete", {
+      type: GalaxyState.demoType,
+      correct: isCorrect,
+    });
+  }
+
+  // ===== LEGAL MODAL SYSTEM =====
+  function openModal(type) {
+    const overlay = document.getElementById("legal-modal-overlay");
+    const legalContents = document.querySelectorAll(".legal-content");
+
+    GalaxyState.isLegalOpen = true;
+    GalaxyState.legalType = type;
+
+    // Show overlay
+    overlay.classList.add("active");
+
+    // Show specific legal content
+    legalContents.forEach((content) => {
+      content.classList.remove("active");
+      if (content.id === `legal-${type}`) {
+        content.classList.add("active");
+      }
+    });
+  }
+
+  function closeLegalModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+
+    const overlay = document.getElementById("legal-modal-overlay");
+    overlay.classList.remove("active");
+
+    GalaxyState.isLegalOpen = false;
+    GalaxyState.legalType = null;
+  }
+
+  // ===== MATCHING DEMO DRAG & DROP =====
+  function initMatchingDemo() {
+    const terms = document.querySelectorAll(".matching-term");
+    const slots = document.querySelectorAll(".matching-slot");
+
+    terms.forEach((term) => {
+      term.addEventListener("dragstart", handleDragStart);
+      term.addEventListener("dragend", handleDragEnd);
+    });
+
+    slots.forEach((slot) => {
+      slot.addEventListener("dragover", handleDragOver);
+      slot.addEventListener("dragleave", handleDragLeave);
+      slot.addEventListener("drop", handleDrop);
+    });
+  }
+
+  let draggedItem = null;
+
+  function handleDragStart(e) {
+    draggedItem = e.target;
+    e.target.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", e.target.dataset.match);
+  }
+
+  function handleDragEnd(e) {
+    e.target.classList.remove("dragging");
+    draggedItem = null;
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.target.classList.add("dragover");
+  }
+
+  function handleDragLeave(e) {
+    e.target.classList.remove("dragover");
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.target.classList.remove("dragover");
+
+    const matchId = e.dataTransfer.getData("text/plain");
+    const acceptId = e.target.dataset.accept;
+
+    if (matchId === acceptId) {
+      e.target.classList.add("matched");
+      e.target.textContent = `${draggedItem.textContent} → ${e.target.textContent}`;
+      draggedItem.style.display = "none";
+
+      // Check if all matched
+      const allSlots = document.querySelectorAll(".matching-slot");
+      const matchedSlots = document.querySelectorAll(".matching-slot.matched");
+
+      if (allSlots.length === matchedSlots.length) {
+        const feedback = document.getElementById("demo-feedback-matching");
+        if (feedback) {
+          feedback.classList.add("show", "correct");
+          feedback.innerHTML =
+            "🎉 <strong>Tuyệt vời!</strong> Bạn đã ghép đúng tất cả!";
+        }
+        trackEvent("demo_complete", { type: "matching", correct: true });
+      }
+    }
+  }
+
+  // ===== PARALLAX EFFECT =====
+  function initParallax() {
+    const starsNear = document.querySelector(".stars-near");
+    const starsFar = document.querySelector(".stars-far");
+
+    document.addEventListener("mousemove", (e) => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+      const x = (e.clientX / window.innerWidth - 0.5) * 2;
+      const y = (e.clientY / window.innerHeight - 0.5) * 2;
+
+      if (starsNear) {
+        starsNear.style.transform = `translate(${x * 12}px, ${y * 12}px)`;
+      }
+      if (starsFar) {
+        starsFar.style.transform = `translate(${x * 6}px, ${y * 6}px)`;
+      }
+    });
+  }
+
+  // ===== KEYBOARD NAVIGATION =====
+  function initKeyboardNav() {
+    document.addEventListener("keydown", (e) => {
+      // ESC to close modals/focus
+      if (e.key === "Escape") {
+        if (GalaxyState.isDemoOpen) {
+          closeDemoModal();
+        } else if (GalaxyState.isLegalOpen) {
+          closeLegalModal();
+        } else if (GalaxyState.focusedPlanet) {
+          resetFocus();
+        }
+      }
+    });
+  }
+
+  // ===== EVENT TRACKING =====
+  function trackEvent(eventName, data) {
+    console.log(`📊 Track: ${eventName}`, data);
+    // Future: Send to analytics
+  }
+
+  // ===== INTRO ANIMATION =====
+  function playIntroAnimation() {
+    const corePlanet = document.getElementById("core-planet");
+    const tagline = document.getElementById("core-tagline");
+
+    // Core planet appears with pulse
+    if (corePlanet) {
+      corePlanet.style.animation = "coreFadeIn 1s ease-out forwards";
+    }
+  }
+
+  // ===== CHECK AUTH STATUS =====
+  function checkAuthStatus() {
+    const currentUser =
+      localStorage.getItem("currentUser") ||
+      sessionStorage.getItem("currentUser");
+
+    if (currentUser) {
+      // User is logged in, update CTA
+      const ctaPrimary = document.querySelector(".cta-primary");
+      if (ctaPrimary) {
+        ctaPrimary.innerHTML =
+          '<span class="cta-icon">🚀</span><span>Vào Dashboard</span>';
+        ctaPrimary.onclick = () => {
+          if (typeof showPage === "function") {
+            showPage("page-dashboard");
+          }
+        };
+      }
+
+      const ctaGhost = document.querySelector(".cta-ghost");
+      if (ctaGhost) {
+        ctaGhost.style.display = "none";
+      }
+    }
+  }
+
+  // ===== TYPING EFFECT FOR CODE SLOGAN =====
+  function initCodeSloganTyping() {
+    const container = document.getElementById("code-slogan");
+    const line1 = document.getElementById("slogan-line-1");
+    const line2 = document.getElementById("slogan-line-2");
+    const line3 = document.getElementById("slogan-line-3");
+
+    if (!container || !line1 || !line2 || !line3) return;
+
+    // Lines to type with syntax highlighting
+    const lines = [
+      {
+        el: line1,
+        html: '&lt;<span class="keyword-blue">Hello World</span>, Master <span class="highlight-cyan">O</span><span class="highlight-orange">.</span><span class="highlight-lime">uiz</span> /&gt;',
+        speed: 40,
+      },
+      {
+        el: line2,
+        html: '<span class="keyword-blue">if</span> (<span class="var-white">knowledge</span> &lt; <span class="string-orange">100%</span>) { <span class="keyword-purple">return</span> <span class="string-lime">"Practice"</span>; }',
+        speed: 30,
+      },
+      {
+        el: line3,
+        html: '<span class="ready-text">_Ready to Code?</span><span class="blink-cursor">█</span>',
+        speed: 50,
+      },
+    ];
+
+    // Extract plain text from HTML for typing
+    function stripHtml(html) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      return tmp.textContent || tmp.innerText || "";
+    }
+
+    // Type one line character by character
+    async function typeLine(lineObj) {
+      const plainText = stripHtml(lineObj.html);
+      lineObj.el.innerHTML = '<span class="blink-cursor">█</span>';
+
+      for (let i = 0; i <= plainText.length; i++) {
+        lineObj.el.innerHTML =
+          plainText.substring(0, i) + '<span class="blink-cursor">█</span>';
+        await new Promise((r) => setTimeout(r, lineObj.speed));
+      }
+
+      // Replace with full styled HTML
+      lineObj.el.innerHTML = lineObj.html;
+    }
+
+    // Clear all lines
+    function clearLines() {
+      line1.innerHTML = "";
+      line2.innerHTML = "";
+      line3.innerHTML = "";
+    }
+
+    // Run full typing sequence
+    async function runTypingSequence() {
+      container.classList.add("visible");
+      await new Promise((r) => setTimeout(r, 300));
+
+      for (let i = 0; i < lines.length; i++) {
+        await typeLine(lines[i]);
+        if (i < lines.length - 1) {
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+    }
+
+    // Start immediately, then loop every 19 seconds
+    runTypingSequence();
+
+    setInterval(async () => {
+      clearLines();
+      await runTypingSequence();
+    }, 19000);
+  }
+
+  // ===== INITIALIZATION =====
+  function initGalaxyLanding() {
+    console.log("🌌 Initializing Galaxy Landing...");
+
+    initMatchingDemo();
+    initParallax();
+    initKeyboardNav();
+    checkAuthStatus();
+    playIntroAnimation();
+    initCodeSloganTyping();
+
+    // Close capsule when clicking outside
+    document.addEventListener("click", (e) => {
+      const isClickOnPlanet =
+        e.target.closest(".planet") || e.target.closest(".core-planet");
+      const isClickOnCapsule = e.target.closest(".info-capsule");
+
+      if (!isClickOnPlanet && !isClickOnCapsule && GalaxyState.focusedPlanet) {
+        resetFocus();
+      }
+    });
+
+    console.log("✅ Galaxy Landing initialized");
+  }
+
+  // Run on load
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initGalaxyLanding);
+  } else {
+    initGalaxyLanding();
+  }
+
+  // ===== CONSOLE WELCOME =====
+  console.log(
+    "%c🌌 O.uiz Galaxy",
+    "background: linear-gradient(135deg, #1a0a3e, #2563eb); color: white; font-size: 20px; font-weight: bold; padding: 10px 20px; border-radius: 8px;"
+  );
+  console.log(
+    "%cHọc lập trình cơ bản qua trò chơi vũ trụ 🚀",
+    "font-size: 14px; color: #a78bfa;"
+  );
 </script>

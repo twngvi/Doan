@@ -289,7 +289,8 @@
     function createTopicCard(topic) {
       const card = document.createElement("div");
       card.className = "topic-card";
-      card.onclick = () => showTopicDetail(topic);
+      // ⭐ SKIP POPUP - Go directly to lesson
+      card.onclick = () => startTopicDirect(topic);
 
       // Get user progress for this topic
       const progress = userProgress[topic.topicId] || {
@@ -329,21 +330,7 @@
         </div>
       </div>
       <h3 class="topic-title">${topic.title}</h3>
-      <p class="topic-description">${truncateText(topic.description, 100)}</p>
-      <div class="topic-stats">
-        <div class="stat">
-          <div class="stat-value">${topic.totalStages || 0}</div>
-          <div class="stat-label">Stages</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">${topic.minAILevel || 1}</div>
-          <div class="stat-label">AI Level</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">${topic.minAccuracy || 0}%</div>
-          <div class="stat-label">Độ chính xác</div>
-        </div>
-      </div>
+      <p class="topic-description">${truncateText(topic.description, 120)}</p>
       ${
         !isLocked
           ? `
@@ -528,6 +515,33 @@
       if (!event || event.target === event.currentTarget) {
         document.getElementById("topicDetailModal").style.display = "none";
         selectedTopic = null;
+      }
+    }
+
+    /**
+     * ⭐ Start topic directly without popup
+     */
+    function startTopicDirect(topic) {
+      if (!topic) {
+        showNotification("Topic not found", "error");
+        return;
+      }
+
+      if (!checkTopicUnlocked(topic)) {
+        showNotification(
+          "Chủ đề này đang bị khóa. Hoàn thành bài học trước để mở khóa.",
+          "warning"
+        );
+        return;
+      }
+
+      console.log("🚀 Starting topic directly:", topic.topicId);
+
+      // Navigate directly to lesson
+      if (topic.contentDocId && topic.contentDocId !== "") {
+        navigateToLesson(topic);
+      } else {
+        navigateToQuiz(topic);
       }
     }
 
@@ -874,6 +888,7 @@
     window.showTopicDetail = showTopicDetail;
     window.closeTopicDetail = closeTopicDetail;
     window.startTopic = startTopic;
+    window.startTopicDirect = startTopicDirect;
     window.navigateToLesson = navigateToLesson;
     window.navigateToQuiz = navigateToQuiz;
 

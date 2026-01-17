@@ -45,6 +45,13 @@
   let flashcardsData = [];
   let currentFlashcardIndex = 0;
 
+  // ⭐ Progress Saving State
+  let progressSaved = {
+    lesson: false,
+    mindmap: false,
+    flashcards: false,
+  };
+
   /**
    * Initialize Lesson Page
    */
@@ -56,6 +63,7 @@
     currentLessonData = null;
     scrollProgress = 0;
     aiContentLoaded = { mindmap: false, flashcards: false };
+    progressSaved = { lesson: false, mindmap: false, flashcards: false };
     flashcardsData = [];
     currentFlashcardIndex = 0;
 
@@ -265,6 +273,10 @@
           renderMindmap(mindmapData);
           document.getElementById("mindmap-content").style.display = "block";
           aiContentLoaded.mindmap = true;
+
+          // ⭐ Save mindmap progress when viewed
+          saveMindmapProgress();
+
           showToast("✅ Đã tải Mindmap", "success");
         } else {
           console.error("❌ Response failed:", response?.message);
@@ -346,14 +358,16 @@
             currentFlashcardIndex = 0;
             initDeckState(); // Initialize deck tracking
 
-            // Show content FIRST before rendering
-            document.getElementById("flashcards-content").style.display =
-              "flex";
+            // Update total count
             document.getElementById("flashcard-total").textContent =
               flashcardsData.length;
 
-            // Then render flashcard
+            // Render flashcard FIRST (while still hidden)
             renderCurrentFlashcard();
+
+            // THEN show content after card is ready
+            document.getElementById("flashcards-content").style.display =
+              "flex";
             aiContentLoaded.flashcards = true;
 
             // Setup swipe gestures after content is visible
@@ -934,6 +948,9 @@
   function saveFlashcardProgress() {
     if (!currentLessonData?.topicId) return;
 
+    // ⭐ Also save to Topic_Progress for overall tracking
+    saveFlashcardsProgress(true);
+
     const progressData = {
       topicId: currentLessonData.topicId,
       totalCards: flashcardsData.length,
@@ -1366,6 +1383,9 @@
       return;
     }
 
+    // ⭐ Save lesson completion before navigating to quiz
+    saveLessonProgress(true);
+
     // Navigate to MCQ page with quiz mode
     showPage("page-mcq", {
       topicId: currentLessonData.topicId,
@@ -1376,10 +1396,118 @@
     });
   }
 
+  // ========== PROGRESS SAVING FUNCTIONS ==========
+
+  /**
+   * Save lesson progress
+   * @param {boolean} completed - Whether lesson is completed
+   */
+  function saveLessonProgress(completed = false) {
+    if (!currentLessonData?.topicId) return;
+    if (progressSaved.lesson && !completed) return; // Already saved and not completing
+
+    console.log("💾 Saving lesson progress...", { completed, scrollProgress });
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          progressSaved.lesson = true;
+          console.log("✅ Lesson progress saved");
+          if (completed) {
+            showToast("✅ Đã lưu tiến độ bài học", "success");
+          }
+        } else {
+          console.error("❌ Failed to save lesson progress:", response.message);
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving lesson progress:", error);
+      })
+      .saveLearningProgressForWeb(currentLessonData.topicId, "lesson", {
+        topicTitle: currentLessonData.topicTitle,
+        scrollDepth: scrollProgress,
+        completed: completed,
+      });
+  }
+
+  /**
+   * Save mindmap progress (just viewing counts)
+   */
+  function saveMindmapProgress() {
+    if (!currentLessonData?.topicId) return;
+    if (progressSaved.mindmap) return; // Already saved
+
+    console.log("💾 Saving mindmap progress...");
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          progressSaved.mindmap = true;
+          console.log("✅ Mindmap progress saved");
+          showToast("✅ Đã lưu tiến độ Mindmap", "success");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving mindmap progress:", error);
+      })
+      .saveLearningProgressForWeb(currentLessonData.topicId, "mindmap", {
+        topicTitle: currentLessonData.topicTitle,
+      });
+  }
+
+  /**
+   * Save flashcards progress
+   * @param {boolean} completed - Whether all cards are viewed
+   */
+  function saveFlashcardsProgress(completed = false) {
+    if (!currentLessonData?.topicId) return;
+    if (progressSaved.flashcards && !completed) return;
+
+    const total = flashcardsData.length;
+    const reviewed = learnedCount + reviewCount;
+
+    console.log("💾 Saving flashcards progress...", {
+      total,
+      reviewed,
+      completed,
+    });
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          if (completed) {
+            progressSaved.flashcards = true;
+            showToast("✅ Đã lưu tiến độ Flashcards", "success");
+          }
+          console.log("✅ Flashcards progress saved");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving flashcards progress:", error);
+      })
+      .saveLearningProgressForWeb(currentLessonData.topicId, "flashcards", {
+        topicTitle: currentLessonData.topicTitle,
+        total: total,
+        reviewed: reviewed,
+        completed: completed,
+      });
+  }
+
+  /**
+   * Complete lesson and go back to topics
+   */
+  function completeLessonAndGoBack() {
+    saveLessonProgress(true);
+    setTimeout(() => {
+      showPage("page-topics");
+    }, 500);
+  }
+
   // Make functions globally available
   window.initLessonPage = initLessonPage;
   window.retryLoadLesson = retryLoadLesson;
   window.startQuizFromLesson = startQuizFromLesson;
+  window.completeLessonAndGoBack = completeLessonAndGoBack;
   window.switchLessonTab = switchLessonTab;
   window.loadMindmap = loadMindmap;
   window.loadFlashcards = loadFlashcards;
