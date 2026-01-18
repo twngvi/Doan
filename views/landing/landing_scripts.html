@@ -10,6 +10,152 @@
     legalType: null,
   };
 
+  // ===== AUTH TOAST NOTIFICATION SYSTEM =====
+  let authToastTimeout = null;
+
+  function showAuthToast(message, type = "info") {
+    // Sử dụng showToast global nếu có, nếu không thì dùng toast riêng
+    if (typeof window.showToast === "function") {
+      window.showToast(message, type);
+      return;
+    }
+
+    // Tạo toast container nếu chưa có
+    let toastContainer = document.getElementById("auth-toast-container");
+    if (!toastContainer) {
+      toastContainer = document.createElement("div");
+      toastContainer.id = "auth-toast-container";
+      toastContainer.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999999;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+      `;
+      document.body.appendChild(toastContainer);
+    }
+
+    // Tạo toast element
+    const toast = document.createElement("div");
+    toast.className = "auth-toast auth-toast-" + type;
+
+    const icons = {
+      success: "✅",
+      error: "❌",
+      warning: "⚠️",
+      info: "ℹ️",
+    };
+
+    const colors = {
+      success: "linear-gradient(135deg, #10b981, #059669)",
+      error: "linear-gradient(135deg, #ef4444, #dc2626)",
+      warning: "linear-gradient(135deg, #f59e0b, #d97706)",
+      info: "linear-gradient(135deg, #3b82f6, #2563eb)",
+    };
+
+    toast.style.cssText = `
+      background: ${colors[type] || colors.info};
+      color: white;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+      animation: authToastSlideIn 0.3s ease-out;
+      max-width: 350px;
+      backdrop-filter: blur(10px);
+    `;
+
+    toast.innerHTML = `
+      <span style="font-size: 18px;">${icons[type] || icons.info}</span>
+      <span>${message}</span>
+    `;
+
+    // Thêm animation styles nếu chưa có
+    if (!document.getElementById("auth-toast-styles")) {
+      const style = document.createElement("style");
+      style.id = "auth-toast-styles";
+      style.textContent = `
+        @keyframes authToastSlideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes authToastSlideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    toastContainer.appendChild(toast);
+
+    // Tự động ẩn sau 4 giây
+    setTimeout(() => {
+      toast.style.animation = "authToastSlideOut 0.3s ease-in forwards";
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // ===== AUTH SUCCESS POPUP SYSTEM =====
+  function showAuthSuccess(
+    title = "Đăng nhập thành công!",
+    subtitle = "Chào mừng bạn quay trở lại"
+  ) {
+    const overlay = document.getElementById("auth-success-overlay");
+    if (!overlay) return;
+
+    // Update text
+    const titleEl = overlay.querySelector(".success-title");
+    const subtitleEl = overlay.querySelector(".success-subtitle");
+    if (titleEl) titleEl.textContent = title;
+    if (subtitleEl) subtitleEl.textContent = subtitle;
+
+    // Show overlay
+    overlay.classList.add("active");
+
+    // Reset loading bar animation
+    const loadingFill = overlay.querySelector(".success-loading-fill");
+    if (loadingFill) {
+      loadingFill.style.animation = "none";
+      loadingFill.offsetHeight; // Force reflow
+      loadingFill.style.animation =
+        "successLoadingProgress 1.5s ease-out forwards, successLoadingShimmer 1s linear infinite";
+    }
+  }
+
+  function hideAuthSuccess() {
+    const overlay = document.getElementById("auth-success-overlay");
+    if (overlay) {
+      overlay.classList.remove("active");
+    }
+  }
+
+  // Auto hide and redirect after showing success
+  function showAuthSuccessAndRedirect(
+    title,
+    subtitle,
+    redirectPage,
+    delay = 1800
+  ) {
+    showAuthSuccess(title, subtitle);
+
+    setTimeout(() => {
+      hideAuthSuccess();
+      closeAuthPanel();
+      if (typeof showPage === "function" && redirectPage) {
+        showPage(redirectPage);
+      }
+    }, delay);
+  }
+
   // ===== METEOR SHOWER EFFECT =====
   function createMeteorShower() {
     const container = document.getElementById("meteor-shower");
@@ -72,6 +218,10 @@
     isAuthPanelOpen = true;
     currentAuthForm = formType;
 
+    // Lưu trạng thái để khôi phục khi reload
+    sessionStorage.setItem("authPanelOpen", "true");
+    sessionStorage.setItem("authFormType", formType);
+
     // Add split mode to landing
     landing.classList.add("split-mode");
 
@@ -100,6 +250,10 @@
 
     isAuthPanelOpen = false;
 
+    // Xóa trạng thái lưu
+    sessionStorage.removeItem("authPanelOpen");
+    sessionStorage.removeItem("authFormType");
+
     // Remove split mode
     landing.classList.remove("split-mode");
 
@@ -112,25 +266,46 @@
   function switchAuthForm(formType) {
     const loginForm = document.getElementById("auth-login-form");
     const registerForm = document.getElementById("auth-register-form");
+    const forgotForm = document.getElementById("auth-forgot-form");
+    const verifyForm = document.getElementById("auth-verify-form");
 
     if (!loginForm || !registerForm) return;
 
     currentAuthForm = formType;
 
+    // Cập nhật trạng thái lưu
+    if (isAuthPanelOpen) {
+      sessionStorage.setItem("authFormType", formType);
+    }
+
+    // Hide all forms
+    loginForm.style.display = "none";
+    registerForm.style.display = "none";
+    if (forgotForm) forgotForm.style.display = "none";
+    if (verifyForm) verifyForm.style.display = "none";
+
+    // Show the requested form
+    let targetForm = null;
     if (formType === "login") {
-      loginForm.style.display = "block";
-      registerForm.style.display = "none";
+      targetForm = loginForm;
+    } else if (formType === "register") {
+      targetForm = registerForm;
+    } else if (formType === "forgot") {
+      targetForm = forgotForm;
+      // Reset to step 1
+      showForgotStep1();
+    } else if (formType === "verify") {
+      targetForm = verifyForm;
+      // Load pending verification email
+      initSplitVerifyPage();
+    }
+
+    if (targetForm) {
+      targetForm.style.display = "block";
       // Re-trigger animation
-      loginForm.style.animation = "none";
-      loginForm.offsetHeight; // Trigger reflow
-      loginForm.style.animation = "authFadeIn 0.4s ease-out";
-    } else {
-      loginForm.style.display = "none";
-      registerForm.style.display = "block";
-      // Re-trigger animation
-      registerForm.style.animation = "none";
-      registerForm.offsetHeight; // Trigger reflow
-      registerForm.style.animation = "authFadeIn 0.4s ease-out";
+      targetForm.style.animation = "none";
+      targetForm.offsetHeight; // Trigger reflow
+      targetForm.style.animation = "authFadeIn 0.4s ease-out";
     }
   }
 
@@ -145,8 +320,10 @@
   function handleGoogleLoginClick() {
     const loadingOverlay = document.getElementById("auth-loading-overlay");
 
-    // Show loading overlay
+    // Show loading overlay with Google text
     if (loadingOverlay) {
+      const loadingText = loadingOverlay.querySelector(".auth-loading-text");
+      if (loadingText) loadingText.textContent = "Đang kết nối với Google...";
       loadingOverlay.classList.add("active");
     }
 
@@ -154,53 +331,70 @@
     if (typeof google !== "undefined" && google.script) {
       google.script.run
         .withSuccessHandler((result) => {
+          // Hide loading
+          if (loadingOverlay) {
+            loadingOverlay.classList.remove("active");
+          }
+
           if (result.success) {
-            // Hide loading
-            if (loadingOverlay) {
-              loadingOverlay.classList.remove("active");
-            }
-            closeAuthPanel();
-            if (typeof showPage === "function") {
-              showPage("page-dashboard");
-            }
+            // Show galaxy-themed success popup
+            showAuthSuccessAndRedirect(
+              "Đăng nhập thành công!",
+              "Chào mừng bạn đến với O.uiz Galaxy",
+              "page-dashboard",
+              1800
+            );
           } else {
-            if (loadingOverlay) {
-              loadingOverlay.classList.remove("active");
-            }
-            alert(result.message || "Đăng nhập Google thất bại!");
+            showAuthToast(
+              result.message || "Đăng nhập Google thất bại!",
+              "error"
+            );
           }
         })
         .withFailureHandler((error) => {
           if (loadingOverlay) {
             loadingOverlay.classList.remove("active");
           }
-          alert("Lỗi: " + error.message);
+          showAuthToast("Lỗi: " + error.message, "error");
         })
         .signInWithGoogle();
     } else if (typeof signInWithGoogle === "function") {
       // Use existing signInWithGoogle function
       signInWithGoogle();
     } else {
-      // Fallback for testing - hide loading after 2 seconds
+      // Fallback for testing - simulate loading then success
       setTimeout(() => {
         if (loadingOverlay) {
           loadingOverlay.classList.remove("active");
         }
-        alert("Đăng nhập Google thành công (demo)!");
-        closeAuthPanel();
+        // Show galaxy-themed success popup (demo)
+        showAuthSuccessAndRedirect(
+          "Đăng nhập thành công!",
+          "Chào mừng bạn đến với O.uiz Galaxy",
+          null,
+          1800
+        );
       }, 2000);
     }
   }
 
   // ===== SPLIT AUTH FORM HANDLERS =====
   async function handleSplitLogin() {
-    const email = document.getElementById("split-login-email")?.value;
+    const email = document.getElementById("split-login-email")?.value?.trim();
     const password = document.getElementById("split-login-password")?.value;
     const remember = document.getElementById("split-remember")?.checked;
 
     if (!email || !password) {
-      alert("Vui lòng nhập đầy đủ thông tin!");
+      showAuthToast("Vui lòng nhập đầy đủ thông tin!", "error");
       return;
+    }
+
+    // Show loading overlay
+    const loadingOverlay = document.getElementById("auth-loading-overlay");
+    if (loadingOverlay) {
+      const loadingText = loadingOverlay.querySelector(".auth-loading-text");
+      if (loadingText) loadingText.textContent = "Đang đăng nhập...";
+      loadingOverlay.classList.add("active");
     }
 
     const submitBtn = document.querySelector(
@@ -216,29 +410,59 @@
       if (typeof google !== "undefined" && google.script) {
         google.script.run
           .withSuccessHandler((result) => {
+            // Hide loading overlay
+            if (loadingOverlay) loadingOverlay.classList.remove("active");
+
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Đăng nhập</span>";
+            }
             if (result.success) {
-              closeAuthPanel();
-              if (typeof showPage === "function") {
-                showPage("page-dashboard");
-              }
+              // Show galaxy-themed success popup
+              showAuthSuccessAndRedirect(
+                "Đăng nhập thành công!",
+                "Chào mừng bạn quay trở lại",
+                "page-dashboard",
+                1800
+              );
             } else {
-              alert(result.message || "Đăng nhập thất bại!");
+              showAuthToast(result.message || "Đăng nhập thất bại!", "error");
             }
           })
           .withFailureHandler((error) => {
-            alert("Lỗi: " + error.message);
+            // Hide loading overlay
+            if (loadingOverlay) loadingOverlay.classList.remove("active");
+
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Đăng nhập</span>";
+            }
+            showAuthToast("Lỗi: " + error.message, "error");
           })
           .loginUser({ email, password, remember });
       } else {
-        // Fallback for testing
-        console.log("Login attempt:", { email, remember });
-        alert("Đăng nhập thành công (demo)!");
-        closeAuthPanel();
+        // Fallback for testing - simulate loading
+        setTimeout(() => {
+          if (loadingOverlay) loadingOverlay.classList.remove("active");
+
+          console.log("Login attempt:", { email, remember });
+          // Show galaxy-themed success popup (demo)
+          showAuthSuccessAndRedirect(
+            "Đăng nhập thành công!",
+            "Chào mừng bạn quay trở lại",
+            null,
+            1800
+          );
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = "<span>Đăng nhập</span>";
+          }
+        }, 1500);
       }
     } catch (error) {
       console.error("Login error:", error);
-      alert("Có lỗi xảy ra!");
-    } finally {
+      if (loadingOverlay) loadingOverlay.classList.remove("active");
+      showAuthToast("Có lỗi xảy ra!", "error");
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = "<span>Đăng nhập</span>";
@@ -247,24 +471,26 @@
   }
 
   async function handleSplitRegister() {
-    const name = document.getElementById("split-register-name")?.value;
-    const email = document.getElementById("split-register-email")?.value;
+    const name = document.getElementById("split-register-name")?.value?.trim();
+    const email = document
+      .getElementById("split-register-email")
+      ?.value?.trim();
     const password = document.getElementById("split-register-password")?.value;
     const confirm = document.getElementById("split-register-confirm")?.value;
     const terms = document.getElementById("split-terms")?.checked;
 
     if (!name || !email || !password || !confirm) {
-      alert("Vui lòng nhập đầy đủ thông tin!");
+      showAuthToast("Vui lòng nhập đầy đủ thông tin!", "error");
       return;
     }
 
     if (password !== confirm) {
-      alert("Mật khẩu xác nhận không khớp!");
+      showAuthToast("Mật khẩu xác nhận không khớp!", "error");
       return;
     }
 
     if (!terms) {
-      alert("Vui lòng đồng ý với Điều khoản sử dụng!");
+      showAuthToast("Vui lòng đồng ý với Điều khoản sử dụng!", "warning");
       return;
     }
 
@@ -280,31 +506,369 @@
       if (typeof google !== "undefined" && google.script) {
         google.script.run
           .withSuccessHandler((result) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Tạo tài khoản</span>";
+            }
             if (result.success) {
-              alert("Đăng ký thành công! Vui lòng kiểm tra email để xác thực.");
-              switchAuthForm("login");
+              // Lưu email vào localStorage để sử dụng trong trang verify
+              localStorage.setItem(
+                "pendingVerification",
+                JSON.stringify({ email })
+              );
+              showAuthToast(
+                "Đăng ký thành công! Vui lòng kiểm tra email.",
+                "success"
+              );
+              setTimeout(() => switchAuthForm("verify"), 1500);
             } else {
-              alert(result.message || "Đăng ký thất bại!");
+              showAuthToast(result.message || "Đăng ký thất bại!", "error");
             }
           })
           .withFailureHandler((error) => {
-            alert("Lỗi: " + error.message);
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Tạo tài khoản</span>";
+            }
+            showAuthToast("Lỗi: " + error.message, "error");
           })
           .registerUser({ fullName: name, email, password });
       } else {
         // Fallback for testing
         console.log("Register attempt:", { name, email });
-        alert("Đăng ký thành công (demo)!");
-        switchAuthForm("login");
+        localStorage.setItem("pendingVerification", JSON.stringify({ email }));
+        showAuthToast("Đăng ký thành công (demo)!", "success");
+        setTimeout(() => switchAuthForm("verify"), 1500);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "<span>Tạo tài khoản</span>";
+        }
       }
     } catch (error) {
       console.error("Register error:", error);
-      alert("Có lỗi xảy ra!");
-    } finally {
+      showAuthToast("Có lỗi xảy ra!", "error");
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = "<span>Tạo tài khoản</span>";
       }
+    }
+  }
+
+  // ===== FORGOT PASSWORD HANDLERS =====
+  function showForgotStep1() {
+    const step1 = document.getElementById("auth-forgot-step1");
+    const step2 = document.getElementById("auth-forgot-step2");
+    if (step1) step1.style.display = "block";
+    if (step2) step2.style.display = "none";
+  }
+
+  function showForgotStep2() {
+    const step1 = document.getElementById("auth-forgot-step1");
+    const step2 = document.getElementById("auth-forgot-step2");
+    if (step1) step1.style.display = "none";
+    if (step2) step2.style.display = "block";
+  }
+
+  async function handleSplitForgotPassword() {
+    const email = document.getElementById("split-forgot-email")?.value?.trim();
+
+    if (!email) {
+      showAuthToast("Vui lòng nhập email!", "error");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#split-forgot-form .auth-submit-btn"
+    );
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>Đang gửi...</span>";
+    }
+
+    try {
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Gửi mã xác thực</span>";
+            }
+            if (result.success) {
+              showAuthToast(
+                "Đã gửi mã xác thực! Vui lòng kiểm tra email.",
+                "success"
+              );
+              document.getElementById("split-reset-email").value = email;
+              showForgotStep2();
+            } else {
+              showAuthToast(result.message || "Gửi mã thất bại!", "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Gửi mã xác thực</span>";
+            }
+            showAuthToast("Lỗi: " + error.message, "error");
+          })
+          .requestPasswordReset(email);
+      } else {
+        // Fallback for testing
+        console.log("Forgot password request:", { email });
+        showAuthToast("Đã gửi mã xác thực (demo)!", "success");
+        document.getElementById("split-reset-email").value = email;
+        showForgotStep2();
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "<span>Gửi mã xác thực</span>";
+        }
+      }
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      showAuthToast("Có lỗi xảy ra!", "error");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "<span>Gửi mã xác thực</span>";
+      }
+    }
+  }
+
+  async function handleSplitResetPassword() {
+    const email = document.getElementById("split-reset-email")?.value;
+    const code = document.getElementById("split-reset-code")?.value?.trim();
+    const password = document.getElementById("split-reset-password")?.value;
+    const confirm = document.getElementById("split-reset-confirm")?.value;
+
+    if (!code || code.length !== 6) {
+      showAuthToast("Vui lòng nhập mã 6 chữ số!", "error");
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      showAuthToast("Mật khẩu phải có ít nhất 6 ký tự!", "error");
+      return;
+    }
+
+    if (password !== confirm) {
+      showAuthToast("Mật khẩu xác nhận không khớp!", "error");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#split-reset-form .auth-submit-btn"
+    );
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>Đang xử lý...</span>";
+    }
+
+    try {
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Xác nhận đổi mật khẩu</span>";
+            }
+            if (result.success) {
+              showAuthToast("Đổi mật khẩu thành công!", "success");
+              setTimeout(() => switchAuthForm("login"), 1500);
+            } else {
+              showAuthToast(
+                result.message || "Đổi mật khẩu thất bại!",
+                "error"
+              );
+            }
+          })
+          .withFailureHandler((error) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Xác nhận đổi mật khẩu</span>";
+            }
+            showAuthToast("Lỗi: " + error.message, "error");
+          })
+          .resetPasswordWithCode({
+            email,
+            code,
+            newPassword: password,
+            confirmPassword: password,
+          });
+      } else {
+        // Fallback for testing
+        console.log("Reset password:", { email, code });
+        showAuthToast("Đổi mật khẩu thành công (demo)!", "success");
+        setTimeout(() => switchAuthForm("login"), 1500);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "<span>Xác nhận đổi mật khẩu</span>";
+        }
+      }
+    } catch (error) {
+      console.error("Reset password error:", error);
+      showAuthToast("Có lỗi xảy ra!", "error");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "<span>Xác nhận đổi mật khẩu</span>";
+      }
+    }
+  }
+
+  function handleSplitResendResetCode() {
+    const email = document.getElementById("split-reset-email")?.value;
+    if (email) {
+      document.getElementById("split-forgot-email").value = email;
+      handleSplitForgotPassword();
+    }
+  }
+
+  // ===== VERIFY EMAIL HANDLERS =====
+  let splitVerifyTimer = null;
+  let splitVerifySeconds = 60;
+
+  function initSplitVerifyPage() {
+    const verificationData = localStorage.getItem("pendingVerification");
+    if (verificationData) {
+      const data = JSON.parse(verificationData);
+      const emailDisplay = document.getElementById(
+        "split-verify-email-display"
+      );
+      if (emailDisplay) {
+        emailDisplay.textContent = data.email || "";
+      }
+    }
+    startSplitResendTimer();
+  }
+
+  function startSplitResendTimer() {
+    const resendBtn = document.getElementById("split-resend-code-btn");
+    const timerDisplay = document.getElementById("split-resend-timer");
+    const timerSeconds = document.getElementById("split-timer-seconds");
+
+    if (resendBtn) resendBtn.style.display = "none";
+    if (timerDisplay) timerDisplay.style.display = "block";
+
+    splitVerifySeconds = 60;
+
+    if (splitVerifyTimer) clearInterval(splitVerifyTimer);
+
+    splitVerifyTimer = setInterval(() => {
+      splitVerifySeconds--;
+      if (timerSeconds) timerSeconds.textContent = splitVerifySeconds;
+
+      if (splitVerifySeconds <= 0) {
+        clearInterval(splitVerifyTimer);
+        if (resendBtn) resendBtn.style.display = "inline";
+        if (timerDisplay) timerDisplay.style.display = "none";
+        splitVerifySeconds = 60;
+      }
+    }, 1000);
+  }
+
+  async function handleSplitVerifyEmail() {
+    const code = document.getElementById("split-verify-code")?.value?.trim();
+
+    if (!code || code.length !== 6) {
+      showAuthToast("Vui lòng nhập mã 6 chữ số!", "error");
+      return;
+    }
+
+    const submitBtn = document.querySelector(
+      "#split-verify-form .auth-submit-btn"
+    );
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>Đang xác thực...</span>";
+    }
+
+    try {
+      const verificationData = localStorage.getItem("pendingVerification");
+      let email = "";
+      if (verificationData) {
+        const data = JSON.parse(verificationData);
+        email = data.email;
+      }
+
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Xác thực</span>";
+            }
+            if (result.success) {
+              showAuthToast("Xác thực thành công!", "success");
+              localStorage.removeItem("pendingVerification");
+              setTimeout(() => {
+                closeAuthPanel();
+                switchAuthForm("login");
+              }, 1500);
+            } else {
+              showAuthToast(result.message || "Xác thực thất bại!", "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Xác thực</span>";
+            }
+            showAuthToast("Lỗi: " + error.message, "error");
+          })
+          .verifyEmail({ email, code });
+      } else {
+        // Fallback for testing
+        console.log("Verify email:", { email, code });
+        showAuthToast("Xác thực thành công (demo)!", "success");
+        localStorage.removeItem("pendingVerification");
+        setTimeout(() => switchAuthForm("login"), 1500);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "<span>Xác thực</span>";
+        }
+      }
+    } catch (error) {
+      console.error("Verify email error:", error);
+      showAuthToast("Có lỗi xảy ra!", "error");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "<span>Xác thực</span>";
+      }
+    }
+  }
+
+  async function handleSplitResendVerifyCode() {
+    const verificationData = localStorage.getItem("pendingVerification");
+    if (!verificationData) {
+      showAuthToast("Không tìm thấy thông tin xác thực!", "error");
+      return;
+    }
+
+    const data = JSON.parse(verificationData);
+    const email = data.email;
+
+    try {
+      if (typeof google !== "undefined" && google.script) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (result.success) {
+              showAuthToast("Đã gửi lại mã xác thực!", "success");
+              startSplitResendTimer();
+            } else {
+              showAuthToast(result.message || "Gửi lại thất bại!", "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            showAuthToast("Lỗi: " + error.message, "error");
+          })
+          .resendVerificationCode({ email });
+      } else {
+        // Fallback for testing
+        console.log("Resend verify code:", { email });
+        showAuthToast("Đã gửi lại mã (demo)!", "success");
+        startSplitResendTimer();
+      }
+    } catch (error) {
+      console.error("Resend verify code error:", error);
+      showAuthToast("Có lỗi xảy ra!", "error");
     }
   }
 
@@ -586,7 +1150,9 @@
     document.addEventListener("keydown", (e) => {
       // ESC to close modals/focus
       if (e.key === "Escape") {
-        if (GalaxyState.isDemoOpen) {
+        if (isAuthPanelOpen) {
+          closeAuthPanel();
+        } else if (GalaxyState.isDemoOpen) {
           closeDemoModal();
         } else if (GalaxyState.isLegalOpen) {
           closeLegalModal();
@@ -730,6 +1296,9 @@
     playIntroAnimation();
     initCodeSloganTyping();
 
+    // Khôi phục trạng thái auth panel khi reload trang
+    restoreAuthPanelState();
+
     // Close capsule when clicking outside
     document.addEventListener("click", (e) => {
       const isClickOnPlanet =
@@ -742,6 +1311,20 @@
     });
 
     console.log("✅ Galaxy Landing initialized");
+  }
+
+  // Khôi phục trạng thái auth panel khi reload
+  function restoreAuthPanelState() {
+    const savedPanelOpen = sessionStorage.getItem("authPanelOpen");
+    const savedFormType = sessionStorage.getItem("authFormType");
+
+    if (savedPanelOpen === "true" && savedFormType) {
+      console.log("🔄 Restoring auth panel state:", savedFormType);
+      // Delay nhỏ để đảm bảo DOM đã sẵn sàng
+      setTimeout(() => {
+        openAuthPanel(savedFormType);
+      }, 100);
+    }
   }
 
   // Run on load

@@ -96,9 +96,9 @@ function requestPasswordReset(email) {
 }
 
 /**
- * Reset password with code
+ * Reset password with code (Internal)
  */
-function resetPasswordWithCode(data) {
+function resetPasswordWithCodeInternal(data) {
   try {
     Logger.log("=== RESET PASSWORD WITH CODE ===");
     Logger.log("Email: " + data.email);

@@ -27,18 +27,18 @@ function doGet(e) {
     Logger.log("Parameters: " + JSON.stringify(e.parameter));
 
     // --- PHẦN THÊM MỚI: Xử lý Callback Google Login ---
-    if (e.parameter.code && e.parameter.state === 'google_login_flow') {
+    if (e.parameter.code && e.parameter.state === "google_login_flow") {
       return handleGoogleCallback(e.parameter.code);
     }
     // --------------------------------------------------
 
     const template = HtmlService.createTemplateFromFile("views/index");
-    
+
     // ⭐ SERVER-SIDE ROUTING: Truyền tham số 'page' vào template
-    const requestedPage = e.parameter.page || '';
+    const requestedPage = e.parameter.page || "";
     template.page = requestedPage;
     template.params = e.parameter || {};
-    
+
     Logger.log("Requested page: " + requestedPage);
 
     const htmlOutput = template
@@ -111,7 +111,12 @@ function requestResetPassword(email) {
 }
 
 function resetPasswordWithToken(data) {
-  return resetPasswordWithCode(data);
+  return resetPasswordWithCodeInternal(data);
+}
+
+// ⭐ Wrapper cho frontend gọi resetPasswordWithCode
+function resetPasswordWithCode(data) {
+  return resetPasswordWithCodeInternal(data);
 }
 
 function resendVerificationEmailToUser(email) {

@@ -1,6 +1,93 @@
 <script>
   // ===== DASHBOARD - KNOWLEDGE STUDIO =====
 
+  // Cache for dashboard data
+  const DashboardCache = {
+    quizResults: null,
+    topics: null,
+    lastFetch: null,
+    cacheTimeout: 60000, // 1 minute cache
+  };
+
+  // ===== RECENT ACTIVITY SYSTEM =====
+  const RECENT_ACTIVITIES_KEY = "recentActivities";
+  const MAX_RECENT_ACTIVITIES = 4;
+
+  /**
+   * Save activity to localStorage
+   * Called when user visits/plays a topic
+   */
+  window.saveRecentActivity = function (activity) {
+    try {
+      let activities = JSON.parse(
+        localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]"
+      );
+
+      // Remove existing activity with same topicId to avoid duplicates
+      activities = activities.filter((a) => a.topicId !== activity.topicId);
+
+      // Add new activity at the beginning
+      activities.unshift({
+        topicId: activity.topicId,
+        topicTitle: activity.topicTitle || "Chủ đề",
+        activityType: activity.activityType || "view", // view, quiz, matching
+        lastAccess: new Date().toISOString(),
+        score: activity.score || null,
+        totalQuestions: activity.totalQuestions || null,
+        percentage: activity.percentage || null,
+      });
+
+      // Keep only latest 4 activities
+      activities = activities.slice(0, MAX_RECENT_ACTIVITIES);
+
+      localStorage.setItem(RECENT_ACTIVITIES_KEY, JSON.stringify(activities));
+      console.log("📝 Activity saved:", activity.topicTitle);
+    } catch (e) {
+      console.error("Error saving activity:", e);
+    }
+  };
+
+  /**
+   * Get recent activities from localStorage
+   */
+  function getRecentActivities() {
+    try {
+      return JSON.parse(localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]");
+    } catch (e) {
+      console.error("Error getting activities:", e);
+      return [];
+    }
+  }
+
+  /**
+   * Update activity with quiz result
+   */
+  window.updateActivityResult = function (topicId, score, totalQuestions) {
+    try {
+      let activities = getRecentActivities();
+      const index = activities.findIndex((a) => a.topicId === topicId);
+
+      if (index !== -1) {
+        activities[index].score = score;
+        activities[index].totalQuestions = totalQuestions;
+        activities[index].percentage = Math.round(
+          (score / totalQuestions) * 100
+        );
+        activities[index].lastAccess = new Date().toISOString();
+        activities[index].activityType = "quiz";
+
+        // Move to top
+        const activity = activities.splice(index, 1)[0];
+        activities.unshift(activity);
+
+        localStorage.setItem(RECENT_ACTIVITIES_KEY, JSON.stringify(activities));
+        console.log("📊 Activity updated with result:", topicId);
+      }
+    } catch (e) {
+      console.error("Error updating activity:", e);
+    }
+  };
+
   /**
    * Get user data from storage
    */
@@ -59,9 +146,132 @@
 
     updateGreeting();
     initStreakTracking();
-    loadRecentTopics();
-    loadProgressByTopic();
-    loadKPIs();
+
+    // Start meteor shower after 10 seconds
+    setTimeout(initHeaderMeteorShower, 10000);
+
+    // Load all dashboard data in parallel with single API calls
+    loadAllDashboardData();
+  }
+
+  /**
+   * Create meteor shower effect in dashboard header
+   */
+  function initHeaderMeteorShower() {
+    const container = document.getElementById("header-meteor-container");
+    if (!container) return;
+
+    function createMeteor() {
+      const meteor = document.createElement("div");
+      meteor.className = "header-meteor";
+
+      // Start from top area, random horizontal position
+      meteor.style.left = Math.random() * 40 + "%"; // Left 0-40%
+      meteor.style.top = "-10px"; // Start above header
+
+      // Random size
+      const height = 35 + Math.random() * 35;
+      meteor.style.height = height + "px";
+
+      // Random duration
+      meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+      container.appendChild(meteor);
+
+      // Remove after animation
+      setTimeout(() => meteor.remove(), 1200);
+    }
+
+    // Create 2-4 meteors
+    const meteorCount = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < meteorCount; i++) {
+      setTimeout(createMeteor, i * 200);
+    }
+
+    // Repeat every 15-25 seconds
+    setTimeout(initHeaderMeteorShower, 15000 + Math.random() * 10000);
+  }
+
+  /**
+   * Load all dashboard data efficiently
+   */
+  function loadAllDashboardData() {
+    console.log("📋 Loading all dashboard data...");
+
+    // Check cache first
+    const now = Date.now();
+    if (
+      DashboardCache.lastFetch &&
+      now - DashboardCache.lastFetch < DashboardCache.cacheTimeout
+    ) {
+      console.log("📦 Using cached dashboard data");
+      if (DashboardCache.quizResults) {
+        handleRecentTopicsLoaded(DashboardCache.quizResults);
+        handleKPIsLoaded(DashboardCache.quizResults);
+      }
+      if (DashboardCache.topics) {
+        handleProgressLoaded(DashboardCache.topics);
+      }
+      return;
+    }
+
+    // Set timeout fallback for slow API
+    const loadingTimeout = setTimeout(() => {
+      console.warn("⏱️ API taking too long, showing cached/empty state");
+      showFastLoadingFallback();
+    }, 5000); // 5 second timeout
+
+    // Load quiz results (for recent topics + KPIs)
+    google.script.run
+      .withSuccessHandler((response) => {
+        clearTimeout(loadingTimeout);
+        DashboardCache.quizResults = response;
+        DashboardCache.lastFetch = Date.now();
+        handleRecentTopicsLoaded(response);
+        handleKPIsLoaded(response);
+      })
+      .withFailureHandler((error) => {
+        clearTimeout(loadingTimeout);
+        handleRecentTopicsError(error);
+        handleKPIsError(error);
+      })
+      .getUserQuizResults();
+
+    // Load topics (for progress)
+    google.script.run
+      .withSuccessHandler((response) => {
+        DashboardCache.topics = response;
+        handleProgressLoaded(response);
+      })
+      .withFailureHandler(handleProgressError)
+      .getAllTopics();
+  }
+
+  /**
+   * Show fallback state when API is slow
+   */
+  function showFastLoadingFallback() {
+    // Show empty states with friendly message
+    const gridEl = document.getElementById("recent-topics-grid");
+    if (gridEl && gridEl.querySelector(".loading-state")) {
+      gridEl.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <div class="empty-state-icon">⏳</div>
+          <div class="empty-state-title">Đang kết nối với server...</div>
+          <div class="empty-state-text">Vui lòng đợi hoặc làm mới trang</div>
+        </div>
+      `;
+    }
+
+    const progressList = document.getElementById("progress-list");
+    if (progressList && progressList.querySelector(".loading-state")) {
+      progressList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⏳</div>
+          <div class="empty-state-text">Đang tải...</div>
+        </div>
+      `;
+    }
   }
 
   /**
@@ -221,32 +431,59 @@
   }
 
   /**
-   * Load recent topics (activity cards)
+   * Load recent topics (activity cards) - now called internally
    */
   function loadRecentTopics() {
-    console.log("📋 Loading recent topics...");
-
-    google.script.run
-      .withSuccessHandler(handleRecentTopicsLoaded)
-      .withFailureHandler(handleRecentTopicsError)
-      .getUserQuizResults();
+    // This is now handled by loadAllDashboardData
+    console.log(
+      "📋 loadRecentTopics called - delegating to loadAllDashboardData"
+    );
+    loadAllDashboardData();
   }
 
   /**
-   * Handle recent topics loaded
+   * Handle recent topics loaded - prioritize local activities
    */
   function handleRecentTopicsLoaded(response) {
     const gridEl = document.getElementById("recent-topics-grid");
     if (!gridEl) return;
 
-    let results = [];
+    // Get local activities first (priority)
+    const localActivities = getRecentActivities();
+
+    // Also get server results
+    let serverResults = [];
     if (response && response.success && Array.isArray(response.results)) {
-      results = response.results;
+      serverResults = response.results;
     } else if (Array.isArray(response)) {
-      results = response;
+      serverResults = response;
     }
 
-    if (results.length === 0) {
+    // Merge: local activities first, then server results (avoid duplicates)
+    const mergedActivities = [...localActivities];
+    const localTopicIds = new Set(localActivities.map((a) => a.topicId));
+
+    serverResults.forEach((result) => {
+      const topicId = result.topicId || result.topicTitle;
+      if (!localTopicIds.has(topicId)) {
+        mergedActivities.push({
+          topicId: topicId,
+          topicTitle: result.topicTitle || "Chủ đề",
+          activityType: result.quizType || "quiz",
+          lastAccess: result.completedAt || new Date().toISOString(),
+          score: result.score,
+          totalQuestions: result.totalQuestions,
+          percentage: result.percentage,
+        });
+      }
+    });
+
+    // Sort by lastAccess and take only 4
+    const recentActivities = mergedActivities
+      .sort((a, b) => new Date(b.lastAccess) - new Date(a.lastAccess))
+      .slice(0, 4);
+
+    if (recentActivities.length === 0) {
       gridEl.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1;">
           <div class="empty-state-icon">📚</div>
@@ -257,51 +494,58 @@
       return;
     }
 
-    // Group by topic and get recent unique topics
-    const topicMap = new Map();
-    results.forEach((result) => {
-      const topicId = result.topicId || result.topicTitle;
-      if (!topicMap.has(topicId)) {
-        topicMap.set(topicId, result);
-      }
-    });
-
-    const recentTopics = Array.from(topicMap.values()).slice(0, 6);
     const today = new Date().toISOString().split("T")[0];
 
-    gridEl.innerHTML = recentTopics
-      .map((topic) => {
+    gridEl.innerHTML = recentActivities
+      .map((activity) => {
         const isToday =
-          topic.completedAt && topic.completedAt.startsWith(today);
-        const timeAgo = getTimeAgo(topic.completedAt);
-        const score = topic.score || 0;
-        const total = topic.totalQuestions || 10;
+          activity.lastAccess && activity.lastAccess.startsWith(today);
+        const timeAgo = getTimeAgo(activity.lastAccess);
+        const score = activity.score || 0;
+        const total = activity.totalQuestions || 10;
         const percentage =
-          topic.percentage || Math.round((score / total) * 100);
+          activity.percentage ||
+          (score > 0 ? Math.round((score / total) * 100) : 0);
         const progress = Math.min(100, percentage);
 
-        // Determine quiz type tag
+        // Determine activity type tag
         let tagClass = "";
-        let tagText = "Quiz Visual";
-        if (topic.quizType === "matching") {
+        let tagText = "Xem chủ đề";
+        let tagIcon = "👁️";
+        if (
+          activity.activityType === "quiz" ||
+          activity.activityType === "mcq"
+        ) {
+          tagClass = "quiz";
+          tagText = "Quiz Visual";
+          tagIcon = "✅";
+        } else if (activity.activityType === "matching") {
           tagClass = "matching";
           tagText = "Matching";
-        } else if (topic.quizType === "code") {
-          tagClass = "code";
-          tagText = "Code Puzzle";
+          tagIcon = "🔗";
+        } else if (activity.activityType === "view") {
+          tagClass = "view";
+          tagText = "Xem chủ đề";
+          tagIcon = "📖";
         }
+
+        const hasResult =
+          activity.score !== null && activity.score !== undefined;
 
         return `
         <div class="topic-card ${isToday ? "today" : ""}">
           <div class="topic-card-header">
             <div>
-              <div class="topic-title">${topic.topicTitle || "Chủ đề"}</div>
+              <div class="topic-title">${activity.topicTitle}</div>
               <div class="topic-tags">
-                <span class="topic-tag ${tagClass}">${tagText}</span>
+                <span class="topic-tag ${tagClass}">${tagIcon} ${tagText}</span>
               </div>
             </div>
             ${isToday ? '<span class="today-chip">Hôm nay</span>' : ""}
           </div>
+          ${
+            hasResult
+              ? `
           <div class="topic-progress">
             <div class="topic-progress-bar">
               <div class="topic-progress-fill" style="width: ${progress}%"></div>
@@ -311,11 +555,24 @@
             <span>Lần chơi: ${timeAgo}</span>
             <span class="topic-result">${score}/${total} · ${percentage}%</span>
           </div>
+          `
+              : `
+          <div class="topic-meta">
+            <span>Lần truy cập: ${timeAgo}</span>
+          </div>
+          `
+          }
           <div class="topic-actions">
             <button class="topic-btn topic-btn-primary" onclick="continueQuiz('${
-              topic.topicId || ""
-            }')">Tiếp tục</button>
-            <button class="topic-btn topic-btn-secondary">Xem báo cáo</button>
+              activity.topicId
+            }')">
+              ${hasResult ? "Tiếp tục" : "Bắt đầu"}
+            </button>
+            ${
+              hasResult
+                ? '<button class="topic-btn topic-btn-secondary">Xem báo cáo</button>'
+                : ""
+            }
           </div>
         </div>
       `;
@@ -351,15 +608,14 @@
   }
 
   /**
-   * Load progress by topic
+   * Load progress by topic - now called internally
    */
   function loadProgressByTopic() {
-    console.log("📈 Loading progress by topic...");
-
-    google.script.run
-      .withSuccessHandler(handleProgressLoaded)
-      .withFailureHandler(handleProgressError)
-      .getAllTopics();
+    // This is now handled by loadAllDashboardData
+    console.log(
+      "📈 loadProgressByTopic called - delegating to loadAllDashboardData"
+    );
+    loadAllDashboardData();
   }
 
   /**
@@ -433,15 +689,12 @@
   }
 
   /**
-   * Load KPIs
+   * Load KPIs - now called internally
    */
   function loadKPIs() {
-    console.log("📊 Loading KPIs...");
-
-    google.script.run
-      .withSuccessHandler(handleKPIsLoaded)
-      .withFailureHandler(handleKPIsError)
-      .getUserQuizResults();
+    // This is now handled by loadAllDashboardData
+    console.log("📊 loadKPIs called - delegating to loadAllDashboardData");
+    loadAllDashboardData();
   }
 
   /**

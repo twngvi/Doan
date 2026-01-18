@@ -78,11 +78,12 @@
       lesson: "page-lesson",
       matching: "page-matching",
       profile: "page-profile",
-      login: "page-login",
-      register: "page-register",
       landing: "page-landing",
-      "verify-email": "page-verify-email",
-      "forgot-password": "page-forgot-password",
+      // Auth pages giờ nằm trong auth layer của landing
+      login: "page-landing",
+      register: "page-landing",
+      "verify-email": "page-landing",
+      "forgot-password": "page-landing",
     };
 
     const protectedPages = [
@@ -93,7 +94,21 @@
       "matching",
       "profile",
     ];
-    const authPages = ["login", "register", "landing", "forgot-password"];
+    const authPages = [
+      "login",
+      "register",
+      "landing",
+      "forgot-password",
+      "verify-email",
+    ];
+
+    // Mapping auth page name to auth form type
+    const authFormMap = {
+      login: "login",
+      register: "register",
+      "verify-email": "verify",
+      "forgot-password": "forgot",
+    };
 
     // Mặc định là landing
     let targetPageId = "page-landing";
@@ -177,6 +192,39 @@
    */
   function showPage(pageId, params = {}, addToHistory = true) {
     console.log("Showing page:", pageId);
+
+    // ===== AUTH LAYER INTEGRATION =====
+    // Các trang auth cũ giờ được xử lý trong auth layer của landing
+    const authPageIds = [
+      "page-login",
+      "page-register",
+      "page-verify-email",
+      "page-forgot-password",
+    ];
+    const authFormMapping = {
+      "page-login": "login",
+      "page-register": "register",
+      "page-verify-email": "verify",
+      "page-forgot-password": "forgot",
+    };
+
+    if (authPageIds.includes(pageId)) {
+      const formType = authFormMapping[pageId];
+      // Hiện landing page trước
+      const allPages = document.querySelectorAll(".page-content");
+      allPages.forEach((page) => (page.style.display = "none"));
+      const landingPage = document.getElementById("page-landing");
+      if (landingPage) {
+        landingPage.style.display = "block";
+      }
+      // Mở auth panel với form tương ứng
+      if (typeof openAuthPanel === "function") {
+        setTimeout(() => openAuthPanel(formType), 100);
+        console.log("🔄 Redirected to auth panel:", formType);
+        return;
+      }
+    }
+    // ===================================
 
     // Safety check: Nếu pageId không tồn tại trong DOM, về landing
     if (!document.getElementById(pageId)) {
@@ -679,6 +727,11 @@
     localStorage.removeItem("currentUser");
     localStorage.removeItem("user");
     localStorage.removeItem("authToken");
+    localStorage.removeItem("recentActivities"); // Clear activity cache
+
+    // Clear auth panel state
+    sessionStorage.removeItem("authPanelOpen");
+    sessionStorage.removeItem("authFormType");
 
     // Clear Google auth state if needed
     if (
@@ -703,23 +756,46 @@
 
     // Navigate to login
     setTimeout(() => {
+      // Reset landing page CTA buttons to show login/register
+      resetLandingCTA();
+
       if (typeof showPage === "function") {
-        showPage("page-login");
+        showPage("page-landing");
       } else {
-        // Fallback if showPage is not defined
         document
           .querySelectorAll(".page-content")
           .forEach((p) => (p.style.display = "none"));
-        const loginPage = document.getElementById("page-login");
-        if (loginPage) loginPage.style.display = "block";
+        const landingPage = document.getElementById("page-landing");
+        if (landingPage) landingPage.style.display = "block";
       }
-
-      // Clear form fields
-      const emailInput = document.getElementById("login-email");
-      const passwordInput = document.getElementById("login-password");
-      if (emailInput) emailInput.value = "";
-      if (passwordInput) passwordInput.value = "";
     }, 500);
+  }
+
+  /**
+   * Reset landing page CTA buttons to default (login/register)
+   */
+  function resetLandingCTA() {
+    const ctaPrimary = document.querySelector(".cta-dock .cta-primary");
+    const ctaGhost = document.querySelector(".cta-dock .cta-ghost");
+
+    if (ctaPrimary) {
+      ctaPrimary.innerHTML = "<span>Bắt đầu</span>";
+      ctaPrimary.onclick = () => {
+        if (typeof openAuthPanel === "function") {
+          openAuthPanel("register");
+        }
+      };
+    }
+
+    if (ctaGhost) {
+      ctaGhost.style.display = "";
+      ctaGhost.innerHTML = "<span>Đăng nhập</span>";
+      ctaGhost.onclick = () => {
+        if (typeof openAuthPanel === "function") {
+          openAuthPanel("login");
+        }
+      };
+    }
   }
 
   /**
@@ -1591,6 +1667,8 @@ Hoáº·c báº¡n cÃ³ thá»ƒ:
   window.handleLoginFormSubmit = handleLoginFormSubmit;
   window.handleRegisterFormSubmit = handleRegisterFormSubmit;
   window.handleLogout = handleLogout;
+  window.logout = handleLogout; // Alias for sidebar compatibility
+  window.resetLandingCTA = resetLandingCTA;
   window.showToast = showToast;
   window.showNotification = showToast; // Alias for compatibility
   window.showForgotPasswordModal = showForgotPasswordModal;
