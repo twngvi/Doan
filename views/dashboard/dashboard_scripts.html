@@ -20,7 +20,7 @@
   window.saveRecentActivity = function (activity) {
     try {
       let activities = JSON.parse(
-        localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]"
+        localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]",
       );
 
       // Remove existing activity with same topicId to avoid duplicates
@@ -71,7 +71,7 @@
         activities[index].score = score;
         activities[index].totalQuestions = totalQuestions;
         activities[index].percentage = Math.round(
-          (score / totalQuestions) * 100
+          (score / totalQuestions) * 100,
         );
         activities[index].lastAccess = new Date().toISOString();
         activities[index].activityType = "quiz";
@@ -147,27 +147,58 @@
     updateGreeting();
     initStreakTracking();
 
-    // Start meteor shower after 10 seconds
-    setTimeout(initHeaderMeteorShower, 10000);
+    // Start meteor shower immediately
+    initHeaderMeteorShower();
+
+    // Setup mouse-responsive stars effect
+    setupDashboardHeaderMouseEffect();
 
     // Load all dashboard data in parallel with single API calls
     loadAllDashboardData();
   }
 
   /**
-   * Create meteor shower effect in dashboard header
+   * Mouse-responsive stars effect for dashboard header
    */
+  function setupDashboardHeaderMouseEffect() {
+    const header = document.querySelector(".dashboard-header");
+    const stars = document.getElementById("dashboardHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  /**
+   * Create meteor shower effect in dashboard header - continuous rain
+   */
+  let dashboardMeteorInterval = null;
+
   function initHeaderMeteorShower() {
     const container = document.getElementById("header-meteor-container");
     if (!container) return;
+
+    // Clear existing interval
+    if (dashboardMeteorInterval) {
+      clearInterval(dashboardMeteorInterval);
+    }
 
     function createMeteor() {
       const meteor = document.createElement("div");
       meteor.className = "header-meteor";
 
-      // Start from top area, random horizontal position
+      // Start from top-left area
       meteor.style.left = Math.random() * 40 + "%"; // Left 0-40%
-      meteor.style.top = "-10px"; // Start above header
+      meteor.style.top = Math.random() * 20 + "%"; // Top 0-20%
 
       // Random size
       const height = 35 + Math.random() * 35;
@@ -182,14 +213,17 @@
       setTimeout(() => meteor.remove(), 1200);
     }
 
-    // Create 2-4 meteors
-    const meteorCount = 2 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < meteorCount; i++) {
-      setTimeout(createMeteor, i * 200);
-    }
+    // Create meteor every 800ms for continuous rain
+    dashboardMeteorInterval = setInterval(() => {
+      if (!document.getElementById("header-meteor-container")) {
+        clearInterval(dashboardMeteorInterval);
+        return;
+      }
+      createMeteor();
+    }, 800);
 
-    // Repeat every 15-25 seconds
-    setTimeout(initHeaderMeteorShower, 15000 + Math.random() * 10000);
+    // Create initial meteor
+    createMeteor();
   }
 
   /**
@@ -436,7 +470,7 @@
   function loadRecentTopics() {
     // This is now handled by loadAllDashboardData
     console.log(
-      "📋 loadRecentTopics called - delegating to loadAllDashboardData"
+      "📋 loadRecentTopics called - delegating to loadAllDashboardData",
     );
     loadAllDashboardData();
   }
@@ -613,7 +647,7 @@
   function loadProgressByTopic() {
     // This is now handled by loadAllDashboardData
     console.log(
-      "📈 loadProgressByTopic called - delegating to loadAllDashboardData"
+      "📈 loadProgressByTopic called - delegating to loadAllDashboardData",
     );
     loadAllDashboardData();
   }
@@ -715,7 +749,7 @@
       results.length > 0
         ? Math.round(
             results.reduce((sum, r) => sum + (r.percentage || 0), 0) /
-              results.length
+              results.length,
           )
         : 0;
     const rank =

@@ -107,7 +107,7 @@
   // ===== AUTH SUCCESS POPUP SYSTEM =====
   function showAuthSuccess(
     title = "Đăng nhập thành công!",
-    subtitle = "Chào mừng bạn quay trở lại"
+    subtitle = "Chào mừng bạn quay trở lại",
   ) {
     const overlay = document.getElementById("auth-success-overlay");
     if (!overlay) return;
@@ -143,7 +143,7 @@
     title,
     subtitle,
     redirectPage,
-    delay = 1800
+    delay = 1800,
   ) {
     showAuthSuccess(title, subtitle);
 
@@ -209,6 +209,50 @@
   let isAuthPanelOpen = false;
   let currentAuthForm = "login";
 
+  // ===== AUTH TRANSITION METEOR SHOWER =====
+  function createAuthMeteorShower() {
+    const container = document.getElementById("auth-meteor-shower");
+    if (!container) return;
+
+    // Clear previous meteors
+    container.innerHTML = "";
+    container.classList.add("active");
+
+    // Create 40-60 meteors for a dense shower
+    const meteorCount = Math.floor(Math.random() * 20) + 40;
+
+    for (let i = 0; i < meteorCount; i++) {
+      setTimeout(() => {
+        const meteor = document.createElement("div");
+        meteor.className = "auth-meteor";
+
+        // Random position across the left half
+        meteor.style.left = Math.random() * 100 + "%";
+        meteor.style.top = -10 + Math.random() * 60 + "%";
+
+        // Random size variation
+        const scale = 0.5 + Math.random() * 1;
+        meteor.style.height = 80 * scale + "px";
+
+        // Random delay and duration
+        meteor.style.animationDelay = Math.random() * 2 + "s";
+        meteor.style.animationDuration = 0.8 + Math.random() * 0.8 + "s";
+
+        container.appendChild(meteor);
+
+        // Remove meteor after animation
+        setTimeout(() => {
+          meteor.remove();
+        }, 4000);
+      }, i * 50); // Stagger meteor creation
+    }
+
+    // Hide container after 3 seconds
+    setTimeout(() => {
+      container.classList.remove("active");
+    }, 3000);
+  }
+
   function openAuthPanel(formType = "login") {
     const landing = document.getElementById("galaxy-landing");
     const authLayer = document.getElementById("auth-layer");
@@ -217,6 +261,9 @@
 
     isAuthPanelOpen = true;
     currentAuthForm = formType;
+
+    // Trigger meteor shower
+    createAuthMeteorShower();
 
     // Lưu trạng thái để khôi phục khi reload
     sessionStorage.setItem("authPanelOpen", "true");
@@ -234,7 +281,7 @@
     // Focus first input after animation
     setTimeout(() => {
       const firstInput = authLayer.querySelector(
-        'input:not([type="checkbox"])'
+        'input:not([type="checkbox"])',
       );
       if (firstInput) firstInput.focus();
     }, 550);
@@ -250,15 +297,25 @@
 
     isAuthPanelOpen = false;
 
+    // Trigger meteor shower
+    createAuthMeteorShower();
+
     // Xóa trạng thái lưu
     sessionStorage.removeItem("authPanelOpen");
     sessionStorage.removeItem("authFormType");
 
-    // Remove split mode
-    landing.classList.remove("split-mode");
-
-    // Hide auth layer
+    // Start closing animations simultaneously
+    // 1. Auth layer slides out
     authLayer.classList.remove("active");
+
+    // 2. Galaxy landing expands back with orbit scaling up
+    landing.classList.add("closing");
+
+    // After animation completes, clean up classes
+    setTimeout(() => {
+      landing.classList.remove("split-mode");
+      landing.classList.remove("closing");
+    }, 550);
 
     console.log("← Auth panel closed");
   }
@@ -342,12 +399,12 @@
               "Đăng nhập thành công!",
               "Chào mừng bạn đến với O.uiz Galaxy",
               "page-dashboard",
-              1800
+              1800,
             );
           } else {
             showAuthToast(
               result.message || "Đăng nhập Google thất bại!",
-              "error"
+              "error",
             );
           }
         })
@@ -372,7 +429,7 @@
           "Đăng nhập thành công!",
           "Chào mừng bạn đến với O.uiz Galaxy",
           null,
-          1800
+          1800,
         );
       }, 2000);
     }
@@ -398,7 +455,7 @@
     }
 
     const submitBtn = document.querySelector(
-      "#auth-login-form .auth-submit-btn"
+      "#auth-login-form .auth-submit-btn",
     );
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -423,7 +480,7 @@
                 "Đăng nhập thành công!",
                 "Chào mừng bạn quay trở lại",
                 "page-dashboard",
-                1800
+                1800,
               );
             } else {
               showAuthToast(result.message || "Đăng nhập thất bại!", "error");
@@ -451,7 +508,7 @@
             "Đăng nhập thành công!",
             "Chào mừng bạn quay trở lại",
             null,
-            1800
+            1800,
           );
           if (submitBtn) {
             submitBtn.disabled = false;
@@ -495,7 +552,7 @@
     }
 
     const submitBtn = document.querySelector(
-      "#auth-register-form .auth-submit-btn"
+      "#auth-register-form .auth-submit-btn",
     );
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -514,11 +571,11 @@
               // Lưu email vào localStorage để sử dụng trong trang verify
               localStorage.setItem(
                 "pendingVerification",
-                JSON.stringify({ email })
+                JSON.stringify({ email }),
               );
               showAuthToast(
                 "Đăng ký thành công! Vui lòng kiểm tra email.",
-                "success"
+                "success",
               );
               setTimeout(() => switchAuthForm("verify"), 1500);
             } else {
@@ -578,7 +635,7 @@
     }
 
     const submitBtn = document.querySelector(
-      "#split-forgot-form .auth-submit-btn"
+      "#split-forgot-form .auth-submit-btn",
     );
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -596,7 +653,7 @@
             if (result.success) {
               showAuthToast(
                 "Đã gửi mã xác thực! Vui lòng kiểm tra email.",
-                "success"
+                "success",
               );
               document.getElementById("split-reset-email").value = email;
               showForgotStep2();
@@ -655,7 +712,7 @@
     }
 
     const submitBtn = document.querySelector(
-      "#split-reset-form .auth-submit-btn"
+      "#split-reset-form .auth-submit-btn",
     );
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -676,7 +733,7 @@
             } else {
               showAuthToast(
                 result.message || "Đổi mật khẩu thất bại!",
-                "error"
+                "error",
               );
             }
           })
@@ -730,7 +787,7 @@
     if (verificationData) {
       const data = JSON.parse(verificationData);
       const emailDisplay = document.getElementById(
-        "split-verify-email-display"
+        "split-verify-email-display",
       );
       if (emailDisplay) {
         emailDisplay.textContent = data.email || "";
@@ -773,7 +830,7 @@
     }
 
     const submitBtn = document.querySelector(
-      "#split-verify-form .auth-submit-btn"
+      "#split-verify-form .auth-submit-btn",
     );
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -874,6 +931,11 @@
 
   // ===== PLANET FOCUS SYSTEM =====
   function focusPlanet(planetId) {
+    // Don't show info-capsule when auth panel is open
+    if (isAuthPanelOpen) {
+      return;
+    }
+
     const landing = document.getElementById("galaxy-landing");
     const capsules = document.querySelectorAll(".info-capsule");
 
@@ -929,11 +991,24 @@
 
   // ===== DEMO MODAL SYSTEM =====
   function openDemo(type) {
+    // Close auth panel if open
+    if (isAuthPanelOpen) {
+      closeAuthPanel();
+    }
+
     const overlay = document.getElementById("demo-modal-overlay");
+    if (!overlay) return;
+
     const demoContents = document.querySelectorAll(".demo-content");
+    const capsules = document.querySelectorAll(".info-capsule");
 
     GalaxyState.isDemoOpen = true;
     GalaxyState.demoType = type;
+
+    // Hide all info-capsules first
+    capsules.forEach((capsule) => {
+      capsule.classList.remove("active");
+    });
 
     // Reset all demo states
     resetDemoStates();
@@ -961,6 +1036,9 @@
 
     GalaxyState.isDemoOpen = false;
     GalaxyState.demoType = null;
+
+    // Also reset focus mode
+    resetFocus();
   }
 
   function resetDemoStates() {
@@ -1337,10 +1415,10 @@
   // ===== CONSOLE WELCOME =====
   console.log(
     "%c🌌 O.uiz Galaxy",
-    "background: linear-gradient(135deg, #1a0a3e, #2563eb); color: white; font-size: 20px; font-weight: bold; padding: 10px 20px; border-radius: 8px;"
+    "background: linear-gradient(135deg, #1a0a3e, #2563eb); color: white; font-size: 20px; font-weight: bold; padding: 10px 20px; border-radius: 8px;",
   );
   console.log(
     "%cHọc lập trình cơ bản qua trò chơi vũ trụ 🚀",
-    "font-size: 14px; color: #a78bfa;"
+    "font-size: 14px; color: #a78bfa;",
   );
 </script>

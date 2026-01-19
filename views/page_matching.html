@@ -5,20 +5,155 @@
     max-width: 1400px;
     margin: 0 auto;
     min-height: 100vh;
-    background: #f8fafc;
+    background: #ffffff;
   }
 
   .matching-header {
+    position: relative;
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
+    padding: 1.5rem;
+    background: linear-gradient(
+      135deg,
+      #030014 0%,
+      #0a0520 30%,
+      #1a0a3e 60%,
+      #0d1b4c 100%
+    );
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+  }
+
+  /* Galaxy Background Effects for Matching Header */
+  .matching-header-galaxy-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .matching-header-stars {
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(
+        1px 1px at 20% 30%,
+        rgba(255, 255, 255, 0.8) 100%,
+        transparent
+      ),
+      radial-gradient(
+        1px 1px at 40% 70%,
+        rgba(168, 216, 255, 0.7) 100%,
+        transparent
+      ),
+      radial-gradient(
+        1.5px 1.5px at 60% 20%,
+        rgba(255, 255, 255, 0.9) 100%,
+        transparent
+      ),
+      radial-gradient(
+        1px 1px at 80% 50%,
+        rgba(201, 168, 255, 0.6) 100%,
+        transparent
+      );
+    background-size: 200px 100px;
+    animation: matchingHeaderTwinkle 4s ease-in-out infinite;
+    transition: transform 0.3s ease-out;
+  }
+
+  @keyframes matchingHeaderTwinkle {
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .matching-header-nebula {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        ellipse 80% 60% at 20% 40%,
+        rgba(255, 100, 150, 0.12),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 60% 50% at 80% 60%,
+        rgba(100, 150, 255, 0.1),
+        transparent
+      );
+    filter: blur(20px);
+  }
+
+  /* Header Meteor Effect - 45 degree from left to right */
+  .matching-header-meteor-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .matching-header-meteor {
+    position: absolute;
+    width: 2px;
+    height: 50px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(168, 216, 255, 0.5),
+      rgba(255, 255, 255, 0.9)
+    );
+    border-radius: 50%;
+    transform: rotate(45deg);
+    opacity: 0;
+    animation: matchingMeteorFall 1s ease-in forwards;
+  }
+
+  .matching-header-meteor::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: -1.5px;
+    width: 5px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    box-shadow: 0 0 8px 3px rgba(168, 216, 255, 0.7);
+  }
+
+  @keyframes matchingMeteorFall {
+    0% {
+      opacity: 0;
+      transform: rotate(45deg) translate(0, 0);
+    }
+    15% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(45deg) translate(300px, 300px);
+    }
+  }
+
+  .matching-header-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
 
   .matching-title {
     font-size: 1.75rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   }
 
   .matching-placeholder {
@@ -42,7 +177,18 @@
 
 <div class="matching-container">
   <div class="matching-header">
-    <h1 class="matching-title">🎮 Matching Game</h1>
+    <!-- Galaxy Background Effects -->
+    <div class="matching-header-galaxy-bg">
+      <div class="matching-header-stars" id="matchingHeaderStars"></div>
+      <div class="matching-header-nebula"></div>
+      <div
+        class="matching-header-meteor-container"
+        id="matchingMeteorContainer"
+      ></div>
+    </div>
+    <div class="matching-header-content">
+      <h1 class="matching-title">🎮 Matching Game</h1>
+    </div>
   </div>
 
   <div class="matching-placeholder">
@@ -53,3 +199,83 @@
     <p style="color: #94a3b8; margin-top: 0.5rem">Coming soon!</p>
   </div>
 </div>
+
+<script>
+  // Meteor shower for matching header
+  let matchingMeteorInterval = null;
+
+  window.initMatchingPage = function () {
+    startMatchingHeaderMeteors();
+    setupMatchingHeaderMouseEffect();
+  };
+
+  function startMatchingHeaderMeteors() {
+    const container = document.getElementById("matchingMeteorContainer");
+    if (!container) return;
+
+    if (matchingMeteorInterval) {
+      clearInterval(matchingMeteorInterval);
+    }
+
+    matchingMeteorInterval = setInterval(() => {
+      if (!document.getElementById("matchingMeteorContainer")) {
+        clearInterval(matchingMeteorInterval);
+        return;
+      }
+      createMatchingMeteor();
+    }, 800);
+
+    createMatchingMeteor();
+  }
+
+  function createMatchingMeteor() {
+    const container = document.getElementById("matchingMeteorContainer");
+    if (!container) return;
+
+    const meteor = document.createElement("div");
+    meteor.className = "matching-header-meteor";
+
+    // Random position from top-left area
+    const startX = Math.random() * 40; // 0-40% from left
+    const startY = Math.random() * 20; // 0-20% from top
+
+    meteor.style.left = startX + "%";
+    meteor.style.top = startY + "%";
+
+    // Random size for variety
+    const height = 35 + Math.random() * 35;
+    meteor.style.height = height + "px";
+    meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+    container.appendChild(meteor);
+
+    setTimeout(() => {
+      meteor.remove();
+    }, 1500);
+  }
+
+  // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+  function setupMatchingHeaderMouseEffect() {
+    const header = document.querySelector(".matching-header");
+    const stars = document.getElementById("matchingHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  // Auto-init when page is shown
+  if (document.getElementById("matchingMeteorContainer")) {
+    startMatchingHeaderMeteors();
+    setupMatchingHeaderMouseEffect();
+  }
+</script>

@@ -55,6 +55,10 @@
     // Reset quiz state when initializing
     resetQuizState();
 
+    // Start meteor shower for header
+    startMCQHeaderMeteors();
+    setupMCQHeaderMouseEffect();
+
     // Check if we have valid topic params (coming from lesson or topics page)
     const params = window.currentPageParams;
     if (params && params.topicId && params.contentDocId) {
@@ -630,12 +634,11 @@
 
     // Update stats
     const answered = savedProgress.questionDetails.filter(
-      (q) => q.wasAnswered
+      (q) => q.wasAnswered,
     ).length;
     const total = savedProgress.questionDetails.length;
-    document.getElementById(
-      "resume-answered-count"
-    ).textContent = `${answered}/${total}`;
+    document.getElementById("resume-answered-count").textContent =
+      `${answered}/${total}`;
     document.getElementById("resume-current-score").textContent =
       savedProgress.score || 0;
 
@@ -693,10 +696,10 @@
 
           // Restore user answers from saved progress
           quizState.userAnswers = new Array(quizState.questions.length).fill(
-            null
+            null,
           );
           quizState.answeredQuestions = new Array(
-            quizState.questions.length
+            quizState.questions.length,
           ).fill(false);
 
           savedProgress.questionDetails.forEach((detail, idx) => {
@@ -870,7 +873,7 @@
     // Check if quiz is in progress (has questions and not finished)
     const hasStarted = quizState.questions.length > 0;
     const answeredCount = quizState.userAnswers.filter(
-      (a) => a !== null && a !== undefined
+      (a) => a !== null && a !== undefined,
     ).length;
     const isFinished =
       document.getElementById("quiz-results")?.style.display !== "none";
@@ -888,9 +891,8 @@
     exitTarget = target;
 
     // Update modal with current progress
-    document.getElementById(
-      "exit-answered-count"
-    ).textContent = `${answeredCount}/${quizState.questions.length}`;
+    document.getElementById("exit-answered-count").textContent =
+      `${answeredCount}/${quizState.questions.length}`;
     document.getElementById("exit-current-score").textContent =
       quizState.gameMode === "instant" ? quizState.score : "?";
 
@@ -953,7 +955,7 @@
           if (wrongAnswers && wrongAnswers.length > 0) {
             console.log(
               "📋 Found wrong answers to retry:",
-              wrongAnswers.length
+              wrongAnswers.length,
             );
             quizState.wrongAnswers = wrongAnswers;
           }
@@ -992,7 +994,7 @@
         let options = q.options;
         if (!Array.isArray(options)) {
           options = [options.A, options.B, options.C, options.D].filter(
-            Boolean
+            Boolean,
           );
         }
 
@@ -1038,7 +1040,7 @@
           // Filter out mastered questions
           questions = allQuestions.filter((q) => !masteredIds.includes(q.id));
           console.log(
-            `✅ Filtered: ${allQuestions.length} → ${questions.length} questions`
+            `✅ Filtered: ${allQuestions.length} → ${questions.length} questions`,
           );
 
           // If all questions are mastered, show a message
@@ -1086,7 +1088,7 @@
       "🎮 Starting quiz session with",
       quizState.questions.length,
       "questions, mode:",
-      quizState.gameMode
+      quizState.gameMode,
     );
 
     quizState.currentQuestionIndex = 0;
@@ -1094,7 +1096,7 @@
     quizState.startTime = new Date();
     quizState.isReviewing = false;
     quizState.answeredQuestions = new Array(quizState.questions.length).fill(
-      false
+      false,
     );
 
     document.getElementById("quiz-loading").style.display = "none";
@@ -1214,7 +1216,7 @@
           : question.options[userAnswer] || "";
       const isCorrect = checkFillBlankAnswer(
         userAnswer,
-        question.correctAnswer
+        question.correctAnswer,
       );
       inputClass = isCorrect ? "correct" : "incorrect";
     }
@@ -1441,7 +1443,7 @@
     google.script.run
       .withSuccessHandler(() => console.log("✅ Mastered question saved"))
       .withFailureHandler((err) =>
-        console.error("❌ Error saving mastered question:", err)
+        console.error("❌ Error saving mastered question:", err),
       )
       .saveMasteredQuestion(masteredData);
   }
@@ -1474,7 +1476,7 @@
     google.script.run
       .withSuccessHandler(() => console.log("✅ Wrong answer saved"))
       .withFailureHandler((err) =>
-        console.error("❌ Error saving wrong answer:", err)
+        console.error("❌ Error saving wrong answer:", err),
       )
       .saveWrongAnswer(wrongData);
   }
@@ -1592,7 +1594,7 @@
     if (quizState.retryQueue.length > 0) {
       console.log(
         "📝 Adding retry questions to quiz:",
-        quizState.retryQueue.length
+        quizState.retryQueue.length,
       );
 
       // Add retry questions to end of questions array
@@ -1603,7 +1605,7 @@
       const additionalAnswers = new Array(retryQuestions.length).fill(null);
       quizState.userAnswers.push(...additionalAnswers);
       quizState.answeredQuestions.push(
-        ...new Array(retryQuestions.length).fill(false)
+        ...new Array(retryQuestions.length).fill(false),
       );
 
       // Clear retry queue
@@ -1682,13 +1684,13 @@
    */
   function submitQuiz() {
     const unansweredCount = quizState.userAnswers.filter(
-      (a) => a === null
+      (a) => a === null,
     ).length;
 
     if (unansweredCount > 0) {
       if (
         !confirm(
-          `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn có chắc muốn nộp bài?`
+          `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn có chắc muốn nộp bài?`,
         )
       ) {
         return;
@@ -1735,7 +1737,7 @@
       window.updateActivityResult(
         quizState.currentTopic.topicId,
         finalScore,
-        totalQuestions
+        totalQuestions,
       );
     }
 
@@ -1848,8 +1850,8 @@
           <div class="review-answer" style="color:#2FA36B;">
             <strong>Đáp án đúng:</strong> 
             ${labels[question.correctAnswer]}. ${
-                question.options[question.correctAnswer]
-              }
+              question.options[question.correctAnswer]
+            }
           </div>
         `
             : ""
@@ -2016,7 +2018,7 @@
       console.log(
         `  Q${qIndex + 1}: Correct answer moved from ${
           question.correctAnswer
-        } to ${newCorrectIndex}`
+        } to ${newCorrectIndex}`,
       );
 
       return {
@@ -2036,7 +2038,7 @@
     quizState.currentQuestionIndex = 0;
     quizState.userAnswers = new Array(quizState.questions.length).fill(null);
     quizState.answeredQuestions = new Array(quizState.questions.length).fill(
-      false
+      false,
     );
     quizState.score = 0;
     quizState.startTime = null;
@@ -2100,7 +2102,7 @@
    */
   function exitAndSaveProgress() {
     const answeredCount = quizState.userAnswers.filter(
-      (a) => a !== null && a !== undefined
+      (a) => a !== null && a !== undefined,
     ).length;
     const totalQuestions = quizState.questions.length;
 
@@ -2220,7 +2222,7 @@
     const seconds = diff % 60;
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
       2,
-      "0"
+      "0",
     )}`;
   }
 
@@ -2290,6 +2292,88 @@
   window.reviewAllMastered = reviewAllMastered;
   window.handleFillBlankInput = handleFillBlankInput;
   window.submitFillBlankAnswer = submitFillBlankAnswer;
+
+  // ===== METEOR SHOWER FOR MCQ HEADER =====
+  let mcqMeteorInterval = null;
+
+  function startMCQHeaderMeteors() {
+    const container = document.getElementById("mcqMeteorContainer");
+    if (!container) return;
+
+    // Clear existing interval
+    if (mcqMeteorInterval) {
+      clearInterval(mcqMeteorInterval);
+    }
+
+    // Create meteor every 800ms
+    mcqMeteorInterval = setInterval(() => {
+      if (!document.getElementById("mcqMeteorContainer")) {
+        clearInterval(mcqMeteorInterval);
+        return;
+      }
+      createMCQMeteor();
+    }, 800);
+
+    // Create initial meteor
+    createMCQMeteor();
+  }
+
+  function createMCQMeteor() {
+    const container = document.getElementById("mcqMeteorContainer");
+    if (!container) return;
+
+    const meteor = document.createElement("div");
+    meteor.className = "mcq-header-meteor";
+
+    // Random position from top-left area
+    const startX = Math.random() * 40; // 0-40% from left
+    const startY = Math.random() * 20; // 0-20% from top
+
+    meteor.style.left = startX + "%";
+    meteor.style.top = startY + "%";
+
+    // Random size for variety
+    const height = 35 + Math.random() * 35;
+    meteor.style.height = height + "px";
+    meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+    container.appendChild(meteor);
+
+    // Remove after animation
+    setTimeout(() => {
+      meteor.remove();
+    }, 1500);
+  }
+
+  function stopMCQHeaderMeteors() {
+    if (mcqMeteorInterval) {
+      clearInterval(mcqMeteorInterval);
+      mcqMeteorInterval = null;
+    }
+  }
+
+  // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+  function setupMCQHeaderMouseEffect() {
+    const header = document.querySelector(".mcq-header");
+    const stars = document.getElementById("mcqHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  window.startMCQHeaderMeteors = startMCQHeaderMeteors;
+  window.stopMCQHeaderMeteors = stopMCQHeaderMeteors;
+  window.setupMCQHeaderMouseEffect = setupMCQHeaderMouseEffect;
 
   console.log("✅ MCQ scripts loaded");
 </script>

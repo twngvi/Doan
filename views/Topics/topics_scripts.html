@@ -26,6 +26,9 @@
       console.log("✅ Initializing Topics Page...");
       setupEventListeners();
       loadTopics();
+      // Start meteor shower for header
+      startTopicsHeaderMeteors();
+      setupTopicsHeaderMouseEffect();
     };
 
     function setupEventListeners() {
@@ -198,7 +201,7 @@
       showErrorState(
         error.message ||
           error.toString() ||
-          "Không thể kết nối với server. Vui lòng thử lại sau."
+          "Không thể kết nối với server. Vui lòng thử lại sau.",
       );
     }
 
@@ -242,13 +245,13 @@
 
       // Group topics by journey
       const beginnerTopics = filteredTopics.filter(
-        (t) => t.journey === "Beginner"
+        (t) => t.journey === "Beginner",
       );
       const intermediateTopics = filteredTopics.filter(
-        (t) => t.journey === "Intermediate"
+        (t) => t.journey === "Intermediate",
       );
       const advancedTopics = filteredTopics.filter(
-        (t) => t.journey === "Advanced"
+        (t) => t.journey === "Advanced",
       );
 
       // ⭐ SỬ DỤNG FRAGMENT cho mỗi section
@@ -314,8 +317,8 @@
         </div>
         <div class="topic-badges">
           <span class="badge badge-journey ${journeyClass}">${
-        topic.journey
-      }</span>
+            topic.journey
+          }</span>
           ${
             topic.category
               ? `<span class="badge badge-category">${topic.category}</span>`
@@ -353,8 +356,8 @@
           isLocked
             ? `${lockIcon} Đang khoá`
             : progress.completed
-            ? `${checkIcon} Ôn tập`
-            : `${playIcon} Bắt đầu học`
+              ? `${checkIcon} Ôn tập`
+              : `${playIcon} Bắt đầu học`
         }
       </button>
     `;
@@ -409,7 +412,7 @@
           (topic) =>
             topic.title.toLowerCase().includes(searchLower) ||
             topic.description.toLowerCase().includes(searchLower) ||
-            topic.category.toLowerCase().includes(searchLower)
+            topic.category.toLowerCase().includes(searchLower),
         );
       }
 
@@ -503,7 +506,7 @@
       const journeyBadge = document.getElementById("modalJourney");
       if (journeyBadge) {
         journeyBadge.className = `level-badge ${getJourneyClass(
-          topic.journey
+          topic.journey,
         )}`;
       }
 
@@ -530,7 +533,7 @@
       if (!checkTopicUnlocked(topic)) {
         showNotification(
           "Chủ đề này đang bị khóa. Hoàn thành bài học trước để mở khóa.",
-          "warning"
+          "warning",
         );
         return;
       }
@@ -561,7 +564,7 @@
       if (!checkTopicUnlocked(topic)) {
         showNotification(
           "This topic is locked. Complete prerequisites first.",
-          "warning"
+          "warning",
         );
         return;
       }
@@ -585,14 +588,14 @@
      */
     function navigateToLesson(topic) {
       console.log(
-        "🔍 ==================== NAVIGATE TO LESSON ===================="
+        "🔍 ==================== NAVIGATE TO LESSON ====================",
       );
       console.log("🔍 Topic object:", topic);
       console.log("📄 contentDocId:", topic.contentDocId);
       console.log("📄 contentDocId type:", typeof topic.contentDocId);
       console.log(
         "📄 contentDocId length:",
-        topic.contentDocId ? topic.contentDocId.length : 0
+        topic.contentDocId ? topic.contentDocId.length : 0,
       );
       console.log("📄 contentDocId value:", JSON.stringify(topic.contentDocId));
 
@@ -627,7 +630,7 @@
       showPage("page-lesson", params);
 
       console.log(
-        "🔍 ==================== END NAVIGATE TO LESSON ===================="
+        "🔍 ==================== END NAVIGATE TO LESSON ====================",
       );
     }
 
@@ -798,10 +801,10 @@
 
     function updateProgressStats() {
       const completed = Object.values(userProgress).filter(
-        (p) => p.completed
+        (p) => p.completed,
       ).length;
       const inProgress = Object.values(userProgress).filter(
-        (p) => p.progress > 0 && !p.completed
+        (p) => p.progress > 0 && !p.completed,
       ).length;
 
       document.getElementById("completedTopics").textContent = completed;
@@ -921,17 +924,21 @@
     window.initTopicsPageOnShow = function () {
       console.log(
         "initTopicsPageOnShow called, initialized:",
-        window.topicsPageInitialized
+        window.topicsPageInitialized,
       );
 
       if (!window.topicsPageInitialized) {
         console.log("Initializing Topics Page for the first time...");
         window.topicsPageInitialized = true;
         loadTopics();
+        startTopicsHeaderMeteors();
+        setupTopicsHeaderMouseEffect();
       } else {
         console.log("Topics Page already initialized, using cache if valid...");
         // ⭐ Không reload nếu đã có cache còn hiệu lực
         loadTopics(false); // false = không force refresh
+        startTopicsHeaderMeteors();
+        setupTopicsHeaderMouseEffect();
       }
     };
 
@@ -941,6 +948,80 @@
       loadTopics(true); // true = force refresh, bỏ qua cache
     };
 
+    // ===== METEOR SHOWER FOR TOPICS HEADER =====
+    let topicsMeteorInterval = null;
+
+    function startTopicsHeaderMeteors() {
+      const container = document.getElementById("topicsMeteorContainer");
+      if (!container) return;
+
+      // Clear existing interval
+      if (topicsMeteorInterval) {
+        clearInterval(topicsMeteorInterval);
+      }
+
+      // Create meteor every 800ms
+      topicsMeteorInterval = setInterval(() => {
+        if (!document.getElementById("topicsMeteorContainer")) {
+          clearInterval(topicsMeteorInterval);
+          return;
+        }
+        createTopicsMeteor();
+      }, 800);
+
+      // Create initial meteor
+      createTopicsMeteor();
+    }
+
+    function createTopicsMeteor() {
+      const container = document.getElementById("topicsMeteorContainer");
+      if (!container) return;
+
+      const meteor = document.createElement("div");
+      meteor.className = "topics-header-meteor";
+
+      // Random position from top-left area
+      const startX = Math.random() * 40; // 0-40% from left
+      const startY = Math.random() * 20; // 0-20% from top
+
+      meteor.style.left = startX + "%";
+      meteor.style.top = startY + "%";
+
+      // Random size for variety
+      const height = 35 + Math.random() * 35;
+      meteor.style.height = height + "px";
+      meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+      container.appendChild(meteor);
+
+      // Remove after animation
+      setTimeout(() => {
+        meteor.remove();
+      }, 1500);
+    }
+
+    // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+    function setupTopicsHeaderMouseEffect() {
+      const header = document.querySelector(".topics-header");
+      const stars = document.getElementById("topicsHeaderStars");
+      if (!header || !stars) return;
+
+      header.addEventListener("mousemove", (e) => {
+        const rect = header.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width - 0.5;
+        const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+        stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+      });
+
+      header.addEventListener("mouseleave", () => {
+        stars.style.transform = "translate(0, 0)";
+      });
+    }
+
+    window.startTopicsHeaderMeteors = startTopicsHeaderMeteors;
+    window.setupTopicsHeaderMouseEffect = setupTopicsHeaderMouseEffect;
+
     // Create aliases for compatibility with different calling patterns
     window.initTopics = window.initTopicsPageOnShow;
     window.loadTopicsPage = window.initTopicsPageOnShow;
@@ -949,7 +1030,7 @@
     console.log("- window.initTopicsPage:", typeof window.initTopicsPage);
     console.log(
       "- window.initTopicsPageOnShow:",
-      typeof window.initTopicsPageOnShow
+      typeof window.initTopicsPageOnShow,
     );
   })();
 </script>

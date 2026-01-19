@@ -184,7 +184,7 @@
 
           // 5. Dispatch event để các component khác update
           window.dispatchEvent(
-            new CustomEvent("avatar-updated", { detail: { url } })
+            new CustomEvent("avatar-updated", { detail: { url } }),
           );
 
           // 6. Update tất cả avatar elements trong DOM
@@ -265,6 +265,9 @@
     console.log("Initializing Profile...");
     loadProfileData();
     setupEventListeners();
+    // Start galaxy effects
+    startProfileHeaderMeteors();
+    setupProfileHeaderMouseEffect();
   }
 
   function loadProfileData() {
@@ -277,7 +280,7 @@
     console.log("  - window.currentUser:", window.currentUser);
     console.log(
       "  - sessionStorage currentUser:",
-      sessionStorage.getItem("currentUser") ? "EXISTS" : "NULL"
+      sessionStorage.getItem("currentUser") ? "EXISTS" : "NULL",
     );
 
     // 1. Kiểm tra biến currentUser trong scope (ưu tiên cao nhất)
@@ -313,7 +316,7 @@
       console.error("  - window.currentUser:", window.currentUser);
       console.error(
         "  - sessionStorage:",
-        sessionStorage.getItem("currentUser")
+        sessionStorage.getItem("currentUser"),
       );
       showToast("Vui lòng đăng nhập", "error");
       setTimeout(() => showPage("page-login"), 1500);
@@ -535,7 +538,7 @@
   // Hàm cập nhật tên ở tất cả các nơi
   function updateAllUserNames(displayName) {
     const nameElements = document.querySelectorAll(
-      "#userName, #userNameWelcome, #dashboard-user-name, #profile-fullname, #sidebar-user-name"
+      "#userName, #userNameWelcome, #dashboard-user-name, #profile-fullname, #sidebar-user-name",
     );
 
     nameElements.forEach((el) => {
@@ -551,6 +554,73 @@
     showToast("Tính năng đang phát triển", "info");
   }
 
+  // ===== METEOR SHOWER FOR PROFILE HEADER =====
+  let profileMeteorInterval = null;
+
+  function startProfileHeaderMeteors() {
+    const container = document.getElementById("profileMeteorContainer");
+    if (!container) return;
+
+    if (profileMeteorInterval) {
+      clearInterval(profileMeteorInterval);
+    }
+
+    profileMeteorInterval = setInterval(() => {
+      if (!document.getElementById("profileMeteorContainer")) {
+        clearInterval(profileMeteorInterval);
+        return;
+      }
+      createProfileMeteor();
+    }, 800);
+
+    createProfileMeteor();
+  }
+
+  function createProfileMeteor() {
+    const container = document.getElementById("profileMeteorContainer");
+    if (!container) return;
+
+    const meteor = document.createElement("div");
+    meteor.className = "profile-header-meteor";
+
+    // Random position from top-left area
+    const startX = Math.random() * 40; // 0-40% from left
+    const startY = Math.random() * 20; // 0-20% from top
+
+    meteor.style.left = startX + "%";
+    meteor.style.top = startY + "%";
+
+    // Random size for variety
+    const height = 35 + Math.random() * 35;
+    meteor.style.height = height + "px";
+    meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+    container.appendChild(meteor);
+
+    setTimeout(() => {
+      meteor.remove();
+    }, 1500);
+  }
+
+  // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+  function setupProfileHeaderMouseEffect() {
+    const header = document.querySelector(".profile-header");
+    const stars = document.getElementById("profileHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
   // ⭐ EXPORT FUNCTIONS
   window.initProfilePage = initProfilePage;
   window.openAvatarModal = openAvatarModal;
@@ -559,6 +629,8 @@
   window.selectAvatar = selectAvatar;
   window.updateAllAvatars = updateAllAvatars;
   window.updateAllUserNames = updateAllUserNames;
+  window.startProfileHeaderMeteors = startProfileHeaderMeteors;
+  window.setupProfileHeaderMouseEffect = setupProfileHeaderMouseEffect;
 
   console.log("✅ Profile scripts loaded");
   console.log("✅ initProfilePage:", typeof window.initProfilePage);

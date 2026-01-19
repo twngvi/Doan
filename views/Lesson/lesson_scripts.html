@@ -67,6 +67,10 @@
     flashcardsData = [];
     currentFlashcardIndex = 0;
 
+    // Start meteor shower and mouse effects for header
+    startLessonHeaderMeteors();
+    setupLessonHeaderMouseEffect();
+
     // Clear previous content
     const contentArea = document.getElementById("lesson-content-area");
     if (contentArea) {
@@ -92,7 +96,7 @@
       if (currentLessonData.contentDocId) {
         console.log(
           "🚀 Calling loadLessonContent with docId:",
-          currentLessonData.contentDocId
+          currentLessonData.contentDocId,
         );
         loadLessonContent(currentLessonData.contentDocId);
       } else {
@@ -210,7 +214,7 @@
         console.error("❌ Error message:", error?.message);
         console.error("❌ Error toString:", error?.toString());
         showLessonError(
-          "Lỗi: " + (error?.message || error?.toString() || "Không xác định")
+          "Lỗi: " + (error?.message || error?.toString() || "Không xác định"),
         );
       })
       .getTopicContentByDocId(docId);
@@ -251,7 +255,7 @@
               "Kiểm tra:\n" +
               "1. API Key đã setup chưa?\n" +
               "2. Google Doc có quyền truy cập?\n" +
-              "3. Xem Apps Script Logs để biết lỗi chi tiết"
+              "3. Xem Apps Script Logs để biết lỗi chi tiết",
           );
           return;
         }
@@ -282,7 +286,7 @@
           console.error("❌ Response failed:", response?.message);
           showMindmapError(
             response?.message ||
-              "Không thể tải Mindmap.\n\nKiểm tra Apps Script Logs."
+              "Không thể tải Mindmap.\n\nKiểm tra Apps Script Logs.",
           );
         }
       })
@@ -291,13 +295,13 @@
         document.getElementById("mindmap-loading").style.display = "none";
         showMindmapError(
           "Lỗi kết nối server:\n" +
-            (error?.message || error?.toString() || "Unknown error")
+            (error?.message || error?.toString() || "Unknown error"),
         );
       })
       .getAIContentForWeb(
         currentLessonData.topicId,
         "mindmap",
-        forceRegenerate
+        forceRegenerate,
       );
   }
 
@@ -334,7 +338,7 @@
               "Kiểm tra:\n" +
               "1. API Key đã setup chưa?\n" +
               "2. Google Doc có quyền truy cập?\n" +
-              "3. Xem Apps Script Logs để biết lỗi chi tiết"
+              "3. Xem Apps Script Logs để biết lỗi chi tiết",
           );
           return;
         }
@@ -359,15 +363,15 @@
             initDeckState(); // Initialize deck tracking
 
             // Update total count
-            document.getElementById("flashcard-total").textContent =
-              flashcardsData.length;
+            const totalEl = document.getElementById("flashcard-total");
+            if (totalEl) totalEl.textContent = flashcardsData.length;
 
             // Render flashcard FIRST (while still hidden)
             renderCurrentFlashcard();
 
             // THEN show content after card is ready
-            document.getElementById("flashcards-content").style.display =
-              "flex";
+            const flashcardsContentEl = document.getElementById("flashcards-content");
+            if (flashcardsContentEl) flashcardsContentEl.style.display = "flex";
             aiContentLoaded.flashcards = true;
 
             // Setup swipe gestures after content is visible
@@ -377,7 +381,7 @@
 
             showToast(
               "✅ Đã tải " + flashcardsData.length + " Flashcards",
-              "success"
+              "success",
             );
           } else {
             showFlashcardsError("Không có flashcard nào");
@@ -394,7 +398,7 @@
       .getAIContentForWeb(
         currentLessonData.topicId,
         "flashcards",
-        forceRegenerate
+        forceRegenerate,
       );
   }
 
@@ -569,7 +573,7 @@
         branchCenterY,
         lineColor,
         2,
-        "root-branch"
+        "root-branch",
       );
       svg.appendChild(rootPath);
 
@@ -592,7 +596,7 @@
           childCenterY,
           lineColor,
           1.5,
-          "branch-child"
+          "branch-child",
         );
         svg.appendChild(childPath);
       });
@@ -697,6 +701,19 @@
     const card = flashcardsData[currentFlashcardIndex];
     const flashcardWrapper = document.getElementById("flashcard-wrapper");
     const flashcardEl = document.getElementById("current-flashcard");
+    const frontTextEl = document.getElementById("flashcard-front-text");
+    const backTextEl = document.getElementById("flashcard-back-text");
+    const currentEl = document.getElementById("flashcard-current");
+
+    // Check if elements exist
+    if (!flashcardEl || !frontTextEl || !backTextEl) {
+      console.error("❌ Flashcard DOM elements not found:", {
+        flashcardEl: !!flashcardEl,
+        frontTextEl: !!frontTextEl,
+        backTextEl: !!backTextEl,
+      });
+      return;
+    }
 
     // Remove flipped state
     flashcardEl.classList.remove("flipped");
@@ -729,10 +746,9 @@
     }
 
     // Update content
-    document.getElementById("flashcard-front-text").textContent = frontText;
-    document.getElementById("flashcard-back-text").textContent = backText;
-    document.getElementById("flashcard-current").textContent =
-      currentFlashcardIndex + 1;
+    frontTextEl.textContent = frontText;
+    backTextEl.textContent = backText;
+    if (currentEl) currentEl.textContent = currentFlashcardIndex + 1;
 
     // Update progress bar
     updateDeckProgress();
@@ -778,7 +794,8 @@
   // ========== FLASHCARD CONTROLS ==========
 
   function flipFlashcard() {
-    document.getElementById("current-flashcard").classList.toggle("flipped");
+    const flashcardEl = document.getElementById("current-flashcard");
+    if (flashcardEl) flashcardEl.classList.toggle("flipped");
   }
 
   function nextFlashcard() {
@@ -1109,8 +1126,8 @@
     if (keyboardHints) keyboardHints.style.display = "flex";
 
     // Update total and render
-    document.getElementById("flashcard-total").textContent =
-      flashcardsData.length;
+    const totalEl = document.getElementById("flashcard-total");
+    if (totalEl) totalEl.textContent = flashcardsData.length;
     renderCurrentFlashcard();
     updateDeckProgress();
 
@@ -1211,7 +1228,7 @@
 
     const swipeLeftIndicator = document.getElementById("swipe-left-indicator");
     const swipeRightIndicator = document.getElementById(
-      "swipe-right-indicator"
+      "swipe-right-indicator",
     );
 
     flashcardWrapper.addEventListener(
@@ -1222,7 +1239,7 @@
         isDragging = true;
         flashcardWrapper.classList.add("dragging");
       },
-      { passive: true }
+      { passive: true },
     );
 
     flashcardWrapper.addEventListener(
@@ -1252,7 +1269,7 @@
           }
         }
       },
-      { passive: true }
+      { passive: true },
     );
 
     flashcardWrapper.addEventListener("touchend", () => {
@@ -1316,24 +1333,39 @@
   // ========== ERROR HANDLERS ==========
 
   function showLessonError(message) {
-    document.getElementById("lesson-loading").style.display = "none";
-    document.getElementById("lesson-content-area").style.display = "none";
-    document.getElementById("lesson-error").style.display = "block";
-    document.getElementById("lesson-error-message").textContent = message;
+    const loading = document.getElementById("lesson-loading");
+    const content = document.getElementById("lesson-content-area");
+    const error = document.getElementById("lesson-error");
+    const errorMsg = document.getElementById("lesson-error-message");
+    
+    if (loading) loading.style.display = "none";
+    if (content) content.style.display = "none";
+    if (error) error.style.display = "block";
+    if (errorMsg) errorMsg.textContent = message;
   }
 
   function showMindmapError(message) {
-    document.getElementById("mindmap-loading").style.display = "none";
-    document.getElementById("mindmap-content").style.display = "none";
-    document.getElementById("mindmap-error").style.display = "block";
-    document.getElementById("mindmap-error-message").textContent = message;
+    const loading = document.getElementById("mindmap-loading");
+    const content = document.getElementById("mindmap-content");
+    const error = document.getElementById("mindmap-error");
+    const errorMsg = document.getElementById("mindmap-error-message");
+    
+    if (loading) loading.style.display = "none";
+    if (content) content.style.display = "none";
+    if (error) error.style.display = "block";
+    if (errorMsg) errorMsg.textContent = message;
   }
 
   function showFlashcardsError(message) {
-    document.getElementById("flashcards-loading").style.display = "none";
-    document.getElementById("flashcards-content").style.display = "none";
-    document.getElementById("flashcards-error").style.display = "block";
-    document.getElementById("flashcards-error-message").textContent = message;
+    const loading = document.getElementById("flashcards-loading");
+    const content = document.getElementById("flashcards-content");
+    const error = document.getElementById("flashcards-error");
+    const errorMsg = document.getElementById("flashcards-error-message");
+    
+    if (loading) loading.style.display = "none";
+    if (content) content.style.display = "none";
+    if (error) error.style.display = "block";
+    if (errorMsg) errorMsg.textContent = message;
   }
 
   /**
@@ -1542,6 +1574,9 @@
     const contentArea = document.getElementById("lesson-content-area");
     if (!contentArea) return;
 
+    // 0) Parse and apply markers first (NEW RULE SYSTEM)
+    parseContentMarkers(contentArea);
+
     // 1) Normalize HTML from Google Doc first
     normalizeDocContent(contentArea);
 
@@ -1553,9 +1588,150 @@
     enhanceYouTubeLinks(contentArea);
     enhanceSpoilers(contentArea);
 
-    // Note: TOC removed per user request - keep content clean and focused
+    // Add lesson-content-wrapper class
+    contentArea.classList.add("lesson-content-wrapper");
 
     console.log("✅ Content enhancement complete!");
+  }
+
+  // ========================================
+  // 🏷️ PARSE CONTENT MARKERS (NEW RULE SYSTEM)
+  // ========================================
+
+  /**
+   * Parse and transform content markers from Google Doc
+   * Supports: [[COLOR:X]], [[CODE:X]], [[EXAMPLE]], [[NOTE]], [[TIP]], [[WARNING]], [[CHECKPOINT]], [[TASK]], [[QA]]
+   */
+  function parseContentMarkers(container) {
+    console.log("🏷️ Parsing content markers...");
+    let html = container.innerHTML;
+
+    // === 1. COLOR SECTIONS [[COLOR:X]] ... [[/COLOR]] or until next H3 ===
+    const colorMap = {
+      ORANGE: "lesson-section-orange",
+      RED: "lesson-section-red",
+      BLUE: "lesson-section-blue",
+      GREEN: "lesson-section-green",
+      PURPLE: "lesson-section-purple",
+      CYAN: "lesson-section-cyan",
+    };
+
+    // Simple color marker at start of section
+    for (const [color, className] of Object.entries(colorMap)) {
+      const regex = new RegExp(`\\[\\[COLOR:${color}\\]\\]`, "gi");
+      html = html.replace(regex, `<div class="${className}">`);
+    }
+    html = html.replace(/\[\[\/COLOR\]\]/gi, "</div>");
+
+    // === 2. CODE BLOCKS [[CODE:PYTHON]] ... [[/CODE]] ===
+    html = html.replace(
+      /\[\[CODE:(\w+)\]\]([\s\S]*?)\[\[\/CODE\]\]/gi,
+      (match, lang, code) => {
+        const cleanCode = code
+          .trim()
+          .replace(/<[^>]*>/g, "") // Remove HTML tags
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&");
+        return `
+        <div class="code-block-wrapper">
+          <div class="code-block-header">
+            <span class="code-block-lang">${lang.toUpperCase()}</span>
+            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <pre><code class="language-${lang.toLowerCase()}">${escapeHtml(cleanCode)}</code></pre>
+        </div>`;
+      },
+    );
+
+    // === 3. EXAMPLE BLOCKS [[EXAMPLE]] ... [[/EXAMPLE]] ===
+    html = html.replace(
+      /\[\[EXAMPLE\]\]([\s\S]*?)\[\[\/EXAMPLE\]\]/gi,
+      (match, content) => {
+        return `<div class="example-block">${content}</div>`;
+      },
+    );
+
+    // === 4. CALLOUT BLOCKS ===
+    const calloutTypes = [
+      { marker: "NOTE", class: "callout-note" },
+      { marker: "TIP", class: "callout-tip" },
+      { marker: "WARNING", class: "callout-warning" },
+      { marker: "CHECKPOINT", class: "callout-checkpoint" },
+      { marker: "TASK", class: "callout-task" },
+      { marker: "QA", class: "callout-qa" },
+    ];
+
+    for (const type of calloutTypes) {
+      const regex = new RegExp(
+        `\\[\\[${type.marker}\\]\\]([\\s\\S]*?)\\[\\[\\/${type.marker}\\]\\]`,
+        "gi",
+      );
+      html = html.replace(regex, (match, content) => {
+        return `<div class="${type.class}">${content}</div>`;
+      });
+    }
+
+    // === 5. MARKDOWN CODE BLOCKS ```python ... ``` ===
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const language = lang || "plaintext";
+      const cleanCode = code
+        .trim()
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&");
+      return `
+        <div class="code-block-wrapper">
+          <div class="code-block-header">
+            <span class="code-block-lang">${language.toUpperCase()}</span>
+            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <pre><code class="language-${language.toLowerCase()}">${escapeHtml(cleanCode)}</code></pre>
+        </div>`;
+    });
+
+    // === 6. RESOURCE LINKS section ===
+    html = html.replace(
+      /\[\[RESOURCES\]\]([\s\S]*?)\[\[\/RESOURCES\]\]/gi,
+      (match, content) => {
+        return `<div class="resource-links">${content}</div>`;
+      },
+    );
+
+    // === 7. FIGURE with caption ===
+    html = html.replace(
+      /\[\[FIGURE:([^\]]*)\]\]([\s\S]*?)\[\[\/FIGURE\]\]/gi,
+      (match, caption, content) => {
+        return `<figure>${content}<figcaption>${caption}</figcaption></figure>`;
+      },
+    );
+
+    container.innerHTML = html;
+    console.log("✅ Markers parsed and transformed");
+  }
+
+  /**
+   * Escape HTML special characters
+   */
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // ========================================
@@ -1569,10 +1745,41 @@
   function normalizeDocContent(container) {
     console.log("📄 Normalizing Google Doc content...");
 
-    // Remove all inline font styles (Google Docs adds lots of these)
+    // === STEP 1: Unwrap unnecessary spans from Google Doc ===
+    // Google Doc wraps each word/phrase in <span> with inline styles
+    // We need to unwrap these to fix the word-by-word line break issue
+    const spans = container.querySelectorAll("span");
+    spans.forEach((span) => {
+      // Check if span only contains text (no special elements)
+      const hasOnlyText =
+        span.childNodes.length === 1 &&
+        span.childNodes[0].nodeType === Node.TEXT_NODE;
+      const hasOnlyInlineChildren = Array.from(span.children).every((child) =>
+        ["SPAN", "A", "STRONG", "B", "EM", "I", "U", "CODE"].includes(
+          child.tagName,
+        ),
+      );
+
+      // If span has no special attributes worth keeping, unwrap it
+      const keepSpan =
+        span.classList.length > 0 || span.id || span.dataset.length > 0;
+
+      if (
+        !keepSpan &&
+        (hasOnlyText || hasOnlyInlineChildren || span.children.length === 0)
+      ) {
+        // Replace span with its contents
+        const parent = span.parentNode;
+        while (span.firstChild) {
+          parent.insertBefore(span.firstChild, span);
+        }
+        parent.removeChild(span);
+      }
+    });
+
+    // === STEP 2: Remove all inline font styles ===
     const allElements = container.querySelectorAll("*");
     allElements.forEach((el) => {
-      // Remove inline style except for specific allowed properties
       const style = el.getAttribute("style");
       if (style) {
         // Keep only essential styles like text-align, width for images
@@ -1592,7 +1799,20 @@
       }
     });
 
-    // Normalize empty paragraphs (often used as spacers)
+    // === STEP 3: Fix line breaks in headings and paragraphs ===
+    // Google Doc sometimes adds <br> inside headings
+    const headingsAndParagraphs = container.querySelectorAll(
+      "h1, h2, h3, h4, h5, h6, p",
+    );
+    headingsAndParagraphs.forEach((el) => {
+      // Replace multiple spaces with single space
+      el.innerHTML = el.innerHTML
+        .replace(/\s+/g, " ")
+        .replace(/<br\s*\/?>\s*/gi, " ")
+        .trim();
+    });
+
+    // === STEP 4: Normalize empty paragraphs (spacers) ===
     const paragraphs = container.querySelectorAll("p");
     paragraphs.forEach((p) => {
       if (!p.textContent.trim() && !p.querySelector("img")) {
@@ -1600,19 +1820,17 @@
       }
     });
 
-    // Ensure headings have proper structure
+    // === STEP 5: Add IDs to headings ===
     const headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
     headings.forEach((h, index) => {
-      // Add ID for potential linking
       if (!h.id) {
         h.id = `heading-${index}`;
       }
     });
 
-    // Normalize lists - ensure proper nesting
+    // === STEP 6: Normalize lists ===
     const lists = container.querySelectorAll("ul, ol");
     lists.forEach((list) => {
-      // Remove empty list items
       const items = list.querySelectorAll("li");
       items.forEach((li) => {
         if (!li.textContent.trim()) {
@@ -1711,7 +1929,7 @@
 
     // Method 1: Find existing <pre><code> blocks
     const existingCodeBlocks = container.querySelectorAll(
-      "pre:not(.code-block-wrapper pre), code:not(.code-block-wrapper code)"
+      "pre:not(.code-block-wrapper pre), code:not(.code-block-wrapper code)",
     );
 
     // Method 2: Find monospace font spans (from Google Docs)
@@ -1783,8 +2001,8 @@
         </button>
       </div>
       <pre><code class="language-${language}">${escapeHtml(
-      code.trim()
-    )}</code></pre>
+        code.trim(),
+      )}</code></pre>
     `;
 
     // Replace target element
@@ -1873,7 +2091,7 @@
 
     // Find blockquotes or indented paragraphs
     const blockquotes = container.querySelectorAll(
-      'blockquote, [style*="margin-left"]'
+      'blockquote, [style*="margin-left"]',
     );
 
     blockquotes.forEach((block) => {
@@ -1924,7 +2142,7 @@
         let content = block.innerHTML.replace(/^[💡⚠️📝ℹ️]\s*/, "");
         content = content.replace(
           /^(tip|warning|note|info|mẹo|cảnh báo|ghi chú|thông tin):\s*/i,
-          ""
+          "",
         );
 
         const callout = document.createElement("div");
@@ -1987,7 +2205,7 @@
       container,
       NodeFilter.SHOW_TEXT,
       null,
-      false
+      false,
     );
     const nodesToReplace = [];
 
@@ -2031,12 +2249,12 @@
 
     // Also handle <a> tags with YouTube links
     const links = container.querySelectorAll(
-      'a[href*="youtube.com"], a[href*="youtu.be"]'
+      'a[href*="youtube.com"], a[href*="youtu.be"]',
     );
     links.forEach((link) => {
       const href = link.href;
       const match = href.match(
-        /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/
+        /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/,
       );
 
       if (match) {
@@ -2149,7 +2367,7 @@
           if (entry.isIntersecting) {
             tocLinks.forEach((link) => link.classList.remove("active"));
             const activeLink = document.querySelector(
-              `.toc-link[data-target="${entry.target.id}"]`
+              `.toc-link[data-target="${entry.target.id}"]`,
             );
             if (activeLink) {
               activeLink.classList.add("active");
@@ -2164,7 +2382,7 @@
       },
       {
         rootMargin: "-20% 0px -70% 0px",
-      }
+      },
     );
 
     headings.forEach((heading) => observer.observe(heading));
@@ -2220,7 +2438,7 @@
       container,
       NodeFilter.SHOW_TEXT,
       null,
-      false
+      false,
     );
     const nodesToReplace = [];
 
@@ -2266,7 +2484,7 @@
                 <div class="mini-quiz-radio"></div>
                 <span class="mini-quiz-text">${opt.text}</span>
               </div>
-            `
+            `,
               )
               .join("")}
           </div>
@@ -2411,7 +2629,7 @@
       container,
       NodeFilter.SHOW_TEXT,
       null,
-      false
+      false,
     );
     const nodesToReplace = [];
 
@@ -2429,7 +2647,7 @@
         /\[SPOILER:\s*(.+?)\]/g,
         (match, content) => {
           return `<span class="spoiler" onclick="toggleSpoiler(this)">${content}</span>`;
-        }
+        },
       );
 
       const temp = document.createElement("span");
@@ -2457,4 +2675,81 @@
     div.textContent = text;
     return div.innerHTML;
   }
+
+  // ========================================
+  // GALAXY HEADER EFFECTS
+  // ========================================
+
+  // Meteor shower for lesson header
+  let lessonMeteorInterval = null;
+
+  function startLessonHeaderMeteors() {
+    const container = document.getElementById("lessonMeteorContainer");
+    if (!container) return;
+
+    if (lessonMeteorInterval) {
+      clearInterval(lessonMeteorInterval);
+    }
+
+    lessonMeteorInterval = setInterval(() => {
+      if (!document.getElementById("lessonMeteorContainer")) {
+        clearInterval(lessonMeteorInterval);
+        return;
+      }
+      createLessonMeteor();
+    }, 800);
+
+    createLessonMeteor();
+  }
+
+  function createLessonMeteor() {
+    const container = document.getElementById("lessonMeteorContainer");
+    if (!container) return;
+
+    const meteor = document.createElement("div");
+    meteor.className = "lesson-header-meteor";
+
+    // Random position from top-left area
+    const startX = Math.random() * 40; // 0-40% from left
+    const startY = Math.random() * 20; // 0-20% from top
+
+    meteor.style.left = startX + "%";
+    meteor.style.top = startY + "%";
+
+    // Random size for variety
+    const height = 35 + Math.random() * 35;
+    meteor.style.height = height + "px";
+    meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+    container.appendChild(meteor);
+
+    setTimeout(() => {
+      meteor.remove();
+    }, 1500);
+  }
+
+  // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+  function setupLessonHeaderMouseEffect() {
+    const header = document.querySelector(".lesson-header");
+    const stars = document.getElementById("lessonHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  // Export functions to global
+  window.initLessonPage = initLessonPage;
+  window.switchLessonTab = switchLessonTab;
+  window.startLessonHeaderMeteors = startLessonHeaderMeteors;
+  window.setupLessonHeaderMouseEffect = setupLessonHeaderMouseEffect;
 </script>
