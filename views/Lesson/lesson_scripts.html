@@ -310,6 +310,7 @@
    */
   function loadFlashcards(forceRegenerate = false) {
     console.log("🃏 Loading Flashcards...");
+    console.log("🔄 Force Regenerate: " + forceRegenerate);
 
     if (!currentLessonData?.topicId) {
       showFlashcardsError("Thiếu thông tin topic");
@@ -321,6 +322,7 @@
     document.getElementById("flashcards-error").style.display = "none";
     document.getElementById("flashcards-content").style.display = "none";
 
+    // Gọi backend với forceRegenerate flag
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("✅ Flashcards response:", response);
@@ -370,7 +372,8 @@
             renderCurrentFlashcard();
 
             // THEN show content after card is ready
-            const flashcardsContentEl = document.getElementById("flashcards-content");
+            const flashcardsContentEl =
+              document.getElementById("flashcards-content");
             if (flashcardsContentEl) flashcardsContentEl.style.display = "flex";
             aiContentLoaded.flashcards = true;
 
@@ -915,11 +918,15 @@
 
     if (deckArea) {
       const hasReviewCards = reviewCount > 0;
+      const isPerfect = reviewCount === 0;
+
       deckArea.innerHTML = `
         <div class="deck-complete">
-          <div class="complete-icon">🎉</div>
-          <h3 class="complete-title">Hoàn thành!</h3>
-          <p style="opacity: 0.7; margin-bottom: 1rem;">Bạn đã xem hết tất cả các thẻ</p>
+          <div class="complete-icon">${isPerfect ? "🎉" : "💪"}</div>
+          <h3 class="complete-title">${isPerfect ? "Hoàn hảo!" : "Hoàn thành!"}</h3>
+          <p style="opacity: 0.7; margin-bottom: 1rem;">
+            ${isPerfect ? "Bạn đã thuộc tất cả các thẻ!" : "Bạn đã xem hết tất cả các thẻ"}
+          </p>
           <div class="complete-stats">
             <div class="complete-stat learned">
               <div class="complete-stat-value">${learnedCount}</div>
@@ -934,17 +941,22 @@
             ${
               hasReviewCards
                 ? `
-            <button onclick="reviewWrongCards()" class="action-btn btn-review" style="min-width: 140px;">
-              <span class="btn-icon">↻</span>
-              <span class="btn-text">Ôn ${reviewCount} thẻ sai</span>
+            <button onclick="reviewWrongCards()" class="action-btn btn-review" style="min-width: 140px; padding: 0.75rem 1.25rem;">
+              <span class="btn-icon" style="font-size: 1.25rem;">↻</span>
+              <span class="btn-text" style="display: block; margin-top: 0.25rem;">Ôn ${reviewCount} thẻ sai</span>
+            </button>
+            <button onclick="restartDeck()" class="action-btn btn-flip" style="min-width: 140px; padding: 0.75rem 1.25rem;">
+              <span class="btn-icon" style="font-size: 1.25rem;">🔄</span>
+              <span class="btn-text" style="display: block; margin-top: 0.25rem;">Học lại từ đầu</span>
             </button>
             `
-                : ""
-            }
-            <button onclick="restartDeck()" class="action-btn btn-flip" style="min-width: 140px;">
-              <span class="btn-icon">🔄</span>
-              <span class="btn-text">Học lại từ đầu</span>
+                : `
+            <button onclick="restartDeck()" class="action-btn btn-learned" style="min-width: 160px; padding: 1rem 1.5rem;">
+              <span class="btn-icon" style="font-size: 1.5rem;">🔄</span>
+              <span class="btn-text" style="display: block; margin-top: 0.25rem; font-size: 0.875rem;">Chơi lại hết</span>
             </button>
+            `
+            }
           </div>
         </div>
       `;
@@ -1189,7 +1201,11 @@
         document.getElementById("flashcards-loading").style.display = "none";
         showFlashcardsError(error?.message || "Lỗi kết nối server");
       })
-      .getAIContentForWeb(currentLessonData.topicId, "flashcards", false);
+      .getAIContentForWeb(
+        currentLessonData.topicId,
+        "flashcards",
+        forceRegenerate,
+      );
   }
 
   function shuffleFlashcards() {
@@ -1337,7 +1353,7 @@
     const content = document.getElementById("lesson-content-area");
     const error = document.getElementById("lesson-error");
     const errorMsg = document.getElementById("lesson-error-message");
-    
+
     if (loading) loading.style.display = "none";
     if (content) content.style.display = "none";
     if (error) error.style.display = "block";
@@ -1349,7 +1365,7 @@
     const content = document.getElementById("mindmap-content");
     const error = document.getElementById("mindmap-error");
     const errorMsg = document.getElementById("mindmap-error-message");
-    
+
     if (loading) loading.style.display = "none";
     if (content) content.style.display = "none";
     if (error) error.style.display = "block";
@@ -1361,7 +1377,7 @@
     const content = document.getElementById("flashcards-content");
     const error = document.getElementById("flashcards-error");
     const errorMsg = document.getElementById("flashcards-error-message");
-    
+
     if (loading) loading.style.display = "none";
     if (content) content.style.display = "none";
     if (error) error.style.display = "block";

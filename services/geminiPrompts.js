@@ -162,9 +162,9 @@ YÊU CẦU:
 - CHỈ dùng kiến thức trong tài liệu`,
 
   /**
-   * Tạo Flashcards
+   * Tạo Flashcards - Đơn giản, ngắn gọn
    */
-  FLASHCARD_GENERATION: `Bạn là chuyên gia tạo flashcard học tập. Tạo bộ flashcards từ tài liệu.
+  FLASHCARD_GENERATION: `Bạn là chuyên gia tạo flashcard học tập. Tạo bộ flashcards TỪ KHÓA - ĐỊNH NGHĨA ngắn gọn.
 
 === TÀI LIỆU ===
 {docContent}
@@ -180,28 +180,30 @@ Trả về CHÍNH XÁC format JSON sau (ĐỒNG BỘ với frontend):
     {
       "id": "FC001",
       "conceptId": "CON001",
-      "term": "Thuật ngữ hoặc câu hỏi",
-      "definition": "Định nghĩa hoặc đáp án",
-      "hint": "Gợi ý nhỏ (optional)",
-      "example": "Ví dụ minh họa (optional)",
-      "mnemonic": "Cách ghi nhớ (optional)",
+      "term": "Từ khóa hoặc thuật ngữ",
+      "definition": "Định nghĩa NGẮN GỌN (1-2 câu)",
       "difficulty": "easy|medium|hard",
       "tags": ["tag1", "tag2"]
     }
   ]
 }
 
-YÊU CẦU:
+YÊU CẦU QUAN TRỌNG:
 - Tạo {cardCount} flashcards
-- Mỗi card có "term" (mặt trước) và "definition" (mặt sau) - ĐỠN GIẢN
-- KHÔNG dùng cấu trúc phức tạp { front: { content: "..." } }
-- "term" và "definition" là STRING trực tiếp
-- Ưu tiên khái niệm khó, dễ nhầm lẫn
-- Mặt trước ngắn gọn, rõ ràng
-- Mặt sau có giải thích đầy đủ
-- Thêm ví dụ khi có thể
-- mnemonic giúp ghi nhớ (nếu phù hợp)
-- CHỈ dùng kiến thức trong tài liệu`,
+- Mỗi card chỉ có "term" (từ khóa) và "definition" (định nghĩa)
+- "term": Từ khóa/thuật ngữ NGẮN GỌN (1-5 từ)
+- "definition": Giải thích CỰC KỲ NGẮN GỌN (tối đa 1-2 câu, khoảng 15-25 từ)
+- KHÔNG dùng ví dụ, hint, mnemonic
+- KHÔNG giải thích dài dòng
+- Tập trung vào các khái niệm/thuật ngữ QUAN TRỌNG nhất  
+- Definition phải đủ để hiểu nhưng KHÔNG DÀI DÒNG
+- CHỈ dùng kiến thức trong tài liệu
+
+VÍ DỤ CHUẨN:
+{
+  "term": "Biến (Variable)",
+  "definition": "Vùng nhớ lưu trữ dữ liệu có thể thay đổi giá trị trong chương trình."
+}`,
 
   /**
    * Tạo câu hỏi MCQ
@@ -357,7 +359,7 @@ const ContentGenerator = {
   analyzeDocument: function (docContent) {
     const prompt = PROMPT_TEMPLATES.DOCUMENT_ANALYSIS.replace(
       "{docContent}",
-      docContent
+      docContent,
     );
 
     const result = GeminiService.callWithRetry(prompt, {
@@ -378,7 +380,7 @@ const ContentGenerator = {
   generateMindmap: function (docContent, analysis) {
     const prompt = PROMPT_TEMPLATES.MINDMAP_GENERATION.replace(
       "{docContent}",
-      docContent
+      docContent,
     ).replace("{analysis}", JSON.stringify(analysis));
 
     return GeminiService.callWithRetry(prompt, {
@@ -397,7 +399,7 @@ const ContentGenerator = {
   generateInfographic: function (docContent, analysis) {
     const prompt = PROMPT_TEMPLATES.INFOGRAPHIC_GENERATION.replace(
       "{docContent}",
-      docContent
+      docContent,
     ).replace("{analysis}", JSON.stringify(analysis));
 
     return GeminiService.callWithRetry(prompt, {
@@ -417,7 +419,7 @@ const ContentGenerator = {
   generateFlashcards: function (docContent, analysis, cardCount = 15) {
     const prompt = PROMPT_TEMPLATES.FLASHCARD_GENERATION.replace(
       "{docContent}",
-      docContent
+      docContent,
     )
       .replace("{analysis}", JSON.stringify(analysis))
       .replace("{cardCount}", cardCount.toString());
@@ -443,14 +445,14 @@ const ContentGenerator = {
 
     const prompt = PROMPT_TEMPLATES.MCQ_GENERATION.replace(
       "{docContent}",
-      docContent
+      docContent,
     )
       .replace("{analysis}", JSON.stringify(analysis))
       .replace("{questionCount}", questionCount.toString())
       .replace("{difficulty}", difficulty)
       .replace(
         "{focusConcepts}",
-        focusConcepts.length > 0 ? focusConcepts.join(", ") : "Tất cả"
+        focusConcepts.length > 0 ? focusConcepts.join(", ") : "Tất cả",
       );
 
     return GeminiService.callWithRetry(prompt, {
@@ -470,7 +472,7 @@ const ContentGenerator = {
   generateQuestionVariant: function (originalQuestion, variantType) {
     const prompt = PROMPT_TEMPLATES.QUESTION_VARIANT.replace(
       "{originalQuestion}",
-      JSON.stringify(originalQuestion)
+      JSON.stringify(originalQuestion),
     ).replace(/{variantType}/g, variantType);
 
     return GeminiService.callWithRetry(prompt, {
@@ -489,7 +491,7 @@ const ContentGenerator = {
   generateLessonSummary: function (docContent, analysis) {
     const prompt = PROMPT_TEMPLATES.LESSON_SUMMARY.replace(
       "{docContent}",
-      docContent
+      docContent,
     ).replace("{analysis}", JSON.stringify(analysis));
 
     return GeminiService.callWithRetry(prompt, {
@@ -541,7 +543,7 @@ const TopicContentOrchestrator = {
           if (
             !shouldRegenerateContent(
               docLastModified,
-              firstCache.docLastModified
+              firstCache.docLastModified,
             )
           ) {
             Logger.log("✅ Using cached content (doc not modified)");
@@ -582,7 +584,7 @@ const TopicContentOrchestrator = {
         try {
           results.mindmap = ContentGenerator.generateMindmap(
             docContent,
-            analysis
+            analysis,
           );
           AIContentCache.save({
             topicId: topicId,
@@ -603,7 +605,7 @@ const TopicContentOrchestrator = {
         try {
           results.infographic = ContentGenerator.generateInfographic(
             docContent,
-            analysis
+            analysis,
           );
           AIContentCache.save({
             topicId: topicId,
@@ -625,7 +627,7 @@ const TopicContentOrchestrator = {
           results.flashcards = ContentGenerator.generateFlashcards(
             docContent,
             analysis,
-            15
+            15,
           );
           AIContentCache.save({
             topicId: topicId,
@@ -646,7 +648,7 @@ const TopicContentOrchestrator = {
         try {
           results.lesson_summary = ContentGenerator.generateLessonSummary(
             docContent,
-            analysis
+            analysis,
           );
           AIContentCache.save({
             topicId: topicId,
@@ -668,7 +670,7 @@ const TopicContentOrchestrator = {
           results.questions = ContentGenerator.generateQuestions(
             docContent,
             analysis,
-            { questionCount: 20 }
+            { questionCount: 20 },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -719,7 +721,7 @@ const TopicContentOrchestrator = {
       Logger.log(
         "✅ All content generated in " +
           (processingTime / 1000).toFixed(1) +
-          "s"
+          "s",
       );
 
       return {
@@ -801,7 +803,7 @@ function TEST_generateContent() {
   const result = TopicContentOrchestrator.generateAllContent(
     TEST_TOPIC_ID,
     TEST_DOC_ID,
-    TEST_USER_ID
+    TEST_USER_ID,
   );
 
   Logger.log("=== RESULT ===");
@@ -851,7 +853,7 @@ function TEST_generateVariant() {
 
   const variant = ContentGenerator.generateQuestionVariant(
     originalQuestion,
-    "scenario"
+    "scenario",
   );
   Logger.log(JSON.stringify(variant, null, 2));
 
