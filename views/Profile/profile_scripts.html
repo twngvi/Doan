@@ -2,6 +2,14 @@
 <script>
   console.log("🎨 Profile scripts loading...");
 
+  // ⭐ COLLAPSIBLE TOGGLE FUNCTION
+  function toggleCollapsible(button) {
+    const section = button.closest(".collapsible-section");
+    if (section) {
+      section.classList.toggle("open");
+    }
+  }
+
   // ⭐ DANH SÁCH AVATAR TỪ DICEBEAR
   const PRESET_AVATARS = [
     "https://api.dicebear.com/9.x/bottts/svg?seed=Alexander",
@@ -265,9 +273,8 @@
     console.log("Initializing Profile...");
     loadProfileData();
     setupEventListeners();
-    // Start galaxy effects
-    startProfileHeaderMeteors();
-    setupProfileHeaderMouseEffect();
+    // Start meteor shower effect (every 5 seconds)
+    startProfileMeteorShower();
   }
 
   function loadProfileData() {
@@ -388,16 +395,21 @@
   }
 
   function setupEventListeners() {
-    // Password toggle
-    document.querySelectorAll(".password-toggle").forEach((toggle) => {
+    // Password toggle - Updated for new HTML structure
+    document.querySelectorAll(".password-toggle-btn").forEach((toggle) => {
       toggle.addEventListener("click", function () {
         const input = document.getElementById(this.dataset.target);
+        const eyeOpen = this.querySelector(".eye-open");
+        const eyeClosed = this.querySelector(".eye-closed");
+
         if (input.type === "password") {
           input.type = "text";
-          this.textContent = "🙈";
+          if (eyeOpen) eyeOpen.style.display = "none";
+          if (eyeClosed) eyeClosed.style.display = "block";
         } else {
           input.type = "password";
-          this.textContent = "👁️";
+          if (eyeOpen) eyeOpen.style.display = "block";
+          if (eyeClosed) eyeClosed.style.display = "none";
         }
       });
     });
@@ -421,7 +433,7 @@
 
   function checkPasswordStrength() {
     const pwd = this.value;
-    const bar = document.getElementById("strengthBarFill");
+    const bars = document.querySelectorAll(".strength-bar-item");
     const text = document.getElementById("strengthText");
 
     let strength = 0;
@@ -431,39 +443,53 @@
     if (/\d/.test(pwd)) strength++;
     if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
 
-    const percent = (strength / 5) * 100;
-    bar.style.width = percent + "%";
+    // Update strength bars
+    let strengthLevel = Math.ceil(strength / 1.25); // Convert 0-5 to 0-4
+    let color = "#ef4444"; // red
+    let label = "Yếu";
 
-    if (strength <= 2) {
-      bar.style.background = "#f87171";
-      text.textContent = "Yếu";
-      text.style.color = "#f87171";
-    } else if (strength <= 3) {
-      bar.style.background = "#fbbf24";
-      text.textContent = "Trung bình";
-      text.style.color = "#fbbf24";
-    } else {
-      bar.style.background = "#34d399";
-      text.textContent = "Mạnh";
-      text.style.color = "#34d399";
+    if (strengthLevel >= 4) {
+      color = "#22c55e"; // green
+      label = "Mạnh";
+    } else if (strengthLevel >= 3) {
+      color = "#f59e0b"; // orange
+      label = "Khá";
+    } else if (strengthLevel >= 2) {
+      color = "#fbbf24"; // yellow
+      label = "Trung bình";
+    }
+
+    bars.forEach((bar, index) => {
+      if (index < strengthLevel) {
+        bar.classList.add("active");
+        bar.style.setProperty("--strength-color", color);
+        bar.style.background = color;
+      } else {
+        bar.classList.remove("active");
+        bar.style.background = "#e5e7eb";
+      }
+    });
+
+    if (text) {
+      text.textContent = pwd.length > 0 ? label : "";
+      text.style.color = color;
     }
   }
 
   function checkPasswordMatch() {
     const newPwd = document.getElementById("newPassword").value;
     const confirmPwd = this.value;
-    const icon = document.getElementById("confirmPasswordCheck");
+    const icon = document.getElementById("passwordMatchIcon");
+
+    if (!icon) return;
 
     if (confirmPwd === "") {
-      icon.classList.add("hidden");
+      icon.classList.remove("show");
     } else if (newPwd === confirmPwd) {
-      icon.classList.remove("hidden");
-      icon.style.color = "#34d399";
-      icon.textContent = "✓";
+      icon.classList.add("show");
+      icon.style.color = "#22c55e";
     } else {
-      icon.classList.remove("hidden");
-      icon.style.color = "#f87171";
-      icon.textContent = "✗";
+      icon.classList.remove("show");
     }
   }
 
@@ -554,26 +580,46 @@
     showToast("Tính năng đang phát triển", "info");
   }
 
-  // ===== METEOR SHOWER FOR PROFILE HEADER =====
+  // ===== METEOR SHOWER FOR PROFILE PAGE =====
   let profileMeteorInterval = null;
+  let meteorShowerTimeout = null;
 
-  function startProfileHeaderMeteors() {
+  function startProfileMeteorShower() {
     const container = document.getElementById("profileMeteorContainer");
     if (!container) return;
 
+    // Clear any existing intervals
     if (profileMeteorInterval) {
       clearInterval(profileMeteorInterval);
     }
+    if (meteorShowerTimeout) {
+      clearTimeout(meteorShowerTimeout);
+    }
 
-    profileMeteorInterval = setInterval(() => {
+    // Function to create a meteor shower burst
+    function createMeteorShower() {
       if (!document.getElementById("profileMeteorContainer")) {
         clearInterval(profileMeteorInterval);
+        clearTimeout(meteorShowerTimeout);
         return;
       }
-      createProfileMeteor();
-    }, 800);
 
-    createProfileMeteor();
+      // Create 8-12 meteors in quick succession
+      const meteorCount = 8 + Math.floor(Math.random() * 5);
+      for (let i = 0; i < meteorCount; i++) {
+        setTimeout(() => {
+          createProfileMeteor();
+        }, i * 150); // Stagger each meteor by 150ms
+      }
+    }
+
+    // Initial meteor shower
+    createMeteorShower();
+
+    // Repeat meteor shower every 5 seconds
+    profileMeteorInterval = setInterval(() => {
+      createMeteorShower();
+    }, 5000);
   }
 
   function createProfileMeteor() {
@@ -581,11 +627,11 @@
     if (!container) return;
 
     const meteor = document.createElement("div");
-    meteor.className = "profile-header-meteor";
+    meteor.className = "profile-meteor";
 
-    // Random position from top-left area
-    const startX = Math.random() * 40; // 0-40% from left
-    const startY = Math.random() * 20; // 0-20% from top
+    // Random position from top-left area (spread across screen)
+    const startX = Math.random() * 80; // 0-80% from left
+    const startY = -10 + Math.random() * 30; // -10 to 20% from top
 
     meteor.style.left = startX + "%";
     meteor.style.top = startY + "%";
@@ -629,7 +675,7 @@
   window.selectAvatar = selectAvatar;
   window.updateAllAvatars = updateAllAvatars;
   window.updateAllUserNames = updateAllUserNames;
-  window.startProfileHeaderMeteors = startProfileHeaderMeteors;
+  window.startProfileMeteorShower = startProfileMeteorShower;
   window.setupProfileHeaderMouseEffect = setupProfileHeaderMouseEffect;
 
   console.log("✅ Profile scripts loaded");

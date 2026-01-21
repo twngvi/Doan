@@ -355,76 +355,45 @@
   }
 
   /**
-   * Initialize streak tracking system
+   * Initialize streak tracking system - Updated for 15 min goal
    */
   function initStreakTracking() {
-    const streakData = getStreakData();
-    const today = new Date().toISOString().split("T")[0];
+    console.log("⏱️ Initializing streak tracking with 15 min goal...");
 
-    // Check if it's a new day
-    if (streakData.lastActiveDate !== today) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split("T")[0];
+    // Load data from server first
+    google.script.run
+      .withSuccessHandler(function (result) {
+        if (result && result.success) {
+          console.log("✅ Loaded streak data from server:", result);
 
-      // If last active was not yesterday, reset streak (unless we had ≥5 min yesterday)
-      if (
-        streakData.lastActiveDate !== yesterdayStr &&
-        streakData.dailyActiveMinutes < 5
-      ) {
-        streakData.currentStreak = 0;
-      }
+          const streakData = {
+            currentStreak: result.currentStreak || 0,
+            longestStreak: result.longestStreak || 0,
+            lastActiveDate: result.lastActiveDate || null,
+          };
 
-      // Reset daily minutes for new day
-      streakData.dailyActiveMinutes = 0;
+          // Save to localStorage for quick access
+          saveStreakData(streakData);
+          updateStreakUI(streakData);
+        } else {
+          // Fallback to localStorage
+          updateStreakUI(getStreakData());
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("Failed to load streak data:", error);
+        updateStreakUI(getStreakData());
+      })
+      .getUserStreakData();
+
+    // Load today's learning time from server
+    if (window.LearningTracker) {
+      window.LearningTracker.loadFromServer();
     }
-
-    // Start session timer
-    streakData.sessionStartTime = Date.now();
-    saveStreakData(streakData);
-
-    // Update UI
-    updateStreakUI(streakData);
-
-    // Track active time every minute
-    setInterval(trackActiveTime, 60000);
   }
 
   /**
-   * Track active time (called every minute)
-   */
-  function trackActiveTime() {
-    if (document.hidden) return; // Don't count if tab is hidden
-
-    const streakData = getStreakData();
-    const today = new Date().toISOString().split("T")[0];
-
-    // Add 1 minute to daily active time
-    streakData.dailyActiveMinutes = (streakData.dailyActiveMinutes || 0) + 1;
-    streakData.lastActiveDate = today;
-
-    // Check if reached 5 minutes today (streak milestone)
-    if (streakData.dailyActiveMinutes === 5) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split("T")[0];
-
-      // Check if we maintained streak from yesterday
-      const prevStreak = streakData.currentStreak || 0;
-      streakData.currentStreak = prevStreak + 1;
-
-      // Update longest streak
-      if (streakData.currentStreak > (streakData.longestStreak || 0)) {
-        streakData.longestStreak = streakData.currentStreak;
-      }
-    }
-
-    saveStreakData(streakData);
-    updateStreakUI(streakData);
-  }
-
-  /**
-   * Update streak UI elements
+   * Update streak UI elements - Updated for 15 min goal
    */
   function updateStreakUI(streakData) {
     const streakDaysEl = document.getElementById("streak-days");
@@ -432,12 +401,21 @@
     const todayMinutesEl = document.getElementById("today-minutes");
     const timeStatusEl = document.getElementById("time-status");
     const timeStatEl = document.getElementById("time-stat");
+    const GOAL_MINUTES = 15;
 
     if (streakDaysEl) {
       streakDaysEl.textContent = `${streakData.currentStreak || 0} ngày`;
     }
 
-    const dailyMinutes = streakData.dailyActiveMinutes || 0;
+    // Get daily minutes from localStorage (LearningTracker updates this)
+    let dailyMinutes = 0;
+    try {
+      const stored = localStorage.getItem("dailyLearningTime");
+      if (stored) {
+        const data = JSON.parse(stored);
+        dailyMinutes = data.serverTotal || data.totalMinutes || 0;
+      }
+    } catch (e) {}
 
     if (todayTimeEl) {
       todayTimeEl.textContent = dailyMinutes;
@@ -448,11 +426,11 @@
     }
 
     if (timeStatusEl && timeStatEl) {
-      if (dailyMinutes >= 5) {
+      if (dailyMinutes >= GOAL_MINUTES) {
         timeStatusEl.textContent = "Đã đạt";
         timeStatusEl.classList.add("achieved");
       } else {
-        timeStatusEl.textContent = "Chưa đạt";
+        timeStatusEl.textContent = `${GOAL_MINUTES - dailyMinutes} phút nữa`;
         timeStatusEl.classList.remove("achieved");
       }
     }
