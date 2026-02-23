@@ -254,7 +254,7 @@ function updateUserStreak(email, today) {
     }
 
     const spreadsheet = SpreadsheetApp.openById(progressSheetId);
-    const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+    const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
 
     // Update master DB with streak data
     const masterDbId =
@@ -310,48 +310,49 @@ function updateUserStreak(email, today) {
 }
 
 /**
- * Calculate streak from Login_History sheet
- * Streak = consecutive login days going backward from today
- * If today has no login, check if yesterday has - if neither, streak = 0
+ * Calculate streak from Checkin_History sheet (source of truth for check-in)
+ * Streak = consecutive check-in days going backward from today
+ * If today has no check-in, check yesterday - if neither, streak = 0
  *
  * @param {Spreadsheet} spreadsheet - User's personal spreadsheet
  * @returns {Object} { currentStreak, longestStreak }
  */
-function calculateStreakFromLoginHistory(spreadsheet) {
+function calculateStreakFromCheckinHistory(spreadsheet) {
   try {
-    const loginSheet = spreadsheet.getSheetByName("Login_History");
-    if (!loginSheet) return { currentStreak: 0, longestStreak: 0 };
+    const checkinSheet = spreadsheet.getSheetByName("Checkin_History");
+    if (!checkinSheet) return { currentStreak: 0, longestStreak: 0 };
 
-    const data = loginSheet.getDataRange().getValues();
+    const data = checkinSheet.getDataRange().getValues();
     if (data.length <= 1) return { currentStreak: 0, longestStreak: 0 };
 
-    // Extract unique login dates
-    const loginDates = new Set();
+    // Extract unique check-in dates (column 0 = date in YYYY-MM-DD format)
+    const checkinDates = new Set();
     for (let i = 1; i < data.length; i++) {
-      const loginTime = data[i][1]; // loginTime column
-      if (loginTime) {
-        try {
-          const date = new Date(loginTime);
-          if (!isNaN(date.getTime())) {
-            const dateStr = Utilities.formatDate(
-              date,
-              "Asia/Ho_Chi_Minh",
-              "yyyy-MM-dd",
-            );
-            loginDates.add(dateStr);
-          }
-        } catch (e) {
-          // Skip invalid dates
+      const dateVal = data[i][0];
+      if (dateVal) {
+        // Google Sheets may return Date objects — convert properly
+        let dateStr;
+        if (dateVal instanceof Date) {
+          dateStr = Utilities.formatDate(
+            dateVal,
+            "Asia/Ho_Chi_Minh",
+            "yyyy-MM-dd",
+          );
+        } else {
+          dateStr = String(dateVal).trim();
+        }
+        if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          checkinDates.add(dateStr);
         }
       }
     }
 
-    if (loginDates.size === 0) return { currentStreak: 0, longestStreak: 0 };
+    if (checkinDates.size === 0) return { currentStreak: 0, longestStreak: 0 };
 
     // Sort dates ascending
-    const sortedDates = Array.from(loginDates).sort();
+    const sortedDates = Array.from(checkinDates).sort();
 
-    // Get today and yesterday
+    // Get today and yesterday (server timezone)
     const now = new Date();
     const today = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
     const yesterdayDate = new Date(now);
@@ -365,10 +366,10 @@ function calculateStreakFromLoginHistory(spreadsheet) {
     // === Calculate CURRENT STREAK ===
     let currentStreak = 0;
 
-    if (loginDates.has(today) || loginDates.has(yesterday)) {
-      // Start counting from today (or yesterday if no login today yet)
+    if (checkinDates.has(today) || checkinDates.has(yesterday)) {
+      // Start from today if checked in, else from yesterday
       const startDate = new Date(now);
-      if (!loginDates.has(today)) {
+      if (!checkinDates.has(today)) {
         startDate.setDate(startDate.getDate() - 1);
       }
 
@@ -380,7 +381,7 @@ function calculateStreakFromLoginHistory(spreadsheet) {
           "Asia/Ho_Chi_Minh",
           "yyyy-MM-dd",
         );
-        if (loginDates.has(checkStr)) {
+        if (checkinDates.has(checkStr)) {
           currentStreak++;
           checkDate.setDate(checkDate.getDate() - 1);
         } else {
@@ -388,6 +389,7 @@ function calculateStreakFromLoginHistory(spreadsheet) {
         }
       }
     }
+    // If neither today nor yesterday has check-in → currentStreak stays 0
 
     // === Calculate LONGEST STREAK ===
     let longestStreak = 0;
@@ -408,17 +410,17 @@ function calculateStreakFromLoginHistory(spreadsheet) {
       }
     }
     longestStreak = Math.max(longestStreak, tempStreak);
-
-    // Current streak could be the longest
     longestStreak = Math.max(longestStreak, currentStreak);
 
     Logger.log(
-      `Streak calculated: current=${currentStreak}, longest=${longestStreak}, total login days=${loginDates.size}`,
+      `Streak from Checkin_History: current=${currentStreak}, longest=${longestStreak}, total days=${checkinDates.size}`,
     );
 
     return { currentStreak, longestStreak };
   } catch (error) {
-    Logger.log("Error calculating streak: " + error.toString());
+    Logger.log(
+      "Error calculating streak from Checkin_History: " + error.toString(),
+    );
     return { currentStreak: 0, longestStreak: 0 };
   }
 }
@@ -441,14 +443,14 @@ function getUserStreakData() {
       "yyyy-MM-dd",
     );
 
-    // Try to calculate from Login_History first
+    // Calculate from Checkin_History
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
     if (progressSheetId) {
       try {
         const spreadsheet = SpreadsheetApp.openById(progressSheetId);
-        const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+        const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
 
-        // Check if already checked in today
+        // Check if already checked in today (from Checkin_History sheet)
         const checkedInToday = hasCheckedInToday(spreadsheet, today);
 
         return {
@@ -457,10 +459,11 @@ function getUserStreakData() {
           longestStreak: streakResult.longestStreak,
           lastActiveDate: today,
           checkedInToday: checkedInToday,
+          serverToday: today,
         };
       } catch (e) {
         Logger.log(
-          "Error calculating streak from Login_History: " + e.toString(),
+          "Error calculating streak from Checkin_History: " + e.toString(),
         );
       }
     }
@@ -523,7 +526,18 @@ function hasCheckedInToday(spreadsheet, today) {
 
     const data = checkinSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === today) {
+      const dateVal = data[i][0];
+      let dateStr;
+      if (dateVal instanceof Date) {
+        dateStr = Utilities.formatDate(
+          dateVal,
+          "Asia/Ho_Chi_Minh",
+          "yyyy-MM-dd",
+        );
+      } else {
+        dateStr = String(dateVal).trim();
+      }
+      if (dateStr === today) {
         return true;
       }
     }
@@ -580,16 +594,22 @@ function dailyCheckin() {
     // Check if already checked in today
     const data = checkinSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === today) {
+      const dateVal = data[i][0];
+      const dateStr =
+        dateVal instanceof Date
+          ? Utilities.formatDate(dateVal, "Asia/Ho_Chi_Minh", "yyyy-MM-dd")
+          : String(dateVal).trim();
+      if (dateStr === today) {
         Logger.log("Already checked in today: " + today);
 
         // Still return streak data
-        const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+        const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
         return {
           success: false,
           alreadyCheckedIn: true,
           currentStreak: streakResult.currentStreak,
           longestStreak: streakResult.longestStreak,
+          serverToday: today,
           message: "Hôm nay bạn đã điểm danh rồi!",
         };
       }
@@ -607,11 +627,12 @@ function dailyCheckin() {
     updateUserStreak(userEmail, today);
 
     // Return updated streak
-    const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+    const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
     return {
       success: true,
       currentStreak: streakResult.currentStreak,
       longestStreak: streakResult.longestStreak,
+      serverToday: today,
       message: "Điểm danh thành công!",
     };
   } catch (error) {

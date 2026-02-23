@@ -356,18 +356,12 @@
 
   /**
    * Initialize streak tracking system - Daily check-in based
+   * Source of truth: Checkin_History sheet in user's personal Google Sheet
    */
   function initStreakTracking() {
     console.log("📋 Initializing daily check-in system...");
 
-    // Check if already checked in today (from localStorage for instant UI)
-    const todayStr = new Date().toISOString().split("T")[0];
-    const lastCheckin = localStorage.getItem("lastCheckinDate");
-    if (lastCheckin === todayStr) {
-      setCheckinDone();
-    }
-
-    // Load streak data from server
+    // Load streak + check-in state from SERVER (source of truth)
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
@@ -384,9 +378,8 @@
           saveStreakData(streakData);
           updateStreakUI(streakData);
 
-          // Update check-in state from server
+          // Server says checked in today → show done state
           if (streakData.checkedInToday) {
-            localStorage.setItem("lastCheckinDate", todayStr);
             setCheckinDone();
           }
         } else {
@@ -408,32 +401,23 @@
     const btn = document.getElementById("checkin-btn");
     if (btn && btn.disabled) return;
 
-    // Disable button immediately
+    // Disable button immediately to prevent double-click
     if (btn) btn.disabled = true;
-
-    const todayStr = new Date().toISOString().split("T")[0];
-    const lastCheckin = localStorage.getItem("lastCheckinDate");
-    if (lastCheckin === todayStr) {
-      if (typeof showToast === "function") {
-        showToast("Hôm nay bạn đã điểm danh rồi!", "info");
-      }
-      return;
-    }
 
     console.log("📋 Processing daily check-in...");
 
+    // Call server - server checks Checkin_History sheet to prevent duplicates
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
           console.log("✅ Check-in successful:", result);
-          localStorage.setItem("lastCheckinDate", todayStr);
           setCheckinDone();
 
           // Update streak display
           const streakData = {
             currentStreak: result.currentStreak || 0,
             longestStreak: result.longestStreak || 0,
-            lastActiveDate: todayStr,
+            lastActiveDate: result.serverToday || null,
             checkedInToday: true,
           };
           saveStreakData(streakData);
@@ -449,8 +433,15 @@
           }
         } else {
           if (result && result.alreadyCheckedIn) {
-            localStorage.setItem("lastCheckinDate", todayStr);
             setCheckinDone();
+            // Update streak from server response
+            const streakData = {
+              currentStreak: result.currentStreak || 0,
+              longestStreak: result.longestStreak || 0,
+              checkedInToday: true,
+            };
+            saveStreakData(streakData);
+            updateStreakUI(streakData);
             if (typeof showToast === "function") {
               showToast("Hôm nay bạn đã điểm danh rồi!", "info");
             }
@@ -482,15 +473,13 @@
     const btn = document.getElementById("checkin-btn");
     const iconEl = document.getElementById("checkin-icon");
     const textEl = document.getElementById("checkin-text");
-    const statusEl = document.getElementById("checkin-status");
 
-    if (btn) btn.disabled = true;
-    if (iconEl) iconEl.textContent = "✅";
-    if (textEl) textEl.textContent = "Đã điểm danh";
-    if (statusEl) {
-      statusEl.textContent = "Đã điểm danh hôm nay";
-      statusEl.classList.add("achieved");
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add("checked-in");
     }
+    if (iconEl) iconEl.textContent = "🌟";
+    if (textEl) textEl.textContent = "Đã điểm danh";
   }
 
   /**
