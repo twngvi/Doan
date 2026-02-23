@@ -5,7 +5,7 @@
  * Requirements:
  * - Track time spent in: Lesson, Mindmap, Flashcard, Quiz
  * - Save daily learning time to user's personal Google Sheet
- * - Streak: consecutive days with >= 15 minutes of learning
+ * - Streak: consecutive days with login (tracked via Login_History sheet)
  */
 
 // ========================================
@@ -98,20 +98,20 @@ function saveLearningTime(data) {
         activityType === "mindmap" ? minutes : 0, // mindmapMinutes
         activityType === "flashcard" ? minutes : 0, // flashcardMinutes
         activityType === "quiz" ? minutes : 0, // quizMinutes
-        minutes >= 15, // streakAchieved
+        minutes >= 5, // streakAchieved (5 min goal)
         now, // lastUpdated
       ];
       sheet.appendRow(newRow);
 
-      // Update streak if first time reaching 15 min
-      if (minutes >= 15) {
+      // Update streak if first time reaching 5 min
+      if (minutes >= 5) {
         updateUserStreak(userEmail, today);
       }
 
       return {
         success: true,
         dailyTotal: minutes,
-        streakAchieved: minutes >= 15,
+        streakAchieved: minutes >= 5,
       };
     } else {
       // Update existing row
@@ -138,9 +138,9 @@ function saveLearningTime(data) {
       // Update lastUpdated
       sheet.getRange(todayRowIndex, 8).setValue(now);
 
-      // Check if just reached 15 minutes (streak milestone)
+      // Check if just reached 5 minutes (streak milestone)
       const wasAchieved = row[6] === true || row[6] === "TRUE";
-      if (!wasAchieved && newTotal >= 15) {
+      if (!wasAchieved && newTotal >= 5) {
         sheet.getRange(todayRowIndex, 7).setValue(true);
         updateUserStreak(userEmail, today);
       }
@@ -148,7 +148,7 @@ function saveLearningTime(data) {
       return {
         success: true,
         dailyTotal: newTotal,
-        streakAchieved: newTotal >= 15,
+        streakAchieved: newTotal >= 5,
       };
     }
   } catch (error) {
@@ -238,14 +238,25 @@ function getTodayLearningStats() {
 // ========================================
 
 /**
- * Update user's streak in master database
- * Called when user reaches 15 minutes for the day
+ * Update user's streak based on Login_History in personal sheet
+ * Called on login - calculates consecutive login days
  *
  * @param {string} email - User's email
- * @param {string} today - Today's date string YYYY-MM-DD
+ * @param {string} today - Today's date string YYYY-MM-DD (optional, used by learning tracker)
  */
 function updateUserStreak(email, today) {
   try {
+    // Get user's personal sheet
+    const progressSheetId = getUserProgressSheetIdByEmail(email);
+    if (!progressSheetId) {
+      Logger.log("No personal sheet found for: " + email);
+      return;
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+
+    // Update master DB with streak data
     const masterDbId =
       DB_CONFIG.SPREADSHEET_ID ||
       "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
@@ -267,51 +278,28 @@ function updateUserStreak(email, today) {
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailCol] === email) {
         const rowIndex = i + 1;
-        const lastActive = data[i][lastActiveCol];
-        let currentStreak = parseInt(data[i][currentStreakCol]) || 0;
-        let longestStreak = parseInt(data[i][longestStreakCol]) || 0;
 
-        // Calculate yesterday's date
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = Utilities.formatDate(
-          yesterday,
-          "Asia/Ho_Chi_Minh",
-          "yyyy-MM-dd",
-        );
-
-        // Check if streak continues
-        if (lastActive === yesterdayStr) {
-          // Streak continues - increment
-          currentStreak += 1;
-        } else if (lastActive !== today) {
-          // Streak broken - reset to 1
-          currentStreak = 1;
-        }
-        // If lastActive === today, streak already counted today
-
-        // Update longest streak
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
+        const todayStr =
+          today ||
+          Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
 
         // Save to sheet
         if (currentStreakCol !== -1) {
           usersSheet
             .getRange(rowIndex, currentStreakCol + 1)
-            .setValue(currentStreak);
+            .setValue(streakResult.currentStreak);
         }
         if (longestStreakCol !== -1) {
           usersSheet
             .getRange(rowIndex, longestStreakCol + 1)
-            .setValue(longestStreak);
+            .setValue(streakResult.longestStreak);
         }
         if (lastActiveCol !== -1) {
-          usersSheet.getRange(rowIndex, lastActiveCol + 1).setValue(today);
+          usersSheet.getRange(rowIndex, lastActiveCol + 1).setValue(todayStr);
         }
 
         Logger.log(
-          `Updated streak for ${email}: current=${currentStreak}, longest=${longestStreak}`,
+          `Updated streak for ${email}: current=${streakResult.currentStreak}, longest=${streakResult.longestStreak}`,
         );
         break;
       }
@@ -322,8 +310,123 @@ function updateUserStreak(email, today) {
 }
 
 /**
- * Get user's streak data
- * @returns {Object} - { success, currentStreak, longestStreak, lastActiveDate }
+ * Calculate streak from Login_History sheet
+ * Streak = consecutive login days going backward from today
+ * If today has no login, check if yesterday has - if neither, streak = 0
+ *
+ * @param {Spreadsheet} spreadsheet - User's personal spreadsheet
+ * @returns {Object} { currentStreak, longestStreak }
+ */
+function calculateStreakFromLoginHistory(spreadsheet) {
+  try {
+    const loginSheet = spreadsheet.getSheetByName("Login_History");
+    if (!loginSheet) return { currentStreak: 0, longestStreak: 0 };
+
+    const data = loginSheet.getDataRange().getValues();
+    if (data.length <= 1) return { currentStreak: 0, longestStreak: 0 };
+
+    // Extract unique login dates
+    const loginDates = new Set();
+    for (let i = 1; i < data.length; i++) {
+      const loginTime = data[i][1]; // loginTime column
+      if (loginTime) {
+        try {
+          const date = new Date(loginTime);
+          if (!isNaN(date.getTime())) {
+            const dateStr = Utilities.formatDate(
+              date,
+              "Asia/Ho_Chi_Minh",
+              "yyyy-MM-dd",
+            );
+            loginDates.add(dateStr);
+          }
+        } catch (e) {
+          // Skip invalid dates
+        }
+      }
+    }
+
+    if (loginDates.size === 0) return { currentStreak: 0, longestStreak: 0 };
+
+    // Sort dates ascending
+    const sortedDates = Array.from(loginDates).sort();
+
+    // Get today and yesterday
+    const now = new Date();
+    const today = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+    const yesterdayDate = new Date(now);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = Utilities.formatDate(
+      yesterdayDate,
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+
+    // === Calculate CURRENT STREAK ===
+    let currentStreak = 0;
+
+    if (loginDates.has(today) || loginDates.has(yesterday)) {
+      // Start counting from today (or yesterday if no login today yet)
+      const startDate = new Date(now);
+      if (!loginDates.has(today)) {
+        startDate.setDate(startDate.getDate() - 1);
+      }
+
+      // Count consecutive days backwards
+      const checkDate = new Date(startDate);
+      while (true) {
+        const checkStr = Utilities.formatDate(
+          checkDate,
+          "Asia/Ho_Chi_Minh",
+          "yyyy-MM-dd",
+        );
+        if (loginDates.has(checkStr)) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    // === Calculate LONGEST STREAK ===
+    let longestStreak = 0;
+    let tempStreak = 1;
+
+    for (let i = 1; i < sortedDates.length; i++) {
+      const prevDate = new Date(sortedDates[i - 1] + "T00:00:00");
+      const currDate = new Date(sortedDates[i] + "T00:00:00");
+      const diffDays = Math.round(
+        (currDate - prevDate) / (1000 * 60 * 60 * 24),
+      );
+
+      if (diffDays === 1) {
+        tempStreak++;
+      } else {
+        longestStreak = Math.max(longestStreak, tempStreak);
+        tempStreak = 1;
+      }
+    }
+    longestStreak = Math.max(longestStreak, tempStreak);
+
+    // Current streak could be the longest
+    longestStreak = Math.max(longestStreak, currentStreak);
+
+    Logger.log(
+      `Streak calculated: current=${currentStreak}, longest=${longestStreak}, total login days=${loginDates.size}`,
+    );
+
+    return { currentStreak, longestStreak };
+  } catch (error) {
+    Logger.log("Error calculating streak: " + error.toString());
+    return { currentStreak: 0, longestStreak: 0 };
+  }
+}
+
+/**
+ * Get user's streak data - calculated from Login_History
+ * Also checks if user has checked in today
+ * @returns {Object} - { success, currentStreak, longestStreak, lastActiveDate, checkedInToday }
  */
 function getUserStreakData() {
   try {
@@ -332,6 +435,37 @@ function getUserStreakData() {
       return { success: false, message: "Chưa đăng nhập" };
     }
 
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+
+    // Try to calculate from Login_History first
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (progressSheetId) {
+      try {
+        const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+        const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+
+        // Check if already checked in today
+        const checkedInToday = hasCheckedInToday(spreadsheet, today);
+
+        return {
+          success: true,
+          currentStreak: streakResult.currentStreak,
+          longestStreak: streakResult.longestStreak,
+          lastActiveDate: today,
+          checkedInToday: checkedInToday,
+        };
+      } catch (e) {
+        Logger.log(
+          "Error calculating streak from Login_History: " + e.toString(),
+        );
+      }
+    }
+
+    // Fallback: read from master DB
     const masterDbId =
       DB_CONFIG.SPREADSHEET_ID ||
       "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
@@ -353,32 +487,12 @@ function getUserStreakData() {
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailCol] === userEmail) {
         const lastActive = data[i][lastActiveCol] || "";
-        let currentStreak = parseInt(data[i][currentStreakCol]) || 0;
-
-        // Check if streak is still valid (not broken)
-        const today = Utilities.formatDate(
-          new Date(),
-          "Asia/Ho_Chi_Minh",
-          "yyyy-MM-dd",
-        );
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = Utilities.formatDate(
-          yesterday,
-          "Asia/Ho_Chi_Minh",
-          "yyyy-MM-dd",
-        );
-
-        // If last active was not today or yesterday, streak is broken
-        if (lastActive !== today && lastActive !== yesterdayStr) {
-          currentStreak = 0;
-        }
-
         return {
           success: true,
-          currentStreak: currentStreak,
+          currentStreak: parseInt(data[i][currentStreakCol]) || 0,
           longestStreak: parseInt(data[i][longestStreakCol]) || 0,
           lastActiveDate: lastActive,
+          checkedInToday: lastActive === today,
         };
       }
     }
@@ -388,9 +502,120 @@ function getUserStreakData() {
       currentStreak: 0,
       longestStreak: 0,
       lastActiveDate: null,
+      checkedInToday: false,
     };
   } catch (error) {
     Logger.log("Error getting streak data: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Check if user has a check-in entry for today in Checkin_History sheet
+ * @param {Spreadsheet} spreadsheet - User's personal spreadsheet
+ * @param {string} today - Today's date YYYY-MM-DD
+ * @returns {boolean}
+ */
+function hasCheckedInToday(spreadsheet, today) {
+  try {
+    const checkinSheet = spreadsheet.getSheetByName("Checkin_History");
+    if (!checkinSheet) return false;
+
+    const data = checkinSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === today) {
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Daily check-in - called when user clicks "Điểm danh" button
+ * Each day can only check in once. Saves to Checkin_History sheet.
+ * Updates streak in master DB.
+ *
+ * @returns {Object} - { success, currentStreak, longestStreak, alreadyCheckedIn }
+ */
+function dailyCheckin() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+
+    // Get or create Checkin_History sheet
+    let checkinSheet = spreadsheet.getSheetByName("Checkin_History");
+    if (!checkinSheet) {
+      Logger.log("Creating Checkin_History sheet...");
+      checkinSheet = spreadsheet.insertSheet("Checkin_History");
+      checkinSheet.appendRow([
+        "date", // YYYY-MM-DD
+        "checkinTime", // Full timestamp
+      ]);
+
+      // Style header
+      const headerRange = checkinSheet.getRange(1, 1, 1, 2);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#6366F1");
+      headerRange.setFontColor("white");
+      checkinSheet.setFrozenRows(1);
+    }
+
+    // Check if already checked in today
+    const data = checkinSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === today) {
+        Logger.log("Already checked in today: " + today);
+
+        // Still return streak data
+        const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+        return {
+          success: false,
+          alreadyCheckedIn: true,
+          currentStreak: streakResult.currentStreak,
+          longestStreak: streakResult.longestStreak,
+          message: "Hôm nay bạn đã điểm danh rồi!",
+        };
+      }
+    }
+
+    // Save check-in
+    const now = new Date();
+    checkinSheet.appendRow([today, now.toISOString()]);
+    Logger.log("✅ Daily check-in saved for: " + today);
+
+    // Also save to Login_History for streak calculation consistency
+    saveLoginToPersonalSheet(progressSheetId, userEmail, now);
+
+    // Update streak
+    updateUserStreak(userEmail, today);
+
+    // Return updated streak
+    const streakResult = calculateStreakFromLoginHistory(spreadsheet);
+    return {
+      success: true,
+      currentStreak: streakResult.currentStreak,
+      longestStreak: streakResult.longestStreak,
+      message: "Điểm danh thành công!",
+    };
+  } catch (error) {
+    Logger.log("Error in dailyCheckin: " + error.toString());
     return { success: false, message: error.toString() };
   }
 }

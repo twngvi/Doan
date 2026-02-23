@@ -19,7 +19,7 @@ function getOrCreateDatabase() {
         return ss;
       } catch (e) {
         Logger.log(
-          "Hard-coded ID failed, falling back to search: " + e.toString()
+          "Hard-coded ID failed, falling back to search: " + e.toString(),
         );
       }
     }
@@ -65,7 +65,7 @@ function getOrCreateDatabase() {
   } catch (error) {
     Logger.log("Error getting/creating database: " + error.toString());
     throw new Error(
-      "Không thể tạo hoặc truy cập database: " + error.toString()
+      "Không thể tạo hoặc truy cập database: " + error.toString(),
     );
   }
 }
@@ -138,7 +138,7 @@ function createSheet(spreadsheet, sheetConfig) {
     return sheet;
   } catch (error) {
     Logger.log(
-      "Error creating sheet " + sheetConfig.name + ": " + error.toString()
+      "Error creating sheet " + sheetConfig.name + ": " + error.toString(),
     );
     throw error;
   }
@@ -174,7 +174,7 @@ function updateSheetSchema(sheet, sheetConfig) {
     }
   } catch (error) {
     Logger.log(
-      "Error updating schema for " + sheetConfig.name + ": " + error.toString()
+      "Error updating schema for " + sheetConfig.name + ": " + error.toString(),
     );
   }
 }
@@ -234,7 +234,7 @@ function createUserPersonalSheet(email, displayName) {
         1,
         1,
         1,
-        sheetConfig.columns.length
+        sheetConfig.columns.length,
       );
       headerRange.setValues([sheetConfig.columns]);
       headerRange.setFontWeight("bold");
@@ -286,7 +286,7 @@ function processGoogleUserLogin(googleProfile) {
     try {
       progressSheetId = createUserPersonalSheet(email, name);
       Logger.log(
-        "Created new personal sheet for " + email + ": " + progressSheetId
+        "Created new personal sheet for " + email + ": " + progressSheetId,
       );
     } catch (e) {
       Logger.log("Error creating personal sheet: " + e.toString());
@@ -297,6 +297,16 @@ function processGoogleUserLogin(googleProfile) {
     // === CẬP NHẬT USER CŨ ===
     userSheet.getRange(userRowIndex, 2).setValue(googleId); // Update Google ID
     userSheet.getRange(userRowIndex, 16).setValue(new Date()); // Last Login
+
+    // ⭐ Save login to personal sheet & update streak
+    if (progressSheetId) {
+      saveLoginToPersonalSheet(progressSheetId, email, new Date());
+      try {
+        updateUserStreak(email);
+      } catch (e) {
+        Logger.log("Warning: Could not update streak: " + e.toString());
+      }
+    }
 
     // ⭐ CHỈ cập nhật avatar nếu user chưa có avatar tùy chỉnh
     // Cột avatarUrl là index 6 (thứ 7 trong row)
@@ -372,6 +382,18 @@ function processGoogleUserLogin(googleProfile) {
     ];
 
     userSheet.appendRow(newRow);
+
+    // ⭐ Save first login to personal sheet & update streak
+    if (progressSheetId) {
+      saveLoginToPersonalSheet(progressSheetId, email, now);
+      try {
+        updateUserStreak(email);
+      } catch (e) {
+        Logger.log(
+          "Warning: Could not update streak for new user: " + e.toString(),
+        );
+      }
+    }
 
     return {
       userId: newUserId,

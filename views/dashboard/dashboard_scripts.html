@@ -355,12 +355,19 @@
   }
 
   /**
-   * Initialize streak tracking system - Updated for 15 min goal
+   * Initialize streak tracking system - Daily check-in based
    */
   function initStreakTracking() {
-    console.log("⏱️ Initializing streak tracking with 15 min goal...");
+    console.log("📋 Initializing daily check-in system...");
 
-    // Load data from server first
+    // Check if already checked in today (from localStorage for instant UI)
+    const todayStr = new Date().toISOString().split("T")[0];
+    const lastCheckin = localStorage.getItem("lastCheckinDate");
+    if (lastCheckin === todayStr) {
+      setCheckinDone();
+    }
+
+    // Load streak data from server
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
@@ -370,11 +377,18 @@
             currentStreak: result.currentStreak || 0,
             longestStreak: result.longestStreak || 0,
             lastActiveDate: result.lastActiveDate || null,
+            checkedInToday: result.checkedInToday || false,
           };
 
           // Save to localStorage for quick access
           saveStreakData(streakData);
           updateStreakUI(streakData);
+
+          // Update check-in state from server
+          if (streakData.checkedInToday) {
+            localStorage.setItem("lastCheckinDate", todayStr);
+            setCheckinDone();
+          }
         } else {
           // Fallback to localStorage
           updateStreakUI(getStreakData());
@@ -385,53 +399,117 @@
         updateStreakUI(getStreakData());
       })
       .getUserStreakData();
+  }
 
-    // Load today's learning time from server
-    if (window.LearningTracker) {
-      window.LearningTracker.loadFromServer();
+  /**
+   * Handle daily check-in button click
+   */
+  window.handleDailyCheckin = function () {
+    const btn = document.getElementById("checkin-btn");
+    if (btn && btn.disabled) return;
+
+    // Disable button immediately
+    if (btn) btn.disabled = true;
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const lastCheckin = localStorage.getItem("lastCheckinDate");
+    if (lastCheckin === todayStr) {
+      if (typeof showToast === "function") {
+        showToast("Hôm nay bạn đã điểm danh rồi!", "info");
+      }
+      return;
+    }
+
+    console.log("📋 Processing daily check-in...");
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        if (result && result.success) {
+          console.log("✅ Check-in successful:", result);
+          localStorage.setItem("lastCheckinDate", todayStr);
+          setCheckinDone();
+
+          // Update streak display
+          const streakData = {
+            currentStreak: result.currentStreak || 0,
+            longestStreak: result.longestStreak || 0,
+            lastActiveDate: todayStr,
+            checkedInToday: true,
+          };
+          saveStreakData(streakData);
+          updateStreakUI(streakData);
+
+          if (typeof showToast === "function") {
+            showToast(
+              "Điểm danh thành công! 🔥 Chuỗi: " +
+                streakData.currentStreak +
+                " ngày",
+              "success",
+            );
+          }
+        } else {
+          if (result && result.alreadyCheckedIn) {
+            localStorage.setItem("lastCheckinDate", todayStr);
+            setCheckinDone();
+            if (typeof showToast === "function") {
+              showToast("Hôm nay bạn đã điểm danh rồi!", "info");
+            }
+          } else {
+            if (btn) btn.disabled = false;
+            if (typeof showToast === "function") {
+              showToast(
+                "Không thể điểm danh: " + (result?.message || "Lỗi"),
+                "error",
+              );
+            }
+          }
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("Check-in failed:", error);
+        if (btn) btn.disabled = false;
+        if (typeof showToast === "function") {
+          showToast("Lỗi khi điểm danh", "error");
+        }
+      })
+      .dailyCheckin();
+  };
+
+  /**
+   * Set check-in button to "done" state
+   */
+  function setCheckinDone() {
+    const btn = document.getElementById("checkin-btn");
+    const iconEl = document.getElementById("checkin-icon");
+    const textEl = document.getElementById("checkin-text");
+    const statusEl = document.getElementById("checkin-status");
+
+    if (btn) btn.disabled = true;
+    if (iconEl) iconEl.textContent = "✅";
+    if (textEl) textEl.textContent = "Đã điểm danh";
+    if (statusEl) {
+      statusEl.textContent = "Đã điểm danh hôm nay";
+      statusEl.classList.add("achieved");
     }
   }
 
   /**
-   * Update streak UI elements - Updated for 15 min goal
+   * Update streak UI elements - Check-in based
    */
   function updateStreakUI(streakData) {
     const streakDaysEl = document.getElementById("streak-days");
-    const todayTimeEl = document.getElementById("today-time");
-    const todayMinutesEl = document.getElementById("today-minutes");
-    const timeStatusEl = document.getElementById("time-status");
-    const timeStatEl = document.getElementById("time-stat");
-    const GOAL_MINUTES = 15;
+    const subtitleEl = document.getElementById("header-subtitle");
 
     if (streakDaysEl) {
       streakDaysEl.textContent = `${streakData.currentStreak || 0} ngày`;
     }
 
-    // Get daily minutes from localStorage (LearningTracker updates this)
-    let dailyMinutes = 0;
-    try {
-      const stored = localStorage.getItem("dailyLearningTime");
-      if (stored) {
-        const data = JSON.parse(stored);
-        dailyMinutes = data.serverTotal || data.totalMinutes || 0;
-      }
-    } catch (e) {}
-
-    if (todayTimeEl) {
-      todayTimeEl.textContent = dailyMinutes;
-    }
-
-    if (todayMinutesEl) {
-      todayMinutesEl.textContent = dailyMinutes;
-    }
-
-    if (timeStatusEl && timeStatEl) {
-      if (dailyMinutes >= GOAL_MINUTES) {
-        timeStatusEl.textContent = "Đã đạt";
-        timeStatusEl.classList.add("achieved");
+    // Update subtitle
+    if (subtitleEl) {
+      if (streakData.checkedInToday) {
+        subtitleEl.innerHTML = `Bạn đã điểm danh hôm nay · Chuỗi hiện tại: <strong>${streakData.currentStreak || 0}</strong> ngày`;
       } else {
-        timeStatusEl.textContent = `${GOAL_MINUTES - dailyMinutes} phút nữa`;
-        timeStatusEl.classList.remove("achieved");
+        subtitleEl.textContent = "Điểm danh mỗi ngày để tăng chuỗi ngày học!";
       }
     }
 

@@ -87,6 +87,12 @@ function loginWithEmail(credentials) {
         const progressSheetId = data[i][progressSheetIdIndex];
         if (progressSheetId) {
           saveLoginToPersonalSheet(progressSheetId, data[i][emailIndex], now);
+          // ⭐ Update streak based on login history
+          try {
+            updateUserStreak(data[i][emailIndex]);
+          } catch (e) {
+            Logger.log("Warning: Could not update streak: " + e.toString());
+          }
         }
 
         // Log activity
@@ -103,7 +109,7 @@ function loginWithEmail(credentials) {
         // ⭐ Get avatar URL - ưu tiên stored avatar từ đúng cột
         let avatarUrl = data[i][avatarUrlIndex];
         Logger.log(
-          "Avatar URL from DB (index " + avatarUrlIndex + "): " + avatarUrl
+          "Avatar URL from DB (index " + avatarUrlIndex + "): " + avatarUrl,
         );
 
         if (
