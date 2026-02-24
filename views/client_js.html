@@ -155,8 +155,19 @@
 
     console.log(" Final Target Page:", targetPageId);
 
+    // Đánh dấu đang restore trang (để không scroll lên đầu)
+    window._isRestoringPage = true;
+
     // Hiển thị trang cuối cùng
     showPage(targetPageId, {}, false);
+
+    // Khôi phục vị trí scroll sau khi trang đã hiển thị
+    restoreScrollPosition(finalPageName);
+
+    // Reset flag sau khi restore xong
+    setTimeout(() => {
+      window._isRestoringPage = false;
+    }, 500);
 
     // Load dữ liệu dashboard nếu cần
     if (
@@ -258,11 +269,28 @@
       // Cập nhật URL ảo
       if (typeof updateURLState === "function") updateURLState(pageName);
 
+      // Cập nhật title của trang
+      const pageTitles = {
+        landing: "O.Uiz - Learning Platform",
+        dashboard: "Dashboard - O.Uiz",
+        topics: "Chủ đề - O.Uiz",
+        lesson: "Bài học - O.Uiz",
+        mcq: "Trắc nghiệm - O.Uiz",
+        matching: "Nối từ - O.Uiz",
+        profile: "Hồ sơ - O.Uiz",
+      };
+      document.title = pageTitles[pageName] || "O.Uiz";
+
       // Update browser history
       if (addToHistory) {
         const state = { pageId: pageId, params: params };
         const url = window.location.pathname + "?page=" + pageName;
         history.pushState(state, "", url);
+      }
+
+      // Scroll lên đầu trang khi chuyển trang (trừ khi đang restore)
+      if (!window._isRestoringPage) {
+        window.scrollTo({ top: 0, behavior: "instant" });
       }
 
       // --- KHU VỰC SỬA LỖI (FIX CRASH) ---
@@ -340,13 +368,13 @@
   // Initialize history state on first load
   window.addEventListener("load", function () {
     if (!history.state) {
-      const savedUser = localStorage.getItem("currentUser");
-      const initialPage = savedUser ? "page-dashboard" : "page-landing";
-      const state = { pageId: initialPage, params: {} };
+      const currentPage = localStorage.getItem("lastActivePage") || "landing";
+      const pageId = "page-" + currentPage;
+      const state = { pageId: pageId, params: {} };
       history.replaceState(
         state,
         "",
-        window.location.pathname + "#" + initialPage.replace("page-", ""),
+        window.location.pathname + "?page=" + currentPage,
       );
     }
   });
@@ -1026,7 +1054,7 @@
 
       // Save user to localStorage (auto logout when closing tab)
       currentUser = response.user;
-      window.currentUser = response.user; 
+      window.currentUser = response.user;
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       console.log("âœ… Current user synced to window:", currentUser.username);
 

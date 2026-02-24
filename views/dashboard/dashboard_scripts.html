@@ -262,12 +262,21 @@
       },
     };
 
-    container.innerHTML = activities
+    // Chỉ hiển thị tối đa 4 hoạt động gần nhất
+    const recentActivities = activities.slice(0, 4);
+
+    container.innerHTML = recentActivities
       .map((act) => {
         const cfg = typeConfig[act.type] || typeConfig.Learning;
         const timeAgo = getTimeAgo(act.timestamp);
         const isToday = act.timestamp && act.timestamp.startsWith(today);
         const hasScore = act.score !== null && act.score !== undefined;
+
+        // Xác định trang đích khi click
+        let targetPage = "page-topics";
+        if (act.type === "MCQ") targetPage = "page-mcq";
+        else if (act.type === "Matching") targetPage = "page-matching";
+        else if (act.type === "Learning") targetPage = "page-lesson";
 
         // Dot color logic
         let dotClass = "dot-info";
@@ -293,7 +302,9 @@
         }
 
         return `
-        <div class="activity-hist-item">
+        <div class="activity-hist-item activity-clickable" 
+             onclick="navigateToActivity('${targetPage}', '${(act.topicTitle || "").replace(/'/g, "\\&#39;")}', '${act.type}')" 
+             title="Bấm để thực hiện lại">
           <div class="activity-dot-status ${dotClass}"></div>
           <div class="activity-hist-content">
             <div class="activity-hist-top">
@@ -305,9 +316,20 @@
             <div class="activity-hist-title">${act.topicTitle || "Chủ đề"}</div>
             ${scoreHtml}
           </div>
+          <div class="activity-go-icon">›</div>
         </div>`;
       })
       .join("");
+  }
+
+  /**
+   * Navigate to activity page when clicking on history item
+   */
+  function navigateToActivity(targetPage, topicTitle, actType) {
+    console.log("🔗 Navigating to:", targetPage, topicTitle, actType);
+    if (typeof showPage === "function") {
+      showPage(targetPage, { topicTitle: topicTitle, type: actType });
+    }
   }
 
   /**

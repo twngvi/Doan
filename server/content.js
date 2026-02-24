@@ -1096,12 +1096,8 @@ function getDashboardData() {
     }
     leaderboard.sort((a, b) => b.xp - a.xp);
 
-    // === 7. Smart suggestion ===
+    // === 7. Smart suggestion (disabled) ===
     let suggestion = null;
-    if (skillProgress.length > 0) {
-      const topSkill = skillProgress[0];
-      suggestion = `O.uiz nhận thấy bạn đang rất quan tâm đến ${topSkill.title}. Hãy tiếp tục cải thiện kỹ năng này nhé!`;
-    }
 
     Logger.log("✅ getDashboardData: complete");
     return {
