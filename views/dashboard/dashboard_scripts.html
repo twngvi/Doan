@@ -50,6 +50,8 @@
   /**
    * Initialize Dashboard
    */
+  let dashboardAutoRefreshInterval = null;
+
   function initDashboard() {
     console.log("📊 Initializing Dashboard (Gamification)...");
 
@@ -63,6 +65,38 @@
 
     // Single API call for all dashboard data
     loadAllDashboardData();
+
+    // Auto-refresh Lịch sử Thực chiến mỗi 30 giây
+    startDashboardAutoRefresh();
+  }
+
+  /**
+   * Auto-refresh dashboard data (activity history)
+   */
+  function startDashboardAutoRefresh() {
+    if (dashboardAutoRefreshInterval)
+      clearInterval(dashboardAutoRefreshInterval);
+
+    dashboardAutoRefreshInterval = setInterval(() => {
+      // Chỉ refresh nếu đang ở trang dashboard
+      if (
+        document.querySelector(".dashboard-main-content") &&
+        document.querySelector(".dashboard-main-content").offsetParent !== null
+      ) {
+        console.log("🔄 Auto-refreshing dashboard data...");
+        // Xóa cache để force reload
+        DashboardCache.data = null;
+        DashboardCache.lastFetch = null;
+        loadAllDashboardData();
+      }
+    }, 30000); // 30 giây
+  }
+
+  function stopDashboardAutoRefresh() {
+    if (dashboardAutoRefreshInterval) {
+      clearInterval(dashboardAutoRefreshInterval);
+      dashboardAutoRefreshInterval = null;
+    }
   }
 
   /**
@@ -121,11 +155,12 @@
   /**
    * SINGLE API CALL - Load all dashboard data
    */
-  function loadAllDashboardData() {
+  function loadAllDashboardData(forceRefresh) {
     console.log("📋 Loading all dashboard data (single API)...");
 
     const now = Date.now();
     if (
+      !forceRefresh &&
       DashboardCache.data &&
       DashboardCache.lastFetch &&
       now - DashboardCache.lastFetch < DashboardCache.cacheTimeout
