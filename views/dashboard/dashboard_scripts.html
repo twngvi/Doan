@@ -1,91 +1,11 @@
 <script>
-  // ===== DASHBOARD - KNOWLEDGE STUDIO =====
+  // ===== DASHBOARD - GAMIFICATION 4-ZONE =====
 
   // Cache for dashboard data
   const DashboardCache = {
-    quizResults: null,
-    topics: null,
+    data: null,
     lastFetch: null,
-    cacheTimeout: 60000, // 1 minute cache
-  };
-
-  // ===== RECENT ACTIVITY SYSTEM =====
-  const RECENT_ACTIVITIES_KEY = "recentActivities";
-  const MAX_RECENT_ACTIVITIES = 4;
-
-  /**
-   * Save activity to localStorage
-   * Called when user visits/plays a topic
-   */
-  window.saveRecentActivity = function (activity) {
-    try {
-      let activities = JSON.parse(
-        localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]",
-      );
-
-      // Remove existing activity with same topicId to avoid duplicates
-      activities = activities.filter((a) => a.topicId !== activity.topicId);
-
-      // Add new activity at the beginning
-      activities.unshift({
-        topicId: activity.topicId,
-        topicTitle: activity.topicTitle || "Chủ đề",
-        activityType: activity.activityType || "view", // view, quiz, matching
-        lastAccess: new Date().toISOString(),
-        score: activity.score || null,
-        totalQuestions: activity.totalQuestions || null,
-        percentage: activity.percentage || null,
-      });
-
-      // Keep only latest 4 activities
-      activities = activities.slice(0, MAX_RECENT_ACTIVITIES);
-
-      localStorage.setItem(RECENT_ACTIVITIES_KEY, JSON.stringify(activities));
-      console.log("📝 Activity saved:", activity.topicTitle);
-    } catch (e) {
-      console.error("Error saving activity:", e);
-    }
-  };
-
-  /**
-   * Get recent activities from localStorage
-   */
-  function getRecentActivities() {
-    try {
-      return JSON.parse(localStorage.getItem(RECENT_ACTIVITIES_KEY) || "[]");
-    } catch (e) {
-      console.error("Error getting activities:", e);
-      return [];
-    }
-  }
-
-  /**
-   * Update activity with quiz result
-   */
-  window.updateActivityResult = function (topicId, score, totalQuestions) {
-    try {
-      let activities = getRecentActivities();
-      const index = activities.findIndex((a) => a.topicId === topicId);
-
-      if (index !== -1) {
-        activities[index].score = score;
-        activities[index].totalQuestions = totalQuestions;
-        activities[index].percentage = Math.round(
-          (score / totalQuestions) * 100,
-        );
-        activities[index].lastAccess = new Date().toISOString();
-        activities[index].activityType = "quiz";
-
-        // Move to top
-        const activity = activities.splice(index, 1)[0];
-        activities.unshift(activity);
-
-        localStorage.setItem(RECENT_ACTIVITIES_KEY, JSON.stringify(activities));
-        console.log("📊 Activity updated with result:", topicId);
-      }
-    } catch (e) {
-      console.error("Error updating activity:", e);
-    }
+    cacheTimeout: 60000,
   };
 
   /**
@@ -106,29 +26,23 @@
   }
 
   /**
-   * Get streak data from localStorage
+   * Get/Save streak data from localStorage
    */
   function getStreakData() {
     const streakData = localStorage.getItem("streakData");
     if (streakData) {
       try {
         return JSON.parse(streakData);
-      } catch (e) {
-        console.error("Error parsing streakData:", e);
-      }
+      } catch (e) {}
     }
     return {
       currentStreak: 0,
       longestStreak: 0,
       lastActiveDate: null,
-      dailyActiveMinutes: 0,
-      sessionStartTime: null,
+      checkedInToday: false,
     };
   }
 
-  /**
-   * Save streak data to localStorage
-   */
   function saveStreakData(data) {
     localStorage.setItem("streakData", JSON.stringify(data));
   }
@@ -137,28 +51,22 @@
    * Initialize Dashboard
    */
   function initDashboard() {
-    console.log("📊 Initializing Dashboard (Knowledge Studio)...");
+    console.log("📊 Initializing Dashboard (Gamification)...");
 
     const user = getUserData();
-    if (user) {
-      updateDashboardUserInfo(user);
-    }
+    if (user) updateDashboardUserInfo(user);
 
     updateGreeting();
     initStreakTracking();
-
-    // Start meteor shower immediately
     initHeaderMeteorShower();
-
-    // Setup mouse-responsive stars effect
     setupDashboardHeaderMouseEffect();
 
-    // Load all dashboard data in parallel with single API calls
+    // Single API call for all dashboard data
     loadAllDashboardData();
   }
 
   /**
-   * Mouse-responsive stars effect for dashboard header
+   * Mouse-responsive stars effect
    */
   function setupDashboardHeaderMouseEffect() {
     const header = document.querySelector(".dashboard-header");
@@ -169,7 +77,6 @@
       const rect = header.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width - 0.5;
       const y = (e.clientY - rect.top) / rect.height - 0.5;
-
       stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
     });
 
@@ -179,7 +86,7 @@
   }
 
   /**
-   * Create meteor shower effect in dashboard header - continuous rain
+   * Meteor shower effect
    */
   let dashboardMeteorInterval = null;
 
@@ -187,33 +94,19 @@
     const container = document.getElementById("header-meteor-container");
     if (!container) return;
 
-    // Clear existing interval
-    if (dashboardMeteorInterval) {
-      clearInterval(dashboardMeteorInterval);
-    }
+    if (dashboardMeteorInterval) clearInterval(dashboardMeteorInterval);
 
     function createMeteor() {
       const meteor = document.createElement("div");
       meteor.className = "header-meteor";
-
-      // Start from top-left area
-      meteor.style.left = Math.random() * 40 + "%"; // Left 0-40%
-      meteor.style.top = Math.random() * 20 + "%"; // Top 0-20%
-
-      // Random size
-      const height = 35 + Math.random() * 35;
-      meteor.style.height = height + "px";
-
-      // Random duration
+      meteor.style.left = Math.random() * 40 + "%";
+      meteor.style.top = Math.random() * 20 + "%";
+      meteor.style.height = 35 + Math.random() * 35 + "px";
       meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
-
       container.appendChild(meteor);
-
-      // Remove after animation
       setTimeout(() => meteor.remove(), 1200);
     }
 
-    // Create meteor every 800ms for continuous rain
     dashboardMeteorInterval = setInterval(() => {
       if (!document.getElementById("header-meteor-container")) {
         clearInterval(dashboardMeteorInterval);
@@ -222,90 +115,310 @@
       createMeteor();
     }, 800);
 
-    // Create initial meteor
     createMeteor();
   }
 
   /**
-   * Load all dashboard data efficiently
+   * SINGLE API CALL - Load all dashboard data
    */
   function loadAllDashboardData() {
-    console.log("📋 Loading all dashboard data...");
+    console.log("📋 Loading all dashboard data (single API)...");
 
-    // Check cache first
     const now = Date.now();
     if (
+      DashboardCache.data &&
       DashboardCache.lastFetch &&
       now - DashboardCache.lastFetch < DashboardCache.cacheTimeout
     ) {
       console.log("📦 Using cached dashboard data");
-      if (DashboardCache.quizResults) {
-        handleRecentTopicsLoaded(DashboardCache.quizResults);
-        handleKPIsLoaded(DashboardCache.quizResults);
-      }
-      if (DashboardCache.topics) {
-        handleProgressLoaded(DashboardCache.topics);
-      }
+      renderAllZones(DashboardCache.data);
       return;
     }
 
-    // Set timeout fallback for slow API
     const loadingTimeout = setTimeout(() => {
-      console.warn("⏱️ API taking too long, showing cached/empty state");
-      showFastLoadingFallback();
-    }, 5000); // 5 second timeout
+      console.warn("⏱️ API taking too long");
+    }, 10000);
 
-    // Load quiz results (for recent topics + KPIs)
     google.script.run
       .withSuccessHandler((response) => {
         clearTimeout(loadingTimeout);
-        DashboardCache.quizResults = response;
-        DashboardCache.lastFetch = Date.now();
-        handleRecentTopicsLoaded(response);
-        handleKPIsLoaded(response);
+        if (response && response.success) {
+          DashboardCache.data = response;
+          DashboardCache.lastFetch = Date.now();
+          renderAllZones(response);
+        } else {
+          showErrorStates("Không thể tải dữ liệu");
+        }
       })
       .withFailureHandler((error) => {
         clearTimeout(loadingTimeout);
-        handleRecentTopicsError(error);
-        handleKPIsError(error);
+        console.error("❌ getDashboardData error:", error);
+        showErrorStates("Lỗi kết nối server");
       })
-      .getUserQuizResults();
-
-    // Load topics (for progress)
-    google.script.run
-      .withSuccessHandler((response) => {
-        DashboardCache.topics = response;
-        handleProgressLoaded(response);
-      })
-      .withFailureHandler(handleProgressError)
-      .getAllTopics();
+      .getDashboardData();
   }
 
   /**
-   * Show fallback state when API is slow
+   * Render all 4 zones from single data object
    */
-  function showFastLoadingFallback() {
-    // Show empty states with friendly message
-    const gridEl = document.getElementById("recent-topics-grid");
-    if (gridEl && gridEl.querySelector(".loading-state")) {
-      gridEl.innerHTML = `
-        <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-state-icon">⏳</div>
-          <div class="empty-state-title">Đang kết nối với server...</div>
-          <div class="empty-state-text">Vui lòng đợi hoặc làm mới trang</div>
-        </div>
-      `;
+  function renderAllZones(data) {
+    renderQuickStats(data.quickStats);
+    renderActivities(data.activities);
+    renderQuests(data.quests);
+    renderSkillProgress(data.skillProgress);
+    renderLeaderboard(data.leaderboard);
+    renderSuggestion(data.suggestion);
+  }
+
+  /**
+   * ZONE 2: Quick Stats
+   */
+  function renderQuickStats(stats) {
+    if (!stats) return;
+    const xpEl = document.getElementById("qs-xp");
+    const accEl = document.getElementById("qs-accuracy");
+    const badgesEl = document.getElementById("qs-badges");
+    const rankEl = document.getElementById("qs-rank");
+    const rankIconEl = document.getElementById("qs-rank-icon");
+
+    if (xpEl) xpEl.textContent = stats.totalXP.toLocaleString();
+    if (accEl) accEl.textContent = stats.avgAccuracy + "%";
+    if (badgesEl) badgesEl.textContent = stats.badges;
+    if (rankEl) rankEl.textContent = stats.rankTitle;
+    if (rankIconEl) rankIconEl.textContent = stats.rankIcon;
+  }
+
+  /**
+   * ZONE 3 LEFT: Activity History
+   */
+  function renderActivities(activities) {
+    const container = document.getElementById("activity-history-list");
+    if (!container) return;
+
+    if (!activities || activities.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚔️</div>
+          <div class="empty-state-title">Chưa có trận chiến nào</div>
+          <div class="empty-state-text">Bắt đầu học hoặc làm quiz để ghi nhận!</div>
+        </div>`;
+      return;
     }
 
-    const progressList = document.getElementById("progress-list");
-    if (progressList && progressList.querySelector(".loading-state")) {
-      progressList.innerHTML = `
+    const today = new Date().toISOString().split("T")[0];
+    const typeConfig = {
+      Learning: {
+        icon: "📖",
+        label: "Learning",
+        color: "#60a5fa",
+        bg: "rgba(96,165,250,0.15)",
+      },
+      MCQ: {
+        icon: "🧠",
+        label: "MCQ Quiz",
+        color: "#34d399",
+        bg: "rgba(52,211,153,0.15)",
+      },
+      Matching: {
+        icon: "🔗",
+        label: "Matching",
+        color: "#a78bfa",
+        bg: "rgba(167,139,250,0.15)",
+      },
+    };
+
+    container.innerHTML = activities
+      .map((act) => {
+        const cfg = typeConfig[act.type] || typeConfig.Learning;
+        const timeAgo = getTimeAgo(act.timestamp);
+        const isToday = act.timestamp && act.timestamp.startsWith(today);
+        const hasScore = act.score !== null && act.score !== undefined;
+
+        // Dot color logic
+        let dotClass = "dot-info";
+        if (act.type === "Learning") dotClass = "dot-info";
+        else if (hasScore) {
+          const pct = act.percentage || 0;
+          if (pct >= 80) dotClass = "dot-success";
+          else if (pct >= 50) dotClass = "dot-warning";
+          else dotClass = "dot-danger";
+        }
+
+        let scoreHtml = "";
+        if (hasScore) {
+          const pct = act.percentage || 0;
+          let scoreColor = "#f87171";
+          if (pct >= 80) scoreColor = "#34d399";
+          else if (pct >= 50) scoreColor = "#fbbf24";
+          scoreHtml = `
+          <div class="activity-hist-score">
+            <span class="score-val" style="color:${scoreColor}">${act.score}/${act.totalQuestions}</span>
+            <span class="score-pct" style="background:${scoreColor}15;color:${scoreColor}">${pct}%</span>
+          </div>`;
+        }
+
+        return `
+        <div class="activity-hist-item">
+          <div class="activity-dot-status ${dotClass}"></div>
+          <div class="activity-hist-content">
+            <div class="activity-hist-top">
+              <span class="activity-hist-badge" style="background:${cfg.bg};color:${cfg.color}">
+                ${cfg.icon} ${cfg.label}
+              </span>
+              <span class="activity-hist-time">${isToday ? "🕐 " : ""}${timeAgo}</span>
+            </div>
+            <div class="activity-hist-title">${act.topicTitle || "Chủ đề"}</div>
+            ${scoreHtml}
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  /**
+   * ZONE 3 RIGHT TOP: Daily Quests
+   */
+  function renderQuests(quests) {
+    const container = document.getElementById("quests-list");
+    if (!container) return;
+
+    if (!quests || quests.length === 0) {
+      container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">⏳</div>
-          <div class="empty-state-text">Đang tải...</div>
-        </div>
-      `;
+          <div class="empty-state-icon">🎯</div>
+          <div class="empty-state-text">Không có nhiệm vụ nào</div>
+        </div>`;
+      return;
     }
+
+    container.innerHTML = quests
+      .map((q) => {
+        const doneClass = q.done ? "quest-done" : "";
+        const pct =
+          q.target > 0 ? Math.round((q.progress / q.target) * 100) : 0;
+
+        return `
+        <div class="quest-item ${doneClass}">
+          <div class="quest-check">${q.done ? "✓" : ""}</div>
+          <div class="quest-body">
+            <div class="quest-title">${q.title}</div>
+            <div class="quest-progress-bar">
+              <div class="quest-progress-fill" style="width:${pct}%"></div>
+            </div>
+          </div>
+          <div class="quest-xp">+${q.xpReward} XP</div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  /**
+   * ZONE 3 RIGHT BOTTOM: Skill Progress
+   */
+  function renderSkillProgress(skills) {
+    const container = document.getElementById("skill-progress-list");
+    if (!container) return;
+
+    if (!skills || skills.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-text">Làm quiz để xem tiến độ kỹ năng</div>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = skills
+      .map((s) => {
+        let fillClass = "skill-low";
+        if (s.progress >= 75) fillClass = "skill-high";
+        else if (s.progress >= 50) fillClass = "skill-mid";
+
+        return `
+        <div class="skill-item">
+          <div class="skill-header">
+            <span class="skill-name">${s.title}</span>
+            <span class="skill-pct">${s.progress}%</span>
+          </div>
+          <div class="skill-bar">
+            <div class="skill-fill ${fillClass}" style="width:${s.progress}%"></div>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  /**
+   * ZONE 4 TOP: Leaderboard
+   */
+  function renderLeaderboard(leaderboard) {
+    const container = document.getElementById("leaderboard-list");
+    if (!container) return;
+
+    if (!leaderboard || leaderboard.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏅</div>
+          <div class="empty-state-text">Chưa có dữ liệu xếp hạng</div>
+        </div>`;
+      return;
+    }
+
+    const medals = ["🥇", "🥈", "🥉"];
+    container.innerHTML =
+      '<div class="leaderboard-table">' +
+      leaderboard
+        .map((entry, idx) => {
+          const meClass = entry.isMe ? "lb-me" : "";
+          const rankDisplay = idx < 3 ? medals[idx] : idx + 1;
+
+          return `
+          <div class="lb-row ${meClass}">
+            <div class="lb-rank">${rankDisplay}</div>
+            <div class="lb-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
+            <div class="lb-xp">🌟 ${entry.xp.toLocaleString()} XP</div>
+          </div>`;
+        })
+        .join("") +
+      "</div>";
+  }
+
+  /**
+   * ZONE 4 BOTTOM: Smart Suggestion
+   */
+  function renderSuggestion(suggestion) {
+    const banner = document.getElementById("suggestion-banner");
+    const textEl = document.getElementById("suggestion-text");
+    if (!banner || !textEl) return;
+
+    if (suggestion) {
+      textEl.textContent = suggestion;
+      banner.style.display = "flex";
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  /**
+   * Show error states for all zones
+   */
+  function showErrorStates(msg) {
+    const ids = [
+      "activity-history-list",
+      "quests-list",
+      "skill-progress-list",
+      "leaderboard-list",
+    ];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <div class="empty-state-text">${msg}</div>
+          </div>`;
+      }
+    });
   }
 
   /**
@@ -315,15 +428,10 @@
     const hour = new Date().getHours();
     let greeting = "Chào mừng trở lại";
 
-    if (hour >= 5 && hour < 12) {
-      greeting = "Chào buổi sáng";
-    } else if (hour >= 12 && hour < 18) {
-      greeting = "Chào buổi chiều";
-    } else if (hour >= 18 && hour < 22) {
-      greeting = "Chào buổi tối";
-    } else {
-      greeting = "Chúc ngủ ngon";
-    }
+    if (hour >= 5 && hour < 12) greeting = "Chào buổi sáng";
+    else if (hour >= 12 && hour < 18) greeting = "Chào buổi chiều";
+    else if (hour >= 18 && hour < 22) greeting = "Chào buổi tối";
+    else greeting = "Chúc ngủ ngon";
 
     const greetingEl = document.getElementById("greeting-text");
     const userNameEl = document.getElementById("userNameWelcome");
@@ -340,50 +448,34 @@
   function updateDashboardUserInfo(user) {
     const displayName =
       user.displayName || user.fullName || user.username || "User";
-
     const userNameEl = document.getElementById("userNameWelcome");
-    if (userNameEl) {
-      userNameEl.textContent = displayName;
-    }
+    if (userNameEl) userNameEl.textContent = displayName;
 
-    if (typeof window.updateAllUserNames === "function") {
+    if (typeof window.updateAllUserNames === "function")
       window.updateAllUserNames(displayName);
-    }
-    if (typeof window.updateAllUserAvatars === "function") {
+    if (typeof window.updateAllUserAvatars === "function")
       window.updateAllUserAvatars(user.avatarUrl);
-    }
   }
 
   /**
-   * Initialize streak tracking system - Daily check-in based
-   * Source of truth: Checkin_History sheet in user's personal Google Sheet
+   * Initialize streak tracking - server source of truth
    */
   function initStreakTracking() {
     console.log("📋 Initializing daily check-in system...");
 
-    // Load streak + check-in state from SERVER (source of truth)
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
-          console.log("✅ Loaded streak data from server:", result);
-
           const streakData = {
             currentStreak: result.currentStreak || 0,
             longestStreak: result.longestStreak || 0,
             lastActiveDate: result.lastActiveDate || null,
             checkedInToday: result.checkedInToday || false,
           };
-
-          // Save to localStorage for quick access
           saveStreakData(streakData);
           updateStreakUI(streakData);
-
-          // Server says checked in today → show done state
-          if (streakData.checkedInToday) {
-            setCheckinDone();
-          }
+          if (streakData.checkedInToday) setCheckinDone();
         } else {
-          // Fallback to localStorage
           updateStreakUI(getStreakData());
         }
       })
@@ -395,25 +487,17 @@
   }
 
   /**
-   * Handle daily check-in button click
+   * Handle daily check-in
    */
   window.handleDailyCheckin = function () {
     const btn = document.getElementById("checkin-btn");
     if (btn && btn.disabled) return;
-
-    // Disable button immediately to prevent double-click
     if (btn) btn.disabled = true;
 
-    console.log("📋 Processing daily check-in...");
-
-    // Call server - server checks Checkin_History sheet to prevent duplicates
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
-          console.log("✅ Check-in successful:", result);
           setCheckinDone();
-
-          // Update streak display
           const streakData = {
             currentStreak: result.currentStreak || 0,
             longestStreak: result.longestStreak || 0,
@@ -422,7 +506,6 @@
           };
           saveStreakData(streakData);
           updateStreakUI(streakData);
-
           if (typeof showToast === "function") {
             showToast(
               "Điểm danh thành công! 🔥 Chuỗi: " +
@@ -434,7 +517,6 @@
         } else {
           if (result && result.alreadyCheckedIn) {
             setCheckinDone();
-            // Update streak from server response
             const streakData = {
               currentStreak: result.currentStreak || 0,
               longestStreak: result.longestStreak || 0,
@@ -442,32 +524,29 @@
             };
             saveStreakData(streakData);
             updateStreakUI(streakData);
-            if (typeof showToast === "function") {
+            if (typeof showToast === "function")
               showToast("Hôm nay bạn đã điểm danh rồi!", "info");
-            }
           } else {
             if (btn) btn.disabled = false;
-            if (typeof showToast === "function") {
+            if (typeof showToast === "function")
               showToast(
                 "Không thể điểm danh: " + (result?.message || "Lỗi"),
                 "error",
               );
-            }
           }
         }
       })
       .withFailureHandler(function (error) {
         console.error("Check-in failed:", error);
         if (btn) btn.disabled = false;
-        if (typeof showToast === "function") {
+        if (typeof showToast === "function")
           showToast("Lỗi khi điểm danh", "error");
-        }
       })
       .dailyCheckin();
   };
 
   /**
-   * Set check-in button to "done" state
+   * Set check-in to done state
    */
   function setCheckinDone() {
     const btn = document.getElementById("checkin-btn");
@@ -483,17 +562,15 @@
   }
 
   /**
-   * Update streak UI elements - Check-in based
+   * Update streak UI
    */
   function updateStreakUI(streakData) {
     const streakDaysEl = document.getElementById("streak-days");
     const subtitleEl = document.getElementById("header-subtitle");
 
-    if (streakDaysEl) {
+    if (streakDaysEl)
       streakDaysEl.textContent = `${streakData.currentStreak || 0} ngày`;
-    }
 
-    // Update subtitle
     if (subtitleEl) {
       if (streakData.checkedInToday) {
         subtitleEl.innerHTML = `Bạn đã điểm danh hôm nay · Chuỗi hiện tại: <strong>${streakData.currentStreak || 0}</strong> ngày`;
@@ -501,321 +578,6 @@
         subtitleEl.textContent = "Điểm danh mỗi ngày để tăng chuỗi ngày học!";
       }
     }
-
-    // Update KPI longest streak
-    const kpiLongestStreak = document.getElementById("kpi-longest-streak");
-    if (kpiLongestStreak) {
-      kpiLongestStreak.textContent = `${streakData.longestStreak || 0} ngày`;
-    }
-  }
-
-  /**
-   * Load recent topics (activity cards) - now called internally
-   */
-  function loadRecentTopics() {
-    // This is now handled by loadAllDashboardData
-    console.log(
-      "📋 loadRecentTopics called - delegating to loadAllDashboardData",
-    );
-    loadAllDashboardData();
-  }
-
-  /**
-   * Handle recent topics loaded - prioritize local activities
-   */
-  function handleRecentTopicsLoaded(response) {
-    const gridEl = document.getElementById("recent-topics-grid");
-    if (!gridEl) return;
-
-    // Get local activities first (priority)
-    const localActivities = getRecentActivities();
-
-    // Also get server results
-    let serverResults = [];
-    if (response && response.success && Array.isArray(response.results)) {
-      serverResults = response.results;
-    } else if (Array.isArray(response)) {
-      serverResults = response;
-    }
-
-    // Merge: local activities first, then server results (avoid duplicates)
-    const mergedActivities = [...localActivities];
-    const localTopicIds = new Set(localActivities.map((a) => a.topicId));
-
-    serverResults.forEach((result) => {
-      const topicId = result.topicId || result.topicTitle;
-      if (!localTopicIds.has(topicId)) {
-        mergedActivities.push({
-          topicId: topicId,
-          topicTitle: result.topicTitle || "Chủ đề",
-          activityType: result.quizType || "quiz",
-          lastAccess: result.completedAt || new Date().toISOString(),
-          score: result.score,
-          totalQuestions: result.totalQuestions,
-          percentage: result.percentage,
-        });
-      }
-    });
-
-    // Sort by lastAccess and take only 4
-    const recentActivities = mergedActivities
-      .sort((a, b) => new Date(b.lastAccess) - new Date(a.lastAccess))
-      .slice(0, 4);
-
-    if (recentActivities.length === 0) {
-      gridEl.innerHTML = `
-        <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-state-icon">📚</div>
-          <div class="empty-state-title">Bạn chưa có hoạt động nào gần đây</div>
-          <div class="empty-state-text">Bắt đầu một bài luyện để hệ thống ghi nhận tiến độ.</div>
-        </div>
-      `;
-      return;
-    }
-
-    const today = new Date().toISOString().split("T")[0];
-
-    gridEl.innerHTML = recentActivities
-      .map((activity) => {
-        const isToday =
-          activity.lastAccess && activity.lastAccess.startsWith(today);
-        const timeAgo = getTimeAgo(activity.lastAccess);
-        const score = activity.score || 0;
-        const total = activity.totalQuestions || 10;
-        const percentage =
-          activity.percentage ||
-          (score > 0 ? Math.round((score / total) * 100) : 0);
-        const progress = Math.min(100, percentage);
-
-        // Determine activity type tag
-        let tagClass = "";
-        let tagText = "Xem chủ đề";
-        let tagIcon = "👁️";
-        if (
-          activity.activityType === "quiz" ||
-          activity.activityType === "mcq"
-        ) {
-          tagClass = "quiz";
-          tagText = "Quiz Visual";
-          tagIcon = "✅";
-        } else if (activity.activityType === "matching") {
-          tagClass = "matching";
-          tagText = "Matching";
-          tagIcon = "🔗";
-        } else if (activity.activityType === "view") {
-          tagClass = "view";
-          tagText = "Xem chủ đề";
-          tagIcon = "📖";
-        }
-
-        const hasResult =
-          activity.score !== null && activity.score !== undefined;
-
-        return `
-        <div class="topic-card ${isToday ? "today" : ""}">
-          <div class="topic-card-header">
-            <div>
-              <div class="topic-title">${activity.topicTitle}</div>
-              <div class="topic-tags">
-                <span class="topic-tag ${tagClass}">${tagIcon} ${tagText}</span>
-              </div>
-            </div>
-            ${isToday ? '<span class="today-chip">Hôm nay</span>' : ""}
-          </div>
-          ${
-            hasResult
-              ? `
-          <div class="topic-progress">
-            <div class="topic-progress-bar">
-              <div class="topic-progress-fill" style="width: ${progress}%"></div>
-            </div>
-          </div>
-          <div class="topic-meta">
-            <span>Lần chơi: ${timeAgo}</span>
-            <span class="topic-result">${score}/${total} · ${percentage}%</span>
-          </div>
-          `
-              : `
-          <div class="topic-meta">
-            <span>Lần truy cập: ${timeAgo}</span>
-          </div>
-          `
-          }
-          <div class="topic-actions">
-            <button class="topic-btn topic-btn-primary" onclick="continueQuiz('${
-              activity.topicId
-            }')">
-              ${hasResult ? "Tiếp tục" : "Bắt đầu"}
-            </button>
-            ${
-              hasResult
-                ? '<button class="topic-btn topic-btn-secondary">Xem báo cáo</button>'
-                : ""
-            }
-          </div>
-        </div>
-      `;
-      })
-      .join("");
-  }
-
-  /**
-   * Handle recent topics error
-   */
-  function handleRecentTopicsError(error) {
-    console.error("❌ Recent topics error:", error);
-    const gridEl = document.getElementById("recent-topics-grid");
-    if (gridEl) {
-      gridEl.innerHTML = `
-        <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-state-icon">⚠️</div>
-          <div class="empty-state-text">Không thể tải hoạt động gần đây</div>
-        </div>
-      `;
-    }
-  }
-
-  /**
-   * Continue quiz for a topic
-   */
-  function continueQuiz(topicId) {
-    if (topicId && typeof showPage === "function") {
-      // Store topic ID and navigate to quiz
-      localStorage.setItem("selectedTopicId", topicId);
-      showPage("page-mcq");
-    }
-  }
-
-  /**
-   * Load progress by topic - now called internally
-   */
-  function loadProgressByTopic() {
-    // This is now handled by loadAllDashboardData
-    console.log(
-      "📈 loadProgressByTopic called - delegating to loadAllDashboardData",
-    );
-    loadAllDashboardData();
-  }
-
-  /**
-   * Handle progress loaded
-   */
-  function handleProgressLoaded(response) {
-    const progressList = document.getElementById("progress-list");
-    if (!progressList) return;
-
-    let topics = [];
-    if (response && response.success && Array.isArray(response.topics)) {
-      topics = response.topics;
-    } else if (Array.isArray(response)) {
-      topics = response;
-    }
-
-    if (topics.length === 0) {
-      progressList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📊</div>
-          <div class="empty-state-text">Chưa có dữ liệu tiến độ</div>
-        </div>
-      `;
-      return;
-    }
-
-    // Show first 5 topics with simulated progress
-    const displayTopics = topics.slice(0, 5);
-    progressList.innerHTML = displayTopics
-      .map((topic) => {
-        const progress = Math.floor(Math.random() * 80) + 10; // 10-90%
-        let statusClass = "needs-work";
-        let statusText = "Cần luyện thêm";
-
-        if (progress >= 75) {
-          statusClass = "strong";
-          statusText = "Mạnh";
-        } else if (progress >= 50) {
-          statusClass = "improving";
-          statusText = "Đang cải thiện";
-        }
-
-        return `
-        <div class="progress-item">
-          <div class="progress-header">
-            <span class="progress-label">${topic.title}</span>
-            <span class="progress-status ${statusClass}">${statusText}</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: ${progress}%"></div>
-          </div>
-        </div>
-      `;
-      })
-      .join("");
-  }
-
-  /**
-   * Handle progress error
-   */
-  function handleProgressError(error) {
-    console.error("❌ Progress error:", error);
-    const progressList = document.getElementById("progress-list");
-    if (progressList) {
-      progressList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-text">Không thể tải tiến độ</div>
-        </div>
-      `;
-    }
-  }
-
-  /**
-   * Load KPIs - now called internally
-   */
-  function loadKPIs() {
-    // This is now handled by loadAllDashboardData
-    console.log("📊 loadKPIs called - delegating to loadAllDashboardData");
-    loadAllDashboardData();
-  }
-
-  /**
-   * Handle KPIs loaded
-   */
-  function handleKPIsLoaded(response) {
-    let results = [];
-    if (response && response.success && Array.isArray(response.results)) {
-      results = response.results;
-    } else if (Array.isArray(response)) {
-      results = response;
-    }
-
-    // Calculate KPIs
-    const uniqueTopics = new Set(results.map((r) => r.topicId || r.topicTitle))
-      .size;
-    const avgAccuracy =
-      results.length > 0
-        ? Math.round(
-            results.reduce((sum, r) => sum + (r.percentage || 0), 0) /
-              results.length,
-          )
-        : 0;
-    const rank =
-      results.length > 0 ? Math.max(1, 50 - results.length * 2) : "--";
-
-    // Update UI
-    const kpiTopics = document.getElementById("kpi-topics");
-    const kpiAccuracy = document.getElementById("kpi-accuracy");
-    const kpiRank = document.getElementById("kpi-rank");
-
-    if (kpiTopics) kpiTopics.textContent = uniqueTopics;
-    if (kpiAccuracy)
-      kpiAccuracy.textContent = avgAccuracy > 0 ? `${avgAccuracy}%` : "--";
-    if (kpiRank) kpiRank.textContent = rank !== "--" ? `#${rank}` : "#--";
-  }
-
-  /**
-   * Handle KPIs error
-   */
-  function handleKPIsError(error) {
-    console.error("❌ KPIs error:", error);
   }
 
   /**
@@ -823,7 +585,6 @@
    */
   function getTimeAgo(dateString) {
     if (!dateString) return "Vừa xong";
-
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now - date;
@@ -843,9 +604,7 @@
 
   // Listen for user updates
   window.addEventListener("user-info-updated", function (e) {
-    if (e.detail) {
-      updateDashboardUserInfo(e.detail);
-    }
+    if (e.detail) updateDashboardUserInfo(e.detail);
   });
 
   window.addEventListener("avatar-updated", function (e) {
@@ -854,15 +613,13 @@
     }
   });
 
-  // Track visibility changes for accurate time tracking
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) {
-      // User came back to tab, update session
       const streakData = getStreakData();
       streakData.sessionStartTime = Date.now();
       saveStreakData(streakData);
     }
   });
 
-  console.log("✅ Dashboard scripts loaded (Knowledge Studio)");
+  console.log("✅ Dashboard scripts loaded (Gamification 4-Zone)");
 </script>

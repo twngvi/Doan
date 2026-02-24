@@ -162,7 +162,7 @@ function getAIContentForWeb(topicId, contentType, forceRegenerate) {
 
     Logger.log(
       "📤 Web wrapper - final response keys: " +
-        Object.keys(response).join(", ")
+        Object.keys(response).join(", "),
     );
 
     return response;
@@ -194,7 +194,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       ", contentType=" +
       contentType +
       ", force=" +
-      forceRegenerate
+      forceRegenerate,
   );
 
   // Set default for forceRegenerate
@@ -255,7 +255,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
             };
 
             Logger.log(
-              "📤 Returning result with data length: " + dataString.length
+              "📤 Returning result with data length: " + dataString.length,
             );
             return result;
           } catch (stringifyError) {
@@ -312,7 +312,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
     }
 
     Logger.log(
-      "✅ Document analyzed: " + (analysis.mainTopic || "Unknown topic")
+      "✅ Document analyzed: " + (analysis.mainTopic || "Unknown topic"),
     );
 
     // 4. Generate content using AI (với đầy đủ tham số)
@@ -322,25 +322,25 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       case "mindmap":
         generatedContent = ContentGenerator.generateMindmap(
           docResult.content,
-          analysis
+          analysis,
         );
         break;
       case "flashcards":
         generatedContent = ContentGenerator.generateFlashcards(
           docResult.content,
-          analysis
+          analysis,
         );
         break;
       case "lesson_summary":
         generatedContent = ContentGenerator.generateLessonSummary(
           docResult.content,
-          analysis
+          analysis,
         );
         break;
       case "infographic":
         generatedContent = ContentGenerator.generateInfographic(
           docResult.content,
-          analysis
+          analysis,
         );
         break;
       case "questions":
@@ -348,7 +348,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
         generatedContent = ContentGenerator.generateQuestions(
           docResult.content,
           analysis,
-          { questionCount: 20 }
+          { questionCount: 20 },
         );
         break;
       default:
@@ -799,6 +799,488 @@ function saveQuizResult(resultData) {
 }
 
 /**
+ * Get or create Activity_Log sheet in user's personal sheet
+ * Columns: id, type (Learning/MCQ/Matching), topicId, topicTitle, score, totalQuestions, percentage, timestamp
+ */
+function getOrCreateActivityLogSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName("Activity_Log");
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet("Activity_Log");
+    sheet.appendRow([
+      "id",
+      "type",
+      "topicId",
+      "topicTitle",
+      "score",
+      "totalQuestions",
+      "percentage",
+      "timestamp",
+    ]);
+    const headerRange = sheet.getRange(1, 1, 1, 8);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#6366F1");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * Save an activity to the user's personal Activity_Log sheet
+ * @param {object} data - { type: "Learning"|"MCQ"|"Matching", topicId, topicTitle, score?, totalQuestions?, percentage? }
+ */
+function saveActivityLog(data) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet" };
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const sheet = getOrCreateActivityLogSheet(spreadsheet);
+
+    const now = new Date();
+    sheet.appendRow([
+      "ACT_" + Date.now(),
+      data.type || "Learning",
+      data.topicId || "",
+      data.topicTitle || "",
+      data.score != null ? data.score : "",
+      data.totalQuestions != null ? data.totalQuestions : "",
+      data.percentage != null ? data.percentage : "",
+      now.toISOString(),
+    ]);
+
+    Logger.log("✅ Activity saved: " + data.type + " - " + data.topicTitle);
+    return { success: true };
+  } catch (error) {
+    Logger.log("❌ Error saving activity: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get all dashboard data in a single API call
+ * Returns: quickStats (XP, accuracy, badges, rank), activities, quests, skillProgress, leaderboard
+ */
+function getDashboardData() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in" };
+    }
+
+    // === 1. Read from Master DB (User row) ===
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const allData = usersSheet.getDataRange().getValues();
+    const headers = allData[0];
+
+    const col = {};
+    headers.forEach((h, i) => (col[h] = i));
+
+    let userRow = null;
+    let userRowIdx = -1;
+    for (let i = 1; i < allData.length; i++) {
+      if (allData[i][col["email"]] === userEmail) {
+        userRow = allData[i];
+        userRowIdx = i;
+        break;
+      }
+    }
+
+    const totalXP = userRow ? parseInt(userRow[col["totalXP"]]) || 0 : 0;
+    const totalQuizAnswered = userRow
+      ? parseInt(userRow[col["totalQuizAnswered"]]) || 0
+      : 0;
+    const progressSheetId = userRow ? userRow[col["progressSheetId"]] : null;
+
+    // === 2. Read personal sheet data ===
+    let activities = [];
+    let quizResults = [];
+    let totalCorrect = 0;
+    let totalQuestions = 0;
+    let badges = 0;
+
+    if (progressSheetId) {
+      const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+
+      // Activity Log
+      const actSheet = userSpreadsheet.getSheetByName("Activity_Log");
+      if (actSheet) {
+        const actData = actSheet.getDataRange().getValues();
+        const actHeaders = actData[0];
+        const ac = {};
+        actHeaders.forEach((h, i) => (ac[h] = i));
+
+        for (let i = 1; i < actData.length; i++) {
+          activities.push({
+            type: ac["type"] >= 0 ? actData[i][ac["type"]] : "",
+            topicId: ac["topicId"] >= 0 ? actData[i][ac["topicId"]] : "",
+            topicTitle:
+              ac["topicTitle"] >= 0 ? actData[i][ac["topicTitle"]] : "",
+            score:
+              ac["score"] >= 0 && actData[i][ac["score"]] !== ""
+                ? parseInt(actData[i][ac["score"]])
+                : null,
+            totalQuestions:
+              ac["totalQuestions"] >= 0 &&
+              actData[i][ac["totalQuestions"]] !== ""
+                ? parseInt(actData[i][ac["totalQuestions"]])
+                : null,
+            percentage:
+              ac["percentage"] >= 0 && actData[i][ac["percentage"]] !== ""
+                ? parseInt(actData[i][ac["percentage"]])
+                : null,
+            timestamp:
+              ac["timestamp"] >= 0 ? String(actData[i][ac["timestamp"]]) : "",
+          });
+        }
+        activities.sort(
+          (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+        );
+        activities = activities.slice(0, 10);
+      }
+
+      // Quiz Results for accuracy calculation
+      const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+      if (quizSheet) {
+        const qData = quizSheet.getDataRange().getValues();
+        const qHeaders = qData[0];
+        const qc = {};
+        qHeaders.forEach((h, i) => (qc[h] = i));
+
+        for (let i = 1; i < qData.length; i++) {
+          const status =
+            qc["status"] >= 0 ? qData[i][qc["status"]] : "complete";
+          if (status === "partial") continue;
+          const sc =
+            qc["score"] >= 0 ? parseInt(qData[i][qc["score"]]) || 0 : 0;
+          const tq =
+            qc["totalQuestions"] >= 0
+              ? parseInt(qData[i][qc["totalQuestions"]]) || 0
+              : 0;
+          totalCorrect += sc;
+          totalQuestions += tq;
+          quizResults.push({
+            topicId: qc["topicId"] >= 0 ? qData[i][qc["topicId"]] : "",
+            topicTitle: qc["topicTitle"] >= 0 ? qData[i][qc["topicTitle"]] : "",
+            percentage:
+              qc["percentage"] >= 0
+                ? parseInt(qData[i][qc["percentage"]]) || 0
+                : 0,
+          });
+        }
+      }
+    }
+
+    const avgAccuracy =
+      totalQuestions > 0
+        ? Math.round((totalCorrect / totalQuestions) * 100)
+        : 0;
+
+    // Badges: count achievements
+    if (totalXP >= 100) badges++;
+    if (totalXP >= 500) badges++;
+    if (totalXP >= 1000) badges++;
+    if (avgAccuracy >= 80) badges++;
+    if (quizResults.length >= 10) badges++;
+    if (quizResults.length >= 50) badges++;
+    const currentStreak = userRow
+      ? parseInt(userRow[col["currentStreak"]]) || 0
+      : 0;
+    if (currentStreak >= 7) badges++;
+    if (currentStreak >= 30) badges++;
+
+    // === 3. Rank system ===
+    let rankTitle = "Chưa xếp hạng";
+    let rankIcon = "🌱";
+    if (totalXP >= 5000) {
+      rankTitle = "Hạng Kim Cương";
+      rankIcon = "💎";
+    } else if (totalXP >= 2000) {
+      rankTitle = "Hạng Vàng";
+      rankIcon = "🥇";
+    } else if (totalXP >= 1000) {
+      rankTitle = "Hạng Bạc";
+      rankIcon = "🥈";
+    } else if (totalXP >= 500) {
+      rankTitle = "Hạng Đồng III";
+      rankIcon = "🥉";
+    } else if (totalXP >= 100) {
+      rankTitle = "Hạng Sắt";
+      rankIcon = "⚔️";
+    } else if (totalXP > 0) {
+      rankTitle = "Người mới";
+      rankIcon = "🌱";
+    }
+
+    // === 4. Daily Quests ===
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+    const todayActivities = activities.filter(
+      (a) => a.timestamp && a.timestamp.startsWith(today),
+    );
+    const todayLearning = todayActivities.filter(
+      (a) => a.type === "Learning",
+    ).length;
+    const todayMCQ = todayActivities.filter((a) => a.type === "MCQ").length;
+    const todayPerfect = todayActivities.filter(
+      (a) => a.type === "MCQ" && a.percentage === 100,
+    ).length;
+
+    const quests = [
+      {
+        title: "Học 1 bài học mới",
+        progress: Math.min(todayLearning, 1),
+        target: 1,
+        xpReward: 30,
+        done: todayLearning >= 1,
+      },
+      {
+        title: "Hoàn thành 1 bài Quiz",
+        progress: Math.min(todayMCQ, 1),
+        target: 1,
+        xpReward: 50,
+        done: todayMCQ >= 1,
+      },
+      {
+        title: "Đạt điểm tuyệt đối 1 bài",
+        progress: Math.min(todayPerfect, 1),
+        target: 1,
+        xpReward: 100,
+        done: todayPerfect >= 1,
+      },
+    ];
+
+    // === 5. Skill progress from quiz results ===
+    const topicScores = {};
+    quizResults.forEach((r) => {
+      if (!topicScores[r.topicTitle]) {
+        topicScores[r.topicTitle] = { total: 0, count: 0 };
+      }
+      topicScores[r.topicTitle].total += r.percentage;
+      topicScores[r.topicTitle].count++;
+    });
+    const skillProgress = Object.entries(topicScores)
+      .map(([title, s]) => ({
+        title: title,
+        progress: Math.round(s.total / s.count),
+      }))
+      .sort((a, b) => b.progress - a.progress)
+      .slice(0, 5);
+
+    // === 6. Leaderboard (top 5 from master DB) ===
+    const leaderboard = [];
+    for (let i = 1; i < allData.length; i++) {
+      const xp = parseInt(allData[i][col["totalXP"]]) || 0;
+      if (xp > 0) {
+        leaderboard.push({
+          name:
+            allData[i][col["displayName"]] ||
+            allData[i][col["username"]] ||
+            "User",
+          xp: xp,
+          isMe: allData[i][col["email"]] === userEmail,
+        });
+      }
+    }
+    leaderboard.sort((a, b) => b.xp - a.xp);
+
+    // === 7. Smart suggestion ===
+    let suggestion = null;
+    if (skillProgress.length > 0) {
+      const topSkill = skillProgress[0];
+      suggestion = `O.uiz nhận thấy bạn đang rất quan tâm đến ${topSkill.title}. Hãy tiếp tục cải thiện kỹ năng này nhé!`;
+    }
+
+    Logger.log("✅ getDashboardData: complete");
+    return {
+      success: true,
+      quickStats: {
+        totalXP: totalXP,
+        avgAccuracy: avgAccuracy,
+        badges: badges,
+        rankTitle: rankTitle,
+        rankIcon: rankIcon,
+      },
+      activities: activities,
+      quests: quests,
+      skillProgress: skillProgress,
+      leaderboard: leaderboard.slice(0, 5),
+      suggestion: suggestion,
+    };
+  } catch (error) {
+    Logger.log("❌ Error in getDashboardData: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get recent activities from user's personal Activity_Log sheet
+ * @param {number} limit - Max number of activities to return (default 10)
+ * @returns {object} - { success, activities: [...] }
+ */
+function getActivityLog(limit) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", activities: [] };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, activities: [] };
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const sheet = spreadsheet.getSheetByName("Activity_Log");
+
+    if (!sheet) {
+      return { success: true, activities: [] };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, activities: [] };
+    }
+
+    const headers = data[0];
+    const typeCol = headers.indexOf("type");
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const scoreCol = headers.indexOf("score");
+    const totalQCol = headers.indexOf("totalQuestions");
+    const percentCol = headers.indexOf("percentage");
+    const tsCol = headers.indexOf("timestamp");
+
+    const activities = [];
+    for (let i = 1; i < data.length; i++) {
+      activities.push({
+        type: typeCol >= 0 ? data[i][typeCol] : "",
+        topicId: topicIdCol >= 0 ? data[i][topicIdCol] : "",
+        topicTitle: topicTitleCol >= 0 ? data[i][topicTitleCol] : "",
+        score:
+          scoreCol >= 0 && data[i][scoreCol] !== ""
+            ? parseInt(data[i][scoreCol])
+            : null,
+        totalQuestions:
+          totalQCol >= 0 && data[i][totalQCol] !== ""
+            ? parseInt(data[i][totalQCol])
+            : null,
+        percentage:
+          percentCol >= 0 && data[i][percentCol] !== ""
+            ? parseInt(data[i][percentCol])
+            : null,
+        timestamp: tsCol >= 0 ? String(data[i][tsCol]) : "",
+      });
+    }
+
+    // Sort by timestamp descending (most recent first) and limit
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const maxItems = limit || 10;
+
+    Logger.log(
+      "✅ getActivityLog: returned " +
+        Math.min(activities.length, maxItems) +
+        " activities",
+    );
+    return { success: true, activities: activities.slice(0, maxItems) };
+  } catch (error) {
+    Logger.log("❌ Error in getActivityLog: " + error.toString());
+    return { success: false, message: error.toString(), activities: [] };
+  }
+}
+
+/**
+ * Get all quiz results for the current user from their personal Google Sheet
+ * Used by dashboard to show recent activity
+ * @returns {object} - { success, results: [...] }
+ */
+function getUserQuizResults() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", results: [] };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, results: [] };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+
+    if (!quizSheet) {
+      return { success: true, results: [] };
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, results: [] };
+    }
+
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const scoreCol = headers.indexOf("score");
+    const totalQuestionsCol = headers.indexOf("totalQuestions");
+    const percentageCol = headers.indexOf("percentage");
+    const timeTakenCol = headers.indexOf("timeTaken");
+    const gameModeCol = headers.indexOf("gameMode");
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+
+    const results = [];
+    for (let i = 1; i < data.length; i++) {
+      const status = statusCol >= 0 ? data[i][statusCol] : "complete";
+      // Only include completed quizzes
+      if (status === "partial") continue;
+
+      results.push({
+        topicId: topicIdCol >= 0 ? data[i][topicIdCol] : "",
+        topicTitle: topicTitleCol >= 0 ? data[i][topicTitleCol] : "Chủ đề",
+        score: scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0,
+        totalQuestions:
+          totalQuestionsCol >= 0
+            ? parseInt(data[i][totalQuestionsCol]) || 0
+            : 0,
+        percentage:
+          percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0,
+        timeTaken: timeTakenCol >= 0 ? data[i][timeTakenCol] : null,
+        quizType: gameModeCol >= 0 ? data[i][gameModeCol] : "quiz",
+        completedAt: completedAtCol >= 0 ? data[i][completedAtCol] : null,
+      });
+    }
+
+    // Sort by completedAt descending (most recent first)
+    results.sort((a, b) => {
+      const dateA = a.completedAt ? new Date(a.completedAt) : new Date(0);
+      const dateB = b.completedAt ? new Date(b.completedAt) : new Date(0);
+      return dateB - dateA;
+    });
+
+    Logger.log(
+      "✅ getUserQuizResults: returned " + results.length + " results",
+    );
+    return { success: true, results: results };
+  } catch (error) {
+    Logger.log("❌ Error in getUserQuizResults: " + error.toString());
+    return { success: false, message: error.toString(), results: [] };
+  }
+}
+
+/**
  * Get saved progress for a topic (partial quiz)
  * @param {string} topicId - Topic ID
  * @returns {object} - Saved progress or null
@@ -1242,7 +1724,7 @@ function getMasteredQuestionIds(topicId) {
       "✅ Found " +
         masteredIds.length +
         " mastered questions for topic " +
-        topicId
+        topicId,
     );
     return masteredIds;
   } catch (error) {
@@ -1281,7 +1763,7 @@ function saveFlashcardProgress(progressDataJson) {
       "Learned: " +
         progressData.learnedCount +
         ", Review: " +
-        progressData.reviewCount
+        progressData.reviewCount,
     );
 
     // Get or CREATE user spreadsheet if not exists
@@ -1291,7 +1773,7 @@ function saveFlashcardProgress(progressDataJson) {
       try {
         const newSheetId = createUserPersonalSheet(
           currentUser.userId,
-          currentUser.username || currentUser.email
+          currentUser.username || currentUser.email,
         );
         if (newSheetId) {
           spreadsheet = SpreadsheetApp.openById(newSheetId);
@@ -1299,7 +1781,7 @@ function saveFlashcardProgress(progressDataJson) {
         }
       } catch (createError) {
         Logger.log(
-          "❌ Failed to create user spreadsheet: " + createError.toString()
+          "❌ Failed to create user spreadsheet: " + createError.toString(),
         );
         return { success: false, message: "Cannot create user spreadsheet" };
       }
@@ -1842,7 +2324,7 @@ function getLearningProgressForWeb() {
     }
 
     Logger.log(
-      "✅ Loaded progress for " + Object.keys(progressMap).length + " topics"
+      "✅ Loaded progress for " + Object.keys(progressMap).length + " topics",
     );
     return { success: true, data: progressMap };
   } catch (error) {
