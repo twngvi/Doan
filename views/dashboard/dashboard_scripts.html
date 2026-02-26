@@ -71,7 +71,7 @@
   }
 
   /**
-   * Auto-refresh dashboard data (activity history)
+   * Auto-refresh dashboard data (activity history + leaderboard)
    */
   function startDashboardAutoRefresh() {
     if (dashboardAutoRefreshInterval)
@@ -79,11 +79,10 @@
 
     dashboardAutoRefreshInterval = setInterval(() => {
       // Chỉ refresh nếu đang ở trang dashboard
-      if (
-        document.querySelector(".dashboard-main-content") &&
-        document.querySelector(".dashboard-main-content").offsetParent !== null
-      ) {
-        console.log("🔄 Auto-refreshing dashboard data...");
+      if (isDashboardVisible()) {
+        console.log(
+          "🔄 Auto-refreshing dashboard data (history + leaderboard)...",
+        );
         // Xóa cache để force reload
         DashboardCache.data = null;
         DashboardCache.lastFetch = null;
@@ -98,6 +97,28 @@
       dashboardAutoRefreshInterval = null;
     }
   }
+
+  /**
+   * Check if dashboard is currently visible
+   */
+  function isDashboardVisible() {
+    const el = document.querySelector(".dashboard-main-content");
+    return el && el.offsetParent !== null;
+  }
+
+  /**
+   * Force refresh dashboard when user returns to dashboard page
+   * Called from showPage() in client_js.html
+   */
+  window.refreshDashboardOnReturn = function () {
+    console.log(
+      "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)...",
+    );
+    DashboardCache.data = null;
+    DashboardCache.lastFetch = null;
+    loadAllDashboardData(true);
+    startDashboardAutoRefresh();
+  };
 
   /**
    * Mouse-responsive stars effect
@@ -510,7 +531,10 @@
 
   /**
    * ZONE 4 TOP: Leaderboard (Top 10)
+   * Previous leaderboard data for detecting XP changes
    */
+  let previousLeaderboard = null;
+
   function renderLeaderboard(leaderboard) {
     const container = document.getElementById("leaderboard-list");
     if (!container) return;
@@ -521,10 +545,25 @@
           <div class="empty-state-icon">🏅</div>
           <div class="empty-state-text">Chưa có dữ liệu xếp hạng</div>
         </div>`;
+      previousLeaderboard = null;
       return;
     }
 
+    // Build map of previous XP for change detection
+    const prevMap = {};
+    if (previousLeaderboard) {
+      previousLeaderboard.forEach((e) => {
+        prevMap[e.name] = e.xp;
+      });
+    }
+
     const medals = ["🥇", "🥈", "🥉"];
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
     container.innerHTML =
       '<div class="leaderboard-table">' +
       leaderboard
@@ -534,15 +573,32 @@
           const topClass = idx < 3 ? "lb-top3" : "";
           const rankDisplay = idx < 3 ? medals[idx] : idx + 1;
 
+          // Detect XP change
+          let changeHtml = "";
+          if (previousLeaderboard && prevMap[entry.name] !== undefined) {
+            const diff = entry.xp - prevMap[entry.name];
+            if (diff > 0) {
+              changeHtml = `<span class="lb-xp-change lb-xp-up">+${diff}</span>`;
+            }
+          }
+
           return `
           <div class="lb-row ${meClass} ${topClass}">
             <div class="lb-rank">${rankDisplay}</div>
             <div class="lb-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
-            <div class="lb-xp">${entry.xp.toLocaleString()} XP</div>
+            <div class="lb-xp">${entry.xp.toLocaleString()} XP ${changeHtml}</div>
           </div>`;
         })
         .join("") +
+      "</div>" +
+      '<div class="lb-updated">Cập nhật lúc ' +
+      timeStr +
       "</div>";
+
+    // Save current as previous for next comparison
+    previousLeaderboard = leaderboard
+      .slice(0, 10)
+      .map((e) => ({ name: e.name, xp: e.xp }));
   }
 
   /**
@@ -789,6 +845,24 @@
       const streakData = getStreakData();
       streakData.sessionStartTime = Date.now();
       saveStreakData(streakData);
+
+      // Force refresh dashboard (leaderboard + history) when tab becomes visible
+      if (isDashboardVisible()) {
+        console.log("🔄 Tab visible — refreshing leaderboard + history...");
+        DashboardCache.data = null;
+        DashboardCache.lastFetch = null;
+        loadAllDashboardData(true);
+      }
+    }
+  });
+
+  // Listen for custom event from other pages (quiz/learning completion)
+  window.addEventListener("dashboard-needs-refresh", function () {
+    console.log("🔄 Dashboard refresh triggered by activity event");
+    DashboardCache.data = null;
+    DashboardCache.lastFetch = null;
+    if (isDashboardVisible()) {
+      loadAllDashboardData(true);
     }
   });
 
