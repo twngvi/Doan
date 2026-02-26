@@ -52,6 +52,14 @@
     flashcards: false,
   };
 
+  // ⭐ Tab Completion State (for overall progress tracking)
+  let tabCompletion = {
+    lessonRead: false, // User checked "Đã đọc xong"
+    lessonQuiz: false, // User completed Mini Quiz
+    mindmapViewed: false, // User checked "Đã xem Mindmap"
+    flashcardsDone: false, // User viewed all flashcards
+  };
+
   /**
    * Initialize Lesson Page
    */
@@ -72,6 +80,12 @@
     scrollProgress = 0;
     aiContentLoaded = { mindmap: false, flashcards: false };
     progressSaved = { lesson: false, mindmap: false, flashcards: false };
+    tabCompletion = {
+      lessonRead: false,
+      lessonQuiz: false,
+      mindmapViewed: false,
+      flashcardsDone: false,
+    };
     flashcardsData = [];
     currentFlashcardIndex = 0;
 
@@ -147,7 +161,15 @@
       }
     }
 
-    // Update tab buttons
+    // Update sidebar nav tabs (new 2-column layout)
+    document.querySelectorAll(".lesson-nav-tab").forEach((tab) => {
+      tab.classList.remove("active");
+      if (tab.dataset.tab === tabName) {
+        tab.classList.add("active");
+      }
+    });
+
+    // Also update old horizontal tabs if they exist (backward compat)
     document.querySelectorAll(".lesson-tab").forEach((tab) => {
       tab.classList.remove("active");
       if (tab.dataset.tab === tabName) {
@@ -165,12 +187,6 @@
     if (activePanel) {
       activePanel.style.display = "block";
       activePanel.classList.add("active");
-    }
-
-    // Show/hide progress bar (only for lesson tab)
-    const progressCard = document.getElementById("lesson-progress-card");
-    if (progressCard) {
-      progressCard.style.display = tabName === "lesson" ? "block" : "none";
     }
 
     // Load AI content if not loaded yet
@@ -226,9 +242,10 @@
           // ⭐ ENHANCE LESSON CONTENT - Apply all enhancements
           enhanceLessonContent();
 
-          // Show actions after a delay
+          // Show lesson completion actions
           setTimeout(() => {
-            document.getElementById("lesson-actions").style.display = "block";
+            const tabActions = document.getElementById("lesson-tab-actions");
+            if (tabActions) tabActions.style.display = "flex";
           }, 2000);
 
           showToast("✅ Đã tải bài giảng", "success");
@@ -306,6 +323,10 @@
           renderMindmap(mindmapData);
           document.getElementById("mindmap-content").style.display = "block";
           aiContentLoaded.mindmap = true;
+
+          // Show mindmap completion checkbox
+          const mindmapActions = document.getElementById("mindmap-tab-actions");
+          if (mindmapActions) mindmapActions.style.display = "flex";
 
           // ⭐ Save mindmap progress when viewed
           saveMindmapProgress();
@@ -945,6 +966,9 @@
     // Update final progress bar
     updateDeckProgress();
 
+    // Mark flashcards as completed for overall progress
+    onAllFlashcardsViewed();
+
     if (deckArea) {
       const hasReviewCards = reviewCount > 0;
       const isPerfect = reviewCount === 0;
@@ -1580,6 +1604,154 @@
     }, 500);
   }
 
+  // ========================================
+  // ⭐ OVERALL PROGRESS TRACKING (33% each tab)
+  // ========================================
+
+  /**
+   * Calculate and update overall progress
+   * - Lesson tab: 33% (read checked + mini quiz = half each → 16.5% + 16.5%)
+   * - Mindmap tab: 33% (viewed checkbox)
+   * - Flashcard tab: 33% (all cards viewed)
+   */
+  function updateOverallProgress() {
+    // Lesson tab progress (33% total)
+    let lessonPct = 0;
+    if (tabCompletion.lessonRead) lessonPct += 50;
+    if (tabCompletion.lessonQuiz) lessonPct += 50;
+    // If no mini quiz exists, reading alone = 100%
+    const hasMiniQuiz = document.getElementById("mini-quiz-requirement");
+    if (hasMiniQuiz && hasMiniQuiz.style.display === "none") {
+      if (tabCompletion.lessonRead) lessonPct = 100;
+    }
+
+    // Mindmap tab progress (33% total)
+    let mindmapPct = tabCompletion.mindmapViewed ? 100 : 0;
+
+    // Flashcard tab progress (33% total)
+    let flashcardPct = tabCompletion.flashcardsDone ? 100 : 0;
+    if (!tabCompletion.flashcardsDone && flashcardsData.length > 0) {
+      const seen = learnedCount + reviewCount;
+      flashcardPct = Math.round((seen / flashcardsData.length) * 100);
+    }
+
+    // Overall progress
+    const overallPct = Math.round(
+      lessonPct * 0.333 + mindmapPct * 0.333 + flashcardPct * 0.333,
+    );
+
+    // Update overall progress bar
+    const progressBar = document.getElementById("overall-progress-bar");
+    const progressText = document.getElementById("overall-progress-text");
+    if (progressBar) progressBar.style.width = overallPct + "%";
+    if (progressText) progressText.textContent = overallPct + "%";
+
+    // Update sidebar progress
+    const sidebarBar = document.getElementById("sidebar-progress-bar");
+    const sidebarText = document.getElementById("sidebar-progress-text");
+    if (sidebarBar) sidebarBar.style.width = overallPct + "%";
+    if (sidebarText) sidebarText.textContent = overallPct + "% hoàn thành";
+
+    // Update segment statuses
+    const segLessonStatus = document.getElementById("seg-lesson-status");
+    const segMindmapStatus = document.getElementById("seg-mindmap-status");
+    const segFlashcardsStatus = document.getElementById(
+      "seg-flashcards-status",
+    );
+    if (segLessonStatus) segLessonStatus.textContent = lessonPct + "%";
+    if (segMindmapStatus) segMindmapStatus.textContent = mindmapPct + "%";
+    if (segFlashcardsStatus)
+      segFlashcardsStatus.textContent = flashcardPct + "%";
+
+    // Update segment completed state
+    const segLesson = document.getElementById("seg-lesson");
+    const segMindmap = document.getElementById("seg-mindmap");
+    const segFlashcards = document.getElementById("seg-flashcards");
+    if (segLesson) segLesson.classList.toggle("completed", lessonPct >= 100);
+    if (segMindmap) segMindmap.classList.toggle("completed", mindmapPct >= 100);
+    if (segFlashcards)
+      segFlashcards.classList.toggle("completed", flashcardPct >= 100);
+
+    // Update sidebar nav tab check marks
+    const checkLesson = document.getElementById("nav-check-lesson");
+    const checkMindmap = document.getElementById("nav-check-mindmap");
+    const checkFlashcards = document.getElementById("nav-check-flashcards");
+    if (checkLesson) checkLesson.textContent = lessonPct >= 100 ? "✅" : "";
+    if (checkMindmap) checkMindmap.textContent = mindmapPct >= 100 ? "✅" : "";
+    if (checkFlashcards)
+      checkFlashcards.textContent = flashcardPct >= 100 ? "✅" : "";
+
+    // Update nav tab completed class
+    document.querySelectorAll(".lesson-nav-tab").forEach((tab) => {
+      const tabName = tab.dataset.tab;
+      if (tabName === "lesson" && lessonPct >= 100)
+        tab.classList.add("completed");
+      if (tabName === "mindmap" && mindmapPct >= 100)
+        tab.classList.add("completed");
+      if (tabName === "flashcards" && flashcardPct >= 100)
+        tab.classList.add("completed");
+    });
+
+    // Show celebration if 100%
+    if (overallPct >= 99) {
+      showToast("🎉 Chúc mừng! Bạn đã hoàn thành 100% bài học!", "success");
+    }
+
+    console.log("📊 Overall progress:", overallPct + "%", {
+      lesson: lessonPct,
+      mindmap: mindmapPct,
+      flashcard: flashcardPct,
+    });
+  }
+
+  /**
+   * Handler: Lesson "Đánh dấu đã đọc" checkbox
+   */
+  window.onLessonReadChecked = function (checkbox) {
+    tabCompletion.lessonRead = checkbox.checked;
+    console.log("📖 Lesson read checked:", checkbox.checked);
+    if (checkbox.checked) {
+      saveLessonProgress(true);
+      showToast("✅ Đã đánh dấu đọc xong!", "success");
+    }
+    updateOverallProgress();
+  };
+
+  /**
+   * Handler: Mindmap "Tích đã xem" checkbox
+   */
+  window.onMindmapViewChecked = function (checkbox) {
+    tabCompletion.mindmapViewed = checkbox.checked;
+    console.log("🧠 Mindmap view checked:", checkbox.checked);
+    if (checkbox.checked) {
+      saveMindmapProgress();
+      showToast("✅ Đã đánh dấu xem Mindmap!", "success");
+    }
+    updateOverallProgress();
+  };
+
+  /**
+   * Handler: Mini Quiz completed (called from handleMiniQuizAnswer)
+   */
+  function onMiniQuizCompleted() {
+    tabCompletion.lessonQuiz = true;
+    const reqIcon = document.getElementById("mini-quiz-req-icon");
+    const reqEl = document.getElementById("mini-quiz-requirement");
+    if (reqIcon) reqIcon.textContent = "✅";
+    if (reqEl) reqEl.classList.add("completed");
+    updateOverallProgress();
+    console.log("🎯 Mini Quiz completed!");
+  }
+
+  /**
+   * Handler: All flashcards viewed (called from showDeckComplete)
+   */
+  function onAllFlashcardsViewed() {
+    tabCompletion.flashcardsDone = true;
+    updateOverallProgress();
+    console.log("🃏 All flashcards viewed!");
+  }
+
   // Make functions globally available
   window.initLessonPage = initLessonPage;
   window.retryLoadLesson = retryLoadLesson;
@@ -1602,6 +1774,7 @@
   window.handleMiniQuizAnswer = handleMiniQuizAnswer;
   window.toggleSpoiler = toggleSpoiler;
   window.toggleTOC = toggleTOC;
+  window.updateOverallProgress = updateOverallProgress;
 
   console.log("✅ Lesson scripts loaded (Phase 3: AI Content Integration)");
 
@@ -2577,6 +2750,9 @@
       option.classList.add("correct");
       feedback.className = "mini-quiz-feedback show correct";
       feedback.innerHTML = "🎉 Chính xác! Bạn đã hiểu đúng rồi!";
+
+      // Mark mini quiz completed for overall progress
+      onMiniQuizCompleted();
 
       // Confetti effect
       createConfetti();

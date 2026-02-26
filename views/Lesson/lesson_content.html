@@ -1,4 +1,4 @@
-<div class="lesson-container">
+﻿<div class="lesson-container">
   <div class="lesson-wrapper">
     <!-- Back Button -->
     <button onclick="showPage('page-topics')" class="btn-back-lesson">
@@ -20,7 +20,6 @@
 
     <!-- Lesson Header -->
     <div class="lesson-header">
-      <!-- Galaxy Background Effects -->
       <div class="lesson-header-galaxy-bg">
         <div class="lesson-header-stars" id="lessonHeaderStars"></div>
         <div class="lesson-header-nebula"></div>
@@ -36,352 +35,425 @@
             📚 Nội dung lý thuyết
           </p>
         </div>
-        <div class="lesson-header-icon">📖</div>
+        <div class="lesson-header-icon"></div>
       </div>
     </div>
 
-    <!-- ========== TAB NAVIGATION ========== -->
-    <div class="lesson-tabs-container">
-      <div class="lesson-tabs" id="lesson-tabs">
-        <button
-          class="lesson-tab active"
-          data-tab="lesson"
-          onclick="switchLessonTab('lesson')"
+    <!-- ========== OVERALL PROGRESS BAR ========== -->
+    <div class="lesson-overall-progress" id="lesson-overall-progress">
+      <div class="overall-progress-header">
+        <span class="overall-progress-label">📊 Tiến độ bài học</span>
+        <span class="overall-progress-value" id="overall-progress-text"
+          >0%</span
         >
-          <span class="tab-icon">📖</span>
-          <span>Bài học</span>
-        </button>
-        <button
-          class="lesson-tab"
-          data-tab="mindmap"
-          onclick="switchLessonTab('mindmap')"
-        >
-          <span class="tab-icon">🧠</span>
-          <span>Mindmap</span>
-        </button>
-        <button
-          class="lesson-tab"
-          data-tab="flashcards"
-          onclick="switchLessonTab('flashcards')"
-        >
-          <span class="tab-icon">🃏</span>
-          <span>Flashcards</span>
-        </button>
       </div>
-    </div>
-
-    <!-- ========== TAB CONTENT PANELS ========== -->
-
-    <!-- Tab 1: Lesson Content (Default) - Render Google Doc as-is -->
-    <div id="tab-lesson" class="tab-panel active">
-      <div class="lesson-card">
-        <!-- Loading State -->
-        <div id="lesson-loading" class="lesson-loading">
-          <div class="quiz-loading-popup">
-            <div class="quiz-loading-logo">
-              <span class="logo-o">O</span>
-              <div class="logo-dots">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-              </div>
-            </div>
-            <div class="quiz-loading-text">Đang tải bài giảng...</div>
-          </div>
-        </div>
-
-        <!-- Error State -->
-        <div id="lesson-error" class="lesson-error" style="display: none">
-          <div class="error-icon">⚠️</div>
-          <h3 class="error-title">Không thể tải bài giảng</h3>
-          <p id="lesson-error-message" class="error-message"></p>
-          <button onclick="retryLoadLesson()" class="btn-primary">
-            Thử lại
-          </button>
-        </div>
-
-        <!-- Content Area -->
+      <div class="overall-progress-track">
         <div
-          id="lesson-content-area"
-          class="prose max-w-none"
-          style="display: none"
-        >
-          <!-- Content from Google Doc will be rendered here -->
+          class="overall-progress-fill"
+          id="overall-progress-bar"
+          style="width: 0%"
+        ></div>
+      </div>
+      <div class="overall-progress-segments">
+        <div class="progress-segment" id="seg-lesson">
+          <span class="seg-icon"></span>
+          <span class="seg-label">Bài học</span>
+          <span class="seg-status" id="seg-lesson-status">0%</span>
+        </div>
+        <div class="progress-segment" id="seg-mindmap">
+          <span class="seg-icon"></span>
+          <span class="seg-label">Mindmap</span>
+          <span class="seg-status" id="seg-mindmap-status">0%</span>
+        </div>
+        <div class="progress-segment" id="seg-flashcards">
+          <span class="seg-icon"></span>
+          <span class="seg-label">Flashcard</span>
+          <span class="seg-status" id="seg-flashcards-status">0%</span>
         </div>
       </div>
     </div>
 
-    <!-- Tab 2: Mindmap - Simple Tree Layout -->
-    <div id="tab-mindmap" class="tab-panel" style="display: none">
-      <div class="lesson-card mindmap-card">
-        <!-- Loading State -->
-        <div id="mindmap-loading" class="lesson-loading">
-          <div class="quiz-loading-popup">
-            <div class="quiz-loading-logo">
-              <span class="logo-o">O</span>
-              <div class="logo-dots">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-              </div>
-            </div>
-            <div class="quiz-loading-text">🧠 AI đang tạo Mindmap...</div>
-            <p class="quiz-loading-hint">Quá trình này có thể mất 10-30 giây</p>
-          </div>
-        </div>
-
-        <!-- Error State -->
-        <div id="mindmap-error" class="lesson-error" style="display: none">
-          <div class="error-icon">⚠️</div>
-          <h3 class="error-title">Không thể tải Mindmap</h3>
-          <p id="mindmap-error-message" class="error-message"></p>
-          <button onclick="loadMindmap(true)" class="btn-primary">
-            Tạo lại Mindmap
-          </button>
-        </div>
-
-        <!-- Simple Tree Mindmap - No Controls -->
-        <div id="mindmap-content" class="mindmap-tree" style="display: none">
-          <!-- SVG for curved connection lines -->
-          <svg id="mindmap-connections" class="tree-connections"></svg>
-
-          <!-- Tree Container -->
-          <div id="tree-container" class="tree-container">
-            <!-- Will be rendered by JS -->
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 3: Flashcards - The Infinite Deck -->
-    <div id="tab-flashcards" class="tab-panel" style="display: none">
-      <div class="lesson-card flashcards-card">
-        <!-- Loading State -->
-        <div id="flashcards-loading" class="lesson-loading">
-          <div class="quiz-loading-popup">
-            <div class="quiz-loading-logo">
-              <span class="logo-o">O</span>
-              <div class="logo-dots">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-              </div>
-            </div>
-            <div class="quiz-loading-text">🃏 AI đang tạo Flashcards...</div>
-            <p class="quiz-loading-hint">Quá trình này có thể mất 10-30 giây</p>
-          </div>
-        </div>
-
-        <!-- Error State -->
-        <div id="flashcards-error" class="lesson-error" style="display: none">
-          <div class="error-icon">⚠️</div>
-          <h3 class="error-title">Không thể tải Flashcards</h3>
-          <p id="flashcards-error-message" class="error-message"></p>
-          <button onclick="loadFlashcards(true)" class="btn-primary">
-            Tạo lại Flashcards
-          </button>
-        </div>
-
-        <!-- Flashcards Content - The Infinite Deck -->
-        <div
-          id="flashcards-content"
-          class="deck-container"
-          style="display: none"
-        >
-          <!-- Progress Bar -->
-          <div class="deck-progress">
-            <div class="progress-info">
-              <span class="progress-counter">
-                <span id="flashcard-current">1</span> /
-                <span id="flashcard-total">0</span>
-              </span>
-              <span class="progress-label">thẻ</span>
-            </div>
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" id="deck-progress-bar"></div>
-            </div>
-            <div class="deck-stats">
-              <span class="stat-item stat-learned">
-                <span class="stat-icon">✓</span>
-                <span id="learned-count">0</span>
-              </span>
-              <span class="stat-item stat-review">
-                <span class="stat-icon">✗</span>
-                <span id="review-count">0</span>
-              </span>
-            </div>
-            <!-- Controls moved here -->
-            <div class="deck-controls-inline">
-              <button
-                onclick="shuffleFlashcards()"
-                class="control-btn-inline"
-                title="Xáo trộn"
-              >
-                🔀
-              </button>
-              <button
-                onclick="resetFlashcards()"
-                class="control-btn-inline"
-                title="Reset"
-              >
-                🔄
-              </button>
-            </div>
-          </div>
-
-          <!-- Deck Area -->
-          <div class="deck-area" id="deck-area">
-            <!-- Background cards (stacking effect) -->
-            <div class="deck-stack">
-              <div class="stack-card stack-3"></div>
-              <div class="stack-card stack-2"></div>
-              <div class="stack-card stack-1"></div>
-            </div>
-
-            <!-- Main Flashcard -->
-            <div class="flashcard-wrapper" id="flashcard-wrapper">
-              <div
-                class="flashcard"
-                id="current-flashcard"
-                onclick="flipFlashcard()"
-              >
-                <div class="flashcard-inner">
-                  <!-- Front Side -->
-                  <div class="flashcard-front">
-                    <div class="card-shine"></div>
-                    <div class="card-pattern"></div>
-                    <div class="flashcard-label">
-                      <span class="label-icon">❓</span>
-                      THUẬT NGỮ
-                    </div>
-                    <div class="flashcard-text" id="flashcard-front-text"></div>
-                  </div>
-                  <!-- Back Side -->
-                  <div class="flashcard-back">
-                    <div class="card-shine"></div>
-                    <div class="flashcard-label">
-                      <span class="label-icon">💡</span>
-                      Định nghĩa
-                    </div>
-                    <div
-                      class="flashcard-text flashcard-answer"
-                      id="flashcard-back-text"
-                    ></div>
+    <!-- ========== 2-COLUMN LAYOUT ========== -->
+    <div class="lesson-two-col">
+      <!-- LEFT COLUMN: Main Content (70-80%) -->
+      <div class="lesson-main-content">
+        <!-- Tab 1: Lesson Content (Default) -->
+        <div id="tab-lesson" class="tab-panel active">
+          <div class="lesson-card">
+            <div id="lesson-loading" class="lesson-loading">
+              <div class="quiz-loading-popup">
+                <div class="quiz-loading-logo">
+                  <span class="logo-o">O</span>
+                  <div class="logo-dots">
+                    <span class="dot"></span><span class="dot"></span
+                    ><span class="dot"></span>
                   </div>
                 </div>
+                <div class="quiz-loading-text">Đang tải bài giảng...</div>
               </div>
             </div>
 
-            <!-- Swipe Indicators -->
-            <div class="swipe-indicator swipe-left" id="swipe-left-indicator">
-              <span>✗ Chưa thuộc</span>
+            <div id="lesson-error" class="lesson-error" style="display: none">
+              <div class="error-icon"></div>
+              <h3 class="error-title">Không thể tải bài giảng</h3>
+              <p id="lesson-error-message" class="error-message"></p>
+              <button onclick="retryLoadLesson()" class="btn-primary">
+                Thử lại
+              </button>
             </div>
-            <div class="swipe-indicator swipe-right" id="swipe-right-indicator">
-              <span>✓ Đã thuộc</span>
+
+            <div
+              id="lesson-content-area"
+              class="prose max-w-none"
+              style="display: none"
+            ></div>
+
+            <div id="lesson-mini-quiz-area" style="display: none"></div>
+
+            <div
+              id="lesson-tab-actions"
+              class="lesson-tab-actions"
+              style="display: none"
+            >
+              <label class="lesson-complete-checkbox" id="lesson-read-check">
+                <input
+                  type="checkbox"
+                  id="lesson-read-checkbox"
+                  onchange="onLessonReadChecked(this)"
+                />
+                <span class="check-mark"></span>
+                <span class="check-label">✅ Đánh dấu đã đọc xong</span>
+              </label>
+              <div class="mini-quiz-requirement" id="mini-quiz-requirement">
+                <span class="req-icon" id="mini-quiz-req-icon"></span>
+                <span class="req-label">Hoàn thành Mini Quiz bên dưới</span>
+              </div>
             </div>
           </div>
+        </div>
 
-          <!-- Action Buttons - Icon Only -->
-          <div class="deck-actions">
-            <button
-              class="action-btn btn-previous"
-              id="btn-previous"
-              onclick="prevFlashcard()"
-              title="Thẻ trước"
+        <!-- Tab 2: Mindmap -->
+        <div id="tab-mindmap" class="tab-panel" style="display: none">
+          <div class="lesson-card mindmap-card">
+            <div id="mindmap-loading" class="lesson-loading">
+              <div class="quiz-loading-popup">
+                <div class="quiz-loading-logo">
+                  <span class="logo-o">O</span>
+                  <div class="logo-dots">
+                    <span class="dot"></span><span class="dot"></span
+                    ><span class="dot"></span>
+                  </div>
+                </div>
+                <div class="quiz-loading-text">🧠 AI đang tạo Mindmap...</div>
+                <p class="quiz-loading-hint">
+                  Quá trình này có thể mất 10-30 giây
+                </p>
+              </div>
+            </div>
+
+            <div id="mindmap-error" class="lesson-error" style="display: none">
+              <div class="error-icon"></div>
+              <h3 class="error-title">Không thể tải Mindmap</h3>
+              <p id="mindmap-error-message" class="error-message"></p>
+              <button onclick="loadMindmap(true)" class="btn-primary">
+                Tạo lại Mindmap
+              </button>
+            </div>
+
+            <div
+              id="mindmap-content"
+              class="mindmap-tree"
+              style="display: none"
             >
-              <span class="btn-icon">←</span>
-            </button>
-            <button
-              class="action-btn btn-review"
-              id="btn-review"
-              onclick="markAsReview()"
-              title="Chưa thuộc"
+              <svg id="mindmap-connections" class="tree-connections"></svg>
+              <div id="tree-container" class="tree-container"></div>
+            </div>
+
+            <div
+              id="mindmap-tab-actions"
+              class="lesson-tab-actions"
+              style="display: none"
             >
-              <span class="btn-icon">✗</span>
-            </button>
-            <button
-              class="action-btn btn-flip"
-              onclick="flipFlashcard()"
-              title="Lật thẻ"
-            >
-              <span class="btn-icon">🔄</span>
-            </button>
-            <button
-              class="action-btn btn-learned"
-              id="btn-learned"
-              onclick="markAsLearned()"
-              title="Đã thuộc"
-            >
-              <span class="btn-icon">✓</span>
-            </button>
-            <button
-              class="action-btn btn-next"
-              id="btn-next"
-              onclick="nextFlashcard()"
-              title="Thẻ tiếp"
-            >
-              <span class="btn-icon">→</span>
-            </button>
+              <label class="lesson-complete-checkbox" id="mindmap-view-check">
+                <input
+                  type="checkbox"
+                  id="mindmap-view-checkbox"
+                  onchange="onMindmapViewChecked(this)"
+                />
+                <span class="check-mark"></span>
+                <span class="check-label">✅ Tích đã xem Mindmap</span>
+              </label>
+            </div>
           </div>
+        </div>
 
-          <!-- Keyboard Hints -->
-          <div class="keyboard-hints">
-            <span class="hint-item"><kbd>Space</kbd> Lật thẻ</span>
-            <span class="hint-item"><kbd>←</kbd> ✗ Chưa thuộc</span>
-            <span class="hint-item"><kbd>→</kbd> ✓ Đã thuộc</span>
+        <!-- Tab 3: Flashcards -->
+        <div id="tab-flashcards" class="tab-panel" style="display: none">
+          <div class="lesson-card flashcards-card">
+            <div id="flashcards-loading" class="lesson-loading">
+              <div class="quiz-loading-popup">
+                <div class="quiz-loading-logo">
+                  <span class="logo-o">O</span>
+                  <div class="logo-dots">
+                    <span class="dot"></span><span class="dot"></span
+                    ><span class="dot"></span>
+                  </div>
+                </div>
+                <div class="quiz-loading-text">
+                  🃏 AI đang tạo Flashcards...
+                </div>
+                <p class="quiz-loading-hint">
+                  Quá trình này có thể mất 10-30 giây
+                </p>
+              </div>
+            </div>
+
+            <div
+              id="flashcards-error"
+              class="lesson-error"
+              style="display: none"
+            >
+              <div class="error-icon"></div>
+              <h3 class="error-title">Không thể tải Flashcards</h3>
+              <p id="flashcards-error-message" class="error-message"></p>
+              <button onclick="loadFlashcards(true)" class="btn-primary">
+                Tạo lại Flashcards
+              </button>
+            </div>
+
+            <div
+              id="flashcards-content"
+              class="deck-container"
+              style="display: none"
+            >
+              <div class="deck-progress">
+                <div class="progress-info">
+                  <span class="progress-counter">
+                    <span id="flashcard-current">1</span> /
+                    <span id="flashcard-total">0</span>
+                  </span>
+                  <span class="progress-label">thẻ</span>
+                </div>
+                <div class="progress-bar-track">
+                  <div class="progress-bar-fill" id="deck-progress-bar"></div>
+                </div>
+                <div class="deck-stats">
+                  <span class="stat-item stat-learned">
+                    <span class="stat-icon"></span>
+                    <span id="learned-count">0</span>
+                  </span>
+                  <span class="stat-item stat-review">
+                    <span class="stat-icon"></span>
+                    <span id="review-count">0</span>
+                  </span>
+                </div>
+                <div class="deck-controls-inline">
+                  <button
+                    onclick="shuffleFlashcards()"
+                    class="control-btn-inline"
+                    title="Xao tron"
+                  ></button>
+                  <button
+                    onclick="resetFlashcards()"
+                    class="control-btn-inline"
+                    title="Reset"
+                  ></button>
+                </div>
+              </div>
+
+              <div
+                class="flashcard-auto-complete-info"
+                id="flashcard-auto-info"
+              >
+                <span class="auto-info-icon">ℹ</span>
+                <span
+                  >Lướt hết tất cả thẻ để hoàn thành phần Flashcard (tự động ghi
+                  nhận)</span
+                >
+              </div>
+
+              <div class="deck-area" id="deck-area">
+                <div class="deck-stack">
+                  <div class="stack-card stack-3"></div>
+                  <div class="stack-card stack-2"></div>
+                  <div class="stack-card stack-1"></div>
+                </div>
+
+                <div class="flashcard-wrapper" id="flashcard-wrapper">
+                  <div
+                    class="flashcard"
+                    id="current-flashcard"
+                    onclick="flipFlashcard()"
+                  >
+                    <div class="flashcard-inner">
+                      <div class="flashcard-front">
+                        <div class="card-shine"></div>
+                        <div class="card-pattern"></div>
+                        <div class="flashcard-label">
+                          <span class="label-icon">❓</span>
+                          THUẬT NGỮ
+                        </div>
+                        <div
+                          class="flashcard-text"
+                          id="flashcard-front-text"
+                        ></div>
+                      </div>
+                      <div class="flashcard-back">
+                        <div class="card-shine"></div>
+                        <div class="flashcard-label">
+                          <span class="label-icon">💡</span>
+                          Định nghĩa
+                        </div>
+                        <div
+                          class="flashcard-text flashcard-answer"
+                          id="flashcard-back-text"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  class="swipe-indicator swipe-left"
+                  id="swipe-left-indicator"
+                >
+                  <span>✗ Chưa thuộc</span>
+                </div>
+                <div
+                  class="swipe-indicator swipe-right"
+                  id="swipe-right-indicator"
+                >
+                  <span>✓ Đã thuộc</span>
+                </div>
+              </div>
+
+              <div class="deck-actions">
+                <button
+                  class="action-btn btn-previous"
+                  id="btn-previous"
+                  onclick="prevFlashcard()"
+                  title="Thẻ trước"
+                >
+                  <span class="btn-icon">←</span>
+                </button>
+                <button
+                  class="action-btn btn-review"
+                  id="btn-review"
+                  onclick="markAsReview()"
+                  title="Chưa thuộc"
+                >
+                  <span class="btn-icon">✗</span>
+                </button>
+                <button
+                  class="action-btn btn-flip"
+                  onclick="flipFlashcard()"
+                  title="Lật thẻ"
+                >
+                  <span class="btn-icon">🔄</span>
+                </button>
+                <button
+                  class="action-btn btn-learned"
+                  id="btn-learned"
+                  onclick="markAsLearned()"
+                  title="Đã thuộc"
+                >
+                  <span class="btn-icon">✓</span>
+                </button>
+                <button
+                  class="action-btn btn-next"
+                  id="btn-next"
+                  onclick="nextFlashcard()"
+                  title="Thẻ tiếp"
+                >
+                  <span class="btn-icon">→</span>
+                </button>
+              </div>
+
+              <div class="keyboard-hints">
+                <span class="hint-item"><kbd>Space</kbd> Lật thẻ</span>
+                <span class="hint-item"><kbd>←</kbd> ✗ Chưa thuộc</span>
+                <span class="hint-item"><kbd>→</kbd> ✓ Đã thuộc</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Action Buttons -->
-    <div
-      id="lesson-actions"
-      class="lesson-card lesson-actions"
-      style="display: none"
-    >
-      <div class="actions-content">
-        <div class="actions-text">
-          <p class="actions-title">✅ Bạn đã hoàn thành việc đọc bài giảng!</p>
-          <p class="actions-subtitle">
-            Bấm để lưu tiến độ hoặc bắt đầu làm quiz
-          </p>
-        </div>
-        <div class="actions-buttons">
-          <button onclick="completeLessonAndGoBack()" class="btn-secondary">
-            <svg
-              class="w-4 h-4 mr-2 inline"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+      <!-- RIGHT COLUMN: Navigation Sidebar (20-30%) -->
+      <aside class="lesson-sidebar">
+        <div class="sidebar-nav-card">
+          <h3 class="sidebar-nav-title">📚 Nội dung học</h3>
+
+          <nav class="lesson-nav-tabs" id="lesson-tabs">
+            <button
+              class="lesson-nav-tab active"
+              data-tab="lesson"
+              onclick="switchLessonTab('lesson')"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-            Hoàn thành bài học
-          </button>
-          <button onclick="startQuizFromLesson()" class="btn-primary">
-            <svg
-              class="w-5 h-5 mr-2 inline"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+              <span class="nav-tab-icon">📖</span>
+              <div class="nav-tab-info">
+                <span class="nav-tab-label">Bài học</span>
+                <span class="nav-tab-desc">Lý thuyết & Mini Quiz</span>
+              </div>
+              <span class="nav-tab-check" id="nav-check-lesson"></span>
+            </button>
+
+            <button
+              class="lesson-nav-tab"
+              data-tab="mindmap"
+              onclick="switchLessonTab('mindmap')"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-            Bắt đầu Quiz
+              <span class="nav-tab-icon">🧠</span>
+              <div class="nav-tab-info">
+                <span class="nav-tab-label">Mindmap</span>
+                <span class="nav-tab-desc">Sơ đồ tư duy</span>
+              </div>
+              <span class="nav-tab-check" id="nav-check-mindmap"></span>
+            </button>
+
+            <button
+              class="lesson-nav-tab"
+              data-tab="flashcards"
+              onclick="switchLessonTab('flashcards')"
+            >
+              <span class="nav-tab-icon">🃏</span>
+              <div class="nav-tab-info">
+                <span class="nav-tab-label">Flashcard</span>
+                <span class="nav-tab-desc">Thẻ ghi nhớ</span>
+              </div>
+              <span class="nav-tab-check" id="nav-check-flashcards"></span>
+            </button>
+          </nav>
+
+          <div class="sidebar-progress-summary">
+            <div class="sidebar-progress-bar">
+              <div
+                class="sidebar-progress-fill"
+                id="sidebar-progress-bar"
+                style="width: 0%"
+              ></div>
+            </div>
+            <span class="sidebar-progress-text" id="sidebar-progress-text"
+              >0% hoàn thành</span
+            >
+          </div>
+        </div>
+
+        <div class="sidebar-actions" id="sidebar-actions">
+          <button
+            onclick="startQuizFromLesson()"
+            class="btn-primary sidebar-btn"
+          >
+            🎯 Bắt đầu Quiz
+          </button>
+          <button
+            onclick="completeLessonAndGoBack()"
+            class="btn-secondary sidebar-btn"
+          >
+            ✅ Hoàn thành & Quay lại
           </button>
         </div>
-      </div>
+      </aside>
     </div>
   </div>
 </div>
