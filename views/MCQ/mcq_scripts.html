@@ -23,6 +23,22 @@
   let mcqTopicsCache = null;
   let mcqLastLoadTime = 0;
   const MCQ_CACHE_DURATION = 60000; // Cache 1 phút
+  let mcqAllTopicsForSearch = null; // Store all topics for search
+
+  // Search function for MCQ topics
+  function searchMcqTopics(query) {
+    if (!mcqAllTopicsForSearch) return;
+    if (!query.trim()) {
+      renderTopicsGrid(mcqAllTopicsForSearch);
+      return;
+    }
+    const searchLower = query.toLowerCase();
+    const filtered = mcqAllTopicsForSearch.filter((topic) =>
+      topic.title.toLowerCase().includes(searchLower),
+    );
+    renderTopicsGrid(filtered);
+  }
+  window.searchMcqTopics = searchMcqTopics;
 
   // Quiz State
   let quizState = {
@@ -140,6 +156,7 @@
       quizState.allTopics = globalCache.data;
       mcqTopicsCache = globalCache.data; // Sync với local cache
       mcqLastLoadTime = globalCache.lastLoadTime;
+      mcqAllTopicsForSearch = globalCache.data;
 
       document.getElementById("topics-loading").style.display = "none";
 
@@ -159,6 +176,7 @@
     ) {
       console.log("✅ Using LOCAL cached MCQ topics data");
       quizState.allTopics = mcqTopicsCache;
+      mcqAllTopicsForSearch = mcqTopicsCache;
 
       document.getElementById("topics-loading").style.display = "none";
 
@@ -265,6 +283,7 @@
     }
 
     quizState.allTopics = topics;
+    mcqAllTopicsForSearch = topics;
     renderTopicsGrid(topics);
   }
 

@@ -8,39 +8,71 @@
  * ⭐ Lấy avatar ngẫu nhiên từ danh sách
  */
 function getRandomAvatar() {
-  const avatarTypes = ["bottts", "dylan", "shapes"];
+  const avatarTypes = [
+    "toon-head",
+    "lorelei-neutral",
+    "croodles",
+    "thumbs",
+    "adventurer-neutral",
+    "big-ears",
+    "initials",
+    "big-smile",
+  ];
   const seeds = [
-    "Alexander",
-    "Mason",
-    "Andrea",
-    "Oliver",
-    "Leo",
-    "Leah",
-    "Katherine",
-    "Jude",
-    "Brian",
-    "Avery",
-    "Vivian",
-    "Riley",
-    "Valentina",
-    "Kimberly",
-    "Jocelyn",
-    "Aidan",
-    "Adrian",
-    "Mackenzie",
-    "Nolan",
-    "Maria",
-    "Jameson",
-    "Liam",
-    "Kingston",
-    "Destiny",
-    "Christopher",
-    "Emery",
-    "Sarah",
-    "Sara",
-    "Sophia",
-    "Luis",
-    "Robert",
+    "1",
+    "2",
+    "6",
+    "7",
+    "8",
+    "9",
+    "11",
+    "12",
+    "14",
+    "16",
+    "21",
+    "22",
+    "25",
+    "26",
+    "29",
+    "36",
+    "53",
+    "56",
+    "78",
+    "89",
+    "609",
+    "99",
+    "234234",
+    "GHFUYG",
+    "HFO",
+    "KO",
+    "KI38I97",
+    "8689",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "h",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
   ];
 
   const randomType =
@@ -125,7 +157,7 @@ function registerWithEmail(userData) {
         const emailSent = sendVerificationEmail(
           userData.email,
           newToken,
-          data[i][1] || userData.email.split("@")[0]
+          data[i][1] || userData.email.split("@")[0],
         );
 
         return {
@@ -192,7 +224,7 @@ function registerWithEmail(userData) {
     const emailSent = sendVerificationEmail(
       userData.email,
       verificationToken,
-      userData.fullName || username
+      userData.fullName || username,
     );
 
     // Log activity
@@ -340,7 +372,7 @@ function verifyEmail(token) {
             Logger.log("Created personal sheet: " + progressSheetId);
           } catch (sheetError) {
             Logger.log(
-              "Failed to create personal sheet: " + sheetError.toString()
+              "Failed to create personal sheet: " + sheetError.toString(),
             );
           }
         } else {
@@ -435,11 +467,11 @@ function resendVerificationEmail(email) {
         const emailSent = sendVerificationEmail(
           email,
           newToken,
-          data[i][1] || email.split("@")[0]
+          data[i][1] || email.split("@")[0],
         );
 
         Logger.log(
-          emailSent ? "Resent verification email" : "Failed to send email"
+          emailSent ? "Resent verification email" : "Failed to send email",
         );
 
         return {
@@ -522,7 +554,7 @@ function verifyEmailWithCode(verificationData) {
               storedCode +
               "], Received: [" +
               verificationData.code +
-              "]"
+              "]",
           );
           return {
             success: false,
@@ -545,7 +577,7 @@ function verifyEmailWithCode(verificationData) {
         });
 
         Logger.log(
-          "Email verified successfully for: " + verificationData.email
+          "Email verified successfully for: " + verificationData.email,
         );
 
         return {
