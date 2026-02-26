@@ -626,6 +626,16 @@ function dailyCheckin() {
     // Update streak
     updateUserStreak(userEmail, today);
 
+    // === AUTO-AWARD CHECKIN XP ===
+    const checkinXP = 20;
+    const xpResult = awardXPToUser(
+      userEmail,
+      checkinXP,
+      "daily_checkin",
+      "Điểm danh hằng ngày",
+    );
+    Logger.log("🌟 Auto-awarded " + checkinXP + " XP for daily check-in");
+
     // Return updated streak
     const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
     return {
@@ -633,6 +643,8 @@ function dailyCheckin() {
       currentStreak: streakResult.currentStreak,
       longestStreak: streakResult.longestStreak,
       serverToday: today,
+      xpAwarded: checkinXP,
+      newTotalXP: xpResult.newTotalXP || 0,
       message: "Điểm danh thành công!",
     };
   } catch (error) {

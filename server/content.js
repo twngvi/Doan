@@ -1038,29 +1038,98 @@ function getDashboardData() {
       (a) => a.type === "MCQ" && a.percentage === 100,
     ).length;
 
+    // Check if user checked in today
+    let checkedInToday = false;
+    if (progressSheetId) {
+      try {
+        const userSS = SpreadsheetApp.openById(progressSheetId);
+        checkedInToday = hasCheckedInToday(userSS, today);
+      } catch (e) {
+        Logger.log("Error checking checkin: " + e.toString());
+      }
+    }
+
+    // Check which quests have been claimed today (from XP_Log)
+    let claimedQuests = {};
+    if (progressSheetId) {
+      try {
+        const userSS = SpreadsheetApp.openById(progressSheetId);
+        const xpSheet = userSS.getSheetByName("XP_Log");
+        if (xpSheet) {
+          const xpData = xpSheet.getDataRange().getValues();
+          for (let i = 1; i < xpData.length; i++) {
+            const xpDate = xpData[i][0];
+            let dateStr;
+            if (xpDate instanceof Date) {
+              dateStr = Utilities.formatDate(
+                xpDate,
+                "Asia/Ho_Chi_Minh",
+                "yyyy-MM-dd",
+              );
+            } else {
+              dateStr = String(xpDate).trim();
+            }
+            if (dateStr === today) {
+              claimedQuests[xpData[i][2]] = true; // questId column
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log("Error reading XP_Log: " + e.toString());
+      }
+    }
+
     const quests = [
       {
+        questId: "daily_checkin",
+        title: "Điểm danh hằng ngày",
+        progress: checkedInToday ? 1 : 0,
+        target: 1,
+        xpReward: 20,
+        done: checkedInToday,
+        claimed: !!claimedQuests["daily_checkin"],
+      },
+      {
+        questId: "daily_learn",
         title: "Học 1 bài học mới",
         progress: Math.min(todayLearning, 1),
         target: 1,
         xpReward: 30,
         done: todayLearning >= 1,
+        claimed: !!claimedQuests["daily_learn"],
       },
       {
+        questId: "daily_quiz",
         title: "Hoàn thành 1 bài Quiz",
         progress: Math.min(todayMCQ, 1),
         target: 1,
         xpReward: 50,
         done: todayMCQ >= 1,
+        claimed: !!claimedQuests["daily_quiz"],
       },
       {
+        questId: "daily_perfect",
         title: "Đạt điểm tuyệt đối 1 bài",
         progress: Math.min(todayPerfect, 1),
         target: 1,
         xpReward: 100,
         done: todayPerfect >= 1,
+        claimed: !!claimedQuests["daily_perfect"],
       },
     ];
+
+    // Check if all main quests are done => bonus quest
+    const allMainDone = quests.every((q) => q.done);
+    quests.push({
+      questId: "daily_all_bonus",
+      title: "🎉 Hoàn thành tất cả nhiệm vụ",
+      progress: quests.filter((q) => q.done).length,
+      target: quests.length,
+      xpReward: 50,
+      done: allMainDone,
+      claimed: !!claimedQuests["daily_all_bonus"],
+      isBonus: true,
+    });
 
     // === 5. Skill progress from quiz results ===
     const topicScores = {};
@@ -1079,20 +1148,20 @@ function getDashboardData() {
       .sort((a, b) => b.progress - a.progress)
       .slice(0, 5);
 
-    // === 6. Leaderboard (top 5 from master DB) ===
+    // === 6. Leaderboard (top 10 from master DB) ===
     const leaderboard = [];
     for (let i = 1; i < allData.length; i++) {
       const xp = parseInt(allData[i][col["totalXP"]]) || 0;
-      if (xp > 0) {
-        leaderboard.push({
-          name:
-            allData[i][col["displayName"]] ||
-            allData[i][col["username"]] ||
-            "User",
-          xp: xp,
-          isMe: allData[i][col["email"]] === userEmail,
-        });
-      }
+      const isActive = allData[i][col["isActive"]];
+      if (isActive === false || isActive === "FALSE") continue;
+      leaderboard.push({
+        name:
+          allData[i][col["displayName"]] ||
+          allData[i][col["username"]] ||
+          "User",
+        xp: xp,
+        isMe: allData[i][col["email"]] === userEmail,
+      });
     }
     leaderboard.sort((a, b) => b.xp - a.xp);
 
@@ -1112,12 +1181,263 @@ function getDashboardData() {
       activities: activities,
       quests: quests,
       skillProgress: skillProgress,
-      leaderboard: leaderboard.slice(0, 5),
+      leaderboard: leaderboard.slice(0, 10),
       suggestion: suggestion,
     };
   } catch (error) {
     Logger.log("❌ Error in getDashboardData: " + error.toString());
     return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Claim XP reward for completing a daily quest
+ * Saves XP to personal XP_Log sheet and updates totalXP in master DB
+ * @param {string} questId - The quest identifier
+ * @returns {Object} - { success, xpAwarded, newTotalXP, message }
+ */
+function completeQuestAndAwardXP(questId) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+
+    // Get or create XP_Log sheet
+    let xpSheet = userSpreadsheet.getSheetByName("XP_Log");
+    if (!xpSheet) {
+      xpSheet = userSpreadsheet.insertSheet("XP_Log");
+      xpSheet.appendRow([
+        "date", // YYYY-MM-DD
+        "timestamp", // ISO timestamp
+        "questId", // quest identifier
+        "questTitle", // quest display name
+        "xpAmount", // XP awarded
+        "source", // "daily_quest" or "bonus"
+      ]);
+      const headerRange = xpSheet.getRange(1, 1, 1, 6);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#F59E0B");
+      headerRange.setFontColor("white");
+      xpSheet.setFrozenRows(1);
+    }
+
+    // Check if already claimed this quest today
+    const xpData = xpSheet.getDataRange().getValues();
+    for (let i = 1; i < xpData.length; i++) {
+      const xpDate = xpData[i][0];
+      let dateStr;
+      if (xpDate instanceof Date) {
+        dateStr = Utilities.formatDate(
+          xpDate,
+          "Asia/Ho_Chi_Minh",
+          "yyyy-MM-dd",
+        );
+      } else {
+        dateStr = String(xpDate).trim();
+      }
+      if (dateStr === today && xpData[i][2] === questId) {
+        return {
+          success: false,
+          alreadyClaimed: true,
+          message: "Đã nhận thưởng rồi!",
+        };
+      }
+    }
+
+    // Validate quest completion
+    const questConfig = {
+      daily_checkin: {
+        title: "Điểm danh hằng ngày",
+        xp: 20,
+        source: "daily_quest",
+      },
+      daily_learn: {
+        title: "Học 1 bài học mới",
+        xp: 30,
+        source: "daily_quest",
+      },
+      daily_quiz: {
+        title: "Hoàn thành 1 bài Quiz",
+        xp: 50,
+        source: "daily_quest",
+      },
+      daily_perfect: {
+        title: "Đạt điểm tuyệt đối 1 bài",
+        xp: 100,
+        source: "daily_quest",
+      },
+      daily_all_bonus: {
+        title: "Hoàn thành tất cả nhiệm vụ",
+        xp: 50,
+        source: "bonus",
+      },
+    };
+
+    const quest = questConfig[questId];
+    if (!quest) {
+      return { success: false, message: "Nhiệm vụ không hợp lệ" };
+    }
+
+    // Verify quest is actually done
+    const verifyResult = verifyQuestCompletion(
+      userSpreadsheet,
+      questId,
+      today,
+      xpSheet,
+    );
+    if (!verifyResult.done) {
+      return { success: false, message: "Nhiệm vụ chưa hoàn thành" };
+    }
+
+    // Save XP to XP_Log
+    const now = new Date();
+    xpSheet.appendRow([
+      today,
+      now.toISOString(),
+      questId,
+      quest.title,
+      quest.xp,
+      quest.source,
+    ]);
+    Logger.log("✅ XP logged: " + quest.xp + " for quest " + questId);
+
+    // Update totalXP in master DB
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailCol = headers.indexOf("email");
+    const xpCol = headers.indexOf("totalXP");
+
+    let newTotalXP = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailCol] === userEmail) {
+        const currentXP = parseInt(data[i][xpCol]) || 0;
+        newTotalXP = currentXP + quest.xp;
+        usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+        Logger.log(
+          "✅ Updated totalXP for " +
+            userEmail +
+            ": " +
+            currentXP +
+            " -> " +
+            newTotalXP,
+        );
+        break;
+      }
+    }
+
+    return {
+      success: true,
+      xpAwarded: quest.xp,
+      newTotalXP: newTotalXP,
+      questId: questId,
+      message: "+" + quest.xp + " XP!",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in completeQuestAndAwardXP: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Verify that a quest has actually been completed today
+ * @param {Spreadsheet} spreadsheet - User's personal spreadsheet
+ * @param {string} questId - Quest identifier
+ * @param {string} today - Today YYYY-MM-DD
+ * @param {Sheet} xpSheet - XP_Log sheet (for bonus check)
+ * @returns {Object} { done: boolean }
+ */
+function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
+  try {
+    switch (questId) {
+      case "daily_checkin": {
+        return { done: hasCheckedInToday(spreadsheet, today) };
+      }
+      case "daily_learn":
+      case "daily_quiz":
+      case "daily_perfect": {
+        const actSheet = spreadsheet.getSheetByName("Activity_Log");
+        if (!actSheet) return { done: false };
+        const actData = actSheet.getDataRange().getValues();
+        const actHeaders = actData[0];
+        const ac = {};
+        actHeaders.forEach((h, i) => (ac[h] = i));
+
+        let todayLearning = 0,
+          todayMCQ = 0,
+          todayPerfect = 0;
+        for (let i = 1; i < actData.length; i++) {
+          const ts =
+            ac["timestamp"] >= 0 ? String(actData[i][ac["timestamp"]]) : "";
+          if (!ts.startsWith(today)) continue;
+          const type = ac["type"] >= 0 ? actData[i][ac["type"]] : "";
+          if (type === "Learning") todayLearning++;
+          if (type === "MCQ") {
+            todayMCQ++;
+            const pct =
+              ac["percentage"] >= 0
+                ? parseInt(actData[i][ac["percentage"]])
+                : 0;
+            if (pct === 100) todayPerfect++;
+          }
+        }
+
+        if (questId === "daily_learn") return { done: todayLearning >= 1 };
+        if (questId === "daily_quiz") return { done: todayMCQ >= 1 };
+        if (questId === "daily_perfect") return { done: todayPerfect >= 1 };
+        return { done: false };
+      }
+      case "daily_all_bonus": {
+        // All 4 main quests must be claimed
+        const mainQuestIds = [
+          "daily_checkin",
+          "daily_learn",
+          "daily_quiz",
+          "daily_perfect",
+        ];
+        const xpData = xpSheet.getDataRange().getValues();
+        const claimedToday = new Set();
+        for (let i = 1; i < xpData.length; i++) {
+          const xpDate = xpData[i][0];
+          let dateStr;
+          if (xpDate instanceof Date) {
+            dateStr = Utilities.formatDate(
+              xpDate,
+              "Asia/Ho_Chi_Minh",
+              "yyyy-MM-dd",
+            );
+          } else {
+            dateStr = String(xpDate).trim();
+          }
+          if (dateStr === today) {
+            claimedToday.add(xpData[i][2]);
+          }
+        }
+        const allClaimed = mainQuestIds.every((id) => claimedToday.has(id));
+        return { done: allClaimed };
+      }
+      default:
+        return { done: false };
+    }
+  } catch (error) {
+    Logger.log("Error verifying quest: " + error.toString());
+    return { done: false };
   }
 }
 
