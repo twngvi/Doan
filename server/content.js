@@ -110,10 +110,23 @@ function getTopicContentByDocId(docId) {
     // 2. Xóa padding/margin của p
     html = html.replace(/p\s*\{[^}]*\}/gi, "");
 
+    // 2.5 ⭐ Xóa CSS Google Doc phá bullet/numbering
+    // Google Docs export thêm CSS: ul/ol { list-style-type: none } → mất bullet
+    html = html.replace(/ul\s*\{[^}]*\}/gi, "");
+    html = html.replace(/ol\s*\{[^}]*\}/gi, "");
+    html = html.replace(/li\s*\{[^}]*\}/gi, "");
+    // Xóa các class của Google Docs cho list (lst-kix_...)
+    html = html.replace(/\.lst-[^{]*\{[^}]*\}/gi, "");
+    // Xóa toàn bộ <style> block từ Google Doc (đã có CSS riêng)
+    html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
     // 3. Extract body content
     html = extractBodyContent(html);
 
-    // 4. Thêm class wrapper để style dễ hơn
+    // 4. ⭐ Format bullet & numbering characters
+    html = formatBulletAndNumbering(html);
+
+    // 5. Thêm class wrapper để style dễ hơn
     html = '<div class="lesson-content-wrapper">' + html + "</div>";
 
     Logger.log("Content processed successfully");
@@ -547,6 +560,232 @@ function generateAllAIContent(topicId) {
     results: results,
     message: "Đã tạo tất cả nội dung AI",
   };
+}
+
+// ========== BULLET & NUMBERING FORMATTER ==========
+
+/**
+ * ⭐ Format text-based bullets & numbering in Google Doc HTML
+ * Converts plain-text bullet/numbered paragraphs to proper <ul>/<ol> lists
+ *
+ * Handles:
+ * - Bullet chars: •, ●, ○, ■, ▪, ▸, ▹, -, –, —, ★, ✓, ✔, ➤, ➜, →, ▶
+ * - Numbered patterns: 1., 2., a., b., (1), (a), i., ii.
+ * - Nested indentation via margin-left from Google Docs
+ */
+function formatBulletAndNumbering(html) {
+  try {
+    Logger.log('⭐ Formatting bullet & numbering...');
+
+    // === PHASE 1: Text-based bullet characters → <ul> ===
+    // Match <p> tags whose visible text starts with a bullet character
+    var bulletChars = '•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃';
+    var dashChars = ['-', '–', '—'];  // dash bullets (must be followed by space)
+
+    // Build a regex that captures: <p ...> [optional spans/tags] BULLET_CHAR rest </p>
+    // We process line-by-line to group consecutive bullet paragraphs
+    var lines = html.split(/(?=<p[\s>])/i);
+    var result = [];
+    var bulletBuffer = [];
+    var numberBuffer = [];
+    var lastBulletIndent = 0;
+    var lastNumberIndent = 0;
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Extract plain text content from this line
+      var textContent = line.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+
+      // Detect indentation level from margin-left
+      var indentMatch = line.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|rem|em)/i);
+      var indentLevel = 0;
+      if (indentMatch) {
+        var indentVal = parseFloat(indentMatch[1]);
+        var unit = indentMatch[2].toLowerCase();
+        // Normalize to approximate nesting level
+        if (unit === 'pt') indentVal = indentVal * 1.333; // pt to px approx
+        if (unit === 'rem' || unit === 'em') indentVal = indentVal * 16;
+        indentLevel = Math.floor(indentVal / 36); // ~36px per indent level
+      }
+
+      // --- Check for BULLET pattern ---
+      var isBullet = false;
+      var bulletContent = '';
+
+      // Check bullet Unicode characters
+      if (textContent.length > 0 && bulletChars.indexOf(textContent.charAt(0)) !== -1) {
+        isBullet = true;
+        bulletContent = textContent.substring(1).trim();
+      }
+      // Check dash bullets (- text, – text, — text) - must have space after
+      if (!isBullet) {
+        for (var d = 0; d < dashChars.length; d++) {
+          if (textContent.indexOf(dashChars[d] + ' ') === 0) {
+            isBullet = true;
+            bulletContent = textContent.substring(dashChars[d].length).trim();
+            break;
+          }
+        }
+      }
+
+      // --- Check for NUMBERING pattern ---
+      var isNumbered = false;
+      var numberContent = '';
+      var numberMatch = textContent.match(/^(?:(\d{1,3})\.\s|\((\d{1,3})\)\s|([a-zA-Z])\.\s|\(([a-zA-Z])\)\s|([ivxlIVXL]{1,4})\.\s|\(([ivxlIVXL]{1,4})\)\s)(.*)/);
+      if (numberMatch && !isBullet) {
+        isNumbered = true;
+        numberContent = numberMatch[7] || '';
+      }
+
+      // --- Build list buffers ---
+      if (isBullet) {
+        // Flush number buffer if any
+        if (numberBuffer.length > 0) {
+          result.push(buildListHtml(numberBuffer, 'ol'));
+          numberBuffer = [];
+        }
+        // Get the rich HTML content (preserve bold, italic, links, etc.)
+        var richContent = extractParagraphInnerContent(line, bulletChars, dashChars);
+        bulletBuffer.push({ content: richContent, indent: indentLevel });
+      } else if (isNumbered) {
+        // Flush bullet buffer if any
+        if (bulletBuffer.length > 0) {
+          result.push(buildListHtml(bulletBuffer, 'ul'));
+          bulletBuffer = [];
+        }
+        var richContent = extractParagraphInnerContentForNumber(line);
+        numberBuffer.push({ content: richContent, indent: indentLevel });
+      } else {
+        // Not a list item - flush all buffers
+        if (bulletBuffer.length > 0) {
+          result.push(buildListHtml(bulletBuffer, 'ul'));
+          bulletBuffer = [];
+        }
+        if (numberBuffer.length > 0) {
+          result.push(buildListHtml(numberBuffer, 'ol'));
+          numberBuffer = [];
+        }
+        result.push(line);
+      }
+    }
+
+    // Flush remaining buffers
+    if (bulletBuffer.length > 0) {
+      result.push(buildListHtml(bulletBuffer, 'ul'));
+    }
+    if (numberBuffer.length > 0) {
+      result.push(buildListHtml(numberBuffer, 'ol'));
+    }
+
+    var finalHtml = result.join('');
+    Logger.log('✅ Bullet & numbering formatted');
+    return finalHtml;
+
+  } catch (error) {
+    Logger.log('⚠️ Error in formatBulletAndNumbering: ' + error.toString());
+    return html; // Return original on error
+  }
+}
+
+/**
+ * Extract inner HTML content from a <p> tag, removing the leading bullet character
+ */
+function extractParagraphInnerContent(pHtml, bulletChars, dashChars) {
+  // Get content inside <p...>...</p>
+  var innerMatch = pHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, '').trim();
+
+  var inner = innerMatch[1];
+
+  // Remove leading bullet character (may be inside nested spans)
+  // Strategy: strip the first visible text character if it's a bullet
+  var cleaned = inner.replace(/^(\s*(?:<[^>]*>\s*)*)([•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃])\s*/,
+    function(match, prefix, bullet) {
+      return prefix;
+    });
+
+  // Also handle dash bullets at start
+  if (cleaned === inner) {
+    cleaned = inner.replace(/^(\s*(?:<[^>]*>\s*)*)([\-–—])\s+/,
+      function(match, prefix, dash) {
+        return prefix;
+      });
+  }
+
+  // Clean up: remove empty leading spans
+  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, '').trim();
+
+  return cleaned || inner.trim();
+}
+
+/**
+ * Extract inner HTML content for numbered list, removing the leading number/letter
+ */
+function extractParagraphInnerContentForNumber(pHtml) {
+  var innerMatch = pHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, '').trim();
+
+  var inner = innerMatch[1];
+
+  // Remove leading number pattern (1. or (1) or a. or (a) or i. etc.)
+  var cleaned = inner.replace(
+    /^(\s*(?:<[^>]*>\s*)*)(?:\d{1,3}\.\s|\(\d{1,3}\)\s|[a-zA-Z]\.\s|\([a-zA-Z]\)\s|[ivxlIVXL]{1,4}\.\s|\([ivxlIVXL]{1,4}\)\s)/,
+    function(match, prefix) {
+      return prefix;
+    });
+
+  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, '').trim();
+  return cleaned || inner.trim();
+}
+
+/**
+ * Build <ul> or <ol> HTML from buffer of items with nesting support
+ */
+function buildListHtml(buffer, listType) {
+  if (buffer.length === 0) return '';
+
+  var html = '';
+  var currentIndent = 0;
+  var openLists = 0;
+
+  // Start the root list
+  html += '<' + listType + ' class="doc-formatted-list">';
+  openLists = 1;
+  currentIndent = buffer[0].indent;
+
+  for (var i = 0; i < buffer.length; i++) {
+    var item = buffer[i];
+    var indent = item.indent;
+
+    if (indent > currentIndent) {
+      // Open nested list
+      var diff = indent - currentIndent;
+      for (var n = 0; n < diff; n++) {
+        html += '<' + listType + ' class="doc-nested-list">';
+        openLists++;
+      }
+      currentIndent = indent;
+    } else if (indent < currentIndent) {
+      // Close nested lists
+      var diff = currentIndent - indent;
+      for (var n = 0; n < diff; n++) {
+        html += '</li></' + listType + '>';
+        openLists--;
+      }
+      currentIndent = indent;
+    }
+
+    html += '<li>' + item.content + '</li>';
+  }
+
+  // Close all open lists
+  while (openLists > 0) {
+    html += '</' + listType + '>';
+    openLists--;
+  }
+
+  return html;
 }
 
 /**
