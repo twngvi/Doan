@@ -251,6 +251,9 @@
 
       grid.style.display = "grid";
       document.getElementById("topicsJourney").style.display = "none";
+
+      // ⭐ Setup 3D tilt effect on grid cards
+      setupGridCardTilt();
     }
 
     function renderJourneyView() {
@@ -278,6 +281,11 @@
       // Clear and append
       listContainer.innerHTML = "";
       listContainer.appendChild(fragment);
+
+      // ⭐ Stagger list item animations
+      listContainer.querySelectorAll(".topic-list-item").forEach((item, i) => {
+        item.style.animationDelay = i * 0.04 + "s";
+      });
 
       document.getElementById("topicsGrid").style.display = "none";
       journeyContainer.style.display = "block";
@@ -1164,6 +1172,39 @@
 
     window.startTopicsHeaderMeteors = startTopicsHeaderMeteors;
     window.setupTopicsHeaderMouseEffect = setupTopicsHeaderMouseEffect;
+
+    // ========================================
+    // ⭐ 3D TILT EFFECT FOR GRID CARDS
+    // ========================================
+    function setupGridCardTilt() {
+      const cards = document.querySelectorAll("#topicsGrid .topic-card");
+      cards.forEach((card) => {
+        card.addEventListener("mousemove", function (e) {
+          const rect = card.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          const rotateY = ((x - centerX) / centerX) * 12;
+          const rotateX = ((centerY - y) / centerY) * 8;
+          card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.03)`;
+        });
+        card.addEventListener("mouseleave", function () {
+          card.style.transform =
+            "perspective(600px) rotateX(0) rotateY(0) scale(1)";
+          card.style.transition = "transform 0.4s ease";
+          setTimeout(() => {
+            card.style.transition = "";
+          }, 400);
+        });
+        card.addEventListener("mouseenter", function () {
+          card.style.transition = "transform 0.15s ease-out";
+          setTimeout(() => {
+            card.style.transition = "transform 0.08s ease-out";
+          }, 150);
+        });
+      });
+    }
 
     // Create aliases for compatibility with different calling patterns
     window.initTopics = window.initTopicsPageOnShow;
