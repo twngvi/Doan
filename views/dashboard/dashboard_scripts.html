@@ -322,9 +322,20 @@
           </div>`;
         }
 
+        // Escape strings for HTML onclick attribute
+        const safeTopicId = String(act.topicId || "").replace(/'/g, "\\&#39;");
+        const safeTopicTitle = String(act.topicTitle || "").replace(
+          /'/g,
+          "\\&#39;",
+        );
+        const safeContentDocId = String(act.contentDocId || "").replace(
+          /'/g,
+          "\\&#39;",
+        );
+
         return `
         <div class="activity-hist-item activity-clickable" 
-             onclick="navigateToActivity('${targetPage}', '${(act.topicTitle || "").replace(/'/g, "\\&#39;")}', '${act.type}')" 
+             onclick="navigateToActivity('${targetPage}', '${safeTopicId}', '${safeTopicTitle}', '${act.type}', '${safeContentDocId}')" 
              title="Bấm để thực hiện lại">
           <div class="activity-dot-status ${dotClass}"></div>
           <div class="activity-hist-content">
@@ -346,11 +357,125 @@
   /**
    * Navigate to activity page when clicking on history item
    */
-  function navigateToActivity(targetPage, topicTitle, actType) {
-    console.log("🔗 Navigating to:", targetPage, topicTitle, actType);
-    if (typeof showPage === "function") {
-      showPage(targetPage, { topicTitle: topicTitle, type: actType });
+  function navigateToActivity(
+    targetPage,
+    topicId,
+    topicTitle,
+    actType,
+    contentDocId,
+  ) {
+    console.log(
+      "🔗 Navigating to:",
+      targetPage,
+      topicId,
+      topicTitle,
+      actType,
+      contentDocId,
+    );
+    if (typeof showPage !== "function") return;
+
+    // Normalize inputs
+    topicId = String(topicId || "").trim();
+    topicTitle = String(topicTitle || "").trim();
+    contentDocId = String(contentDocId || "").trim();
+    if (contentDocId === "undefined" || contentDocId === "null")
+      contentDocId = "";
+
+    // For Learning activities, need contentDocId to open lesson
+    if (actType === "Learning" && topicId) {
+      // 1. Use contentDocId from activity data (enriched by server)
+      if (contentDocId) {
+        console.log("✅ Using contentDocId from activity data:", contentDocId);
+        showPage("page-lesson", {
+          topicId: topicId,
+          topicTitle: topicTitle,
+          contentDocId: contentDocId,
+        });
+        return;
+      }
+
+      // 2. Fallback: look up from global topics cache
+      var topic = null;
+      if (window.globalTopicsCache && window.globalTopicsCache.data) {
+        topic = window.globalTopicsCache.data.find(function (t) {
+          return String(t.topicId).trim() === topicId;
+        });
+      }
+      if (
+        topic &&
+        topic.contentDocId &&
+        topic.contentDocId.trim() !== "" &&
+        topic.contentDocId !== "undefined"
+      ) {
+        console.log(
+          "✅ Using contentDocId from global cache:",
+          topic.contentDocId,
+        );
+        showPage("page-lesson", {
+          topicId: topic.topicId,
+          topicTitle: topic.title || topicTitle,
+          contentDocId: topic.contentDocId.trim(),
+        });
+        return;
+      }
+
+      // 3. Last resort: fetch topics from server
+      console.log(
+        "⏳ No contentDocId available, loading topics from server...",
+      );
+      if (typeof showToast === "function")
+        showToast("Đang tải bài học...", "info");
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (result && result.topics) {
+            // Save to global cache
+            if (!window.globalTopicsCache) {
+              window.globalTopicsCache = {
+                data: null,
+                progress: null,
+                lastLoadTime: 0,
+                cacheDuration: 60000,
+              };
+            }
+            window.globalTopicsCache.data = result.topics;
+            window.globalTopicsCache.lastLoadTime = Date.now();
+            var found = result.topics.find(function (t) {
+              return String(t.topicId).trim() === topicId;
+            });
+            if (
+              found &&
+              found.contentDocId &&
+              found.contentDocId.trim() !== ""
+            ) {
+              showPage("page-lesson", {
+                topicId: found.topicId,
+                topicTitle: found.title || topicTitle,
+                contentDocId: found.contentDocId.trim(),
+              });
+            } else {
+              showNotification("Không tìm thấy nội dung bài học", "warning");
+              showPage("page-topics");
+            }
+          } else {
+            showNotification("Không thể tải danh sách chủ đề", "warning");
+            showPage("page-topics");
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.error("❌ Failed to load topics:", err);
+          showNotification("Lỗi tải chủ đề. Vui lòng thử lại.", "error");
+          showPage("page-topics");
+        })
+        .getAllTopics();
+      return;
     }
+
+    // For MCQ/Matching - go to the page directly
+    showPage(targetPage, {
+      topicId: topicId,
+      topicTitle: topicTitle,
+      type: actType,
+    });
   }
 
   /**

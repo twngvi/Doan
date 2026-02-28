@@ -575,12 +575,12 @@ function generateAllAIContent(topicId) {
  */
 function formatBulletAndNumbering(html) {
   try {
-    Logger.log('⭐ Formatting bullet & numbering...');
+    Logger.log("⭐ Formatting bullet & numbering...");
 
     // === PHASE 1: Text-based bullet characters → <ul> ===
     // Match <p> tags whose visible text starts with a bullet character
-    var bulletChars = '•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃';
-    var dashChars = ['-', '–', '—'];  // dash bullets (must be followed by space)
+    var bulletChars = "•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃";
+    var dashChars = ["-", "–", "—"]; // dash bullets (must be followed by space)
 
     // Build a regex that captures: <p ...> [optional spans/tags] BULLET_CHAR rest </p>
     // We process line-by-line to group consecutive bullet paragraphs
@@ -595,33 +595,42 @@ function formatBulletAndNumbering(html) {
       var line = lines[i];
 
       // Extract plain text content from this line
-      var textContent = line.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+      var textContent = line
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .trim();
 
       // Detect indentation level from margin-left
-      var indentMatch = line.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|rem|em)/i);
+      var indentMatch = line.match(
+        /margin-left\s*:\s*([\d.]+)\s*(px|pt|rem|em)/i,
+      );
       var indentLevel = 0;
       if (indentMatch) {
         var indentVal = parseFloat(indentMatch[1]);
         var unit = indentMatch[2].toLowerCase();
         // Normalize to approximate nesting level
-        if (unit === 'pt') indentVal = indentVal * 1.333; // pt to px approx
-        if (unit === 'rem' || unit === 'em') indentVal = indentVal * 16;
+        if (unit === "pt") indentVal = indentVal * 1.333; // pt to px approx
+        if (unit === "rem" || unit === "em") indentVal = indentVal * 16;
         indentLevel = Math.floor(indentVal / 36); // ~36px per indent level
       }
 
       // --- Check for BULLET pattern ---
       var isBullet = false;
-      var bulletContent = '';
+      var bulletContent = "";
 
       // Check bullet Unicode characters
-      if (textContent.length > 0 && bulletChars.indexOf(textContent.charAt(0)) !== -1) {
+      if (
+        textContent.length > 0 &&
+        bulletChars.indexOf(textContent.charAt(0)) !== -1
+      ) {
         isBullet = true;
         bulletContent = textContent.substring(1).trim();
       }
       // Check dash bullets (- text, – text, — text) - must have space after
       if (!isBullet) {
         for (var d = 0; d < dashChars.length; d++) {
-          if (textContent.indexOf(dashChars[d] + ' ') === 0) {
+          if (textContent.indexOf(dashChars[d] + " ") === 0) {
             isBullet = true;
             bulletContent = textContent.substring(dashChars[d].length).trim();
             break;
@@ -631,27 +640,33 @@ function formatBulletAndNumbering(html) {
 
       // --- Check for NUMBERING pattern ---
       var isNumbered = false;
-      var numberContent = '';
-      var numberMatch = textContent.match(/^(?:(\d{1,3})\.\s|\((\d{1,3})\)\s|([a-zA-Z])\.\s|\(([a-zA-Z])\)\s|([ivxlIVXL]{1,4})\.\s|\(([ivxlIVXL]{1,4})\)\s)(.*)/);
+      var numberContent = "";
+      var numberMatch = textContent.match(
+        /^(?:(\d{1,3})\.\s|\((\d{1,3})\)\s|([a-zA-Z])\.\s|\(([a-zA-Z])\)\s|([ivxlIVXL]{1,4})\.\s|\(([ivxlIVXL]{1,4})\)\s)(.*)/,
+      );
       if (numberMatch && !isBullet) {
         isNumbered = true;
-        numberContent = numberMatch[7] || '';
+        numberContent = numberMatch[7] || "";
       }
 
       // --- Build list buffers ---
       if (isBullet) {
         // Flush number buffer if any
         if (numberBuffer.length > 0) {
-          result.push(buildListHtml(numberBuffer, 'ol'));
+          result.push(buildListHtml(numberBuffer, "ol"));
           numberBuffer = [];
         }
         // Get the rich HTML content (preserve bold, italic, links, etc.)
-        var richContent = extractParagraphInnerContent(line, bulletChars, dashChars);
+        var richContent = extractParagraphInnerContent(
+          line,
+          bulletChars,
+          dashChars,
+        );
         bulletBuffer.push({ content: richContent, indent: indentLevel });
       } else if (isNumbered) {
         // Flush bullet buffer if any
         if (bulletBuffer.length > 0) {
-          result.push(buildListHtml(bulletBuffer, 'ul'));
+          result.push(buildListHtml(bulletBuffer, "ul"));
           bulletBuffer = [];
         }
         var richContent = extractParagraphInnerContentForNumber(line);
@@ -659,11 +674,11 @@ function formatBulletAndNumbering(html) {
       } else {
         // Not a list item - flush all buffers
         if (bulletBuffer.length > 0) {
-          result.push(buildListHtml(bulletBuffer, 'ul'));
+          result.push(buildListHtml(bulletBuffer, "ul"));
           bulletBuffer = [];
         }
         if (numberBuffer.length > 0) {
-          result.push(buildListHtml(numberBuffer, 'ol'));
+          result.push(buildListHtml(numberBuffer, "ol"));
           numberBuffer = [];
         }
         result.push(line);
@@ -672,18 +687,17 @@ function formatBulletAndNumbering(html) {
 
     // Flush remaining buffers
     if (bulletBuffer.length > 0) {
-      result.push(buildListHtml(bulletBuffer, 'ul'));
+      result.push(buildListHtml(bulletBuffer, "ul"));
     }
     if (numberBuffer.length > 0) {
-      result.push(buildListHtml(numberBuffer, 'ol'));
+      result.push(buildListHtml(numberBuffer, "ol"));
     }
 
-    var finalHtml = result.join('');
-    Logger.log('✅ Bullet & numbering formatted');
+    var finalHtml = result.join("");
+    Logger.log("✅ Bullet & numbering formatted");
     return finalHtml;
-
   } catch (error) {
-    Logger.log('⚠️ Error in formatBulletAndNumbering: ' + error.toString());
+    Logger.log("⚠️ Error in formatBulletAndNumbering: " + error.toString());
     return html; // Return original on error
   }
 }
@@ -694,27 +708,31 @@ function formatBulletAndNumbering(html) {
 function extractParagraphInnerContent(pHtml, bulletChars, dashChars) {
   // Get content inside <p...>...</p>
   var innerMatch = pHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, '').trim();
+  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, "").trim();
 
   var inner = innerMatch[1];
 
   // Remove leading bullet character (may be inside nested spans)
   // Strategy: strip the first visible text character if it's a bullet
-  var cleaned = inner.replace(/^(\s*(?:<[^>]*>\s*)*)([•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃])\s*/,
-    function(match, prefix, bullet) {
+  var cleaned = inner.replace(
+    /^(\s*(?:<[^>]*>\s*)*)([•●○■▪▸▹►▻★☆✓✔✗✘➤➜➡→▶◆◇⦿⁃])\s*/,
+    function (match, prefix, bullet) {
       return prefix;
-    });
+    },
+  );
 
   // Also handle dash bullets at start
   if (cleaned === inner) {
-    cleaned = inner.replace(/^(\s*(?:<[^>]*>\s*)*)([\-–—])\s+/,
-      function(match, prefix, dash) {
+    cleaned = inner.replace(
+      /^(\s*(?:<[^>]*>\s*)*)([\-–—])\s+/,
+      function (match, prefix, dash) {
         return prefix;
-      });
+      },
+    );
   }
 
   // Clean up: remove empty leading spans
-  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, '').trim();
+  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, "").trim();
 
   return cleaned || inner.trim();
 }
@@ -724,18 +742,19 @@ function extractParagraphInnerContent(pHtml, bulletChars, dashChars) {
  */
 function extractParagraphInnerContentForNumber(pHtml) {
   var innerMatch = pHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, '').trim();
+  if (!innerMatch) return pHtml.replace(/<[^>]*>/g, "").trim();
 
   var inner = innerMatch[1];
 
   // Remove leading number pattern (1. or (1) or a. or (a) or i. etc.)
   var cleaned = inner.replace(
     /^(\s*(?:<[^>]*>\s*)*)(?:\d{1,3}\.\s|\(\d{1,3}\)\s|[a-zA-Z]\.\s|\([a-zA-Z]\)\s|[ivxlIVXL]{1,4}\.\s|\([ivxlIVXL]{1,4}\)\s)/,
-    function(match, prefix) {
+    function (match, prefix) {
       return prefix;
-    });
+    },
+  );
 
-  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, '').trim();
+  cleaned = cleaned.replace(/^\s*<span[^>]*>\s*<\/span>\s*/, "").trim();
   return cleaned || inner.trim();
 }
 
@@ -743,14 +762,14 @@ function extractParagraphInnerContentForNumber(pHtml) {
  * Build <ul> or <ol> HTML from buffer of items with nesting support
  */
 function buildListHtml(buffer, listType) {
-  if (buffer.length === 0) return '';
+  if (buffer.length === 0) return "";
 
-  var html = '';
+  var html = "";
   var currentIndent = 0;
   var openLists = 0;
 
   // Start the root list
-  html += '<' + listType + ' class="doc-formatted-list">';
+  html += "<" + listType + ' class="doc-formatted-list">';
   openLists = 1;
   currentIndent = buffer[0].indent;
 
@@ -762,7 +781,7 @@ function buildListHtml(buffer, listType) {
       // Open nested list
       var diff = indent - currentIndent;
       for (var n = 0; n < diff; n++) {
-        html += '<' + listType + ' class="doc-nested-list">';
+        html += "<" + listType + ' class="doc-nested-list">';
         openLists++;
       }
       currentIndent = indent;
@@ -770,18 +789,18 @@ function buildListHtml(buffer, listType) {
       // Close nested lists
       var diff = currentIndent - indent;
       for (var n = 0; n < diff; n++) {
-        html += '</li></' + listType + '>';
+        html += "</li></" + listType + ">";
         openLists--;
       }
       currentIndent = indent;
     }
 
-    html += '<li>' + item.content + '</li>';
+    html += "<li>" + item.content + "</li>";
   }
 
   // Close all open lists
   while (openLists > 0) {
-    html += '</' + listType + '>';
+    html += "</" + listType + ">";
     openLists--;
   }
 
@@ -1161,9 +1180,10 @@ function getDashboardData() {
         for (let i = 1; i < actData.length; i++) {
           activities.push({
             type: ac["type"] >= 0 ? actData[i][ac["type"]] : "",
-            topicId: ac["topicId"] >= 0 ? actData[i][ac["topicId"]] : "",
+            topicId:
+              ac["topicId"] >= 0 ? String(actData[i][ac["topicId"]]) : "",
             topicTitle:
-              ac["topicTitle"] >= 0 ? actData[i][ac["topicTitle"]] : "",
+              ac["topicTitle"] >= 0 ? String(actData[i][ac["topicTitle"]]) : "",
             score:
               ac["score"] >= 0 && actData[i][ac["score"]] !== ""
                 ? parseInt(actData[i][ac["score"]])
@@ -1185,6 +1205,49 @@ function getDashboardData() {
           (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
         );
         activities = activities.slice(0, 10);
+
+        // ⭐ Enrich Learning activities with contentDocId from Topics sheet
+        try {
+          var learningActivities = activities.filter(function (a) {
+            return a.type === "Learning" && a.topicId;
+          });
+          if (learningActivities.length > 0) {
+            var topicsSSId = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+            var topicsSS = SpreadsheetApp.openById(topicsSSId);
+            var topicsSheet = topicsSS.getSheetByName("Topics");
+            if (topicsSheet) {
+              var topicsData = topicsSheet.getDataRange().getValues();
+              var topicDocMap = {};
+              for (var ti = 1; ti < topicsData.length; ti++) {
+                var tId = String(topicsData[ti][0]).trim();
+                var docId = String(topicsData[ti][13] || "").trim();
+                if (tId && docId) {
+                  topicDocMap[tId] = docId;
+                }
+              }
+              for (var ai = 0; ai < activities.length; ai++) {
+                if (
+                  activities[ai].type === "Learning" &&
+                  activities[ai].topicId
+                ) {
+                  var mappedDocId =
+                    topicDocMap[String(activities[ai].topicId).trim()];
+                  if (mappedDocId) {
+                    activities[ai].contentDocId = mappedDocId;
+                  }
+                }
+              }
+              Logger.log(
+                "✅ Enriched activities with contentDocId from Topics sheet",
+              );
+            }
+          }
+        } catch (enrichError) {
+          Logger.log(
+            "⚠️ Could not enrich activities with contentDocId: " +
+              enrichError.toString(),
+          );
+        }
       }
 
       // Quiz Results for accuracy calculation
