@@ -1960,6 +1960,125 @@
       },
     );
 
+    // === 9. 🖥️ TERMINAL / CONSOLE OUTPUT [[TERMINAL]] ... [[/TERMINAL]] ===
+    // Hiển thị output terminal/console dạng nền đen, có syntax highlighting
+    // Hỗ trợ: [[TERMINAL:PYTHON]] hoặc [[TERMINAL]] (mặc định)
+    html = html.replace(
+      /\[\[TERMINAL(?::([\w]*))?\]\]([\s\S]*?)\[\[\/TERMINAL\]\]/gi,
+      (match, lang, content) => {
+        const language = (lang || "shell").toLowerCase();
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+
+        // Highlight từng dòng: prompt (>>>), output, path (C:\...>), comment (#)
+        const lines = cleanContent.split("\n");
+        const highlightedLines = lines.map((line) => {
+          const escaped = escapeHtml(line);
+          // Python prompt >>>
+          if (/^\s*>>>/.test(line)) {
+            return `<span class="terminal-prompt">${escaped.replace(/^(\s*&gt;&gt;&gt;|\s*>>>)/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
+          }
+          // Python continuation ...
+          if (/^\s*\.\.\./.test(line)) {
+            return `<span class="terminal-prompt">${escaped}</span>`;
+          }
+          // Windows/Linux shell prompt (C:\...> or $ or %)
+          if (/^\s*[A-Z]:\\.*>/.test(line) || /^\s*[\$%#]\s/.test(line)) {
+            return `<span class="terminal-prompt">${escaped.replace(/^(\s*[A-Z]:\\[^>]*>|\s*[\$%#])/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
+          }
+          // Comment lines (# ...)
+          if (/^\s*#/.test(line)) {
+            return `<span class="terminal-comment">${escaped}</span>`;
+          }
+          // String output (in quotes)
+          const stringHighlighted = escaped
+            .replace(/(&quot;[^&]*&quot;|'[^']*'|"[^"]*")/g, '<span class="terminal-string">$1</span>');
+          // Number highlighting
+          const numHighlighted = stringHighlighted
+            .replace(/\b(\d+\.?\d*)\b/g, '<span class="terminal-number">$1</span>');
+          // Keyword highlighting
+          const kwHighlighted = numHighlighted
+            .replace(/\b(True|False|None|Error|Exception|Traceback|File|line|def|class|import|from|return|if|else|for|while|in|not|and|or|try|except|raise|with|as|lambda|yield|pass|break|continue|print)\b/g, '<span class="terminal-keyword">$1</span>');
+          return `<span class="terminal-output">${kwHighlighted}</span>`;
+        }).join("\n");
+
+        const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
+
+        return `
+        <div class="terminal-block">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+            </div>
+            <span class="terminal-title">${langLabel}</span>
+            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <pre class="terminal-body"><code>${highlightedLines}</code></pre>
+        </div>`;
+      },
+    );
+
+    // === 10. 📝 CMD / COMMAND BLOCK [[CMD]] ... [[/CMD]] ===
+    // Nền xám nhạt, font monospace – dùng cho lệnh/command ngắn
+    html = html.replace(
+      /\[\[CMD\]\]([\s\S]*?)\[\[\/CMD\]\]/gi,
+      (match, content) => {
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+
+        // Highlight: $ prompt, # comment, C:\...> prompt
+        const lines = cleanContent.split("\n");
+        const highlightedLines = lines.map((line) => {
+          const escaped = escapeHtml(line);
+          // Shell prompt $ or %
+          if (/^\s*[\$%]\s/.test(line)) {
+            return `<span class="cmd-prompt">${escaped}</span>`;
+          }
+          // Windows prompt C:\...>
+          if (/^\s*[A-Z]:\s*>/.test(line) || /^\s*[A-Z]:\\.*>/.test(line)) {
+            return `<span class="cmd-prompt">${escaped}</span>`;
+          }
+          // Python prompt
+          if (/^\s*(>>>|python%)/.test(line)) {
+            return `<span class="cmd-prompt">${escaped}</span>`;
+          }
+          // Comment (# ...)
+          if (/^\s*#/.test(line) || /#\s/.test(line)) {
+            return escaped.replace(/(#\s.*)$/, '<span class="cmd-comment">$1</span>');
+          }
+          return escaped;
+        }).join("\n");
+
+        return `<div class="cmd-block"><pre class="cmd-body"><code>${highlightedLines}</code></pre></div>`;
+      },
+    );
+
     container.innerHTML = html;
     console.log("✅ Markers parsed and transformed");
   }
@@ -2417,7 +2536,7 @@
 
     // Method 1: Find existing <pre><code> blocks
     const existingCodeBlocks = container.querySelectorAll(
-      "pre:not(.code-block-wrapper pre), code:not(.code-block-wrapper code)",
+      "pre:not(.code-block-wrapper pre):not(.terminal-block pre):not(.cmd-block pre), code:not(.code-block-wrapper code):not(.terminal-block code):not(.cmd-block code)",
     );
 
     // Method 2: Find monospace font spans (from Google Docs)
@@ -2456,7 +2575,7 @@
 
     // Enhance existing code blocks
     existingCodeBlocks.forEach((el) => {
-      if (el.closest(".code-block-wrapper")) return; // Skip already enhanced
+      if (el.closest(".code-block-wrapper") || el.closest(".terminal-block") || el.closest(".cmd-block")) return; // Skip already enhanced
 
       const isPreTag = el.tagName === "PRE";
       const code = isPreTag
