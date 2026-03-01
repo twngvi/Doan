@@ -2031,16 +2031,17 @@
           if (/^\s*#/.test(line)) {
             return `<span class="terminal-comment">${escaped}</span>`;
           }
-          // String output (in quotes)
-          const stringHighlighted = escaped
-            .replace(/(&quot;[^&]*&quot;|'[^']*'|"[^"]*")/g, '<span class="terminal-string">$1</span>');
-          // Number highlighting
-          const numHighlighted = stringHighlighted
-            .replace(/\b(\d+\.?\d*)\b/g, '<span class="terminal-number">$1</span>');
-          // Keyword highlighting
-          const kwHighlighted = numHighlighted
-            .replace(/\b(True|False|None|Error|Exception|Traceback|File|line|def|class|import|from|return|if|else|for|while|in|not|and|or|try|except|raise|with|as|lambda|yield|pass|break|continue|print)\b/g, '<span class="terminal-keyword">$1</span>');
-          return `<span class="terminal-output">${kwHighlighted}</span>`;
+          // Single-pass highlighting to avoid regex conflicts between string/number/keyword
+          const highlighted = escaped.replace(
+            /(&quot;[^&]*&quot;|'[^']*'|"[^"]*")|(\b\d+\.?\d*\b)|(\b(?:True|False|None|Error|Exception|Traceback|def|import|from|return|if|else|for|while|not|and|or|try|except|raise|with|lambda|yield|pass|break|continue|print)\b)/g,
+            (m, str, num, kw) => {
+              if (str) return '<span class="terminal-string">' + str + '</span>';
+              if (num) return '<span class="terminal-number">' + num + '</span>';
+              if (kw) return '<span class="terminal-keyword">' + kw + '</span>';
+              return m;
+            }
+          );
+          return `<span class="terminal-output">${highlighted}</span>`;
         }).join("\n");
 
         const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
@@ -2108,6 +2109,26 @@
         }).join("\n");
 
         return `<div class="cmd-block"><pre class="cmd-body"><code>${highlightedLines}</code></pre></div>`;
+      },
+    );
+
+    // === 11. 📝 OUTPUT BLOCK [[OUTPUT]] ... [[/OUTPUT]] ===
+    // Nền xám nhạt, chữ monospace – dùng hiển thị kết quả output đơn giản
+    html = html.replace(
+      /\[\[OUTPUT\]\]([\s\S]*?)\[\[\/OUTPUT\]\]/gi,
+      (match, content) => {
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+        return `<div class="output-block"><pre class="output-body"><code>${escapeHtml(cleanContent)}</code></pre></div>`;
       },
     );
 
