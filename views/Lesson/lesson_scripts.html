@@ -1780,6 +1780,7 @@
   window.reviewWrongCards = reviewWrongCards;
   window.reloadFlashcardUI = reloadFlashcardUI;
   window.copyCodeToClipboard = copyCodeToClipboard;
+  window.runPythonCode = runPythonCode;
   window.handleMiniQuizAnswer = handleMiniQuizAnswer;
   window.toggleSpoiler = toggleSpoiler;
   window.toggleTOC = toggleTOC;
@@ -1868,17 +1869,28 @@
           .replace(/&gt;/g, ">")
           .replace(/&amp;/g, "&")
           .replace(/^\n+|\n+$/g, "");
+        const isPython = lang.toLowerCase() === 'python';
+        const runBtn = isPython ? `
+            <button class="btn-run-code" onclick="runPythonCode(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5,3 19,12 5,21"/>
+              </svg>
+              Run
+            </button>` : '';
         return `
         <div class="code-block-wrapper">
           <div class="code-block-header">
             <span class="code-block-lang">${lang.toUpperCase()}</span>
-            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              Copy
-            </button>
+            <div class="code-block-actions">
+              ${runBtn}
+              <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy
+              </button>
+            </div>
           </div>
           <pre><code class="language-${lang.toLowerCase()}">${escapeHtml(cleanCode)}</code></pre>
         </div>`;
@@ -1927,17 +1939,28 @@
         .replace(/&gt;/g, ">")
         .replace(/&amp;/g, "&")
         .replace(/^\n+|\n+$/g, "");
+      const isPython = language.toLowerCase() === 'python';
+      const runBtn = isPython ? `
+            <button class="btn-run-code" onclick="runPythonCode(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5,3 19,12 5,21"/>
+              </svg>
+              Run
+            </button>` : '';
       return `
         <div class="code-block-wrapper">
           <div class="code-block-header">
             <span class="code-block-lang">${language.toUpperCase()}</span>
-            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              Copy
-            </button>
+            <div class="code-block-actions">
+              ${runBtn}
+              <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy
+              </button>
+            </div>
           </div>
           <pre><code class="language-${language.toLowerCase()}">${escapeHtml(cleanCode)}</code></pre>
         </div>`;
@@ -2663,6 +2686,151 @@
       }
     }
     return "plaintext";
+  }
+
+  // ========================================
+  // ▶️ PYTHON CODE EXECUTION (Pyodide)
+  // ========================================
+
+  let pyodideInstance = null;
+  let pyodideLoading = false;
+  let pyodideLoadPromise = null;
+
+  /**
+   * Load Pyodide runtime (lazy - only on first Run click)
+   */
+  async function loadPyodideRuntime() {
+    if (pyodideInstance) return pyodideInstance;
+    if (pyodideLoadPromise) return pyodideLoadPromise;
+
+    pyodideLoading = true;
+    pyodideLoadPromise = (async () => {
+      // Inject Pyodide script if not already loaded
+      if (!window.loadPyodide) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Không thể tải Pyodide runtime'));
+          document.head.appendChild(script);
+        });
+      }
+      pyodideInstance = await window.loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/'
+      });
+      pyodideLoading = false;
+      console.log('✅ Pyodide loaded successfully');
+      return pyodideInstance;
+    })();
+
+    return pyodideLoadPromise;
+  }
+
+  /**
+   * Run Python code from a code block
+   */
+  async function runPythonCode(button) {
+    const wrapper = button.closest('.code-block-wrapper');
+    const codeEl = wrapper.querySelector('code');
+    const code = codeEl.textContent;
+
+    // Find or create output panel
+    let outputPanel = wrapper.querySelector('.code-output-panel');
+    if (!outputPanel) {
+      outputPanel = document.createElement('div');
+      outputPanel.className = 'code-output-panel';
+      outputPanel.innerHTML = `
+        <div class="code-output-header">
+          <span class="code-output-title">Output</span>
+          <button class="btn-clear-output" onclick="this.closest('.code-output-panel').remove()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <pre class="code-output-body"></pre>
+      `;
+      wrapper.appendChild(outputPanel);
+    }
+
+    const outputBody = outputPanel.querySelector('.code-output-body');
+    outputPanel.style.display = 'block';
+
+    // Update button state to loading
+    const originalContent = button.innerHTML;
+    button.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 6v6l4 2"/>
+      </svg>
+      Đang chạy...
+    `;
+    button.disabled = true;
+    button.classList.add('running');
+    outputBody.textContent = 'Đang tải Python runtime...';
+    outputBody.className = 'code-output-body';
+
+    try {
+      const pyodide = await loadPyodideRuntime();
+
+      outputBody.textContent = 'Đang thực thi...';
+
+      // Redirect stdout and stderr
+      pyodide.runPython(`
+import sys
+from io import StringIO
+__stdout_capture = StringIO()
+__stderr_capture = StringIO()
+sys.stdout = __stdout_capture
+sys.stderr = __stderr_capture
+`);
+
+      let result;
+      let hasError = false;
+      try {
+        result = pyodide.runPython(code);
+      } catch (pyErr) {
+        hasError = true;
+        result = pyErr.message;
+      }
+
+      // Get captured output
+      const stdout = pyodide.runPython('__stdout_capture.getvalue()');
+      const stderr = pyodide.runPython('__stderr_capture.getvalue()');
+
+      // Reset stdout/stderr
+      pyodide.runPython(`
+import sys
+sys.stdout = sys.__stdout__
+sys.stderr = sys.__stderr__
+`);
+
+      // Build output text
+      let output = '';
+      if (stdout) output += stdout;
+      if (stderr) output += (output ? '\n' : '') + stderr;
+      if (hasError) {
+        output += (output ? '\n' : '') + result;
+        outputBody.classList.add('has-error');
+      } else {
+        outputBody.classList.remove('has-error');
+        // Show return value if no print output and result is not undefined/None
+        if (!stdout && result !== undefined && result !== null && String(result) !== 'undefined' && String(result) !== 'None') {
+          output += String(result);
+        }
+      }
+
+      outputBody.textContent = output || '(Không có output)';
+
+    } catch (err) {
+      outputBody.textContent = 'Lỗi: ' + err.message;
+      outputBody.classList.add('has-error');
+    } finally {
+      // Restore button
+      button.innerHTML = originalContent;
+      button.disabled = false;
+      button.classList.remove('running');
+    }
   }
 
   /**
