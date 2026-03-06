@@ -1509,6 +1509,22 @@
   // ========== PROGRESS SAVING FUNCTIONS ==========
 
   /**
+   * Invalidate progress cache so Topics page fetches fresh data
+   */
+  function invalidateProgressCache() {
+    // Invalidate global cache progress
+    if (window.globalTopicsCache) {
+      window.globalTopicsCache.progress = null;
+      window.globalTopicsCache.lastLoadTime = 0;
+    }
+    // ⭐ Also invalidate LOCAL cache in topics scripts closure
+    if (typeof window.invalidateTopicsLocalCache === "function") {
+      window.invalidateTopicsLocalCache();
+    }
+    console.log("🔄 Progress cache invalidated (global + local)");
+  }
+
+  /**
    * Save lesson progress
    * @param {boolean} completed - Whether lesson is completed
    */
@@ -1523,6 +1539,8 @@
         if (response.success) {
           progressSaved.lesson = true;
           console.log("✅ Lesson progress saved");
+          // Invalidate progress cache so Topics page reloads fresh data
+          invalidateProgressCache();
           if (completed) {
             showToast("✅ Đã lưu tiến độ bài học", "success");
           }
@@ -1554,6 +1572,7 @@
         if (response.success) {
           progressSaved.mindmap = true;
           console.log("✅ Mindmap progress saved");
+          invalidateProgressCache();
           showToast("✅ Đã lưu tiến độ Mindmap", "success");
         }
       })
@@ -1589,6 +1608,7 @@
             progressSaved.flashcards = true;
             showToast("✅ Đã lưu tiến độ Flashcards", "success");
           }
+          invalidateProgressCache();
           console.log("✅ Flashcards progress saved");
         }
       })
@@ -1607,10 +1627,35 @@
    * Complete lesson and go back to topics
    */
   function completeLessonAndGoBack() {
-    saveLessonProgress(true);
-    setTimeout(() => {
+    // ⭐ Invalidate cache ngay lập tức trước khi chuyển trang
+    invalidateProgressCache();
+
+    if (!currentLessonData?.topicId) {
       showPage("page-topics");
-    }, 500);
+      return;
+    }
+
+    console.log("💾 Saving lesson progress before navigating back...");
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          progressSaved.lesson = true;
+          console.log("✅ Lesson progress saved, navigating to topics...");
+          invalidateProgressCache();
+        }
+        showPage("page-topics");
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving lesson progress:", error);
+        // Vẫn chuyển trang dù lỗi
+        showPage("page-topics");
+      })
+      .saveLearningProgressForWeb(currentLessonData.topicId, "lesson", {
+        topicTitle: currentLessonData.topicTitle,
+        scrollDepth: scrollProgress,
+        completed: true,
+      });
   }
 
   // ========================================

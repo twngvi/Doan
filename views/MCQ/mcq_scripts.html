@@ -1987,6 +1987,15 @@
       .withSuccessHandler((response) => {
         console.log("✅ Quiz result saved:", response);
         showSaveNotification(true, "Kết quả đã được lưu!");
+        // ⭐ Invalidate progress cache so Topics page shows updated progress
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.progress = null;
+          window.globalTopicsCache.lastLoadTime = 0;
+        }
+        if (typeof window.invalidateTopicsLocalCache === "function") {
+          window.invalidateTopicsLocalCache();
+        }
+        console.log("🔄 Progress cache invalidated after quiz save");
       })
       .withFailureHandler((error) => {
         console.error("❌ Error saving result:", error);

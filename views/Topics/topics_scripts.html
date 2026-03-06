@@ -19,6 +19,13 @@
     let lastLoadTime = 0;
     const CACHE_DURATION = 60000; // Cache 1 phút
 
+    // ⭐ Expose function to invalidate LOCAL cache from other pages
+    window.invalidateTopicsLocalCache = function () {
+      progressCache = null;
+      lastLoadTime = 0;
+      console.log("🔄 Topics LOCAL progress cache invalidated");
+    };
+
     // ========================================
     // INITIALIZATION
     // ========================================
@@ -61,7 +68,7 @@
         showLoadingState();
       }
 
-      // ⭐ ƯU TIÊN 1: Kiểm tra GLOBAL cache (có thể đã load từ MCQ page)
+      // ⭐ ƯU TIÊN 1: Kiểm tra GLOBAL cache cho topics data (có thể đã load từ MCQ page)
       const globalCache = window.globalTopicsCache;
       if (
         !forceRefresh &&
@@ -70,28 +77,42 @@
         now - globalCache.lastLoadTime <
           (globalCache.cacheDuration || CACHE_DURATION)
       ) {
-        console.log("✅ Using GLOBAL cached topics data");
+        console.log(
+          "✅ Using GLOBAL cached topics data, refreshing progress...",
+        );
         allTopics = globalCache.data;
-        userProgress = globalCache.progress || {};
-        topicsCache = globalCache.data; // Sync với local cache
-        progressCache = globalCache.progress || {};
+        topicsCache = globalCache.data;
         lastLoadTime = globalCache.lastLoadTime;
         filteredTopics = [...allTopics];
+
+        // Use cached progress for instant render, then refresh from server
+        userProgress = globalCache.progress || {};
+        progressCache = globalCache.progress || {};
         renderTopics();
         updateProgressStats();
         hideLoadingState();
+
+        // ⭐ Always fetch fresh progress in background
+        refreshProgressFromServer();
         return;
       }
 
-      // ⭐ ƯU TIÊN 2: Kiểm tra LOCAL cache - nếu còn hiệu lực thì dùng luôn
+      // ⭐ ƯU TIÊN 2: Kiểm tra LOCAL cache cho topics data
       if (!forceRefresh && topicsCache && now - lastLoadTime < CACHE_DURATION) {
-        console.log("✅ Using LOCAL cached topics data");
+        console.log(
+          "✅ Using LOCAL cached topics data, refreshing progress...",
+        );
         allTopics = topicsCache;
-        userProgress = progressCache || {};
         filteredTopics = [...allTopics];
+
+        // Use cached progress for instant render, then refresh from server
+        userProgress = progressCache || {};
         renderTopics();
         updateProgressStats();
         hideLoadingState();
+
+        // ⭐ Always fetch fresh progress in background
+        refreshProgressFromServer();
         return;
       }
 
@@ -210,6 +231,38 @@
           error.toString() ||
           "Không thể kết nối với server. Vui lòng thử lại sau.",
       );
+    }
+
+    /**
+     * ⭐ Refresh progress from server in background (uses cached topics)
+     * Re-renders topics after getting fresh data
+     */
+    function refreshProgressFromServer() {
+      console.log("🔄 Refreshing progress from server...");
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (result && result.success && result.progress) {
+            var hasChanges =
+              JSON.stringify(userProgress) !== JSON.stringify(result.progress);
+            userProgress = result.progress;
+            progressCache = result.progress;
+            // Update global cache
+            if (window.globalTopicsCache) {
+              window.globalTopicsCache.progress = result.progress;
+            }
+            if (hasChanges) {
+              console.log("✅ Progress updated from server, re-rendering...");
+              renderTopics();
+              updateProgressStats();
+            } else {
+              console.log("✅ Progress unchanged from server");
+            }
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.warn("⚠️ Failed to refresh progress:", error);
+        })
+        .getUserTopicProgress();
     }
 
     // ========================================
@@ -1085,9 +1138,17 @@
         startTopicsHeaderMeteors();
         setupTopicsHeaderMouseEffect();
       } else {
-        console.log("Topics Page already initialized, using cache if valid...");
-        // ⭐ Không reload nếu đã có cache còn hiệu lực
-        loadTopics(false); // false = không force refresh
+        console.log("Topics Page already initialized, refreshing progress...");
+        // ⭐ Luôn dùng cached topics nhưng REFRESH progress từ server
+        if (topicsCache && allTopics.length > 0) {
+          // Render ngay với dữ liệu hiện tại
+          renderTopics();
+          updateProgressStats();
+          // ⭐ Luôn fetch progress mới từ server
+          refreshProgressFromServer();
+        } else {
+          loadTopics(false);
+        }
         startTopicsHeaderMeteors();
         setupTopicsHeaderMouseEffect();
       }

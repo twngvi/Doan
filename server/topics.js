@@ -190,7 +190,7 @@ function getTopicsByJourney(journey) {
     }
 
     const filteredTopics = result.topics.filter(
-      (topic) => topic.journey === journey
+      (topic) => topic.journey === journey,
     );
 
     return {
@@ -259,16 +259,19 @@ function getUserTopicProgress() {
     const userId = session.user.userId;
     Logger.log("Getting topic progress for user: " + userId);
 
-    // Get user's personal sheet
-    const userSheet = findUserProgressSheet(userId);
+    // Get user's personal spreadsheet
+    const userSheetId = findUserProgressSheet(userId);
 
-    if (!userSheet) {
+    if (!userSheetId) {
       Logger.log("User progress sheet not found");
       return {
         success: true,
         progress: {}, // Empty progress for new users
       };
     }
+
+    // Open spreadsheet by ID
+    const userSheet = SpreadsheetApp.openById(userSheetId);
 
     // Get Topic_Progress sheet
     const progressSheet = userSheet.getSheetByName("Topic_Progress");
@@ -288,13 +291,17 @@ function getUserTopicProgress() {
     const progress = {};
     rows.forEach((row) => {
       const topicIdIdx = headers.indexOf("topicId");
-      const topicId = topicIdIdx >= 0 ? row[topicIdIdx] : row[0];
+      const topicId =
+        topicIdIdx >= 0
+          ? String(row[topicIdIdx]).trim()
+          : String(row[0]).trim();
 
       if (topicId) {
         // Check for new schema columns
         const lessonCompletedIdx = headers.indexOf("lessonCompleted");
         const mindmapViewedIdx = headers.indexOf("mindmapViewed");
         const flashcardsCompletedIdx = headers.indexOf("flashcardsCompleted");
+        const quizDoneIdx = headers.indexOf("quizDone");
         const statusIdx = headers.indexOf("status");
         const completedAtIdx = headers.indexOf("completedAt");
 
@@ -303,26 +310,36 @@ function getUserTopicProgress() {
           const lessonDone =
             row[lessonCompletedIdx] === 1 || row[lessonCompletedIdx] === true;
           const mindmapDone =
-            row[mindmapViewedIdx] === 1 || row[mindmapViewedIdx] === true;
+            mindmapViewedIdx >= 0 &&
+            (row[mindmapViewedIdx] === 1 || row[mindmapViewedIdx] === true);
           const flashcardsDone =
-            row[flashcardsCompletedIdx] === 1 ||
-            row[flashcardsCompletedIdx] === true;
+            flashcardsCompletedIdx >= 0 &&
+            (row[flashcardsCompletedIdx] === 1 ||
+              row[flashcardsCompletedIdx] === true);
+          const quizDone =
+            quizDoneIdx >= 0 &&
+            (row[quizDoneIdx] === 1 || row[quizDoneIdx] === true);
 
-          // Calculate progress percentage
+          // ⭐ Calculate progress percentage based on 4 activities (25% each)
           let progressPercent = 0;
-          let completed = 0;
-          if (lessonDone) completed++;
-          if (mindmapDone) completed++;
-          if (flashcardsDone) completed++;
-          progressPercent = Math.round((completed / 3) * 100);
+          let completedCount = 0;
+          const totalActivities = 4; // lesson, mindmap, flashcards, quiz
+          if (lessonDone) completedCount++;
+          if (mindmapDone) completedCount++;
+          if (flashcardsDone) completedCount++;
+          if (quizDone) completedCount++;
+          progressPercent = Math.round(
+            (completedCount / totalActivities) * 100,
+          );
 
           progress[topicId] = {
             topicId: topicId,
-            completed: lessonDone && mindmapDone && flashcardsDone,
+            completed: lessonDone && mindmapDone && flashcardsDone && quizDone,
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,
             flashcardsCompleted: flashcardsDone,
+            quizDone: quizDone,
             status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
             completedAt: completedAtIdx >= 0 ? row[completedAtIdx] : null,
           };
