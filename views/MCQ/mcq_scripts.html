@@ -1005,10 +1005,40 @@
 
     showLoading();
 
-    // Load wrong answers for retry (async)
+    // ⭐ Track loading time for user feedback
+    var loadStartTime = Date.now();
+    var loadingDots = 0;
+    var loadingInterval = setInterval(function () {
+      loadingDots++;
+      var elapsed = Math.round((Date.now() - loadStartTime) / 1000);
+      var hint = document.querySelector("#quiz-loading .quiz-loading-hint");
+      if (hint) {
+        if (elapsed < 10) {
+          hint.textContent = "Đang kiểm tra cache...";
+        } else if (elapsed < 30) {
+          hint.textContent = "AI đang tạo câu hỏi... (" + elapsed + "s)";
+        } else {
+          hint.textContent = "Đang xử lý, vui lòng đợi... (" + elapsed + "s)";
+        }
+      }
+    }, 1000);
+
+    // ⭐ PARALLEL LOADING: Load mastered IDs + wrong answers + questions cùng lúc
+    var questionsResult = null;
+    var masteredIds = [];
+    var questionsLoaded = false;
+    var masteredLoaded = false;
+
+    function tryProcessResults() {
+      if (!questionsLoaded || !masteredLoaded) return;
+      clearInterval(loadingInterval);
+      processQuestionsWithMastered(questionsResult, masteredIds);
+    }
+
+    // Load wrong answers for retry (fire and forget)
     if (!forceRegenerate) {
       google.script.run
-        .withSuccessHandler((wrongAnswers) => {
+        .withSuccessHandler(function (wrongAnswers) {
           if (wrongAnswers && wrongAnswers.length > 0) {
             console.log(
               "📋 Found wrong answers to retry:",
@@ -1017,52 +1047,96 @@
             quizState.wrongAnswers = wrongAnswers;
           }
         })
-        .withFailureHandler(() => {})
+        .withFailureHandler(function () {})
         .getWrongAnswersForTopic(quizState.topicId);
     }
 
+    // ⭐ PARALLEL 1: Load mastered question IDs
     google.script.run
-      .withSuccessHandler(handleQuestionsLoaded)
-      .withFailureHandler(handleLoadError)
+      .withSuccessHandler(function (ids) {
+        masteredIds = ids || [];
+        console.log("📋 Mastered IDs loaded:", masteredIds.length);
+        masteredLoaded = true;
+        tryProcessResults();
+      })
+      .withFailureHandler(function () {
+        masteredIds = [];
+        masteredLoaded = true;
+        tryProcessResults();
+      })
+      .getMasteredQuestionIds(quizState.topicId);
+
+    // ⭐ PARALLEL 2: Load questions from AI/cache
+    google.script.run
+      .withSuccessHandler(function (response) {
+        questionsResult = response;
+        questionsLoaded = true;
+        tryProcessResults();
+      })
+      .withFailureHandler(function (error) {
+        clearInterval(loadingInterval);
+        handleLoadError(error);
+      })
       .getAIContentForWeb(quizState.topicId, "questions", forceRegenerate);
   }
 
   /**
-   * Handle successful questions load
+   * Process questions + mastered IDs together (called when both are ready)
    */
-  function handleQuestionsLoaded(response) {
-    console.log("✅ Questions loaded:", response);
+  function processQuestionsWithMastered(response, masteredIds) {
+    console.log("✅ Processing questions with mastered IDs...");
 
     if (!response || response.success === false) {
-      showError(response?.error || "Không thể tải câu hỏi");
+      showError(
+        response?.message || response?.error || "Không thể tải câu hỏi",
+      );
       return;
     }
 
     try {
-      const parsedData = JSON.parse(response.data);
-      console.log("📊 Parsed questions:", parsedData);
-
-      if (!parsedData.questions || !Array.isArray(parsedData.questions)) {
-        throw new Error("Invalid questions format");
+      // ⭐ Safe JSON parse: handle both string and object
+      var parsedData = response.data;
+      if (typeof parsedData === "string") {
+        try {
+          parsedData = JSON.parse(parsedData);
+        } catch (parseErr) {
+          console.error("❌ JSON parse error:", parseErr);
+          showError("Lỗi parse dữ liệu câu hỏi. Thử tạo lại.");
+          return;
+        }
       }
 
+      if (
+        !parsedData ||
+        !parsedData.questions ||
+        !Array.isArray(parsedData.questions)
+      ) {
+        console.error("❌ Invalid question format:", parsedData);
+        showError(
+          "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.",
+        );
+        return;
+      }
+
+      console.log("📊 Parsed", parsedData.questions.length, "questions");
+
       // Normalize questions format
-      let questions = parsedData.questions.map((q, index) => {
-        let options = q.options;
+      var questions = parsedData.questions.map(function (q, index) {
+        var options = q.options;
         if (!Array.isArray(options)) {
           options = [options.A, options.B, options.C, options.D].filter(
             Boolean,
           );
         }
 
-        let correctAnswer = q.correctAnswer;
+        var correctAnswer = q.correctAnswer;
         if (typeof correctAnswer === "string") {
-          const letterToIndex = { A: 0, B: 1, C: 2, D: 3 };
+          var letterToIndex = { A: 0, B: 1, C: 2, D: 3 };
           correctAnswer = letterToIndex[correctAnswer.toUpperCase()] || 0;
         }
 
         return {
-          id: q.id || `Q${index + 1}`,
+          id: q.id || "Q" + (index + 1),
           question: q.question,
           options: options,
           correctAnswer: correctAnswer,
@@ -1072,61 +1146,43 @@
         };
       });
 
-      // Filter out mastered questions (after loading)
-      filterMasteredQuestions(questions);
+      // ⭐ Filter mastered questions inline (no extra server call)
+      var allMastered = false;
+      if (masteredIds && masteredIds.length > 0) {
+        var filtered = questions.filter(function (q) {
+          return !masteredIds.includes(q.id);
+        });
+        console.log(
+          "✅ Filtered: " +
+            questions.length +
+            " → " +
+            filtered.length +
+            " questions",
+        );
+
+        if (filtered.length === 0) {
+          console.log("🏆 All questions mastered!");
+          allMastered = true;
+          questions = shuffleArray([].concat(questions));
+        } else {
+          questions = filtered;
+        }
+      }
+
+      quizState.questions = questions;
+      quizState.userAnswers = new Array(questions.length).fill(null);
+      quizState.allMastered = allMastered;
+      quizState.masteredCount = masteredIds ? masteredIds.length : 0;
+
+      if (allMastered) {
+        showAllMasteredModal(masteredIds.length);
+      } else {
+        startQuizSession();
+      }
     } catch (error) {
-      console.error("❌ Error parsing questions:", error);
+      console.error("❌ Error processing questions:", error);
       showError("Lỗi xử lý dữ liệu câu hỏi: " + error.message);
     }
-  }
-
-  /**
-   * Filter out mastered questions and start quiz
-   */
-  function filterMasteredQuestions(allQuestions) {
-    console.log("🔍 Filtering mastered questions...");
-
-    google.script.run
-      .withSuccessHandler(function (masteredIds) {
-        console.log("📋 Mastered question IDs:", masteredIds);
-
-        let questions = allQuestions;
-        let allMastered = false;
-
-        if (masteredIds && masteredIds.length > 0) {
-          // Filter out mastered questions
-          questions = allQuestions.filter((q) => !masteredIds.includes(q.id));
-          console.log(
-            `✅ Filtered: ${allQuestions.length} → ${questions.length} questions`,
-          );
-
-          // If all questions are mastered, show a message
-          if (questions.length === 0) {
-            console.log("🏆 All questions mastered!");
-            allMastered = true;
-            // Use all questions but shuffle them
-            questions = shuffleArray([...allQuestions]);
-          }
-        }
-
-        quizState.questions = questions;
-        quizState.userAnswers = new Array(questions.length).fill(null);
-        quizState.allMastered = allMastered;
-        quizState.masteredCount = masteredIds ? masteredIds.length : 0;
-
-        if (allMastered) {
-          showAllMasteredModal(masteredIds.length);
-        } else {
-          startQuizSession();
-        }
-      })
-      .withFailureHandler(function (error) {
-        console.log("No mastered questions or error:", error);
-        quizState.questions = allQuestions;
-        quizState.userAnswers = new Array(allQuestions.length).fill(null);
-        startQuizSession();
-      })
-      .getMasteredQuestionIds(quizState.topicId);
   }
 
   /**

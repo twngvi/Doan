@@ -1672,29 +1672,35 @@
 
   /**
    * Calculate and update overall progress
-   * - Lesson tab: 33% (read checked + mini quiz = half each → 16.5% + 16.5%)
-   * - Mindmap tab: 33% (viewed checkbox)
-   * - Flashcard tab: 33% (all cards viewed)
+   * 4 phần riêng biệt, mỗi phần 25%:
+   * - Bài học (Lesson read): 25%
+   * - Mindmap (viewed checkbox): 25%
+   * - Flashcard (all cards viewed): 25%
+   * - Mini Quiz (completed all 5 questions): 25%
    */
   function updateOverallProgress() {
-    // Lesson tab progress (33% total)
-    let lessonPct = 0;
-    if (tabCompletion.lessonRead) lessonPct += 50;
-    if (tabCompletion.lessonQuiz) lessonPct += 50;
+    // Lesson progress (25%)
+    let lessonPct = tabCompletion.lessonRead ? 100 : 0;
 
-    // Mindmap tab progress (33% total)
+    // Mindmap progress (25%)
     let mindmapPct = tabCompletion.mindmapViewed ? 100 : 0;
 
-    // Flashcard tab progress (33% total)
+    // Flashcard progress (25%)
     let flashcardPct = tabCompletion.flashcardsDone ? 100 : 0;
     if (!tabCompletion.flashcardsDone && flashcardsData.length > 0) {
       const seen = learnedCount + reviewCount;
       flashcardPct = Math.round((seen / flashcardsData.length) * 100);
     }
 
-    // Overall progress
+    // Mini Quiz progress (25%)
+    let miniQuizPct = tabCompletion.lessonQuiz ? 100 : 0;
+
+    // Overall progress (25% each)
     const overallPct = Math.round(
-      lessonPct * 0.333 + mindmapPct * 0.333 + flashcardPct * 0.333,
+      lessonPct * 0.25 +
+        mindmapPct * 0.25 +
+        flashcardPct * 0.25 +
+        miniQuizPct * 0.25,
     );
 
     // Update overall progress bar
@@ -1715,28 +1721,36 @@
     const segFlashcardsStatus = document.getElementById(
       "seg-flashcards-status",
     );
+    const segMiniQuizStatus = document.getElementById("seg-miniquiz-status");
     if (segLessonStatus) segLessonStatus.textContent = lessonPct + "%";
     if (segMindmapStatus) segMindmapStatus.textContent = mindmapPct + "%";
     if (segFlashcardsStatus)
       segFlashcardsStatus.textContent = flashcardPct + "%";
+    if (segMiniQuizStatus) segMiniQuizStatus.textContent = miniQuizPct + "%";
 
     // Update segment completed state
     const segLesson = document.getElementById("seg-lesson");
     const segMindmap = document.getElementById("seg-mindmap");
     const segFlashcards = document.getElementById("seg-flashcards");
+    const segMiniQuiz = document.getElementById("seg-miniquiz");
     if (segLesson) segLesson.classList.toggle("completed", lessonPct >= 100);
     if (segMindmap) segMindmap.classList.toggle("completed", mindmapPct >= 100);
     if (segFlashcards)
       segFlashcards.classList.toggle("completed", flashcardPct >= 100);
+    if (segMiniQuiz)
+      segMiniQuiz.classList.toggle("completed", miniQuizPct >= 100);
 
     // Update sidebar nav tab check marks
     const checkLesson = document.getElementById("nav-check-lesson");
     const checkMindmap = document.getElementById("nav-check-mindmap");
     const checkFlashcards = document.getElementById("nav-check-flashcards");
+    const checkMiniQuiz = document.getElementById("nav-check-miniquiz");
     if (checkLesson) checkLesson.textContent = lessonPct >= 100 ? "✅" : "";
     if (checkMindmap) checkMindmap.textContent = mindmapPct >= 100 ? "✅" : "";
     if (checkFlashcards)
       checkFlashcards.textContent = flashcardPct >= 100 ? "✅" : "";
+    if (checkMiniQuiz)
+      checkMiniQuiz.textContent = miniQuizPct >= 100 ? "✅" : "";
 
     // Update nav tab completed class
     document.querySelectorAll(".lesson-nav-tab").forEach((tab) => {
@@ -1758,6 +1772,7 @@
       lesson: lessonPct,
       mindmap: mindmapPct,
       flashcard: flashcardPct,
+      miniQuiz: miniQuizPct,
     });
   }
 

@@ -323,20 +323,22 @@ function getUserTopicProgress() {
             miniQuizCompletedIdx >= 0 && isChecked(row[miniQuizCompletedIdx]);
 
           // ⭐ Calculate progress percentage based on 4 activities (25% each)
+          // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
           let progressPercent = 0;
           let completedCount = 0;
-          const totalActivities = 4; // lesson, mindmap, flashcards, quiz
+          const totalActivities = 4; // lesson, mindmap, flashcards, miniQuiz
           if (lessonDone) completedCount++;
           if (mindmapDone) completedCount++;
           if (flashcardsDone) completedCount++;
-          if (quizDone) completedCount++;
+          if (miniQuizDone) completedCount++;
           progressPercent = Math.round(
             (completedCount / totalActivities) * 100,
           );
 
           progress[topicId] = {
             topicId: topicId,
-            completed: lessonDone && mindmapDone && flashcardsDone && quizDone,
+            completed:
+              lessonDone && mindmapDone && flashcardsDone && miniQuizDone,
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,

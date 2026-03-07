@@ -23,7 +23,7 @@ const GeminiService = {
   getApiKey: function () {
     try {
       const key = PropertiesService.getScriptProperties().getProperty(
-        AI_CONFIG.GEMINI_API_KEY_PROPERTY
+        AI_CONFIG.GEMINI_API_KEY_PROPERTY,
       );
       if (!key) {
         Logger.log("⚠️ GEMINI_API_KEY chưa được setup trong Script Properties");
@@ -48,7 +48,7 @@ const GeminiService = {
       }
       PropertiesService.getScriptProperties().setProperty(
         AI_CONFIG.GEMINI_API_KEY_PROPERTY,
-        apiKey
+        apiKey,
       );
       Logger.log("✅ Gemini API Key đã được lưu thành công!");
       return true;
@@ -145,17 +145,16 @@ const GeminiService = {
     let response = UrlFetchApp.fetch(url, options);
     let responseCode = response.getResponseCode();
 
-    // Xử lý lỗi 429 (Quota exceeded) - đợi và thử lại
+    // Xử lý lỗi 429 (Quota exceeded) - đợi và thử lại (tối đa 2 lần, giảm thời gian chờ)
     if (responseCode === 429) {
-      Logger.log("⚠️ Quota exceeded (429). Đang đợi 35 giây...");
-      Utilities.sleep(35000); // Đợi 35 giây
+      Logger.log("⚠️ Quota exceeded (429). Đang đợi 15 giây...");
+      Utilities.sleep(15000);
       response = UrlFetchApp.fetch(url, options);
       responseCode = response.getResponseCode();
 
-      // Nếu vẫn lỗi, đợi thêm lần nữa
       if (responseCode === 429) {
-        Logger.log("⚠️ Vẫn bị quota. Đang đợi thêm 60 giây...");
-        Utilities.sleep(60000);
+        Logger.log("⚠️ Vẫn bị quota. Đang đợi thêm 20 giây...");
+        Utilities.sleep(20000);
         response = UrlFetchApp.fetch(url, options);
         responseCode = response.getResponseCode();
       }
@@ -211,7 +210,7 @@ const GeminiService = {
    * @param {number} maxRetries
    * @returns {string|Object}
    */
-  callWithRetry: function (prompt, config = {}, maxRetries = 3) {
+  callWithRetry: function (prompt, config = {}, maxRetries = 2) {
     let lastError;
 
     for (let i = 0; i < maxRetries; i++) {
@@ -222,19 +221,19 @@ const GeminiService = {
         const errorStr = error.toString();
         Logger.log("🔄 Retry " + (i + 1) + "/" + maxRetries + ": " + errorStr);
 
-        // Nếu là rate limit (429), đợi lâu hơn nhiều
+        // Nếu là rate limit (429), đợi ngắn hơn vì _callAPI đã retry nội bộ
         if (
           errorStr.includes("429") ||
           errorStr.includes("quota") ||
           errorStr.includes("RESOURCE_EXHAUSTED")
         ) {
-          const waitTime = 35000 * (i + 1); // 35s, 70s, 105s
+          const waitTime = 10000 * (i + 1); // 10s, 20s
           Logger.log(
-            "⏳ Rate limit detected. Waiting " + waitTime / 1000 + "s..."
+            "⏳ Rate limit detected. Waiting " + waitTime / 1000 + "s...",
           );
           Utilities.sleep(waitTime);
         } else {
-          Utilities.sleep(2000 * (i + 1)); // 2s, 4s, 6s cho lỗi khác
+          Utilities.sleep(2000 * (i + 1)); // 2s, 4s cho lỗi khác
         }
       }
     }
@@ -445,7 +444,7 @@ function ADMIN_updateTopicContentDocId() {
         // Column N = column 14 (1-indexed)
         sheet.getRange(i + 1, contentDocIdCol + 1).setValue(CONTENT_DOC_ID);
         Logger.log(
-          "✅ Updated " + TOPIC_ID + " with contentDocId: " + CONTENT_DOC_ID
+          "✅ Updated " + TOPIC_ID + " with contentDocId: " + CONTENT_DOC_ID,
         );
 
         // Clear server cache

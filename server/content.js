@@ -2996,21 +2996,23 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       if (lastUpdatedCol >= 0)
         sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
 
-      // Check if all completed -> update status
+      // Check if all 4 parts completed -> update status
+      // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
       const lessonCol = headers.indexOf("lessonCompleted");
       const mindmapCol = headers.indexOf("mindmapViewed");
       const flashcardsCol = headers.indexOf("flashcardsCompleted");
-      const quizDoneCol = headers.indexOf("quizDone");
+      const miniQuizCol = headers.indexOf("miniQuizCompleted");
 
       const currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      const lessonDone = currentData[lessonCol] === 1;
-      const mindmapDone = currentData[mindmapCol] === 1;
-      const flashcardsDone = currentData[flashcardsCol] === 1;
-      const quizDone = quizDoneCol >= 0 ? currentData[quizDoneCol] === 1 : true;
+      const lessonDone = lessonCol >= 0 && currentData[lessonCol] === 1;
+      const mindmapDone = mindmapCol >= 0 && currentData[mindmapCol] === 1;
+      const flashcardsDone =
+        flashcardsCol >= 0 && currentData[flashcardsCol] === 1;
+      const miniQuizDone = miniQuizCol >= 0 && currentData[miniQuizCol] === 1;
 
-      if (lessonDone && mindmapDone && flashcardsDone && quizDone) {
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone) {
         const statusCol = headers.indexOf("status");
         const completedAtCol = headers.indexOf("completedAt");
         if (statusCol >= 0)
