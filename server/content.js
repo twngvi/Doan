@@ -233,6 +233,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       "lesson_summary",
       "infographic",
       "questions",
+      "mini_quiz",
     ];
     if (!validTypes.includes(contentType)) {
       Logger.log("❌ Invalid contentType: " + contentType);
@@ -362,6 +363,12 @@ function getAIContent(topicId, contentType, forceRegenerate) {
           docResult.content,
           analysis,
           { questionCount: 20 },
+        );
+        break;
+      case "mini_quiz":
+        generatedContent = ContentGenerator.generateMiniQuiz(
+          docResult.content,
+          analysis,
         );
         break;
       default:
@@ -1087,6 +1094,7 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
         "topicId",
         "topicTitle",
         "lessonCompleted",
+        "miniQuizCompleted",
         "mindmapViewed",
         "flashcardsCompleted",
         "quizDone",
@@ -2859,6 +2867,12 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
           updateData.completedAt = new Date();
         }
         break;
+
+      case "mini_quiz":
+        if (progressData.completed) {
+          updateData.miniQuizCompleted = 1;
+        }
+        break;
     }
 
     // Cập nhật session
@@ -2897,6 +2911,7 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         "topicId",
         "topicTitle",
         "lessonCompleted",
+        "miniQuizCompleted",
         "mindmapViewed",
         "flashcardsCompleted",
         "quizDone",
@@ -2951,6 +2966,9 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         newRow[headers.indexOf("flashcardsCompleted")] = progressData.completed
           ? 1
           : 0;
+      } else if (progressType === "mini_quiz" && progressData.completed) {
+        var mqCol = headers.indexOf("miniQuizCompleted");
+        if (mqCol >= 0) newRow[mqCol] = 1;
       }
 
       sheet.appendRow(newRow);
@@ -2967,6 +2985,10 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       if (progressType === "flashcards" && progressData.completed) {
         const colIdx = headers.indexOf("flashcardsCompleted");
         if (colIdx >= 0) sheet.getRange(rowIndex, colIdx + 1).setValue(1);
+      }
+      if (progressType === "mini_quiz" && progressData.completed) {
+        var mqColIdx = headers.indexOf("miniQuizCompleted");
+        if (mqColIdx >= 0) sheet.getRange(rowIndex, mqColIdx + 1).setValue(1);
       }
 
       // Update lastUpdated
@@ -3001,6 +3023,65 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     Logger.log("✅ Topic progress updated for: " + topicId);
   } catch (error) {
     Logger.log("❌ Error updating topic progress: " + error.toString());
+  }
+}
+
+/**
+ * Lấy tiến trình của 1 topic cụ thể cho user hiện tại
+ * @param {string} topicId
+ * @returns {Object} - {success, data}
+ */
+function getTopicProgressForWeb(topicId) {
+  Logger.log("📊 getTopicProgressForWeb CALLED for topic: " + topicId);
+  try {
+    var userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail)
+      return { success: false, message: "Not authenticated", data: null };
+    var userId = getUserIdByEmail(userEmail);
+    if (!userId) return { success: true, data: null };
+    var spreadsheet = getUserSpreadsheet(userId);
+    if (!spreadsheet) return { success: true, data: null };
+    var sheet = spreadsheet.getSheetByName("Topic_Progress");
+    if (!sheet) return { success: true, data: null };
+
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var topicIdStr = String(topicId).trim();
+
+    // Ensure miniQuizCompleted column exists
+    var mqIdx = headers.indexOf("miniQuizCompleted");
+    if (mqIdx === -1) {
+      // Add column header
+      var newColIdx = headers.length + 1;
+      sheet.getRange(1, newColIdx).setValue("miniQuizCompleted");
+      headers.push("miniQuizCompleted");
+      mqIdx = headers.length - 1;
+    }
+
+    for (var i = 1; i < data.length; i++) {
+      var tidx = headers.indexOf("topicId");
+      if (String(data[i][tidx]).trim() === topicIdStr) {
+        var isTrue = function (v) {
+          return v === 1 || v === true || v === "1" || v === "TRUE";
+        };
+        var lcIdx = headers.indexOf("lessonCompleted");
+        var mvIdx = headers.indexOf("mindmapViewed");
+        var fcIdx = headers.indexOf("flashcardsCompleted");
+        return {
+          success: true,
+          data: {
+            lessonCompleted: lcIdx >= 0 && isTrue(data[i][lcIdx]),
+            mindmapViewed: mvIdx >= 0 && isTrue(data[i][mvIdx]),
+            flashcardsCompleted: fcIdx >= 0 && isTrue(data[i][fcIdx]),
+            miniQuizCompleted: mqIdx >= 0 && isTrue(data[i][mqIdx]),
+          },
+        };
+      }
+    }
+    return { success: true, data: null };
+  } catch (error) {
+    Logger.log("❌ Error getTopicProgressForWeb: " + error.toString());
+    return { success: false, message: error.toString(), data: null };
   }
 }
 
@@ -3085,14 +3166,22 @@ function calculateProgressPercent(row, headers) {
  */
 function getUserIdByEmail(email) {
   try {
-    const masterDb = SpreadsheetApp.openById(MASTER_DB_ID);
+    // ⭐ FIX: Use DB_CONFIG.SPREADSHEET_ID instead of undefined MASTER_DB_ID
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const masterDb = SpreadsheetApp.openById(masterDbId);
     const usersSheet = masterDb.getSheetByName("Users");
     if (!usersSheet) return null;
 
+    // ⭐ FIX: Use header-based lookup instead of hardcoded index
     const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIdx = headers.indexOf("email");
+    if (emailIdx === -1) return null;
+
     for (let i = 1; i < data.length; i++) {
-      if (data[i][1] === email) {
-        // email is column B (index 1)
+      if (data[i][emailIdx] === email) {
         return data[i][0]; // userId is column A (index 0)
       }
     }
@@ -3105,19 +3194,27 @@ function getUserIdByEmail(email) {
 
 /**
  * Helper: Get user spreadsheet
+ * ⭐ FIX: Use DB_CONFIG.SPREADSHEET_ID instead of undefined MASTER_DB_ID
+ * ⭐ Also use header-based email/userId lookup for robustness
  */
 function getUserSpreadsheet(userId) {
   try {
-    const masterDb = SpreadsheetApp.openById(MASTER_DB_ID);
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const masterDb = SpreadsheetApp.openById(masterDbId);
     const usersSheet = masterDb.getSheetByName("Users");
     if (!usersSheet) return null;
 
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0];
+    const userIdCol = headers.indexOf("userId");
     const progressSheetIdCol = headers.indexOf("progressSheetId");
 
+    if (userIdCol === -1 || progressSheetIdCol === -1) return null;
+
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === userId) {
+      if (String(data[i][userIdCol]).trim() === String(userId).trim()) {
         const sheetId = data[i][progressSheetIdCol];
         if (sheetId) {
           return SpreadsheetApp.openById(sheetId);

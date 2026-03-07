@@ -346,6 +346,40 @@ YÊU CẦU:
 - selfCheck có 3-5 câu hỏi đơn giản
 - CHỈ dùng kiến thức trong tài liệu
 - Ngôn ngữ thân thiện, dễ tiếp cận`,
+
+  /**
+   * Tạo Mini Quiz - 5 câu hỏi trọng điểm từ bài học
+   */
+  MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo CHÍNH XÁC 5 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học.
+
+=== TÀI LIỆU ===
+{docContent}
+=== KẾT THÚC TÀI LIỆU ===
+
+Phân tích: {analysis}
+
+Trả về CHÍNH XÁC format JSON sau:
+{
+  "questions": [
+    {
+      "question": "Nội dung câu hỏi?",
+      "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+      "correctAnswer": 0,
+      "explanation": "Giải thích chi tiết tại sao đáp án đúng và tại sao các đáp án khác sai. Giúp sinh viên hiểu sâu hơn."
+    }
+  ]
+}
+
+YÊU CẦU QUAN TRỌNG:
+- Tạo CHÍNH XÁC 5 câu hỏi (không nhiều hơn, không ít hơn)
+- Mỗi câu có 4 đáp án (options là mảng 4 chuỗi)
+- "correctAnswer" là index từ 0-3 (0 = đáp án đầu tiên đúng)
+- Câu hỏi phải tập trung vào KIẾN THỨC TRỌNG ĐIỂM, nội dung cốt lõi nhất
+- Câu hỏi đa dạng: khái niệm, ứng dụng, phân tích, so sánh
+- "explanation" phải GIẢI THÍCH RÕ RÀNG tại sao đáp án đúng/sai, giúp người học hiểu bài hơn
+- Đáp án nhiễu (sai) phải có tính logic, không nên quá rõ ràng là sai
+- CHỈ sử dụng kiến thức từ tài liệu, KHÔNG thêm kiến thức bên ngoài
+- Ngôn ngữ rõ ràng, dễ hiểu`,
 };
 
 // ========== CONTENT GENERATOR ==========
@@ -498,6 +532,25 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.5,
       maxTokens: 5000,
+    });
+  },
+
+  /**
+   * Tạo Mini Quiz - 5 câu hỏi trọng điểm
+   * @param {string} docContent
+   * @param {Object} analysis
+   * @returns {Object} Mini quiz data with 5 questions
+   */
+  generateMiniQuiz: function (docContent, analysis) {
+    const prompt = PROMPT_TEMPLATES.MINI_QUIZ_GENERATION.replace(
+      "{docContent}",
+      docContent,
+    ).replace("{analysis}", JSON.stringify(analysis));
+
+    return GeminiService.callWithRetry(prompt, {
+      expectJson: true,
+      temperature: 0.6,
+      maxTokens: 3000,
     });
   },
 };

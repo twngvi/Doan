@@ -79,7 +79,7 @@ function getAllTopics() {
       }
 
       topics.push({
-        topicId: String(row[0]),
+        topicId: String(row[0]).trim(),
         title: String(row[1]),
         description: String(row[2]),
         category: String(row[3]),
@@ -247,23 +247,22 @@ function getTopicById(topicId) {
  */
 function getUserTopicProgress() {
   try {
-    const session = getUserSession();
-
-    if (!session.success || !session.user) {
+    // ⭐ FIX: Use Session.getActiveUser() + getUserProgressSheetIdByEmail (working pattern)
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
       return {
         success: false,
-        message: "User not logged in",
+        message: "User not authenticated",
       };
     }
 
-    const userId = session.user.userId;
-    Logger.log("Getting topic progress for user: " + userId);
+    Logger.log("Getting topic progress for user: " + userEmail);
 
-    // Get user's personal spreadsheet
-    const userSheetId = findUserProgressSheet(userId);
+    // Get user's personal spreadsheet ID using working function
+    const userSheetId = getUserProgressSheetIdByEmail(userEmail);
 
     if (!userSheetId) {
-      Logger.log("User progress sheet not found");
+      Logger.log("User progress sheet not found for: " + userEmail);
       return {
         success: true,
         progress: {}, // Empty progress for new users
@@ -306,19 +305,22 @@ function getUserTopicProgress() {
         const completedAtIdx = headers.indexOf("completedAt");
 
         if (lessonCompletedIdx >= 0) {
-          // New schema
-          const lessonDone =
-            row[lessonCompletedIdx] === 1 || row[lessonCompletedIdx] === true;
+          // New schema - ⭐ FIX: Handle string/number/boolean values from spreadsheet
+          var isChecked = function (val) {
+            return val === 1 || val === true || val === "1" || val === "TRUE";
+          };
+          const lessonDone = isChecked(row[lessonCompletedIdx]);
           const mindmapDone =
-            mindmapViewedIdx >= 0 &&
-            (row[mindmapViewedIdx] === 1 || row[mindmapViewedIdx] === true);
+            mindmapViewedIdx >= 0 && isChecked(row[mindmapViewedIdx]);
           const flashcardsDone =
             flashcardsCompletedIdx >= 0 &&
-            (row[flashcardsCompletedIdx] === 1 ||
-              row[flashcardsCompletedIdx] === true);
-          const quizDone =
-            quizDoneIdx >= 0 &&
-            (row[quizDoneIdx] === 1 || row[quizDoneIdx] === true);
+            isChecked(row[flashcardsCompletedIdx]);
+          const quizDone = quizDoneIdx >= 0 && isChecked(row[quizDoneIdx]);
+
+          // Mini quiz completed
+          const miniQuizCompletedIdx = headers.indexOf("miniQuizCompleted");
+          const miniQuizDone =
+            miniQuizCompletedIdx >= 0 && isChecked(row[miniQuizCompletedIdx]);
 
           // ⭐ Calculate progress percentage based on 4 activities (25% each)
           let progressPercent = 0;
@@ -340,6 +342,7 @@ function getUserTopicProgress() {
             mindmapViewed: mindmapDone,
             flashcardsCompleted: flashcardsDone,
             quizDone: quizDone,
+            miniQuizCompleted: miniQuizDone,
             status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
             completedAt: completedAtIdx >= 0 ? row[completedAtIdx] : null,
           };
@@ -376,29 +379,25 @@ function getUserTopicProgress() {
  */
 function updateUserTopicProgress(topicId, progressData) {
   try {
-    const session = getUserSession();
-
-    if (!session.success || !session.user) {
-      return {
-        success: false,
-        message: "User not logged in",
-      };
+    // ⭐ FIX: Use Session.getActiveUser() instead of broken getUserSession() call
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "User not authenticated" };
     }
 
-    const userId = session.user.userId;
-    Logger.log(`Updating topic progress for user ${userId}, topic ${topicId}`);
+    Logger.log(
+      `Updating topic progress for user ${userEmail}, topic ${topicId}`,
+    );
 
-    // Get or create user's personal sheet
-    let userSheet = findUserProgressSheet(userId);
+    // Get user's personal spreadsheet ID
+    const userSheetId = getUserProgressSheetIdByEmail(userEmail);
 
-    if (!userSheet) {
-      // Create personal sheet if it doesn't exist
-      const createResult = createUserPersonalSheet(userId);
-      if (!createResult.success) {
-        return createResult;
-      }
-      userSheet = SpreadsheetApp.openById(createResult.sheetId);
+    if (!userSheetId) {
+      Logger.log("User personal sheet not found for: " + userEmail);
+      return { success: false, message: "User personal sheet not found" };
     }
+
+    let userSheet = SpreadsheetApp.openById(userSheetId);
 
     // Get or create Topic_Progress sheet
     let progressSheet = userSheet.getSheetByName("Topic_Progress");
@@ -466,12 +465,12 @@ function updateUserTopicProgress(topicId, progressData) {
  */
 function checkTopicAccess(topicId) {
   try {
-    const session = getUserSession();
-
-    if (!session.success || !session.user) {
+    // ⭐ FIX: Use Session.getActiveUser() instead of broken getUserSession() call
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
       return {
         success: false,
-        message: "User not logged in",
+        message: "User not authenticated",
         unlocked: false,
       };
     }
@@ -483,10 +482,9 @@ function checkTopicAccess(topicId) {
     }
 
     const topic = topicResult.topic;
-    const user = session.user;
 
     // Check AI level requirement
-    const userAILevel = user.aiLevel || 1;
+    const userAILevel = 1; // TODO: get from user data if needed
     const minAILevel = topic.minAILevel || 1;
 
     if (userAILevel < minAILevel) {

@@ -89,6 +89,11 @@
     flashcardsData = [];
     currentFlashcardIndex = 0;
 
+    // Reset mini quiz state
+    miniQuizData = null;
+    miniQuizAnswered = 0;
+    miniQuizLoaded = false;
+
     // Start meteor shower and mouse effects for header
     startLessonHeaderMeteors();
     setupLessonHeaderMouseEffect();
@@ -143,6 +148,9 @@
         console.error("❌ No contentDocId found");
         showLessonError("Không tìm thấy nội dung bài học");
       }
+
+      // ⭐ Load saved progress for this topic (restore sidebar/checkbox states)
+      loadSavedTopicProgress(currentLessonData.topicId);
     } else {
       console.error("❌ No currentPageParams found");
       showLessonError("Thiếu thông tin bài học");
@@ -1673,11 +1681,6 @@
     let lessonPct = 0;
     if (tabCompletion.lessonRead) lessonPct += 50;
     if (tabCompletion.lessonQuiz) lessonPct += 50;
-    // If no mini quiz exists, reading alone = 100%
-    const hasMiniQuiz = document.getElementById("mini-quiz-requirement");
-    if (hasMiniQuiz && hasMiniQuiz.style.display === "none") {
-      if (tabCompletion.lessonRead) lessonPct = 100;
-    }
 
     // Mindmap tab progress (33% total)
     let mindmapPct = tabCompletion.mindmapViewed ? 100 : 0;
@@ -1767,6 +1770,11 @@
     if (checkbox.checked) {
       saveLessonProgress(true);
       showToast("✅ Đã đánh dấu đọc xong!", "success");
+      // Unlock mini quiz dropdown
+      unlockMiniQuizDropdown();
+    } else {
+      // Re-lock if unchecked
+      lockMiniQuizDropdown();
     }
     updateOverallProgress();
   };
@@ -1785,16 +1793,53 @@
   };
 
   /**
-   * Handler: Mini Quiz completed (called from handleMiniQuizAnswer)
+   * Handler: Mini Quiz completed (all 5 questions answered)
    */
   function onMiniQuizCompleted() {
     tabCompletion.lessonQuiz = true;
-    const reqIcon = document.getElementById("mini-quiz-req-icon");
-    const reqEl = document.getElementById("mini-quiz-requirement");
-    if (reqIcon) reqIcon.textContent = "✅";
-    if (reqEl) reqEl.classList.add("completed");
+    // Update badge
+    const badge = document.getElementById("mini-quiz-status-badge");
+    if (badge) {
+      badge.textContent = "Hoàn thành ✅";
+      badge.classList.add("completed");
+    }
+    // Show result section
+    const resultEl = document.getElementById("mini-quiz-result");
+    if (resultEl) {
+      const correctCount = document.querySelectorAll(
+        "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
+      ).length;
+      const totalCount = 5;
+      resultEl.style.display = "block";
+      resultEl.innerHTML = `
+        <div class="mq-result-card">
+          <div class="mq-result-icon">🎉</div>
+          <div class="mq-result-title">Hoàn thành Mini Quiz!</div>
+          <div class="mq-result-score">Bạn trả lời đúng ${correctCount}/${totalCount} câu</div>
+          <div class="mq-result-msg">Bài học đã được ghi nhận hoàn thành. Xem giải thích ở từng câu hỏi phía trên.</div>
+        </div>
+      `;
+    }
     updateOverallProgress();
     console.log("🎯 Mini Quiz completed!");
+
+    // ⭐ Save mini quiz completion to backend per topic per user
+    if (currentLessonData?.topicId) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            console.log("✅ Mini quiz progress saved to backend");
+            invalidateProgressCache();
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.error("❌ Error saving mini quiz progress:", err);
+        })
+        .saveLearningProgressForWeb(currentLessonData.topicId, "mini_quiz", {
+          topicTitle: currentLessonData.topicTitle,
+          completed: true,
+        });
+    }
   }
 
   /**
@@ -1804,6 +1849,357 @@
     tabCompletion.flashcardsDone = true;
     updateOverallProgress();
     console.log("🃏 All flashcards viewed!");
+  }
+
+  // ========================================
+  // ⭐ LOAD & RESTORE SAVED PROGRESS PER TOPIC
+  // ========================================
+
+  /**
+   * Load saved progress for this topic from backend and restore UI state
+   */
+  function loadSavedTopicProgress(topicId) {
+    if (!topicId) return;
+    console.log("📊 Loading saved progress for topic:", topicId);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("📊 Topic progress response:", response);
+        if (response && response.success && response.data) {
+          restoreTopicProgress(response.data);
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.warn("⚠️ Could not load topic progress:", error);
+      })
+      .getTopicProgressForWeb(topicId);
+  }
+
+  /**
+   * Restore UI state from saved progress data
+   */
+  function restoreTopicProgress(data) {
+    console.log("🔄 Restoring topic progress:", data);
+
+    // Restore lesson read checkbox
+    if (data.lessonCompleted) {
+      tabCompletion.lessonRead = true;
+      var readCheckbox = document.getElementById("lesson-read-checkbox");
+      if (readCheckbox) readCheckbox.checked = true;
+      // Unlock mini quiz since lesson is read
+      unlockMiniQuizDropdown();
+    }
+
+    // Restore mini quiz completed state
+    if (data.miniQuizCompleted) {
+      tabCompletion.lessonQuiz = true;
+      var badge = document.getElementById("mini-quiz-status-badge");
+      if (badge) {
+        badge.textContent = "Hoàn thành ✅";
+        badge.classList.add("completed");
+        badge.classList.remove("ready");
+      }
+    }
+
+    // Restore mindmap viewed
+    if (data.mindmapViewed) {
+      tabCompletion.mindmapViewed = true;
+      var mindmapCheckbox = document.getElementById("mindmap-view-checkbox");
+      if (mindmapCheckbox) mindmapCheckbox.checked = true;
+    }
+
+    // Restore flashcards completed
+    if (data.flashcardsCompleted) {
+      tabCompletion.flashcardsDone = true;
+    }
+
+    // Update overall progress bar & sidebar
+    updateOverallProgress();
+  }
+
+  // ========================================
+  // 🧠 MINI QUIZ DROPDOWN SYSTEM
+  // ========================================
+
+  let miniQuizData = null; // Stores the 5 questions from AI
+  let miniQuizAnswered = 0; // How many questions have been answered
+  let miniQuizLoaded = false;
+
+  /**
+   * Unlock the mini quiz dropdown after marking lesson as read
+   */
+  function unlockMiniQuizDropdown() {
+    const section = document.getElementById("mini-quiz-section");
+    const toggle = document.getElementById("mini-quiz-toggle");
+    const icon = document.getElementById("mini-quiz-toggle-icon");
+    const desc = document.getElementById("mini-quiz-toggle-desc");
+    const badge = document.getElementById("mini-quiz-status-badge");
+
+    if (section) section.classList.remove("locked");
+    if (toggle) toggle.disabled = false;
+    if (icon) icon.textContent = "📝";
+    if (desc) desc.textContent = "Nhấn để mở Mini Quiz - 5 câu hỏi trọng điểm";
+    if (badge && !tabCompletion.lessonQuiz) {
+      badge.textContent = "Sẵn sàng";
+      badge.classList.add("ready");
+    }
+
+    // Auto-load mini quiz if not loaded yet
+    if (!miniQuizLoaded) {
+      loadMiniQuiz(false);
+    }
+  }
+
+  /**
+   * Lock the mini quiz dropdown
+   */
+  function lockMiniQuizDropdown() {
+    const section = document.getElementById("mini-quiz-section");
+    const toggle = document.getElementById("mini-quiz-toggle");
+    const icon = document.getElementById("mini-quiz-toggle-icon");
+    const desc = document.getElementById("mini-quiz-toggle-desc");
+    const badge = document.getElementById("mini-quiz-status-badge");
+    const content = document.getElementById("mini-quiz-dropdown-content");
+
+    if (section) section.classList.add("locked");
+    if (toggle) toggle.disabled = true;
+    if (icon) icon.textContent = "🔒";
+    if (desc) desc.textContent = "Đánh dấu đã đọc xong để mở khóa";
+    if (badge) {
+      badge.textContent = "Chưa mở khóa";
+      badge.classList.remove("ready", "completed");
+    }
+    if (content) content.classList.remove("open");
+    if (section) section.classList.remove("expanded");
+  }
+
+  /**
+   * Toggle mini quiz dropdown open/close
+   */
+  function toggleMiniQuizDropdown() {
+    const section = document.getElementById("mini-quiz-section");
+    const content = document.getElementById("mini-quiz-dropdown-content");
+
+    if (!section || section.classList.contains("locked")) return;
+
+    const isOpen = content.classList.contains("open");
+    if (isOpen) {
+      content.classList.remove("open");
+      section.classList.remove("expanded");
+    } else {
+      content.classList.add("open");
+      section.classList.add("expanded");
+    }
+  }
+
+  /**
+   * Load Mini Quiz from AI (5 key questions from lesson content)
+   */
+  function loadMiniQuiz(forceRegenerate) {
+    if (!currentLessonData?.topicId) return;
+
+    console.log("🧠 Loading Mini Quiz...");
+
+    const loadingEl = document.getElementById("mini-quiz-loading");
+    const errorEl = document.getElementById("mini-quiz-error");
+    const questionsEl = document.getElementById("mini-quiz-questions");
+    const resultEl = document.getElementById("mini-quiz-result");
+
+    if (loadingEl) loadingEl.style.display = "block";
+    if (errorEl) errorEl.style.display = "none";
+    if (questionsEl) {
+      questionsEl.style.display = "none";
+      questionsEl.innerHTML = "";
+    }
+    if (resultEl) resultEl.style.display = "none";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Mini Quiz response:", response);
+        if (loadingEl) loadingEl.style.display = "none";
+
+        if (response && response.success && response.data) {
+          let quizData = response.data;
+          if (typeof quizData === "string") {
+            try {
+              quizData = JSON.parse(quizData);
+            } catch (e) {
+              showMiniQuizError("Lỗi parse dữ liệu Mini Quiz");
+              return;
+            }
+          }
+
+          miniQuizData = quizData.questions || quizData;
+          if (!Array.isArray(miniQuizData) || miniQuizData.length === 0) {
+            showMiniQuizError("Không có câu hỏi nào được tạo");
+            return;
+          }
+
+          miniQuizLoaded = true;
+          miniQuizAnswered = 0;
+          renderMiniQuizQuestions(miniQuizData);
+          if (questionsEl) questionsEl.style.display = "block";
+        } else {
+          showMiniQuizError(response?.message || "Không thể tạo Mini Quiz");
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Mini Quiz error:", error);
+        if (loadingEl) loadingEl.style.display = "none";
+        showMiniQuizError(error?.message || "Lỗi kết nối server");
+      })
+      .getAIContentForWeb(
+        currentLessonData.topicId,
+        "mini_quiz",
+        forceRegenerate || false,
+      );
+  }
+
+  /**
+   * Show mini quiz error
+   */
+  function showMiniQuizError(msg) {
+    const errorEl = document.getElementById("mini-quiz-error");
+    const errorMsg = document.getElementById("mini-quiz-error-msg");
+    if (errorEl) errorEl.style.display = "block";
+    if (errorMsg) errorMsg.textContent = msg;
+  }
+
+  /**
+   * Render the 5 mini quiz questions
+   */
+  function renderMiniQuizQuestions(questions) {
+    const container = document.getElementById("mini-quiz-questions");
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="mq-header-info">
+        <div class="mq-header-icon">🧠</div>
+        <div>
+          <div class="mq-header-title">Mini Quiz - Kiểm tra kiến thức</div>
+          <div class="mq-header-subtitle">Trả lời hết 5 câu để hoàn thành bài học. Mỗi câu đều có giải thích!</div>
+        </div>
+      </div>
+      <div class="mq-progress-bar">
+        <div class="mq-progress-fill" id="mq-progress-fill" style="width: 0%"></div>
+      </div>
+      <div class="mq-progress-text" id="mq-progress-text">0/5 câu đã trả lời</div>
+    `;
+
+    questions.forEach(function (q, idx) {
+      if (idx >= 5) return; // Only show 5 questions
+
+      var qEl = document.createElement("div");
+      qEl.className = "mq-question";
+      qEl.id = "mq-q-" + idx;
+      qEl.dataset.answered = "false";
+
+      var optionsHtml = "";
+      var options = q.options || [];
+      for (var i = 0; i < options.length; i++) {
+        var opt = options[i];
+        var optText = typeof opt === "string" ? opt : opt.text || opt;
+        optionsHtml +=
+          '<div class="mq-option" data-idx="' +
+          i +
+          '" data-qidx="' +
+          idx +
+          '" onclick="selectMiniQuizOption(this, ' +
+          idx +
+          ", " +
+          i +
+          ')">' +
+          '<div class="mq-option-radio"></div>' +
+          '<span class="mq-option-text">' +
+          optText +
+          "</span>" +
+          "</div>";
+      }
+
+      qEl.innerHTML =
+        '<div class="mq-question-number">Câu ' +
+        (idx + 1) +
+        "/5</div>" +
+        '<p class="mq-question-text">' +
+        (q.question || "") +
+        "</p>" +
+        '<div class="mq-options">' +
+        optionsHtml +
+        "</div>" +
+        '<div class="mq-explanation" id="mq-explain-' +
+        idx +
+        '" style="display: none"></div>';
+
+      container.appendChild(qEl);
+    });
+  }
+
+  /**
+   * Handle selecting a mini quiz option
+   */
+  function selectMiniQuizOption(optionEl, qIdx, optIdx) {
+    var qEl = document.getElementById("mq-q-" + qIdx);
+    if (!qEl || qEl.dataset.answered === "true") return; // Already answered
+
+    // Mark as answered
+    qEl.dataset.answered = "true";
+    qEl.classList.add("answered");
+
+    var question = miniQuizData[qIdx];
+    var correctIdx = question.correctAnswer;
+    if (typeof correctIdx === "undefined") correctIdx = 0;
+
+    var isCorrect = optIdx === correctIdx;
+
+    // Show selection
+    optionEl.classList.add("selected");
+    if (isCorrect) {
+      optionEl.classList.add("correct");
+    } else {
+      optionEl.classList.add("incorrect");
+      // Highlight correct answer
+      var correctOpt = qEl.querySelector(
+        '.mq-option[data-idx="' + correctIdx + '"]',
+      );
+      if (correctOpt) correctOpt.classList.add("correct");
+    }
+
+    // Show explanation
+    var explainEl = document.getElementById("mq-explain-" + qIdx);
+    if (explainEl) {
+      var explanation =
+        question.explanation ||
+        "Đáp án đúng là: " +
+          (question.options[correctIdx]?.text ||
+            question.options[correctIdx] ||
+            "");
+      explainEl.innerHTML =
+        '<div class="mq-explain-header">' +
+        (isCorrect ? "✅ Chính xác!" : "❌ Chưa đúng") +
+        "</div>" +
+        '<div class="mq-explain-text">' +
+        explanation +
+        "</div>";
+      explainEl.style.display = "block";
+      explainEl.className =
+        "mq-explanation " + (isCorrect ? "correct" : "incorrect");
+    }
+
+    // Update progress
+    miniQuizAnswered++;
+    var progressFill = document.getElementById("mq-progress-fill");
+    var progressText = document.getElementById("mq-progress-text");
+    var pct = Math.round((miniQuizAnswered / 5) * 100);
+    if (progressFill) progressFill.style.width = pct + "%";
+    if (progressText)
+      progressText.textContent = miniQuizAnswered + "/5 câu đã trả lời";
+
+    // Check if all 5 answered
+    if (miniQuizAnswered >= 5) {
+      setTimeout(function () {
+        onMiniQuizCompleted();
+      }, 500);
+    }
   }
 
   // Make functions globally available
@@ -1830,6 +2226,9 @@
   window.toggleSpoiler = toggleSpoiler;
   window.toggleTOC = toggleTOC;
   window.updateOverallProgress = updateOverallProgress;
+  window.toggleMiniQuizDropdown = toggleMiniQuizDropdown;
+  window.selectMiniQuizOption = selectMiniQuizOption;
+  window.loadMiniQuiz = loadMiniQuiz;
 
   console.log("✅ Lesson scripts loaded (Phase 3: AI Content Integration)");
 
@@ -1914,14 +2313,16 @@
           .replace(/&gt;/g, ">")
           .replace(/&amp;/g, "&")
           .replace(/^\n+|\n+$/g, "");
-        const isPython = lang.toLowerCase() === 'python';
-        const runBtn = isPython ? `
+        const isPython = lang.toLowerCase() === "python";
+        const runBtn = isPython
+          ? `
             <button class="btn-run-code" onclick="runPythonCode(this)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="5,3 19,12 5,21"/>
               </svg>
               Run
-            </button>` : '';
+            </button>`
+          : "";
         return `
         <div class="code-block-wrapper">
           <div class="code-block-header">
@@ -1985,14 +2386,16 @@
         .replace(/&gt;/g, ">")
         .replace(/&amp;/g, "&")
         .replace(/^\n+|\n+$/g, "");
-      const isPython = language.toLowerCase() === 'python';
-      const runBtn = isPython ? `
+      const isPython = language.toLowerCase() === "python";
+      const runBtn = isPython
+        ? `
             <button class="btn-run-code" onclick="runPythonCode(this)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="5,3 19,12 5,21"/>
               </svg>
               Run
-            </button>` : '';
+            </button>`
+        : "";
       return `
         <div class="code-block-wrapper">
           <div class="code-block-header">
@@ -2058,38 +2461,46 @@
 
         // Highlight từng dòng: prompt (>>>), output, path (C:\...>), comment (#)
         const lines = cleanContent.split("\n");
-        const highlightedLines = lines.map((line) => {
-          const escaped = escapeHtml(line);
-          // Python prompt >>>
-          if (/^\s*>>>/.test(line)) {
-            return `<span class="terminal-prompt">${escaped.replace(/^(\s*&gt;&gt;&gt;|\s*>>>)/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
-          }
-          // Python continuation ...
-          if (/^\s*\.\.\./.test(line)) {
-            return `<span class="terminal-prompt">${escaped}</span>`;
-          }
-          // Windows/Linux shell prompt (C:\...> or $ or %)
-          if (/^\s*[A-Z]:\\.*>/.test(line) || /^\s*[\$%#]\s/.test(line)) {
-            return `<span class="terminal-prompt">${escaped.replace(/^(\s*[A-Z]:\\[^>]*>|\s*[\$%#])/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
-          }
-          // Comment lines (# ...)
-          if (/^\s*#/.test(line)) {
-            return `<span class="terminal-comment">${escaped}</span>`;
-          }
-          // Single-pass highlighting to avoid regex conflicts between string/number/keyword
-          const highlighted = escaped.replace(
-            /(&quot;[^&]*&quot;|'[^']*'|"[^"]*")|(\b\d+\.?\d*\b)|(\b(?:True|False|None|Error|Exception|Traceback|def|import|from|return|if|else|for|while|not|and|or|try|except|raise|with|lambda|yield|pass|break|continue|print)\b)/g,
-            (m, str, num, kw) => {
-              if (str) return '<span class="terminal-string">' + str + '</span>';
-              if (num) return '<span class="terminal-number">' + num + '</span>';
-              if (kw) return '<span class="terminal-keyword">' + kw + '</span>';
-              return m;
+        const highlightedLines = lines
+          .map((line) => {
+            const escaped = escapeHtml(line);
+            // Python prompt >>>
+            if (/^\s*>>>/.test(line)) {
+              return `<span class="terminal-prompt">${escaped.replace(/^(\s*&gt;&gt;&gt;|\s*>>>)/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
             }
-          );
-          return `<span class="terminal-output">${highlighted}</span>`;
-        }).join("\n");
+            // Python continuation ...
+            if (/^\s*\.\.\./.test(line)) {
+              return `<span class="terminal-prompt">${escaped}</span>`;
+            }
+            // Windows/Linux shell prompt (C:\...> or $ or %)
+            if (/^\s*[A-Z]:\\.*>/.test(line) || /^\s*[\$%#]\s/.test(line)) {
+              return `<span class="terminal-prompt">${escaped.replace(/^(\s*[A-Z]:\\[^>]*>|\s*[\$%#])/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
+            }
+            // Comment lines (# ...)
+            if (/^\s*#/.test(line)) {
+              return `<span class="terminal-comment">${escaped}</span>`;
+            }
+            // Single-pass highlighting to avoid regex conflicts between string/number/keyword
+            const highlighted = escaped.replace(
+              /(&quot;[^&]*&quot;|'[^']*'|"[^"]*")|(\b\d+\.?\d*\b)|(\b(?:True|False|None|Error|Exception|Traceback|def|import|from|return|if|else|for|while|not|and|or|try|except|raise|with|lambda|yield|pass|break|continue|print)\b)/g,
+              (m, str, num, kw) => {
+                if (str)
+                  return '<span class="terminal-string">' + str + "</span>";
+                if (num)
+                  return '<span class="terminal-number">' + num + "</span>";
+                if (kw)
+                  return '<span class="terminal-keyword">' + kw + "</span>";
+                return m;
+              },
+            );
+            return `<span class="terminal-output">${highlighted}</span>`;
+          })
+          .join("\n");
 
-        const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
+        const langLabel =
+          language === "shell"
+            ? "Terminal"
+            : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
 
         return `
         <div class="terminal-block">
@@ -2132,26 +2543,31 @@
 
         // Highlight: $ prompt, # comment, C:\...> prompt
         const lines = cleanContent.split("\n");
-        const highlightedLines = lines.map((line) => {
-          const escaped = escapeHtml(line);
-          // Shell prompt $ or %
-          if (/^\s*[\$%]\s/.test(line)) {
-            return `<span class="cmd-prompt">${escaped}</span>`;
-          }
-          // Windows prompt C:\...>
-          if (/^\s*[A-Z]:\s*>/.test(line) || /^\s*[A-Z]:\\.*>/.test(line)) {
-            return `<span class="cmd-prompt">${escaped}</span>`;
-          }
-          // Python prompt
-          if (/^\s*(>>>|python%)/.test(line)) {
-            return `<span class="cmd-prompt">${escaped}</span>`;
-          }
-          // Comment (# ...)
-          if (/^\s*#/.test(line) || /#\s/.test(line)) {
-            return escaped.replace(/(#\s.*)$/, '<span class="cmd-comment">$1</span>');
-          }
-          return escaped;
-        }).join("\n");
+        const highlightedLines = lines
+          .map((line) => {
+            const escaped = escapeHtml(line);
+            // Shell prompt $ or %
+            if (/^\s*[\$%]\s/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            // Windows prompt C:\...>
+            if (/^\s*[A-Z]:\s*>/.test(line) || /^\s*[A-Z]:\\.*>/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            // Python prompt
+            if (/^\s*(>>>|python%)/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            // Comment (# ...)
+            if (/^\s*#/.test(line) || /#\s/.test(line)) {
+              return escaped.replace(
+                /(#\s.*)$/,
+                '<span class="cmd-comment">$1</span>',
+              );
+            }
+            return escaped;
+          })
+          .join("\n");
 
         return `<div class="cmd-block"><pre class="cmd-body"><code>${highlightedLines}</code></pre></div>`;
       },
@@ -2673,7 +3089,13 @@
 
     // Enhance existing code blocks
     existingCodeBlocks.forEach((el) => {
-      if (el.closest(".code-block-wrapper") || el.closest(".terminal-block") || el.closest(".cmd-block") || el.closest(".output-block")) return; // Skip already enhanced
+      if (
+        el.closest(".code-block-wrapper") ||
+        el.closest(".terminal-block") ||
+        el.closest(".cmd-block") ||
+        el.closest(".output-block")
+      )
+        return; // Skip already enhanced
 
       const isPreTag = el.tagName === "PRE";
       const code = isPreTag
@@ -2775,18 +3197,20 @@
       // Inject Pyodide script if not already loaded
       if (!window.loadPyodide) {
         await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js';
+          const script = document.createElement("script");
+          script.src =
+            "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js";
           script.onload = resolve;
-          script.onerror = () => reject(new Error('Không thể tải Pyodide runtime'));
+          script.onerror = () =>
+            reject(new Error("Không thể tải Pyodide runtime"));
           document.head.appendChild(script);
         });
       }
       pyodideInstance = await window.loadPyodide({
-        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/'
+        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/",
       });
       pyodideLoading = false;
-      console.log('✅ Pyodide loaded successfully');
+      console.log("✅ Pyodide loaded successfully");
       return pyodideInstance;
     })();
 
@@ -2797,15 +3221,15 @@
    * Run Python code from a code block
    */
   async function runPythonCode(button) {
-    const wrapper = button.closest('.code-block-wrapper');
-    const codeEl = wrapper.querySelector('code');
+    const wrapper = button.closest(".code-block-wrapper");
+    const codeEl = wrapper.querySelector("code");
     const code = codeEl.textContent;
 
     // Find or create output panel
-    let outputPanel = wrapper.querySelector('.code-output-panel');
+    let outputPanel = wrapper.querySelector(".code-output-panel");
     if (!outputPanel) {
-      outputPanel = document.createElement('div');
-      outputPanel.className = 'code-output-panel';
+      outputPanel = document.createElement("div");
+      outputPanel.className = "code-output-panel";
       outputPanel.innerHTML = `
         <div class="code-output-header">
           <span class="code-output-title">Output</span>
@@ -2820,8 +3244,8 @@
       wrapper.appendChild(outputPanel);
     }
 
-    const outputBody = outputPanel.querySelector('.code-output-body');
-    outputPanel.style.display = 'block';
+    const outputBody = outputPanel.querySelector(".code-output-body");
+    outputPanel.style.display = "block";
 
     // Update button state to loading
     const originalContent = button.innerHTML;
@@ -2833,14 +3257,14 @@
       Đang chạy...
     `;
     button.disabled = true;
-    button.classList.add('running');
-    outputBody.textContent = 'Đang tải Python runtime...';
-    outputBody.className = 'code-output-body';
+    button.classList.add("running");
+    outputBody.textContent = "Đang tải Python runtime...";
+    outputBody.className = "code-output-body";
 
     try {
       const pyodide = await loadPyodideRuntime();
 
-      outputBody.textContent = 'Đang thực thi...';
+      outputBody.textContent = "Đang thực thi...";
 
       // Redirect stdout and stderr
       pyodide.runPython(`
@@ -2862,8 +3286,8 @@ sys.stderr = __stderr_capture
       }
 
       // Get captured output
-      const stdout = pyodide.runPython('__stdout_capture.getvalue()');
-      const stderr = pyodide.runPython('__stderr_capture.getvalue()');
+      const stdout = pyodide.runPython("__stdout_capture.getvalue()");
+      const stderr = pyodide.runPython("__stderr_capture.getvalue()");
 
       // Reset stdout/stderr
       pyodide.runPython(`
@@ -2873,30 +3297,35 @@ sys.stderr = sys.__stderr__
 `);
 
       // Build output text
-      let output = '';
+      let output = "";
       if (stdout) output += stdout;
-      if (stderr) output += (output ? '\n' : '') + stderr;
+      if (stderr) output += (output ? "\n" : "") + stderr;
       if (hasError) {
-        output += (output ? '\n' : '') + result;
-        outputBody.classList.add('has-error');
+        output += (output ? "\n" : "") + result;
+        outputBody.classList.add("has-error");
       } else {
-        outputBody.classList.remove('has-error');
+        outputBody.classList.remove("has-error");
         // Show return value if no print output and result is not undefined/None
-        if (!stdout && result !== undefined && result !== null && String(result) !== 'undefined' && String(result) !== 'None') {
+        if (
+          !stdout &&
+          result !== undefined &&
+          result !== null &&
+          String(result) !== "undefined" &&
+          String(result) !== "None"
+        ) {
           output += String(result);
         }
       }
 
-      outputBody.textContent = output || '(Không có output)';
-
+      outputBody.textContent = output || "(Không có output)";
     } catch (err) {
-      outputBody.textContent = 'Lỗi: ' + err.message;
-      outputBody.classList.add('has-error');
+      outputBody.textContent = "Lỗi: " + err.message;
+      outputBody.classList.add("has-error");
     } finally {
       // Restore button
       button.innerHTML = originalContent;
       button.disabled = false;
-      button.classList.remove('running');
+      button.classList.remove("running");
     }
   }
 
