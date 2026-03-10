@@ -1343,8 +1343,8 @@
 
     updateNavigationButtons();
 
-    // Hiển thị lại feedback nếu đã trả lời (ở chế độ instant)
-    if (isInstantMode && isLocked && userAnswer !== null) {
+    // Hiển thị lại feedback nếu đã trả lời
+    if (userAnswer !== null) {
       const isCorrect = isFillBlank
         ? checkFillBlankAnswer(userAnswer, question.correctAnswer)
         : userAnswer === question.correctAnswer;
@@ -1507,7 +1507,6 @@
     const userAnswer = quizState.userAnswers[questionIndex];
     const question = quizState.questions[questionIndex];
     const isLocked = quizState.answeredQuestions[questionIndex] === true;
-    const isInstantMode = quizState.gameMode === "instant";
 
     options.forEach((option, index) => {
       const button = document.createElement("button");
@@ -1520,8 +1519,8 @@
         button.classList.add("selected");
       }
 
-      // Nếu đã trả lời và ở chế độ instant, hiển thị trạng thái đúng/sai
-      if (isLocked && isInstantMode) {
+      // Nếu đã trả lời, hiển thị trạng thái đúng/sai và khóa
+      if (isLocked) {
         if (isSelected && isCorrect) {
           button.classList.add("correct");
         } else if (isSelected && !isCorrect) {
@@ -1536,19 +1535,19 @@
         <div class="option-letter">${labels[index]}</div>
         <span class="option-text">${option}</span>
         ${
-          isLocked && isInstantMode && isCorrect
+          isLocked && isCorrect
             ? '<span class="option-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2FA36B" stroke-width="3"><path d="m9 12 2 2 4-4"/></svg></span>'
             : ""
         }
         ${
-          isLocked && isInstantMode && isSelected && !isCorrect
+          isLocked && isSelected && !isCorrect
             ? '<span class="option-cross"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>'
             : ""
         }
       `;
 
       // Chỉ cho phép click nếu chưa bị khóa
-      if (!isLocked || !isInstantMode) {
+      if (!isLocked) {
         button.onclick = () => selectAnswer(index);
       }
 
@@ -1564,8 +1563,8 @@
     const question = quizState.questions[questionIndex];
     const isInstantMode = quizState.gameMode === "instant";
 
-    // Nếu ở chế độ instant và đã trả lời rồi thì không cho chọn lại
-    if (isInstantMode && quizState.answeredQuestions[questionIndex]) {
+    // Nếu đã trả lời rồi thì không cho chọn lại
+    if (quizState.answeredQuestions[questionIndex]) {
       console.log("⚠️ Câu này đã trả lời rồi, không thể thay đổi");
       return;
     }
@@ -1615,11 +1614,12 @@
         }
       }, 1500);
     } else {
-      // Ở chế độ review: chỉ render lại, không hiển feedback
+      // Ở chế độ review: khóa câu hỏi, hiển feedback
+      quizState.answeredQuestions[questionIndex] = true;
       renderAnswerOptions(question.options, questionIndex);
+      showAnswerFeedback(isCorrect, question);
     }
 
-    document.getElementById("btn-next").disabled = false;
     updateNavigationButtons();
   }
 
@@ -1870,17 +1870,21 @@
     const nextBtn = document.getElementById("btn-next");
     const submitBtn = document.getElementById("btn-submit");
 
+    if (!nextBtn || !prevBtn || !submitBtn) return;
+
     prevBtn.style.display =
       quizState.currentQuestionIndex > 0 ? "inline-block" : "none";
 
-    const isAnswered =
-      quizState.userAnswers[quizState.currentQuestionIndex] !== null;
-    nextBtn.disabled = !isAnswered;
+    // Nút câu tiếp theo luôn hoạt động
+    nextBtn.disabled = false;
+    nextBtn.removeAttribute("disabled");
 
     if (quizState.currentQuestionIndex === quizState.questions.length - 1) {
       nextBtn.style.display = "none";
       submitBtn.style.display = "inline-block";
-      submitBtn.disabled = !isAnswered;
+      const allAnswered = quizState.userAnswers.every(a => a !== null);
+      submitBtn.disabled = !allAnswered;
+      if (allAnswered) submitBtn.removeAttribute("disabled");
     } else {
       nextBtn.style.display = "inline-block";
       submitBtn.style.display = "none";
