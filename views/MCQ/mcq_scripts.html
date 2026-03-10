@@ -59,6 +59,7 @@
     gameMode: "instant", // 'instant' = hiện đáp án ngay, 'review' = xem đáp án sau khi nộp
     allMastered: false,
     masteredCount: 0,
+    autoAdvanceTimer: null,
   };
 
   /**
@@ -110,6 +111,10 @@
     if (quizState.timerInterval) {
       clearInterval(quizState.timerInterval);
       quizState.timerInterval = null;
+    }
+    if (quizState.autoAdvanceTimer) {
+      clearTimeout(quizState.autoAdvanceTimer);
+      quizState.autoAdvanceTimer = null;
     }
     quizState.isReviewing = false;
     quizState.gameMode = "instant";
@@ -1419,6 +1424,21 @@
     // Show feedback
     showAnswerFeedback(isCorrect, question);
     updateNavigationButtons();
+
+    // Auto-advance cho fill-blank trong instant mode
+    if (quizState.gameMode === "instant") {
+      if (quizState.autoAdvanceTimer) {
+        clearTimeout(quizState.autoAdvanceTimer);
+      }
+      quizState.autoAdvanceTimer = setTimeout(() => {
+        quizState.autoAdvanceTimer = null;
+        if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
+          nextQuestion();
+        } else {
+          checkAndAddRetryQuestions();
+        }
+      }, 1500);
+    }
   }
 
   /**
@@ -1537,6 +1557,19 @@
 
       renderAnswerOptions(question.options, questionIndex);
       showAnswerFeedback(isCorrect, question);
+
+      // Auto-advance sau khi hiện feedback ở chế độ instant
+      if (quizState.autoAdvanceTimer) {
+        clearTimeout(quizState.autoAdvanceTimer);
+      }
+      quizState.autoAdvanceTimer = setTimeout(() => {
+        quizState.autoAdvanceTimer = null;
+        if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
+          nextQuestion();
+        } else {
+          checkAndAddRetryQuestions();
+        }
+      }, 1500);
     } else {
       // Ở chế độ review: chỉ render lại, không hiển feedback
       renderAnswerOptions(question.options, questionIndex);
@@ -1696,6 +1729,11 @@
    * Next question
    */
   function nextQuestion() {
+    // Hủy auto-advance timer nếu user bấm Next thủ công
+    if (quizState.autoAdvanceTimer) {
+      clearTimeout(quizState.autoAdvanceTimer);
+      quizState.autoAdvanceTimer = null;
+    }
     if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
       quizState.currentQuestionIndex++;
       displayQuestion();
@@ -1735,6 +1773,9 @@
 
       // Show notification
       showRetryNotification(retryQuestions.length);
+    } else {
+      // Không có câu retry → nộp bài
+      submitQuiz();
     }
   }
 
@@ -1766,6 +1807,11 @@
    * Previous question
    */
   function previousQuestion() {
+    // Hủy auto-advance timer nếu user bấm Prev thủ công
+    if (quizState.autoAdvanceTimer) {
+      clearTimeout(quizState.autoAdvanceTimer);
+      quizState.autoAdvanceTimer = null;
+    }
     if (quizState.currentQuestionIndex > 0) {
       quizState.currentQuestionIndex--;
       displayQuestion();
