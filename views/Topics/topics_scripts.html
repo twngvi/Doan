@@ -26,6 +26,60 @@
       console.log("🔄 Topics LOCAL progress cache invalidated");
     };
 
+    /**
+     * ⭐ Merge localStorage lesson progress into progress map
+     * Reads lesson_progress_<topicId> keys written by Lesson page
+     * Ensures Topics page always shows latest progress even if server is stale
+     */
+    function mergeLocalStorageProgress(progress) {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          if (key && key.indexOf("lesson_progress_") === 0) {
+            var topicId = key.replace("lesson_progress_", "");
+            var localData = JSON.parse(localStorage.getItem(key));
+            if (localData) {
+              if (!progress[topicId]) {
+                progress[topicId] = {
+                  topicId: topicId,
+                  completed: false,
+                  progress: 0,
+                };
+              }
+              // Merge: true values from either source win
+              progress[topicId].lessonCompleted =
+                progress[topicId].lessonCompleted ||
+                localData.lessonRead ||
+                false;
+              progress[topicId].mindmapViewed =
+                progress[topicId].mindmapViewed ||
+                localData.mindmapViewed ||
+                false;
+              progress[topicId].flashcardsCompleted =
+                progress[topicId].flashcardsCompleted ||
+                localData.flashcardsDone ||
+                false;
+              progress[topicId].miniQuizCompleted =
+                progress[topicId].miniQuizCompleted ||
+                localData.lessonQuiz ||
+                false;
+              // Recalculate progress percentage
+              var count = 0;
+              if (progress[topicId].lessonCompleted) count++;
+              if (progress[topicId].mindmapViewed) count++;
+              if (progress[topicId].flashcardsCompleted) count++;
+              if (progress[topicId].miniQuizCompleted) count++;
+              progress[topicId].progress = Math.round((count / 4) * 100);
+              progress[topicId].completed = count === 4;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("⚠️ Could not merge localStorage progress:", e);
+      }
+      return progress;
+    }
+
     // ========================================
     // INITIALIZATION
     // ========================================
@@ -86,8 +140,8 @@
         filteredTopics = [...allTopics];
 
         // Use cached progress for instant render, then refresh from server
-        userProgress = globalCache.progress || {};
-        progressCache = globalCache.progress || {};
+        userProgress = mergeLocalStorageProgress(globalCache.progress || {});
+        progressCache = userProgress;
         renderTopics();
         updateProgressStats();
         hideLoadingState();
@@ -106,7 +160,7 @@
         filteredTopics = [...allTopics];
 
         // Use cached progress for instant render, then refresh from server
-        userProgress = progressCache || {};
+        userProgress = mergeLocalStorageProgress(progressCache || {});
         renderTopics();
         updateProgressStats();
         hideLoadingState();
@@ -192,11 +246,12 @@
       // Xử lý progress
       if (progressResult && progressResult.success && progressResult.progress) {
         userProgress = progressResult.progress;
-        progressCache = progressResult.progress;
       } else {
         userProgress = {};
-        progressCache = {};
       }
+      // ⭐ Merge localStorage lesson progress for instant accuracy
+      userProgress = mergeLocalStorageProgress(userProgress);
+      progressCache = userProgress;
 
       lastLoadTime = Date.now();
 
@@ -242,13 +297,15 @@
       google.script.run
         .withSuccessHandler(function (result) {
           if (result && result.success && result.progress) {
+            // ⭐ Merge localStorage data over server data
+            var merged = mergeLocalStorageProgress(result.progress);
             var hasChanges =
-              JSON.stringify(userProgress) !== JSON.stringify(result.progress);
-            userProgress = result.progress;
-            progressCache = result.progress;
+              JSON.stringify(userProgress) !== JSON.stringify(merged);
+            userProgress = merged;
+            progressCache = merged;
             // Update global cache
             if (window.globalTopicsCache) {
-              window.globalTopicsCache.progress = result.progress;
+              window.globalTopicsCache.progress = merged;
             }
             if (hasChanges) {
               console.log("✅ Progress updated from server, re-rendering...");
@@ -477,18 +534,6 @@
             <div class="progress-fill" style="width: ${progressPercent}%"></div>
           </div>
           <p class="progress-text">${progressPercent}% hoàn thành</p>
-          ${
-            progressPercent > 0
-              ? `
-          <div class="topic-progress-details">
-            <span class="progress-part ${progress.lessonCompleted ? "done" : ""}">📖 Bài học</span>
-            <span class="progress-part ${progress.mindmapViewed ? "done" : ""}">🧠 Mindmap</span>
-            <span class="progress-part ${progress.flashcardsCompleted ? "done" : ""}">🃏 Flashcard</span>
-            <span class="progress-part ${progress.miniQuizCompleted ? "done" : ""}">📝 Mini Quiz</span>
-          </div>
-          `
-              : ""
-          }
         </div>
       `
           : ""
@@ -504,7 +549,7 @@
             ? `${lockIcon} Đang khoá`
             : status === "completed"
               ? `${checkIcon} Ôn tập`
-              : status === "current"
+              : progressPercent > 0
                 ? `${playIcon} Tiếp tục học`
                 : `${playIcon} Bắt đầu học`
         }
@@ -631,16 +676,18 @@
         startBtn.style.color = "#A0AEC0";
         startBtn.style.cursor = "not-allowed";
       } else {
-        const btnLabels = {
-          completed: "Ôn tập",
-          current: "Tiếp tục học",
-          available: "Bắt đầu học",
-        };
+        const progressPct = progress.progress || 0;
+        const btnLabel =
+          status === "completed"
+            ? "Ôn tập"
+            : progressPct > 0
+              ? "Tiếp tục học"
+              : "Bắt đầu học";
         const btnIcon =
           status === "completed"
             ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
             : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-        startBtn.innerHTML = `${btnIcon} ${btnLabels[status] || "Bắt đầu học"}`;
+        startBtn.innerHTML = `${btnIcon} ${btnLabel}`;
         startBtn.disabled = false;
         startBtn.style.background = "#5B6FF8";
         startBtn.style.color = "white";
