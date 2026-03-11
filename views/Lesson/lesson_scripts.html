@@ -60,6 +60,44 @@
     flashcardsDone: false, // User viewed all flashcards
   };
 
+  // ========================================
+  // ⭐ LOCAL PROGRESS CACHE (per topicId)
+  // Ensures state persists across topic switches even if server save is slow
+  // ========================================
+  function getLocalProgressKey(topicId) {
+    return "lesson_progress_" + topicId;
+  }
+
+  function saveLocalProgress(topicId) {
+    if (!topicId) return;
+    try {
+      var cacheData = {
+        lessonRead: tabCompletion.lessonRead,
+        lessonQuiz: tabCompletion.lessonQuiz,
+        mindmapViewed: tabCompletion.mindmapViewed,
+        flashcardsDone: tabCompletion.flashcardsDone,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(
+        getLocalProgressKey(topicId),
+        JSON.stringify(cacheData),
+      );
+    } catch (e) {
+      console.warn("⚠️ Could not save local progress:", e);
+    }
+  }
+
+  function loadLocalProgress(topicId) {
+    if (!topicId) return null;
+    try {
+      var stored = localStorage.getItem(getLocalProgressKey(topicId));
+      return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+      console.warn("⚠️ Could not load local progress:", e);
+      return null;
+    }
+  }
+
   /**
    * Initialize Lesson Page
    */
@@ -94,8 +132,8 @@
     miniQuizAnswered = 0;
     miniQuizLoaded = false;
 
-    // ⭐ Reset Mini Quiz DOM (important when switching topics)
-    resetMiniQuizUI();
+    // ⭐ Reset ALL lesson UI to clean defaults (important when switching topics)
+    resetAllLessonUI();
 
     // Start meteor shower and mouse effects for header
     startLessonHeaderMeteors();
@@ -1633,8 +1671,10 @@
       })
       .saveLearningProgressForWeb(currentLessonData.topicId, "lesson", {
         topicTitle: currentLessonData.topicTitle,
+        contentDocId: currentLessonData.contentDocId || "",
         scrollDepth: scrollProgress,
         completed: completed,
+        readingCompletedAt: completed ? new Date().toISOString() : null,
       });
   }
 
@@ -1856,19 +1896,38 @@
 
   /**
    * Handler: Lesson "Đánh dấu đã đọc" checkbox
+   * One-way: once checked, cannot be unchecked. Permanently locks per topic.
    */
   window.onLessonReadChecked = function (checkbox) {
-    tabCompletion.lessonRead = checkbox.checked;
-    console.log("📖 Lesson read checked:", checkbox.checked);
-    if (checkbox.checked) {
-      saveLessonProgress(true);
-      showToast("✅ Đã đánh dấu đọc xong!", "success");
-      // Unlock mini quiz dropdown
-      unlockMiniQuizDropdown();
-    } else {
-      // Re-lock if unchecked
-      lockMiniQuizDropdown();
+    // One-way: if already completed, force back to checked and do nothing
+    if (tabCompletion.lessonRead) {
+      checkbox.checked = true;
+      return;
     }
+
+    if (!checkbox.checked) return; // Only react to checking, not unchecking
+
+    // Mark as read — permanent for this topic
+    tabCompletion.lessonRead = true;
+    console.log(
+      "📖 Lesson read completed (permanent) for topic:",
+      currentLessonData?.topicId,
+    );
+
+    // ⭐ Save to localStorage immediately (survives topic switches)
+    saveLocalProgress(currentLessonData?.topicId);
+
+    // Lock checkbox so user cannot uncheck
+    checkbox.disabled = true;
+    var label = document.getElementById("lesson-read-check");
+    if (label) label.classList.add("completed-locked");
+
+    // Save to server with timestamp
+    saveLessonProgress(true);
+    showToast("✅ Đã đánh dấu đọc xong!", "success");
+
+    // Unlock mini quiz dropdown for this topic
+    unlockMiniQuizDropdown();
     updateOverallProgress();
   };
 
@@ -1879,6 +1938,7 @@
     tabCompletion.mindmapViewed = checkbox.checked;
     console.log("🧠 Mindmap view checked:", checkbox.checked);
     if (checkbox.checked) {
+      saveLocalProgress(currentLessonData?.topicId);
       saveMindmapProgress();
       showToast("✅ Đã đánh dấu xem Mindmap!", "success");
     }
@@ -1890,6 +1950,8 @@
    */
   function onMiniQuizCompleted() {
     tabCompletion.lessonQuiz = true;
+    // ⭐ Save to localStorage immediately
+    saveLocalProgress(currentLessonData?.topicId);
     // Update badge
     const badge = document.getElementById("mini-quiz-status-badge");
     if (badge) {
@@ -1940,6 +2002,7 @@
    */
   function onAllFlashcardsViewed() {
     tabCompletion.flashcardsDone = true;
+    saveLocalProgress(currentLessonData?.topicId);
     updateOverallProgress();
     console.log("🃏 All flashcards viewed!");
   }
@@ -1955,15 +2018,43 @@
     if (!topicId) return;
     console.log("📊 Loading saved progress for topic:", topicId);
 
+    // ⭐ STEP 1: Restore from localStorage immediately (synchronous, no latency)
+    var localData = loadLocalProgress(topicId);
+    if (localData) {
+      console.log("📦 Restoring from localStorage cache:", localData);
+      restoreTopicProgress({
+        lessonCompleted: localData.lessonRead || false,
+        miniQuizCompleted: localData.lessonQuiz || false,
+        mindmapViewed: localData.mindmapViewed || false,
+        flashcardsCompleted: localData.flashcardsDone || false,
+      });
+    }
+
+    // ⭐ STEP 2: Also fetch from server (source of truth) — merges on arrival
     google.script.run
       .withSuccessHandler(function (response) {
-        console.log("📊 Topic progress response:", response);
+        console.log("📊 Topic progress from server:", response);
         if (response && response.success && response.data) {
-          restoreTopicProgress(response.data);
+          // Merge: server true values always win over local false values
+          var merged = response.data;
+          if (localData) {
+            merged.lessonCompleted =
+              merged.lessonCompleted || localData.lessonRead || false;
+            merged.miniQuizCompleted =
+              merged.miniQuizCompleted || localData.lessonQuiz || false;
+            merged.mindmapViewed =
+              merged.mindmapViewed || localData.mindmapViewed || false;
+            merged.flashcardsCompleted =
+              merged.flashcardsCompleted || localData.flashcardsDone || false;
+          }
+          restoreTopicProgress(merged);
+          // Update localStorage with merged data
+          saveLocalProgress(topicId);
         }
       })
       .withFailureHandler(function (error) {
-        console.warn("⚠️ Could not load topic progress:", error);
+        console.warn("⚠️ Could not load topic progress from server:", error);
+        // localStorage data already restored above, so UI is correct
       })
       .getTopicProgressForWeb(topicId);
   }
@@ -1974,11 +2065,16 @@
   function restoreTopicProgress(data) {
     console.log("🔄 Restoring topic progress:", data);
 
-    // Restore lesson read checkbox
+    // Restore lesson read checkbox (one-way: check + disable permanently)
     if (data.lessonCompleted) {
       tabCompletion.lessonRead = true;
       var readCheckbox = document.getElementById("lesson-read-checkbox");
-      if (readCheckbox) readCheckbox.checked = true;
+      if (readCheckbox) {
+        readCheckbox.checked = true;
+        readCheckbox.disabled = true;
+      }
+      var readLabel = document.getElementById("lesson-read-check");
+      if (readLabel) readLabel.classList.add("completed-locked");
     }
 
     // Restore mini quiz completed state
@@ -2030,6 +2126,41 @@
   let miniQuizData = null; // Stores the 5 questions from AI
   let miniQuizAnswered = 0; // How many questions have been answered
   let miniQuizLoaded = false;
+
+  /**
+   * Reset ALL lesson completion UI to clean defaults.
+   * Must be called on every topic switch so no stale state leaks between topics.
+   */
+  function resetAllLessonUI() {
+    // 1) Reset "Đã đọc xong" checkbox to unchecked + enabled
+    var readCheckbox = document.getElementById("lesson-read-checkbox");
+    if (readCheckbox) {
+      readCheckbox.checked = false;
+      readCheckbox.disabled = false;
+    }
+    var readLabel = document.getElementById("lesson-read-check");
+    if (readLabel) readLabel.classList.remove("completed-locked");
+
+    // 2) Reset Mindmap checkbox to unchecked + enabled
+    var mindmapCheckbox = document.getElementById("mindmap-view-checkbox");
+    if (mindmapCheckbox) {
+      mindmapCheckbox.checked = false;
+      mindmapCheckbox.disabled = false;
+    }
+    var mindmapLabel = document.getElementById("mindmap-view-check");
+    if (mindmapLabel) mindmapLabel.classList.remove("completed-locked");
+
+    // 3) Reset Mini Quiz DOM (questions, result, lock state)
+    resetMiniQuizUI();
+
+    // 4) Reset sidebar progress bar & text to 0%
+    updateOverallProgress();
+
+    // 5) Reset nav tab check marks and completed classes
+    document.querySelectorAll(".lesson-nav-tab").forEach(function (tab) {
+      tab.classList.remove("completed");
+    });
+  }
 
   /**
    * Reset Mini Quiz DOM to initial locked state
