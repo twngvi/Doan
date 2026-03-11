@@ -94,6 +94,9 @@
     miniQuizAnswered = 0;
     miniQuizLoaded = false;
 
+    // ⭐ Reset Mini Quiz DOM (important when switching topics)
+    resetMiniQuizUI();
+
     // Start meteor shower and mouse effects for header
     startLessonHeaderMeteors();
     setupLessonHeaderMouseEffect();
@@ -555,20 +558,36 @@
       const branchColor = branchColors[index % branchColors.length];
       const children = branch.children || [];
 
-      // Create branch row
+      // Create branch row — collapsed by default
       const branchRow = document.createElement("div");
-      branchRow.className = "tree-branch";
+      branchRow.className = "tree-branch collapsed";
       branchRow.setAttribute("data-color", branchColor);
       branchRow.setAttribute("data-index", index);
 
-      // Branch node
+      // Branch node — clickable to toggle children
       const branchNodeEl = document.createElement("div");
       branchNodeEl.className = "branch-node";
       branchNodeEl.id = `branch-${index}`;
-      branchNodeEl.textContent = branchLabel;
+      branchNodeEl.innerHTML =
+        `<span class="branch-label">${branchLabel}</span>` +
+        (children.length > 0
+          ? `<span class="branch-toggle-icon">▸</span>`
+          : "");
+
+      if (children.length > 0) {
+        branchNodeEl.style.cursor = "pointer";
+        branchNodeEl.addEventListener("click", function () {
+          const row = this.closest(".tree-branch");
+          const isCollapsed = row.classList.contains("collapsed");
+          row.classList.toggle("collapsed");
+          row.classList.toggle("expanded");
+          // Redraw connections after expand/collapse animation
+          setTimeout(() => drawTreeConnections(branches), 320);
+        });
+      }
       branchRow.appendChild(branchNodeEl);
 
-      // Children column (if any)
+      // Children column (hidden by default via CSS .collapsed)
       if (children.length > 0) {
         const childrenEl = document.createElement("div");
         childrenEl.className = "branch-children";
@@ -593,7 +612,7 @@
 
     treeContainer.appendChild(branchesEl);
 
-    // Draw connection lines after DOM renders
+    // Draw initial connections (root→branch only, children hidden)
     setTimeout(() => {
       drawTreeConnections(branches);
     }, 50);
@@ -647,29 +666,38 @@
       );
       svg.appendChild(rootPath);
 
-      // Draw branch → children connections
-      const children = branch.children || [];
-      children.forEach((child, childIdx) => {
-        const childNode = document.getElementById(`child-${index}-${childIdx}`);
-        if (!childNode) return;
+      // Draw branch → children connections only if expanded
+      const branchEl = document.querySelector(
+        `.tree-branch[data-index="${index}"]`,
+      );
+      const isExpanded = branchEl && !branchEl.classList.contains("collapsed");
 
-        const childRect = childNode.getBoundingClientRect();
-        const branchRightX = branchRect.right - containerRect.left;
-        const childX = childRect.left - containerRect.left;
-        const childCenterY =
-          childRect.top + childRect.height / 2 - containerRect.top;
+      if (isExpanded) {
+        const children = branch.children || [];
+        children.forEach((child, childIdx) => {
+          const childNode = document.getElementById(
+            `child-${index}-${childIdx}`,
+          );
+          if (!childNode) return;
 
-        const childPath = createCurvedPath(
-          branchRightX,
-          branchCenterY,
-          childX,
-          childCenterY,
-          lineColor,
-          1.5,
-          "branch-child",
-        );
-        svg.appendChild(childPath);
-      });
+          const childRect = childNode.getBoundingClientRect();
+          const branchRightX = branchRect.right - containerRect.left;
+          const childX = childRect.left - containerRect.left;
+          const childCenterY =
+            childRect.top + childRect.height / 2 - containerRect.top;
+
+          const childPath = createCurvedPath(
+            branchRightX,
+            branchCenterY,
+            childX,
+            childCenterY,
+            lineColor,
+            1.5,
+            "branch-child",
+          );
+          svg.appendChild(childPath);
+        });
+      }
     });
   }
 
@@ -1467,24 +1495,26 @@
    * Setup scroll tracking for reading progress
    */
   function setupScrollTracking() {
+    // Use page-level scroll since #page-lesson is the scroll container
     window.addEventListener("scroll", function () {
       const contentArea = document.getElementById("lesson-content-area");
       if (!contentArea || contentArea.style.display === "none") return;
 
-      const windowHeight = window.innerHeight;
-      const documentHeight = document.documentElement.scrollHeight;
-      const scrollTop =
-        window.pageYOffset || document.documentElement.scrollTop;
+      // Only track when lesson tab is active
+      const lessonTab = document.getElementById("tab-lesson");
+      if (!lessonTab || !lessonTab.classList.contains("active")) return;
 
-      // Calculate progress
-      const scrollable = documentHeight - windowHeight;
-      const progress = scrollable > 0 ? (scrollTop / scrollable) * 100 : 0;
+      const rect = contentArea.getBoundingClientRect();
+      const contentHeight = contentArea.scrollHeight;
+      const viewportHeight = window.innerHeight;
 
-      // Update progress bar
-      document.getElementById("lesson-progress-bar").style.width =
-        progress + "%";
-      document.getElementById("lesson-progress-text").textContent =
-        Math.round(progress) + "%";
+      // How much of the content has scrolled past the top of the viewport
+      const scrolled = -rect.top;
+      const scrollable = contentHeight - viewportHeight;
+      const progress =
+        scrollable > 0
+          ? Math.min(100, Math.max(0, (scrolled / scrollable) * 100))
+          : 100;
 
       scrollProgress = progress;
     });
@@ -1530,6 +1560,48 @@
       window.invalidateTopicsLocalCache();
     }
     console.log("🔄 Progress cache invalidated (global + local)");
+
+    // ⭐ Refresh topic switcher status icons
+    refreshTopicSwitcherStatus();
+  }
+
+  /**
+   * Refresh topic switcher status icons after progress changes
+   * Updates ✅ for current topic if all 4 parts are completed
+   */
+  function refreshTopicSwitcherStatus() {
+    if (!currentLessonData?.topicId) return;
+
+    const currentTopicId = currentLessonData.topicId;
+    const isCompleted =
+      tabCompletion.lessonRead &&
+      tabCompletion.lessonQuiz &&
+      tabCompletion.mindmapViewed &&
+      tabCompletion.flashcardsDone;
+
+    // Update the global cache progress for current topic
+    if (window.globalTopicsCache) {
+      if (!window.globalTopicsCache.progress) {
+        window.globalTopicsCache.progress = {};
+      }
+      if (!window.globalTopicsCache.progress[currentTopicId]) {
+        window.globalTopicsCache.progress[currentTopicId] = {};
+      }
+      window.globalTopicsCache.progress[currentTopicId].lessonCompleted =
+        isCompleted;
+    }
+
+    // Re-render the topic list with updated statuses
+    const listEl = document.getElementById("topicSwitcherList");
+    if (listEl) {
+      let topics = null;
+      if (window.globalTopicsCache && window.globalTopicsCache.data) {
+        topics = window.globalTopicsCache.data;
+      }
+      if (topics && topics.length > 0) {
+        renderTopicSwitcherList(topics);
+      }
+    }
   }
 
   /**
@@ -1755,12 +1827,18 @@
     // Update nav tab completed class
     document.querySelectorAll(".lesson-nav-tab").forEach((tab) => {
       const tabName = tab.dataset.tab;
-      if (tabName === "lesson" && lessonPct >= 100)
-        tab.classList.add("completed");
-      if (tabName === "mindmap" && mindmapPct >= 100)
-        tab.classList.add("completed");
-      if (tabName === "flashcards" && flashcardPct >= 100)
-        tab.classList.add("completed");
+      if (tabName === "lesson") {
+        tab.classList.toggle(
+          "completed",
+          lessonPct >= 100 && miniQuizPct >= 100,
+        );
+      }
+      if (tabName === "mindmap") {
+        tab.classList.toggle("completed", mindmapPct >= 100);
+      }
+      if (tabName === "flashcards") {
+        tab.classList.toggle("completed", flashcardPct >= 100);
+      }
     });
 
     // Show celebration if 100%
@@ -1901,19 +1979,32 @@
       tabCompletion.lessonRead = true;
       var readCheckbox = document.getElementById("lesson-read-checkbox");
       if (readCheckbox) readCheckbox.checked = true;
-      // Unlock mini quiz since lesson is read
-      unlockMiniQuizDropdown();
     }
 
     // Restore mini quiz completed state
     if (data.miniQuizCompleted) {
       tabCompletion.lessonQuiz = true;
+      // Mark as loaded so unlockMiniQuizDropdown won't auto-load from server
+      miniQuizLoaded = true;
+    }
+
+    // Unlock mini quiz dropdown if lesson was read (must be after miniQuizLoaded flag)
+    if (data.lessonCompleted) {
+      unlockMiniQuizDropdown();
+    }
+
+    // Override badge to completed state if quiz was done
+    if (data.miniQuizCompleted) {
       var badge = document.getElementById("mini-quiz-status-badge");
       if (badge) {
         badge.textContent = "Hoàn thành ✅";
         badge.classList.add("completed");
         badge.classList.remove("ready");
       }
+      var icon = document.getElementById("mini-quiz-toggle-icon");
+      if (icon) icon.textContent = "✅";
+      var desc = document.getElementById("mini-quiz-toggle-desc");
+      if (desc) desc.textContent = "Bạn đã hoàn thành Mini Quiz cho topic này";
     }
 
     // Restore mindmap viewed
@@ -1939,6 +2030,34 @@
   let miniQuizData = null; // Stores the 5 questions from AI
   let miniQuizAnswered = 0; // How many questions have been answered
   let miniQuizLoaded = false;
+
+  /**
+   * Reset Mini Quiz DOM to initial locked state
+   * Called when switching topics to clear old quiz and re-lock
+   */
+  function resetMiniQuizUI() {
+    // Clear questions & result
+    const questionsEl = document.getElementById("mini-quiz-questions");
+    const resultEl = document.getElementById("mini-quiz-result");
+    const loadingEl = document.getElementById("mini-quiz-loading");
+    const errorEl = document.getElementById("mini-quiz-error");
+    const content = document.getElementById("mini-quiz-dropdown-content");
+
+    if (questionsEl) {
+      questionsEl.innerHTML = "";
+      questionsEl.style.display = "none";
+    }
+    if (resultEl) {
+      resultEl.innerHTML = "";
+      resultEl.style.display = "none";
+    }
+    if (loadingEl) loadingEl.style.display = "none";
+    if (errorEl) errorEl.style.display = "none";
+    if (content) content.classList.remove("open");
+
+    // Re-lock the dropdown
+    lockMiniQuizDropdown();
+  }
 
   /**
    * Unlock the mini quiz dropdown after marking lesson as read
@@ -4203,6 +4322,52 @@ sys.stderr = sys.__stderr__
     });
   }
 
+  // ========================================
+  // ⚡ GO TO QUIZ FROM LESSON
+  // ========================================
+
+  /**
+   * Navigate to Quiz page directly from Lesson
+   * - Saves current lesson progress
+   * - Passes topic params + gameMode=instant to skip mode selection
+   */
+  function goToQuizFromLesson() {
+    if (!currentLessonData?.topicId || !currentLessonData?.contentDocId) {
+      showToast("⚠️ Không có thông tin topic để tạo Quiz", "warning");
+      return;
+    }
+
+    console.log("⚡ Going to Quiz from Lesson:", currentLessonData.topicId);
+
+    // Save current lesson progress before navigating
+    if (currentLessonData.topicId) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            console.log("✅ Lesson progress saved before Quiz");
+            invalidateProgressCache();
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn("⚠️ Could not save lesson progress:", err);
+        })
+        .saveLearningProgressForWeb(currentLessonData.topicId, "lesson", {
+          topicTitle: currentLessonData.topicTitle,
+          scrollDepth: scrollProgress,
+          completed: tabCompletion.lessonRead,
+        });
+    }
+
+    // Navigate to MCQ page with params for instant quiz mode
+    showPage("page-mcq", {
+      topicId: currentLessonData.topicId,
+      topicTitle: currentLessonData.topicTitle,
+      contentDocId: currentLessonData.contentDocId,
+      gameMode: "instant",
+      fromLesson: true,
+    });
+  }
+
   // Export functions to global
   window.initLessonPage = initLessonPage;
   window.switchLessonTab = switchLessonTab;
@@ -4211,4 +4376,5 @@ sys.stderr = sys.__stderr__
   window.toggleTopicSwitcher = toggleTopicSwitcher;
   window.closeTopicSwitcher = closeTopicSwitcher;
   window.switchToTopic = switchToTopic;
+  window.goToQuizFromLesson = goToQuizFromLesson;
 </script>

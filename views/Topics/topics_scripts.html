@@ -347,15 +347,17 @@
     // Create compact list item for journey view
     function createTopicListItem(topic, index) {
       const item = document.createElement("div");
+      const status = getTopicStatus(topic, window.currentPageParams);
       const hasContent = topicHasContent(topic);
-      item.className = "topic-list-item" + (hasContent ? "" : " no-content");
+      item.className =
+        "topic-list-item status-" + status + (hasContent ? "" : " no-content");
       item.onclick = () => startTopicDirect(topic);
 
       const progress = userProgress[topic.topicId] || {
         completed: false,
         progress: 0,
       };
-      const isLocked = !checkTopicUnlocked(topic);
+      const isLocked = status === "locked";
       const journeyClass = getJourneyClass(topic.journey);
       const progressPercent = progress.progress || 0;
       const topicIcon = getTopicIcon(topic);
@@ -420,8 +422,10 @@
     // ⭐ TỐI ƯU CARD CREATION - Professional Design with SVG Icons
     function createTopicCard(topic) {
       const card = document.createElement("div");
+      const status = getTopicStatus(topic, window.currentPageParams);
       const hasContent = topicHasContent(topic);
-      card.className = "topic-card" + (hasContent ? "" : " no-content");
+      card.className =
+        "topic-card status-" + status + (hasContent ? "" : " no-content");
       // ⭐ SKIP POPUP - Go directly to lesson
       card.onclick = () => startTopicDirect(topic);
 
@@ -430,7 +434,7 @@
         completed: false,
         progress: 0,
       };
-      const isLocked = !checkTopicUnlocked(topic);
+      const isLocked = status === "locked";
       const topicIcon = getTopicIcon(topic);
       const journeyClass = getJourneyClass(topic.journey);
       const progressPercent = progress.progress || 0;
@@ -453,11 +457,14 @@
               : ""
           }
           ${
-            progress.completed
+            status === "completed"
               ? '<span class="badge badge-completed">Hoàn thành</span>'
-              : ""
+              : status === "current"
+                ? '<span class="badge badge-current">Đang học</span>'
+                : status === "locked"
+                  ? '<span class="badge badge-locked">Khoá</span>'
+                  : ""
           }
-          ${isLocked ? '<span class="badge badge-locked">Khoá</span>' : ""}
         </div>
       </div>
       <h3 class="topic-title">${topic.title}</h3>
@@ -486,19 +493,19 @@
       `
           : ""
       }
-      <button class="topic-action ${isLocked ? "locked" : ""} ${
+      <button class="topic-action status-${status} ${
         !hasContent ? "coming-soon" : ""
-      } ${progress.completed ? "completed" : ""}"
+      }"
               onclick="event.stopPropagation(); ${
-                isLocked || !hasContent ? "" : `startTopic('${topic.topicId}')`
+                status === "locked" ? "" : `startTopic('${topic.topicId}')`
               }">
         ${
-          isLocked
+          status === "locked"
             ? `${lockIcon} Đang khoá`
-            : !hasContent
-              ? `${comingSoonIcon} Chưa có nội dung`
-              : progress.completed
-                ? `${checkIcon} Ôn tập`
+            : status === "completed"
+              ? `${checkIcon} Ôn tập`
+              : status === "current"
+                ? `${playIcon} Tiếp tục học`
                 : `${playIcon} Bắt đầu học`
         }
       </button>
@@ -593,7 +600,7 @@
         completed: false,
         progress: 0,
       };
-      const isLocked = !checkTopicUnlocked(topic);
+      const status = getTopicStatus(topic, window.currentPageParams);
 
       // Populate modal
       document.getElementById("modalTopicTitle").textContent = topic.title;
@@ -615,21 +622,25 @@
         progress.progress || 0
       }% completed`;
 
-      // Update start button
+      // Update start button based on unified status
       const startBtn = document.getElementById("modalStartBtn");
-      if (isLocked) {
+      if (status === "locked") {
         startBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Đang khoá`;
         startBtn.disabled = true;
         startBtn.style.background = "#E6E8F0";
         startBtn.style.color = "#A0AEC0";
         startBtn.style.cursor = "not-allowed";
       } else {
-        const btnIcon = progress.completed
-          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
-          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-        startBtn.innerHTML = progress.completed
-          ? `${btnIcon} Ôn tập`
-          : `${btnIcon} Bắt đầu học`;
+        const btnLabels = {
+          completed: "Ôn tập",
+          current: "Tiếp tục học",
+          available: "Bắt đầu học",
+        };
+        const btnIcon =
+          status === "completed"
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        startBtn.innerHTML = `${btnIcon} ${btnLabels[status] || "Bắt đầu học"}`;
         startBtn.disabled = false;
         startBtn.style.background = "#5B6FF8";
         startBtn.style.color = "white";
@@ -671,6 +682,37 @@
         topic.contentDocId !== "undefined" &&
         topic.contentDocId !== "null"
       );
+    }
+
+    /**
+     * ⭐ Get unified topic status
+     * @param {object} topic - Topic object
+     * @param {object} [currentParams] - window.currentPageParams to detect 'current' topic
+     * @returns {'current'|'completed'|'locked'|'available'} status string
+     */
+    function getTopicStatus(topic, currentParams) {
+      // 1. Đang xem (lesson page đang mở topic này)
+      if (
+        currentParams &&
+        currentParams.topicId &&
+        currentParams.topicId === topic.topicId
+      ) {
+        return "current";
+      }
+
+      // 2. Đã hoàn thành
+      const progress = userProgress[topic.topicId] || {};
+      if (progress.completed) {
+        return "completed";
+      }
+
+      // 3. Khoá — không có nội dung HOẶC bị lock bởi điều kiện
+      if (!topicHasContent(topic) || !checkTopicUnlocked(topic)) {
+        return "locked";
+      }
+
+      // 4. Có thể học
+      return "available";
     }
 
     /**
@@ -1128,6 +1170,7 @@
     window.startTopicDirect = startTopicDirect;
     window.navigateToLesson = navigateToLesson;
     window.navigateToQuiz = navigateToQuiz;
+    window.getTopicStatus = getTopicStatus;
 
     // ========================================
     // AUTO-INITIALIZE SETUP

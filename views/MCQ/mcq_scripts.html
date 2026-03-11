@@ -84,8 +84,15 @@
       quizState.topicTitle = params.topicTitle || "Quiz";
       quizState.contentDocId = params.contentDocId;
 
-      showQuizView();
-      loadQuizQuestions(false);
+      // If gameMode is specified (e.g. from Lesson page), use it directly
+      if (params.gameMode) {
+        quizState.gameMode = params.gameMode;
+        showQuizView();
+        loadQuizQuestions(false);
+      } else {
+        showQuizView();
+        loadQuizQuestions(false);
+      }
     } else {
       console.log("📋 No valid topic params, showing topic selection");
       showTopicSelection();
@@ -1882,7 +1889,7 @@
     if (quizState.currentQuestionIndex === quizState.questions.length - 1) {
       nextBtn.style.display = "none";
       submitBtn.style.display = "inline-block";
-      const allAnswered = quizState.userAnswers.every(a => a !== null);
+      const allAnswered = quizState.userAnswers.every((a) => a !== null);
       submitBtn.disabled = !allAnswered;
       if (allAnswered) submitBtn.removeAttribute("disabled");
     } else {
