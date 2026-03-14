@@ -234,6 +234,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       "infographic",
       "questions",
       "mini_quiz",
+      "matching",
     ];
     if (!validTypes.includes(contentType)) {
       Logger.log("❌ Invalid contentType: " + contentType);
@@ -371,6 +372,13 @@ function getAIContent(topicId, contentType, forceRegenerate) {
           analysis,
         );
         break;
+      case "matching":
+        generatedContent = ContentGenerator.generateMatchingPairs(
+          docResult.content,
+          analysis,
+          { pairCount: 10, difficulty: "mixed" },
+        );
+        break;
       default:
         return { success: false, message: "Unsupported content type" };
     }
@@ -443,6 +451,171 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       success: false,
       message: "Lỗi: " + error.toString(),
     };
+  }
+}
+
+// ========== MATCHING PAIRS DATA LOADER ==========
+
+/**
+ * Load matching pairs cho Matching Game
+ *
+ * Flow:
+ * 1. Kiểm tra cache AI_Content_Cache (contentType = "matching")
+ * 2. Nếu không có -> gọi AI generate qua ContentGenerator.generateMatchingPairs
+ * 3. Validate từng pair (phải có question + answer)
+ * 4. Random lấy đúng pairLimit nếu dữ liệu nhiều hơn
+ * 5. Trả về mảng pairs chuẩn hóa
+ *
+ * @param {string} topicId - Topic ID (e.g. "TOP001")
+ * @param {number} pairLimit - Số cặp cần lấy (4/6/8)
+ * @returns {Array} Mảng pairs: [{question, answer, hint, difficulty}]
+ */
+function getMatchingPairs(topicId, pairLimit) {
+  Logger.log("🎮 getMatchingPairs CALLED");
+  Logger.log("Args: topicId=" + topicId + ", pairLimit=" + pairLimit);
+
+  // Defaults
+  pairLimit = parseInt(pairLimit) || 6;
+
+  try {
+    // Validate input
+    if (!topicId) {
+      throw new Error("Thiếu topicId");
+    }
+
+    // 1. Check cache first
+    Logger.log("🔍 Checking matching cache...");
+    var cachedPairs = null;
+    try {
+      var cached = AIContentCache.get(topicId, "matching");
+      if (cached && cached.content) {
+        Logger.log("📦 Matching cache FOUND");
+        var cacheData = cached.content;
+        if (typeof cacheData === "string") {
+          cacheData = JSON.parse(cacheData);
+        }
+        if (cacheData.pairs && Array.isArray(cacheData.pairs)) {
+          cachedPairs = cacheData.pairs;
+        }
+      }
+    } catch (cacheErr) {
+      Logger.log("⚠️ Cache read error: " + cacheErr.toString());
+    }
+
+    // 2. Nếu không có cache -> generate bằng AI
+    if (!cachedPairs || cachedPairs.length === 0) {
+      Logger.log("🤖 No cache, generating matching pairs with AI...");
+
+      // Get topic info để lấy contentDocId
+      var topicInfo = getTopicInfo(topicId);
+      if (!topicInfo || !topicInfo.contentDocId) {
+        throw new Error(
+          "Không tìm thấy tài liệu cho topic này. Vui lòng kiểm tra lại contentDocId.",
+        );
+      }
+
+      // Read Google Doc
+      var docResult = GeminiService.readGoogleDoc(topicInfo.contentDocId);
+      if (!docResult.success) {
+        throw new Error("Không thể đọc tài liệu: " + docResult.error);
+      }
+
+      // Analyze document
+      Logger.log("🔍 Analyzing document for matching...");
+      var analysis = ContentGenerator.analyzeDocument(docResult.content);
+      if (!analysis || analysis.error) {
+        throw new Error(
+          "Lỗi phân tích tài liệu: " + (analysis ? analysis.error : "Unknown"),
+        );
+      }
+
+      // Generate matching pairs (request nhiều hơn pairLimit để có đủ sau validate)
+      var requestCount = Math.max(pairLimit + 2, 10);
+      Logger.log("🎯 Requesting " + requestCount + " matching pairs...");
+
+      var generated = ContentGenerator.generateMatchingPairs(
+        docResult.content,
+        analysis,
+        { pairCount: requestCount, difficulty: "mixed" },
+      );
+
+      if (!generated || !generated.pairs || !Array.isArray(generated.pairs)) {
+        throw new Error("AI không thể tạo matching pairs. Vui lòng thử lại.");
+      }
+
+      cachedPairs = generated.pairs;
+      Logger.log("✅ AI generated " + cachedPairs.length + " pairs");
+
+      // Save vào cache
+      try {
+        AIContentCache.save({
+          topicId: topicId,
+          contentDocId: topicInfo.contentDocId,
+          contentType: "matching",
+          generatedContent: generated,
+          promptUsed: "MATCHING_GENERATION",
+          geminiModel: AI_CONFIG.GEMINI_MODEL_DEFAULT,
+          docLastModified: docResult.lastModified || new Date().toISOString(),
+        });
+        Logger.log("💾 Matching pairs cached");
+      } catch (saveErr) {
+        Logger.log("⚠️ Cache save failed: " + saveErr.toString());
+      }
+    }
+
+    // 3. Validate từng pair
+    Logger.log("🔍 Validating " + cachedPairs.length + " pairs...");
+    var validPairs = [];
+    for (var i = 0; i < cachedPairs.length; i++) {
+      var pair = cachedPairs[i];
+      if (
+        pair &&
+        pair.question &&
+        pair.answer &&
+        String(pair.question).trim() !== "" &&
+        String(pair.answer).trim() !== ""
+      ) {
+        validPairs.push({
+          question: String(pair.question).trim(),
+          answer: String(pair.answer).trim(),
+          hint: pair.hint ? String(pair.hint).trim() : "",
+          difficulty: pair.difficulty || "medium",
+        });
+      }
+    }
+
+    Logger.log(
+      "✅ Valid pairs: " + validPairs.length + "/" + cachedPairs.length,
+    );
+
+    // 4. Kiểm tra đủ số lượng
+    if (validPairs.length < pairLimit) {
+      throw new Error(
+        "Không đủ dữ liệu matching. Cần " +
+          pairLimit +
+          " cặp nhưng chỉ có " +
+          validPairs.length +
+          " cặp hợp lệ. Vui lòng thử lại hoặc chọn độ khó thấp hơn.",
+      );
+    }
+
+    // 5. Random lấy đúng pairLimit nếu nhiều hơn
+    if (validPairs.length > pairLimit) {
+      // Fisher-Yates shuffle
+      for (var j = validPairs.length - 1; j > 0; j--) {
+        var k = Math.floor(Math.random() * (j + 1));
+        var temp = validPairs[j];
+        validPairs[j] = validPairs[k];
+        validPairs[k] = temp;
+      }
+      validPairs = validPairs.slice(0, pairLimit);
+    }
+
+    Logger.log("🎮 Returning " + validPairs.length + " matching pairs");
+    return validPairs;
+  } catch (error) {
+    Logger.log("❌ getMatchingPairs error: " + error.toString());
+    throw new Error(error.message || "Lỗi tải dữ liệu matching");
   }
 }
 

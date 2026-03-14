@@ -1,0 +1,1145 @@
+<script>
+  // ========================================
+  // MATCHING GAME - SCRIPTS
+  // ========================================
+
+  // ===== CACHE (tái sử dụng globalTopicsCache giống MCQ) =====
+  if (!window.globalTopicsCache) {
+    window.globalTopicsCache = {
+      data: null,
+      progress: null,
+      lastLoadTime: 0,
+      cacheDuration: 60000,
+    };
+  }
+
+  // Local cache fallback
+  let matchingTopicsCache = null;
+  let matchingLastLoadTime = 0;
+  const MATCHING_CACHE_DURATION = 60000;
+  let matchingAllTopicsForSearch = null;
+
+  // ===== STATE =====
+  let matchingMeteorInterval = null;
+  let matchingTimerInterval = null;
+  const MATCHING_DIFFICULTY_MAP = {
+    easy: 4,
+    medium: 6,
+    hard: 8,
+  };
+  let matchingState = {
+    // Topic selector state
+    topics: [],
+    filteredTopics: [],
+    selectedTopic: null,
+    searchKeyword: "",
+    loadingTopics: false,
+    topicError: null,
+    // Difficulty state
+    selectedDifficulty: null, // 'easy' | 'medium' | 'hard'
+    pairLimit: 6, // default medium
+    // Data loader state
+    matchingPairs: [], // Normalized pairs for current game
+    loadingPairs: false, // Loading indicator
+    pairsError: null, // Error message if load failed
+    // Board state (2-column matching)
+    leftItems: [], // Shuffled left column items
+    rightItems: [], // Shuffled right column items
+    selectedLeftId: null, // Currently selected left item pairId
+    selectedRightId: null, // Currently selected right item pairId
+    matchedPairIds: [], // Array of matched pairIds
+    wrongAttemptPair: null, // {leftId, rightId} for wrong animation
+    // Game stats
+    totalPairs: 0,
+    moves: 0,
+    score: 0,
+    elapsedTime: 0,
+    isLocked: false,
+    // Timer state
+    timerRunning: false,
+    startTime: null,
+    endTime: null,
+    timerMode: "countup", // 'countup' | 'countdown'
+    countdownLimit: 0, // seconds, only used in countdown mode
+    // Match tracking
+    attemptCount: 0,
+    wrongCount: 0,
+    correctCount: 0,
+    gameCompleted: false,
+    isCheckingMatch: false,
+    // Result modal
+    showResultModal: false,
+    resultData: null,
+    // Topic info
+    currentTopicId: null,
+    currentTopicName: "",
+    currentContentDocId: "",
+  };
+
+  // ===== PAGE INIT =====
+  window.initMatchingPage = function () {
+    console.log("🎮 Initializing Matching Page...");
+    console.log("📋 currentPageParams:", window.currentPageParams);
+
+    startMatchingHeaderMeteors();
+    setupMatchingHeaderMouseEffect();
+
+    // Check if navigated with params (e.g. from Lesson page)
+    const params = window.currentPageParams;
+    if (params && params.topicId && params.contentDocId) {
+      console.log("📌 Got valid topic params, opening difficulty selector");
+      matchingState.selectedTopic = {
+        topicId: params.topicId,
+        title: params.topicTitle || "Matching",
+        contentDocId: params.contentDocId,
+      };
+      matchingState.currentTopicId = params.topicId;
+      matchingState.currentTopicName = params.topicTitle || "Matching";
+      matchingState.currentContentDocId = params.contentDocId;
+
+      // Load topics in background (for "back to topics" flow)
+      showMatchingTopicSelection();
+      loadMatchingTopics();
+
+      // Open difficulty modal immediately
+      showMatchingDifficultyModal();
+    } else {
+      console.log("📋 No topic params, showing topic selection");
+      showMatchingTopicSelection();
+      loadMatchingTopics();
+    }
+  };
+
+  // ===== HEADER EFFECTS =====
+  function startMatchingHeaderMeteors() {
+    const container = document.getElementById("matchingMeteorContainer");
+    if (!container) return;
+
+    if (matchingMeteorInterval) {
+      clearInterval(matchingMeteorInterval);
+    }
+
+    matchingMeteorInterval = setInterval(() => {
+      if (!document.getElementById("matchingMeteorContainer")) {
+        clearInterval(matchingMeteorInterval);
+        return;
+      }
+      createMatchingMeteor();
+    }, 800);
+
+    createMatchingMeteor();
+  }
+
+  function createMatchingMeteor() {
+    const container = document.getElementById("matchingMeteorContainer");
+    if (!container) return;
+
+    const meteor = document.createElement("div");
+    meteor.className = "matching-header-meteor";
+
+    const startX = Math.random() * 40;
+    const startY = Math.random() * 20;
+
+    meteor.style.left = startX + "%";
+    meteor.style.top = startY + "%";
+
+    const height = 35 + Math.random() * 35;
+    meteor.style.height = height + "px";
+    meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+    container.appendChild(meteor);
+
+    setTimeout(() => {
+      meteor.remove();
+    }, 1500);
+  }
+
+  function setupMatchingHeaderMouseEffect() {
+    const header = document.querySelector("#page-matching .matching-header");
+    const stars = document.getElementById("matchingHeaderStars");
+    if (!header || !stars) return;
+
+    header.addEventListener("mousemove", (e) => {
+      const rect = header.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
+    });
+
+    header.addEventListener("mouseleave", () => {
+      stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  // ===== VIEW MANAGEMENT =====
+  function showMatchingTopicSelection() {
+    const topicSelection = document.getElementById("matchingTopicSelection");
+    const gameWrapper = document.getElementById("matchingGameWrapper");
+    if (topicSelection) topicSelection.style.display = "";
+    if (gameWrapper) gameWrapper.classList.remove("active");
+  }
+
+  // ===== TOPIC LOADING (reuse globalTopicsCache giống MCQ) =====
+  function loadMatchingTopics(forceRefresh) {
+    console.log("📥 Loading topics for matching...");
+
+    const loading = document.getElementById("matchingLoading");
+    const grid = document.getElementById("matchingTopicsGrid");
+    const empty = document.getElementById("matchingEmpty");
+    const searchEmpty = document.getElementById("matchingSearchEmpty");
+
+    matchingState.loadingTopics = true;
+    matchingState.topicError = null;
+
+    if (loading) loading.style.display = "flex";
+    if (grid) grid.style.display = "none";
+    if (empty) empty.style.display = "none";
+    if (searchEmpty) searchEmpty.style.display = "none";
+
+    const now = Date.now();
+
+    // ƯU TIÊN 1: Global Cache (chia sẻ từ Topics/MCQ page)
+    const globalCache = window.globalTopicsCache;
+    if (
+      !forceRefresh &&
+      globalCache &&
+      globalCache.data &&
+      now - globalCache.lastLoadTime < globalCache.cacheDuration
+    ) {
+      console.log("✅ Matching: Using GLOBAL cached topics");
+      handleMatchingTopicsLoaded(globalCache.data);
+      return;
+    }
+
+    // ƯU TIÊN 2: Local cache
+    if (
+      !forceRefresh &&
+      matchingTopicsCache &&
+      now - matchingLastLoadTime < MATCHING_CACHE_DURATION
+    ) {
+      console.log("✅ Matching: Using LOCAL cached topics");
+      handleMatchingTopicsLoaded(matchingTopicsCache);
+      return;
+    }
+
+    // ƯU TIÊN 3: Load từ server
+    console.log("📡 Matching: Loading topics from server...");
+    google.script.run
+      .withSuccessHandler(function (response) {
+        let topics = [];
+        if (response && response.success && Array.isArray(response.topics)) {
+          topics = response.topics;
+        } else if (Array.isArray(response)) {
+          topics = response;
+        } else if (response && !response.success) {
+          handleMatchingTopicsError({
+            message: response.message || "Lỗi từ server",
+          });
+          return;
+        }
+
+        // Lưu vào LOCAL cache
+        matchingTopicsCache = topics;
+        matchingLastLoadTime = Date.now();
+
+        // Lưu vào GLOBAL cache
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.data = topics;
+          window.globalTopicsCache.lastLoadTime = Date.now();
+        }
+
+        handleMatchingTopicsLoaded(topics);
+      })
+      .withFailureHandler(handleMatchingTopicsError)
+      .getAllTopics();
+  }
+
+  function handleMatchingTopicsLoaded(topics) {
+    const loading = document.getElementById("matchingLoading");
+    const empty = document.getElementById("matchingEmpty");
+
+    matchingState.loadingTopics = false;
+    if (loading) loading.style.display = "none";
+
+    if (!topics || topics.length === 0) {
+      matchingState.topics = [];
+      matchingState.filteredTopics = [];
+      matchingAllTopicsForSearch = [];
+      if (empty) empty.style.display = "block";
+      return;
+    }
+
+    matchingState.topics = topics;
+    matchingState.filteredTopics = topics;
+    matchingAllTopicsForSearch = topics;
+
+    // Sync local cache
+    matchingTopicsCache = topics;
+    matchingLastLoadTime = Date.now();
+
+    renderMatchingTopics(topics);
+  }
+
+  function handleMatchingTopicsError(error) {
+    console.error("❌ Error loading matching topics:", error);
+
+    const loading = document.getElementById("matchingLoading");
+    const empty = document.getElementById("matchingEmpty");
+
+    matchingState.loadingTopics = false;
+    matchingState.topicError = error.message || "Không thể kết nối server";
+
+    if (loading) loading.style.display = "none";
+    if (empty) {
+      empty.style.display = "block";
+      empty.innerHTML = `
+        <div class="matching-empty-icon">❌</div>
+        <p class="matching-empty-text">Lỗi tải dữ liệu</p>
+        <p class="matching-empty-sub">${matchingState.topicError}</p>
+        <button class="matching-btn matching-btn-primary" onclick="loadMatchingTopics(true)" style="margin-top: 1rem;">
+          🔄 Thử lại
+        </button>
+      `;
+    }
+  }
+
+  // ===== RENDER TOPICS =====
+  function renderMatchingTopics(topics) {
+    const grid = document.getElementById("matchingTopicsGrid");
+    const empty = document.getElementById("matchingEmpty");
+    const searchEmpty = document.getElementById("matchingSearchEmpty");
+
+    if (!grid) return;
+
+    if (empty) empty.style.display = "none";
+    if (searchEmpty) searchEmpty.style.display = "none";
+
+    if (!topics || topics.length === 0) {
+      grid.style.display = "none";
+      // Nếu đang search mà không ra kết quả
+      if (matchingState.searchKeyword.trim()) {
+        if (searchEmpty) {
+          searchEmpty.style.display = "block";
+          searchEmpty.querySelector(
+            ".matching-search-empty-keyword",
+          ).textContent = matchingState.searchKeyword;
+        }
+      } else {
+        if (empty) empty.style.display = "block";
+      }
+      return;
+    }
+
+    // Get user progress from global cache
+    const userProgress =
+      (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
+
+    // Concept-based SVG icons (reuse từ MCQ pattern)
+    const getTopicIcon = (title) => {
+      const t = title.toLowerCase();
+      if (t.includes("input") || t.includes("output") || t.includes("i/o"))
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+      if (
+        t.includes("biến") ||
+        t.includes("kiểu") ||
+        t.includes("variable") ||
+        t.includes("type")
+      )
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>';
+      if (
+        t.includes("toán tử") ||
+        t.includes("logic") ||
+        t.includes("operator")
+      )
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>';
+      if (t.includes("if") || t.includes("else") || t.includes("điều kiện"))
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>';
+      if (
+        t.includes("for") ||
+        t.includes("while") ||
+        t.includes("vòng lặp") ||
+        t.includes("loop")
+      )
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>';
+      if (
+        t.includes("mảng") ||
+        t.includes("list") ||
+        t.includes("array") ||
+        t.includes("danh sách")
+      )
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
+      if (t.includes("chuỗi") || t.includes("string") || t.includes("text"))
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>';
+      if (t.includes("hàm") || t.includes("function") || t.includes("phạm vi"))
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+      if (t.includes("file") || t.includes("tệp"))
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+      // Default
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    };
+
+    grid.innerHTML = "";
+    grid.style.display = "grid";
+
+    topics.forEach((topic, index) => {
+      const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
+      const topicProgress = userProgress[topic.topicId] || {};
+      const matchingPlayed = topicProgress.matchingDone === true;
+
+      const card = document.createElement("div");
+      card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}`;
+      card.onclick = () => selectMatchingTopic(topic);
+
+      // Status badge
+      let statusHtml = "";
+      if (!hasDoc) {
+        statusHtml = `
+          <div class="matching-topic-status locked">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="3" y="11" width="18" height="11" rx="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <span>Chưa có nội dung</span>
+          </div>`;
+      } else if (matchingPlayed) {
+        statusHtml = `
+          <div class="matching-topic-status played">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span>Đã chơi</span>
+          </div>`;
+      } else {
+        statusHtml = `
+          <div class="matching-topic-status ready">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
+            </svg>
+            <span>Sẵn sàng</span>
+          </div>`;
+      }
+
+      card.innerHTML = `
+        <div class="matching-topic-card-icon">${getTopicIcon(topic.title)}</div>
+        <div class="matching-topic-card-body">
+          <div class="matching-topic-card-name">${topic.title}</div>
+          <div class="matching-topic-card-meta">
+            <span class="matching-topic-card-category">${topic.category || "Chung"}</span>
+          </div>
+        </div>
+        ${statusHtml}
+      `;
+
+      // Stagger animation
+      card.style.animationDelay = index * 0.04 + "s";
+
+      grid.appendChild(card);
+    });
+  }
+
+  // ===== SEARCH =====
+  window.searchMatchingTopics = function (query) {
+    matchingState.searchKeyword = query;
+
+    if (!matchingAllTopicsForSearch) return;
+
+    if (!query.trim()) {
+      matchingState.filteredTopics = matchingAllTopicsForSearch;
+      renderMatchingTopics(matchingAllTopicsForSearch);
+      return;
+    }
+
+    const searchLower = query.toLowerCase();
+    const filtered = matchingAllTopicsForSearch.filter(
+      (topic) =>
+        topic.title.toLowerCase().includes(searchLower) ||
+        (topic.category && topic.category.toLowerCase().includes(searchLower)),
+    );
+
+    matchingState.filteredTopics = filtered;
+    renderMatchingTopics(filtered);
+  };
+
+  // ===== TOPIC SELECTION =====
+  window.selectMatchingTopic = function (topic) {
+    console.log("🎮 Selected topic for matching:", topic);
+
+    // Validate: topic phải có contentDocId
+    if (!topic.contentDocId || topic.contentDocId.length < 10) {
+      showMatchingNoContentModal(topic.title);
+      return;
+    }
+
+    // Set selected topic
+    matchingState.selectedTopic = topic;
+    matchingState.currentTopicId = topic.topicId;
+    matchingState.currentTopicName = topic.title;
+    matchingState.currentContentDocId = topic.contentDocId;
+
+    // Open difficulty selector
+    showMatchingDifficultyModal();
+  };
+
+  // ===== DIFFICULTY MODAL =====
+  function showMatchingDifficultyModal() {
+    const overlay = document.getElementById("matchingDifficultyOverlay");
+    const topicName = document.getElementById("matchingDifficultyTopicName");
+
+    if (topicName) {
+      topicName.textContent = matchingState.currentTopicName;
+    }
+
+    if (overlay) overlay.classList.add("active");
+  }
+
+  window.closeMatchingDifficultyModal = function () {
+    const overlay = document.getElementById("matchingDifficultyOverlay");
+    if (overlay) overlay.classList.remove("active");
+  };
+
+  window.selectMatchingDifficulty = function (difficulty) {
+    console.log("📊 Selected difficulty:", difficulty);
+
+    matchingState.selectedDifficulty = difficulty;
+    matchingState.pairLimit = MATCHING_DIFFICULTY_MAP[difficulty] || 6;
+
+    // Close modal
+    closeMatchingDifficultyModal();
+
+    // Start game
+    startMatchingGameFromTopic(matchingState.selectedTopic);
+  };
+
+  // ===== NO CONTENT MODAL =====
+  function showMatchingNoContentModal(topicTitle) {
+    // Tạo modal nếu chưa có
+    let modal = document.getElementById("matching-no-content-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "matching-no-content-modal";
+      modal.className = "matching-no-content-modal";
+      document.getElementById("page-matching").appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="matching-no-content-dialog">
+        <div class="matching-no-content-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <h3 class="matching-no-content-title">Chưa có nội dung học</h3>
+        <p class="matching-no-content-text">Chủ đề "<strong>${topicTitle}</strong>" chưa có tài liệu để tạo câu hỏi matching.</p>
+        <p class="matching-no-content-sub">Hãy hoàn thành bài học trước để mở khóa tính năng này.</p>
+        <button class="matching-btn matching-btn-primary" onclick="closeMatchingNoContentModal()">Đã hiểu</button>
+      </div>
+    `;
+
+    modal.classList.add("active");
+  }
+
+  window.closeMatchingNoContentModal = function () {
+    const modal = document.getElementById("matching-no-content-modal");
+    if (modal) modal.classList.remove("active");
+  };
+
+  // ===== START GAME FROM TOPIC =====
+  function startMatchingGameFromTopic(topic) {
+    // Hide topic selection, show game
+    document.getElementById("matchingTopicSelection").style.display = "none";
+    const gameWrapper = document.getElementById("matchingGameWrapper");
+    gameWrapper.classList.add("active");
+
+    // Reset game state
+    matchingState.leftItems = [];
+    matchingState.rightItems = [];
+    matchingState.selectedLeftId = null;
+    matchingState.selectedRightId = null;
+    matchingState.matchedPairIds = [];
+    matchingState.wrongAttemptPair = null;
+    matchingState.totalPairs = 0;
+    matchingState.moves = 0;
+    matchingState.score = 0;
+    matchingState.elapsedTime = 0;
+    matchingState.isLocked = false;
+    matchingState.timerRunning = false;
+    matchingState.startTime = null;
+    matchingState.endTime = null;
+    matchingState.attemptCount = 0;
+    matchingState.wrongCount = 0;
+    matchingState.correctCount = 0;
+    matchingState.gameCompleted = false;
+    matchingState.isCheckingMatch = false;
+    matchingState.matchingPairs = [];
+    matchingState.loadingPairs = true;
+    matchingState.pairsError = null;
+
+    updateMatchingUI();
+
+    // Load pairs from server with pairLimit
+    const board = document.getElementById("matchingBoard");
+    board.innerHTML =
+      '<div class="matching-loading"><div class="matching-loading-spinner"></div><p>Đang tạo câu hỏi matching...</p></div>';
+
+    const pairLimit = matchingState.pairLimit || 6;
+    console.log(
+      "🎮 Starting matching game:",
+      topic.title,
+      "| Difficulty:",
+      matchingState.selectedDifficulty,
+      "| Pairs:",
+      pairLimit,
+    );
+
+    google.script.run
+      .withSuccessHandler(function (pairs) {
+        matchingState.loadingPairs = false;
+
+        // Validate response
+        if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
+          matchingState.pairsError =
+            "Không nhận được dữ liệu matching từ server";
+          matchingState.matchingPairs = [];
+          board.innerHTML =
+            '<div class="matching-empty"><div class="matching-empty-icon">📭</div>' +
+            '<p class="matching-empty-text">Chưa có dữ liệu cho chủ đề này</p>' +
+            '<button class="matching-btn matching-btn-primary" onclick="matchingBackToTopics()" style="margin-top:1rem;">Quay lại</button></div>';
+          console.error("Empty matching pairs response");
+          return;
+        }
+
+        // Client-side normalize & validate each pair
+        var normalizedPairs = [];
+        for (var i = 0; i < pairs.length; i++) {
+          var p = pairs[i];
+          if (
+            p &&
+            p.question &&
+            p.answer &&
+            String(p.question).trim() !== "" &&
+            String(p.answer).trim() !== ""
+          ) {
+            normalizedPairs.push({
+              question: String(p.question).trim(),
+              answer: String(p.answer).trim(),
+              hint: p.hint ? String(p.hint).trim() : "",
+              difficulty: p.difficulty || "medium",
+              itemType: "text",
+            });
+          }
+        }
+
+        if (normalizedPairs.length < pairLimit) {
+          matchingState.pairsError =
+            "Dữ liệu không đủ: cần " +
+            pairLimit +
+            " cặp, chỉ có " +
+            normalizedPairs.length +
+            " cặp hợp lệ";
+          matchingState.matchingPairs = [];
+          board.innerHTML =
+            '<div class="matching-empty"><div class="matching-empty-icon">⚠️</div>' +
+            '<p class="matching-empty-text">Không đủ dữ liệu</p>' +
+            '<p class="matching-empty-sub">Cần ' +
+            pairLimit +
+            " cặp nhưng chỉ có " +
+            normalizedPairs.length +
+            " cặp hợp lệ</p>" +
+            '<button class="matching-btn matching-btn-primary" onclick="matchingBackToTopics()" style="margin-top:1rem;">Quay lại</button></div>';
+          console.error(
+            "Not enough pairs:",
+            normalizedPairs.length,
+            "/",
+            pairLimit,
+          );
+          return;
+        }
+
+        // Store normalized pairs
+        matchingState.matchingPairs = normalizedPairs;
+        matchingState.pairsError = null;
+
+        console.log(
+          "✅ Loaded " + normalizedPairs.length + " valid matching pairs",
+        );
+
+        initMatchingBoard(normalizedPairs);
+        startMatchingTimer();
+      })
+      .withFailureHandler(function (err) {
+        matchingState.loadingPairs = false;
+        matchingState.pairsError = err.message || "Vui lòng thử lại";
+        matchingState.matchingPairs = [];
+
+        board.innerHTML =
+          '<div class="matching-empty"><div class="matching-empty-icon">❌</div><p class="matching-empty-text">Lỗi tải câu hỏi</p><p class="matching-empty-sub">' +
+          (err.message || "Vui lòng thử lại") +
+          '</p><button class="matching-btn matching-btn-primary" onclick="matchingRestartGame()" style="margin-top:1rem;">🔄 Thử lại</button></div>';
+        console.error("Error loading matching pairs:", err);
+      })
+      .getMatchingPairs(topic.topicId, pairLimit);
+  }
+
+  // ===== BOARD INIT (2-column matching) =====
+  function initMatchingBoard(pairs) {
+    if (!pairs || pairs.length === 0) {
+      document.getElementById("matchingBoard").innerHTML =
+        '<div class="matching-empty"><div class="matching-empty-icon">📭</div><p class="matching-empty-text">Chưa có dữ liệu cho chủ đề này</p></div>';
+      return;
+    }
+
+    matchingState.totalPairs = pairs.length;
+
+    // Create left items (questions) and right items (answers)
+    const leftItems = pairs.map(function (pair, index) {
+      return { pairId: index, content: pair.question };
+    });
+    const rightItems = pairs.map(function (pair, index) {
+      return { pairId: index, content: pair.answer };
+    });
+
+    // Shuffle each column independently
+    matchingState.leftItems = shuffleArray(leftItems);
+    matchingState.rightItems = shuffleArray(rightItems);
+    matchingState.selectedLeftId = null;
+    matchingState.selectedRightId = null;
+    matchingState.matchedPairIds = [];
+    matchingState.wrongAttemptPair = null;
+
+    renderMatchingBoard();
+    updateMatchingUI();
+  }
+
+  // ===== BOARD RENDER =====
+  function renderMatchingBoard() {
+    var board = document.getElementById("matchingBoard");
+    if (!board) return;
+
+    var leftHtml = matchingState.leftItems
+      .map(function (item) {
+        var isMatched =
+          matchingState.matchedPairIds.indexOf(item.pairId) !== -1;
+        var isSelected = matchingState.selectedLeftId === item.pairId;
+        var isWrong =
+          matchingState.wrongAttemptPair &&
+          matchingState.wrongAttemptPair.leftId === item.pairId;
+
+        var cls = "matching-item matching-item-left";
+        if (isMatched) cls += " matched";
+        else if (isWrong) cls += " wrong";
+        else if (isSelected) cls += " selected";
+
+        return (
+          '<button class="' +
+          cls +
+          '" data-pair-id="' +
+          item.pairId +
+          '"' +
+          (isMatched ? " disabled" : "") +
+          " onclick=\"selectMatchingItem('left'," +
+          item.pairId +
+          ')">' +
+          '<span class="matching-item-text">' +
+          item.content +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+
+    var rightHtml = matchingState.rightItems
+      .map(function (item) {
+        var isMatched =
+          matchingState.matchedPairIds.indexOf(item.pairId) !== -1;
+        var isSelected = matchingState.selectedRightId === item.pairId;
+        var isWrong =
+          matchingState.wrongAttemptPair &&
+          matchingState.wrongAttemptPair.rightId === item.pairId;
+
+        var cls = "matching-item matching-item-right";
+        if (isMatched) cls += " matched";
+        else if (isWrong) cls += " wrong";
+        else if (isSelected) cls += " selected";
+
+        return (
+          '<button class="' +
+          cls +
+          '" data-pair-id="' +
+          item.pairId +
+          '"' +
+          (isMatched ? " disabled" : "") +
+          " onclick=\"selectMatchingItem('right'," +
+          item.pairId +
+          ')">' +
+          '<span class="matching-item-text">' +
+          item.content +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+
+    board.innerHTML =
+      '<div class="matching-column matching-column-left">' +
+      '<div class="matching-column-header">Thuật ngữ</div>' +
+      leftHtml +
+      "</div>" +
+      '<div class="matching-column matching-column-right">' +
+      '<div class="matching-column-header">Định nghĩa</div>' +
+      rightHtml +
+      "</div>";
+  }
+
+  // ===== ITEM SELECTION =====
+  window.selectMatchingItem = function (side, pairId) {
+    // Block all input while checking or game over
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+
+    // Block already-matched items
+    if (matchingState.matchedPairIds.indexOf(pairId) !== -1) return;
+
+    if (side === "left") {
+      handleLeftSelect(pairId);
+    } else {
+      handleRightSelect(pairId);
+    }
+  };
+
+  function handleLeftSelect(pairId) {
+    // Toggle: clicking same item deselects
+    matchingState.selectedLeftId =
+      matchingState.selectedLeftId === pairId ? null : pairId;
+
+    // If both sides selected, trigger match check
+    if (
+      matchingState.selectedLeftId !== null &&
+      matchingState.selectedRightId !== null
+    ) {
+      checkMatch(matchingState.selectedLeftId, matchingState.selectedRightId);
+    } else {
+      renderMatchingBoard();
+      updateMatchingUI();
+    }
+  }
+
+  function handleRightSelect(pairId) {
+    // Toggle: clicking same item deselects
+    matchingState.selectedRightId =
+      matchingState.selectedRightId === pairId ? null : pairId;
+
+    // If both sides selected, trigger match check
+    if (
+      matchingState.selectedLeftId !== null &&
+      matchingState.selectedRightId !== null
+    ) {
+      checkMatch(matchingState.selectedLeftId, matchingState.selectedRightId);
+    } else {
+      renderMatchingBoard();
+      updateMatchingUI();
+    }
+  }
+
+  // ===== MATCH CHECK =====
+  function checkMatch(leftId, rightId) {
+    matchingState.isCheckingMatch = true;
+    matchingState.attemptCount++;
+    matchingState.moves++;
+
+    if (leftId === rightId) {
+      // Correct match
+      markMatched(leftId);
+    } else {
+      // Wrong match
+      matchingState.wrongCount++;
+      matchingState.wrongAttemptPair = { leftId: leftId, rightId: rightId };
+
+      renderMatchingBoard();
+      updateMatchingUI();
+
+      setTimeout(function () {
+        resetWrongSelection();
+      }, 800);
+    }
+  }
+
+  function markMatched(pairId) {
+    matchingState.matchedPairIds.push(pairId);
+    matchingState.correctCount++;
+    matchingState.score += 10;
+
+    // Reset selection
+    matchingState.selectedLeftId = null;
+    matchingState.selectedRightId = null;
+    matchingState.isCheckingMatch = false;
+
+    renderMatchingBoard();
+    updateMatchingUI();
+
+    // Check if all pairs matched
+    if (matchingState.matchedPairIds.length === matchingState.totalPairs) {
+      setTimeout(function () {
+        finishGame();
+      }, 600);
+    }
+  }
+
+  function resetWrongSelection() {
+    matchingState.wrongAttemptPair = null;
+    matchingState.selectedLeftId = null;
+    matchingState.selectedRightId = null;
+    matchingState.isCheckingMatch = false;
+
+    renderMatchingBoard();
+    updateMatchingUI();
+  }
+
+  function finishGame() {
+    matchingState.gameCompleted = true;
+    stopMatchingTimer();
+    showMatchingComplete();
+  }
+
+  // ===== PAIR CHECK (legacy compat) =====
+  function checkMatchingPair() {
+    checkMatch(matchingState.selectedLeftId, matchingState.selectedRightId);
+  }
+
+  // ===== TIMER =====
+  // Supports 2 modes:
+  //   "countup"   — counts from 0 upward (default, used now)
+  //   "countdown" — counts from countdownLimit down to 0 (future)
+  function startMatchingTimer() {
+    if (matchingTimerInterval) clearInterval(matchingTimerInterval);
+
+    matchingState.elapsedTime = 0;
+    matchingState.startTime = Date.now();
+    matchingState.endTime = null;
+    matchingState.timerRunning = true;
+
+    updateTimerDisplay();
+
+    matchingTimerInterval = setInterval(function () {
+      if (!matchingState.timerRunning) return;
+
+      matchingState.elapsedTime = Math.floor(
+        (Date.now() - matchingState.startTime) / 1000,
+      );
+
+      if (
+        matchingState.timerMode === "countdown" &&
+        matchingState.countdownLimit > 0
+      ) {
+        var remaining =
+          matchingState.countdownLimit - matchingState.elapsedTime;
+        if (remaining <= 0) {
+          remaining = 0;
+          stopMatchingTimer();
+          onTimerExpired();
+        }
+        updateTimerDisplay(remaining);
+      } else {
+        updateTimerDisplay(matchingState.elapsedTime);
+      }
+    }, 1000);
+  }
+
+  function stopMatchingTimer() {
+    matchingState.timerRunning = false;
+    matchingState.endTime = Date.now();
+    if (matchingTimerInterval) {
+      clearInterval(matchingTimerInterval);
+      matchingTimerInterval = null;
+    }
+  }
+
+  function updateTimerDisplay(seconds) {
+    var el = document.getElementById("matchingTimer");
+    if (el) {
+      el.textContent = formatMatchingTime(
+        seconds !== undefined ? seconds : matchingState.elapsedTime,
+      );
+    }
+  }
+
+  // Called when countdown reaches 0 (future use)
+  function onTimerExpired() {
+    if (matchingState.gameCompleted) return;
+    matchingState.gameCompleted = true;
+    showMatchingComplete();
+  }
+
+  function formatMatchingTime(seconds) {
+    var m = String(Math.floor(seconds / 60)).padStart(2, "0");
+    var s = String(seconds % 60).padStart(2, "0");
+    return m + ":" + s;
+  }
+
+  // ===== UI UPDATE =====
+  function updateMatchingUI() {
+    const movesEl = document.getElementById("matchingMoves");
+    const matchedEl = document.getElementById("matchingMatched");
+    const scoreEl = document.getElementById("matchingScore");
+
+    if (movesEl) movesEl.textContent = matchingState.moves;
+    if (matchedEl)
+      matchedEl.textContent = `${matchingState.matchedPairIds.length} / ${matchingState.totalPairs}`;
+    if (scoreEl) scoreEl.textContent = matchingState.score;
+  }
+
+  // ===== GAME COMPLETE =====
+  function showMatchingComplete() {
+    // Build result data
+    var accuracy =
+      matchingState.moves > 0
+        ? Math.round((matchingState.correctCount / matchingState.moves) * 100)
+        : 0;
+
+    matchingState.resultData = {
+      topicName: matchingState.currentTopicName || "Unknown",
+      difficulty: matchingState.selectedDifficulty || "medium",
+      score: matchingState.score,
+      time: matchingState.elapsedTime,
+      totalPairs: matchingState.totalPairs,
+      correctPairs: matchingState.correctCount,
+      wrongAttempts: matchingState.wrongCount,
+      moves: matchingState.moves,
+      accuracy: accuracy,
+    };
+
+    matchingState.showResultModal = true;
+
+    // Determine trophy & title based on performance
+    var trophy = "🏆";
+    var title = "Hoàn thành xuất sắc!";
+    var subtitle = "Bạn đã ghép đúng tất cả các cặp!";
+
+    if (matchingState.wrongCount === 0) {
+      trophy = "🏆";
+      title = "Hoàn hảo!";
+      subtitle = "Không sai lần nào — tuyệt vời!";
+    } else if (matchingState.wrongCount <= 2) {
+      trophy = "🎉";
+      title = "Tuyệt vời!";
+      subtitle = "Gần như hoàn hảo!";
+    } else if (matchingState.wrongCount <= 5) {
+      trophy = "👏";
+      title = "Hoàn thành!";
+      subtitle = "Bạn đã ghép đúng tất cả các cặp!";
+    } else {
+      trophy = "💪";
+      title = "Đã hoàn thành!";
+      subtitle = "Hãy thử lại để cải thiện kết quả!";
+    }
+
+    // Populate result modal
+    document.getElementById("matchingResultTrophy").textContent = trophy;
+    document.getElementById("matchingResultTitle").textContent = title;
+    document.getElementById("matchingResultSubtitle").textContent = subtitle;
+
+    // Topic & difficulty
+    document.getElementById("matchingResultTopic").textContent =
+      matchingState.resultData.topicName;
+
+    var diffEl = document.getElementById("matchingResultDifficulty");
+    var diffLabels = { easy: "Easy", medium: "Medium", hard: "Hard" };
+    diffEl.textContent =
+      diffLabels[matchingState.resultData.difficulty] || "Medium";
+    diffEl.setAttribute("data-diff", matchingState.resultData.difficulty);
+
+    // Stats
+    document.getElementById("matchingResultScore").textContent =
+      matchingState.resultData.score;
+    document.getElementById("matchingResultTime").textContent =
+      formatMatchingTime(matchingState.resultData.time);
+    document.getElementById("matchingResultCorrect").textContent =
+      matchingState.resultData.correctPairs;
+    document.getElementById("matchingResultWrong").textContent =
+      matchingState.resultData.wrongAttempts;
+
+    // Pairs summary
+    document.getElementById("matchingResultTotalPairs").textContent =
+      matchingState.resultData.totalPairs;
+    document.getElementById("matchingResultMoves").textContent =
+      matchingState.resultData.moves;
+
+    // Show overlay
+    document.getElementById("matchingResultOverlay").classList.add("active");
+  }
+
+  // ===== NAVIGATION =====
+  window.matchingBackToTopics = function () {
+    stopMatchingTimer();
+
+    document.getElementById("matchingResultOverlay").classList.remove("active");
+    document
+      .getElementById("matchingDifficultyOverlay")
+      .classList.remove("active");
+    document.getElementById("matchingGameWrapper").classList.remove("active");
+    document.getElementById("matchingTopicSelection").style.display = "";
+    document.getElementById("matchingBoard").innerHTML = "";
+
+    // Reset result state
+    matchingState.showResultModal = false;
+    matchingState.resultData = null;
+
+    // Clear search & reset state
+    const searchInput = document.getElementById("searchMatchingTopics");
+    if (searchInput) searchInput.value = "";
+    matchingState.searchKeyword = "";
+    matchingState.selectedTopic = null;
+    matchingState.selectedDifficulty = null;
+
+    // Re-render full list
+    if (matchingAllTopicsForSearch) {
+      renderMatchingTopics(matchingAllTopicsForSearch);
+    }
+  };
+
+  window.matchingRestartGame = function () {
+    document.getElementById("matchingResultOverlay").classList.remove("active");
+
+    // Reset result state
+    matchingState.showResultModal = false;
+    matchingState.resultData = null;
+
+    // Restart with same topic & difficulty
+    if (matchingState.selectedTopic) {
+      startMatchingGameFromTopic(matchingState.selectedTopic);
+    }
+  };
+
+  window.matchingGoToDashboard = function () {
+    stopMatchingTimer();
+
+    document.getElementById("matchingResultOverlay").classList.remove("active");
+
+    // Reset result state
+    matchingState.showResultModal = false;
+    matchingState.resultData = null;
+
+    showPage("page-dashboard");
+  };
+
+  // ===== UTILS =====
+  function shuffleArray(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // ===== CLEANUP =====
+  window.cleanupMatchingPage = function () {
+    stopMatchingTimer();
+    if (matchingMeteorInterval) {
+      clearInterval(matchingMeteorInterval);
+      matchingMeteorInterval = null;
+    }
+  };
+</script>

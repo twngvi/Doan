@@ -1,0 +1,282 @@
+<!-- Matching Game Page Content -->
+<div class="matching-container">
+  <!-- Header -->
+  <div class="matching-header">
+    <!-- Galaxy Background Effects -->
+    <div class="matching-header-galaxy-bg">
+      <div class="matching-header-stars" id="matchingHeaderStars"></div>
+      <div class="matching-header-nebula"></div>
+      <div
+        class="matching-header-meteor-container"
+        id="matchingMeteorContainer"
+      ></div>
+    </div>
+    <div class="matching-header-content">
+      <h1 class="matching-title">🎮 Matching Game</h1>
+      <div class="matching-header-search">
+        <input
+          type="text"
+          id="searchMatchingTopics"
+          class="matching-search-input"
+          placeholder="Tìm kiếm chủ đề..."
+          autocomplete="off"
+          oninput="searchMatchingTopics(this.value)"
+        />
+      </div>
+    </div>
+  </div>
+
+  <!-- Topic Selection View -->
+  <div id="matchingTopicSelection">
+    <!-- Loading State -->
+    <div id="matchingLoading" class="matching-loading">
+      <div class="matching-loading-spinner"></div>
+      <p>Đang tải danh sách chủ đề...</p>
+    </div>
+
+    <!-- Topics Grid -->
+    <div
+      id="matchingTopicsGrid"
+      class="matching-topics-grid"
+      style="display: none"
+    ></div>
+
+    <!-- Empty State -->
+    <div id="matchingEmpty" class="matching-empty" style="display: none">
+      <div class="matching-empty-icon">📭</div>
+      <p class="matching-empty-text">Chưa có chủ đề nào</p>
+      <p class="matching-empty-sub">
+        Hãy thêm chủ đề trong phần Topics để bắt đầu chơi
+      </p>
+    </div>
+
+    <!-- Search Empty State -->
+    <div
+      id="matchingSearchEmpty"
+      class="matching-search-empty"
+      style="display: none"
+    >
+      <div class="matching-empty-icon">🔍</div>
+      <p class="matching-empty-text">Không tìm thấy chủ đề</p>
+      <p class="matching-empty-sub">
+        Không có kết quả cho "<span class="matching-search-empty-keyword"></span
+        >"
+      </p>
+    </div>
+  </div>
+
+  <!-- Game Board View -->
+  <div id="matchingGameWrapper" class="matching-game-wrapper">
+    <!-- Game Stats -->
+    <div class="matching-game-stats">
+      <div class="matching-stat-item">
+        <span class="matching-stat-icon">⏱️</span>
+        <div>
+          <div class="matching-stat-label">Thời gian</div>
+          <div class="matching-stat-value" id="matchingTimer">00:00</div>
+        </div>
+      </div>
+      <div class="matching-stat-item">
+        <span class="matching-stat-icon">🔄</span>
+        <div>
+          <div class="matching-stat-label">Lượt lật</div>
+          <div class="matching-stat-value" id="matchingMoves">0</div>
+        </div>
+      </div>
+      <div class="matching-stat-item">
+        <span class="matching-stat-icon">✅</span>
+        <div>
+          <div class="matching-stat-label">Đã ghép</div>
+          <div class="matching-stat-value" id="matchingMatched">0 / 0</div>
+        </div>
+      </div>
+      <div class="matching-stat-item">
+        <span class="matching-stat-icon">⭐</span>
+        <div>
+          <div class="matching-stat-label">Điểm</div>
+          <div class="matching-stat-value" id="matchingScore">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Board -->
+    <div id="matchingBoard" class="matching-board"></div>
+
+    <!-- Controls -->
+    <div class="matching-controls">
+      <button
+        class="matching-btn matching-btn-back"
+        onclick="matchingBackToTopics()"
+      >
+        ← Quay lại
+      </button>
+      <button
+        class="matching-btn matching-btn-primary"
+        onclick="matchingRestartGame()"
+      >
+        🔄 Chơi lại
+      </button>
+    </div>
+  </div>
+
+  <!-- Result Screen Overlay -->
+  <div id="matchingResultOverlay" class="matching-result-overlay">
+    <div class="matching-result-modal">
+      <!-- Trophy / Icon -->
+      <div class="matching-result-trophy" id="matchingResultTrophy">🏆</div>
+      <h2 class="matching-result-title" id="matchingResultTitle">
+        Hoàn thành xuất sắc!
+      </h2>
+      <p class="matching-result-subtitle" id="matchingResultSubtitle">
+        Bạn đã ghép đúng tất cả các cặp!
+      </p>
+
+      <!-- Topic & Difficulty Badge -->
+      <div class="matching-result-meta">
+        <span class="matching-result-topic" id="matchingResultTopic"></span>
+        <span
+          class="matching-result-difficulty"
+          id="matchingResultDifficulty"
+        ></span>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="matching-result-stats">
+        <div class="matching-result-stat">
+          <div class="matching-result-stat-icon">⭐</div>
+          <div class="matching-result-stat-value" id="matchingResultScore">
+            0
+          </div>
+          <div class="matching-result-stat-label">Điểm</div>
+        </div>
+        <div class="matching-result-stat">
+          <div class="matching-result-stat-icon">⏱️</div>
+          <div class="matching-result-stat-value" id="matchingResultTime">
+            00:00
+          </div>
+          <div class="matching-result-stat-label">Thời gian</div>
+        </div>
+        <div class="matching-result-stat">
+          <div class="matching-result-stat-icon">✅</div>
+          <div class="matching-result-stat-value" id="matchingResultCorrect">
+            0
+          </div>
+          <div class="matching-result-stat-label">Đúng</div>
+        </div>
+        <div class="matching-result-stat">
+          <div class="matching-result-stat-icon">❌</div>
+          <div class="matching-result-stat-value" id="matchingResultWrong">
+            0
+          </div>
+          <div class="matching-result-stat-label">Sai</div>
+        </div>
+      </div>
+
+      <!-- Pairs Summary -->
+      <div class="matching-result-pairs-summary">
+        <span class="matching-result-pairs-text">
+          Tổng số cặp: <strong id="matchingResultTotalPairs">0</strong>
+        </span>
+        <span class="matching-result-pairs-divider">|</span>
+        <span class="matching-result-pairs-text">
+          Lượt thử: <strong id="matchingResultMoves">0</strong>
+        </span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="matching-result-actions">
+        <button
+          class="matching-result-btn matching-result-btn-replay"
+          onclick="matchingRestartGame()"
+        >
+          🔄 Chơi lại
+        </button>
+        <button
+          class="matching-result-btn matching-result-btn-topics"
+          onclick="matchingBackToTopics()"
+        >
+          📚 Chọn chủ đề khác
+        </button>
+        <button
+          class="matching-result-btn matching-result-btn-dashboard"
+          onclick="matchingGoToDashboard()"
+        >
+          🏠 Quay về Dashboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Difficulty Selector Modal -->
+  <div id="matchingDifficultyOverlay" class="matching-difficulty-overlay">
+    <div class="matching-difficulty-modal">
+      <div class="matching-difficulty-header">
+        <h2 class="matching-difficulty-title">Chọn độ khó</h2>
+        <p
+          class="matching-difficulty-topic"
+          id="matchingDifficultyTopicName"
+        ></p>
+      </div>
+
+      <div class="matching-difficulty-options">
+        <!-- Easy -->
+        <button
+          class="matching-difficulty-card"
+          onclick="selectMatchingDifficulty('easy')"
+          data-difficulty="easy"
+        >
+          <div class="matching-difficulty-icon">🌱</div>
+          <div class="matching-difficulty-info">
+            <div class="matching-difficulty-label">Easy</div>
+            <div class="matching-difficulty-desc">4 cặp - Dễ dàng</div>
+          </div>
+          <div class="matching-difficulty-pairs">
+            <span class="matching-difficulty-pairs-count">4</span>
+            <span class="matching-difficulty-pairs-text">cặp</span>
+          </div>
+        </button>
+
+        <!-- Medium -->
+        <button
+          class="matching-difficulty-card"
+          onclick="selectMatchingDifficulty('medium')"
+          data-difficulty="medium"
+        >
+          <div class="matching-difficulty-icon">⚡</div>
+          <div class="matching-difficulty-info">
+            <div class="matching-difficulty-label">Medium</div>
+            <div class="matching-difficulty-desc">6 cặp - Trung bình</div>
+          </div>
+          <div class="matching-difficulty-pairs">
+            <span class="matching-difficulty-pairs-count">6</span>
+            <span class="matching-difficulty-pairs-text">cặp</span>
+          </div>
+        </button>
+
+        <!-- Hard -->
+        <button
+          class="matching-difficulty-card"
+          onclick="selectMatchingDifficulty('hard')"
+          data-difficulty="hard"
+        >
+          <div class="matching-difficulty-icon">🔥</div>
+          <div class="matching-difficulty-info">
+            <div class="matching-difficulty-label">Hard</div>
+            <div class="matching-difficulty-desc">8 cặp - Thử thách</div>
+          </div>
+          <div class="matching-difficulty-pairs">
+            <span class="matching-difficulty-pairs-count">8</span>
+            <span class="matching-difficulty-pairs-text">cặp</span>
+          </div>
+        </button>
+      </div>
+
+      <button
+        class="matching-btn matching-btn-back matching-difficulty-cancel"
+        onclick="closeMatchingDifficultyModal()"
+      >
+        ← Quay lại chọn chủ đề
+      </button>
+    </div>
+  </div>
+</div>

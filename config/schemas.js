@@ -51,6 +51,7 @@ const AI_CONFIG = {
     "flashcards",
     "lesson_summary",
     "questions",
+    "matching",
   ],
 
   // Rate Limiting
@@ -74,7 +75,7 @@ function calculateWrongAnswerPriority(wrongCount, lastAttempt) {
   // Priority cao nếu sai nhiều lần VÀ lâu chưa ôn
   const priority = Math.min(
     5,
-    Math.ceil(wrongCount * 1.5 + daysSinceLastAttempt / 3)
+    Math.ceil(wrongCount * 1.5 + daysSinceLastAttempt / 3),
   );
   return priority;
 }
@@ -94,7 +95,7 @@ function shouldRegenerateContent(docLastModified, cacheDocLastModified) {
 function generateCacheExpiryDate() {
   const now = new Date();
   return new Date(
-    now.getTime() + AI_CONFIG.CACHE_TTL_DAYS * 24 * 60 * 60 * 1000
+    now.getTime() + AI_CONFIG.CACHE_TTL_DAYS * 24 * 60 * 60 * 1000,
   );
 }
 

@@ -350,6 +350,46 @@ YÊU CẦU:
   /**
    * Tạo Mini Quiz - 5 câu hỏi trọng điểm từ bài học
    */
+  /**
+   * Tạo Matching Pairs - Ghép cặp thuật ngữ/định nghĩa
+   */
+  MATCHING_GENERATION: `Bạn là chuyên gia giáo dục. Tạo các cặp ghép (matching pairs) từ tài liệu sau.
+
+=== TÀI LIỆU ===
+{docContent}
+=== KẾT THÚC TÀI LIỆU ===
+
+Phân tích: {analysis}
+Độ khó yêu cầu: {difficulty}
+Số cặp cần tạo: {pairCount}
+
+Trả về CHÍNH XÁC format JSON sau:
+{
+  "title": "Tiêu đề bộ ghép cặp",
+  "totalPairs": {pairCount},
+  "pairs": [
+    {
+      "question": "Thuật ngữ / Khái niệm / Câu hỏi ngắn",
+      "answer": "Định nghĩa / Giải thích / Đáp án tương ứng",
+      "hint": "Gợi ý ngắn (optional)",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}
+
+YÊU CẦU QUAN TRỌNG:
+- Tạo CHÍNH XÁC {pairCount} cặp ghép
+- "question": Thuật ngữ hoặc khái niệm NGẮN GỌN (1-8 từ)
+- "answer": Định nghĩa hoặc giải thích NGẮN GỌN (5-20 từ)
+- Mỗi cặp phải có mối quan hệ RÕ RÀNG, không gây nhầm lẫn giữa các cặp
+- Các đáp án KHÔNG ĐƯỢC giống nhau hoặc dễ nhầm lẫn
+- Phân bố độ khó theo yêu cầu: "{difficulty}"
+  + easy: thuật ngữ cơ bản, định nghĩa trực tiếp
+  + medium: khái niệm cần hiểu sâu hơn
+  + hard: áp dụng, phân tích, so sánh
+- CHỈ dùng kiến thức trong tài liệu
+- KHÔNG tạo cặp mà question hoặc answer quá dài (khó đọc trên thẻ)`,
+
   MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo CHÍNH XÁC 5 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học.
 
 === TÀI LIỆU ===
@@ -532,6 +572,32 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.5,
       maxTokens: 5000,
+    });
+  },
+
+  /**
+   * Tạo Matching Pairs
+   * @param {string} docContent
+   * @param {Object} analysis
+   * @param {Object} options - { pairCount, difficulty }
+   * @returns {Object} Matching pairs data
+   */
+  generateMatchingPairs: function (docContent, analysis, options = {}) {
+    const pairCount = options.pairCount || 6;
+    const difficulty = options.difficulty || "medium";
+
+    const prompt = PROMPT_TEMPLATES.MATCHING_GENERATION.replace(
+      "{docContent}",
+      docContent,
+    )
+      .replace("{analysis}", JSON.stringify(analysis))
+      .replace(/{pairCount}/g, pairCount.toString())
+      .replace(/{difficulty}/g, difficulty);
+
+    return GeminiService.callWithRetry(prompt, {
+      expectJson: true,
+      temperature: 0.6,
+      maxTokens: 3000,
     });
   },
 
