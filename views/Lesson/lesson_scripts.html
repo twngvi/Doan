@@ -15,7 +15,7 @@
    *              └─────┘
    *                  ╲
    *                   ╲
-   *        📚───────── 🔵 Biến ──────╱──── ┌────────┐
+   *        📚───────── 🔵 Biến ──────╱────┌────────┐
    *      Khái niệm    (Satellite)          │ Gán (=)│
    *                         │              └────────┘
    *                         │
@@ -43,6 +43,7 @@
     flashcards: false,
   };
   let flashcardsData = [];
+  let fullFlashcardsData = []; // Immutable source for replaying full deck
   let currentFlashcardIndex = 0;
 
   // ⭐ Progress Saving State
@@ -125,6 +126,7 @@
       flashcardsDone: false,
     };
     flashcardsData = [];
+    fullFlashcardsData = [];
     currentFlashcardIndex = 0;
 
     // Reset mini quiz state
@@ -467,7 +469,9 @@
             }
           }
 
-          flashcardsData = flashcardsRawData.cards || flashcardsRawData;
+          const loadedCards = flashcardsRawData.cards || flashcardsRawData;
+          fullFlashcardsData = JSON.parse(JSON.stringify(loadedCards || []));
+          flashcardsData = JSON.parse(JSON.stringify(fullFlashcardsData));
           if (flashcardsData.length > 0) {
             currentFlashcardIndex = 0;
             initDeckState(); // Initialize deck tracking
@@ -827,6 +831,7 @@
   let learnedCount = 0;
   let reviewCount = 0;
   let flashcardResults = []; // Track learned/review status for each card
+  let isFlashcardSessionComplete = false;
 
   /**
    * Render current flashcard
@@ -924,7 +929,23 @@
     learnedCount = 0;
     reviewCount = 0;
     flashcardResults = new Array(flashcardsData.length).fill(null);
+    isFlashcardSessionComplete = false;
     updateDeckProgress();
+  }
+
+  /**
+   * Bind completion action buttons after summary HTML is rendered
+   */
+  function bindDeckCompleteActions() {
+    const replayBtn = document.getElementById("deck-replay-all-btn");
+    if (replayBtn) {
+      replayBtn.addEventListener("click", restartDeck);
+    }
+
+    const reviewBtn = document.getElementById("deck-review-wrong-btn");
+    if (reviewBtn) {
+      reviewBtn.addEventListener("click", reviewWrongCards);
+    }
   }
 
   // ========== FLASHCARD CONTROLS ==========
@@ -1051,6 +1072,7 @@
 
     // Mark flashcards as completed for overall progress
     onAllFlashcardsViewed();
+    isFlashcardSessionComplete = true;
 
     if (deckArea) {
       const hasReviewCards = reviewCount > 0;
@@ -1077,25 +1099,26 @@
             ${
               hasReviewCards
                 ? `
-            <button onclick="reviewWrongCards()" class="action-btn btn-review" style="min-width: 140px; padding: 0.75rem 1.25rem;">
+            <button id="deck-review-wrong-btn" type="button" class="action-btn btn-review" style="min-width: 140px; padding: 0.75rem 1.25rem;">
               <span class="btn-icon" style="font-size: 1.25rem;">↻</span>
               <span class="btn-text" style="display: block; margin-top: 0.25rem;">Ôn ${reviewCount} thẻ sai</span>
             </button>
-            <button onclick="restartDeck()" class="action-btn btn-flip" style="min-width: 140px; padding: 0.75rem 1.25rem;">
+            <button id="deck-replay-all-btn" type="button" class="action-btn btn-flip" style="min-width: 140px; padding: 0.75rem 1.25rem;">
               <span class="btn-icon" style="font-size: 1.25rem;">🔄</span>
               <span class="btn-text" style="display: block; margin-top: 0.25rem;">Học lại từ đầu</span>
             </button>
             `
                 : `
-            <button onclick="restartDeck()" class="action-btn btn-learned" style="min-width: 160px; padding: 1rem 1.5rem;">
-              <span class="btn-icon" style="font-size: 1.5rem;">🔄</span>
-              <span class="btn-text" style="display: block; margin-top: 0.25rem; font-size: 0.875rem;">Chơi lại hết</span>
+            <button id="deck-replay-all-btn" type="button" class="action-btn btn-learned" style="min-width: 160px; padding: 1rem 1.5rem;">
+              <span class="btn-text" style="display: block; margin-top: 0.25rem; font-size: 0.875rem;">Chơi lại</span>
             </button>
             `
             }
           </div>
         </div>
       `;
+
+      bindDeckCompleteActions();
     }
 
     if (deckActions) deckActions.style.display = "none";
@@ -1203,6 +1226,7 @@
     learnedCount = 0;
     reviewCount = 0;
     flashcardResults = new Array(flashcardsData.length).fill(null);
+    isFlashcardSessionComplete = false;
 
     // Reload UI
     reloadFlashcardUI();
@@ -1291,57 +1315,25 @@
   function restartDeck() {
     console.log("🔄 Restarting deck from beginning...");
 
-    // Reset state
+    if (!fullFlashcardsData || fullFlashcardsData.length === 0) {
+      showToast("Không có dữ liệu Flashcards để chơi lại", "error");
+      return;
+    }
+
+    // Reset only current UI session, keep official completion/progress intact
+    flashcardsData = JSON.parse(JSON.stringify(fullFlashcardsData));
     currentFlashcardIndex = 0;
-    learnedCount = 0;
-    reviewCount = 0;
-    flashcardResults = [];
+    initDeckState();
+    isFlashcardSessionComplete = false;
 
-    // Show loading state
-    document.getElementById("flashcards-loading").style.display = "block";
-    document.getElementById("flashcards-content").style.display = "none";
+    const flashcardsContent = document.getElementById("flashcards-content");
+    if (flashcardsContent) {
+      flashcardsContent.style.display = "flex";
+    }
 
-    // Reload flashcards (force from cache is fine, just reset progress)
-    google.script.run
-      .withSuccessHandler(function (response) {
-        console.log("✅ Flashcards reloaded:", response);
-        document.getElementById("flashcards-loading").style.display = "none";
-
-        if (response && response.success && response.data) {
-          let flashcardsRawData = response.data;
-          if (typeof flashcardsRawData === "string") {
-            try {
-              flashcardsRawData = JSON.parse(flashcardsRawData);
-            } catch (e) {
-              console.error("❌ Failed to parse flashcards data:", e);
-              showFlashcardsError("Lỗi parse dữ liệu flashcards");
-              return;
-            }
-          }
-
-          flashcardsData = flashcardsRawData.cards || flashcardsRawData;
-          if (flashcardsData.length > 0) {
-            currentFlashcardIndex = 0;
-            flashcardResults = new Array(flashcardsData.length).fill(null);
-
-            // Rebuild deck UI
-            reloadFlashcardUI();
-            showToast("🔄 Bắt đầu lại từ đầu", "success");
-          }
-        } else {
-          showFlashcardsError(response?.message || "Không thể tải Flashcards");
-        }
-      })
-      .withFailureHandler(function (error) {
-        console.error("❌ Flashcards reload error:", error);
-        document.getElementById("flashcards-loading").style.display = "none";
-        showFlashcardsError(error?.message || "Lỗi kết nối server");
-      })
-      .getAIContentForWeb(
-        currentLessonData.topicId,
-        "flashcards",
-        forceRegenerate,
-      );
+    // Rebuild from study UI (hide summary and show deck again)
+    reloadFlashcardUI();
+    showToast("🔄 Bắt đầu lại từ đầu", "success");
   }
 
   function shuffleFlashcards() {
@@ -1362,6 +1354,7 @@
   function resetFlashcards() {
     currentFlashcardIndex = 0;
     initDeckState();
+    isFlashcardSessionComplete = false;
     renderCurrentFlashcard();
     showToast("🔄 Đã reset về thẻ đầu tiên", "success");
   }
