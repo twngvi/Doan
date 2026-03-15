@@ -1352,6 +1352,204 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
     Logger.log("❌ Error updating quizDone: " + error.toString());
   }
 }
+
+/**
+ * Get or create Matching_Results sheet in user's personal spreadsheet
+ */
+function getOrCreateMatchingResultsSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName("Matching_Results");
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet("Matching_Results");
+    const headers = [
+      "id",
+      "topicId",
+      "topicTitle",
+      "difficulty",
+      "totalPairs",
+      "correctPairs",
+      "wrongAttempts",
+      "score",
+      "elapsedTime",
+      "accuracy",
+      "completed",
+      "playedAt",
+    ];
+    sheet.appendRow(headers);
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#a78bfa");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * Save matching game result to user's personal Google Sheet
+ * @param {object} resultData - Matching result data
+ * @returns {object} - {success, message}
+ */
+function saveMatchingResult(resultData) {
+  try {
+    Logger.log("=== SAVE MATCHING RESULT TO PERSONAL SHEET ===");
+    Logger.log("Result data: " + JSON.stringify(resultData));
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      Logger.log("⚠️ No user email, cannot save to personal sheet");
+      return { success: false, message: "User not logged in" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      Logger.log("⚠️ User doesn't have personal sheet");
+      return { success: false, message: "User personal sheet not found" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const matchingSheet = getOrCreateMatchingResultsSheet(userSpreadsheet);
+
+    const resultEntry = [
+      "MR_" + Date.now(),
+      resultData.topicId,
+      resultData.topicTitle,
+      resultData.difficulty || "medium",
+      resultData.totalPairs || 0,
+      resultData.correctPairs || 0,
+      resultData.wrongAttempts || 0,
+      resultData.score || 0,
+      resultData.elapsedTime || 0,
+      resultData.accuracy || 0,
+      resultData.completed !== false,
+      new Date().toISOString(),
+    ];
+
+    matchingSheet.appendRow(resultEntry);
+    Logger.log("✅ Matching result saved to personal sheet");
+
+    // Also update matchingDone in Topic_Progress
+    if (resultData.topicId) {
+      try {
+        const userId = getUserIdByEmail(userEmail);
+        if (userId) {
+          updateMatchingDoneInTopicProgress(userId, resultData.topicId);
+        }
+      } catch (e) {
+        Logger.log(
+          "⚠️ Failed to update matchingDone in Topic_Progress: " + e.toString(),
+        );
+      }
+    }
+
+    return { success: true, message: "Matching result saved" };
+  } catch (error) {
+    Logger.log("❌ Error saving matching result: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Update matchingDone in Topic_Progress sheet
+ */
+function updateMatchingDoneInTopicProgress(userId, topicId) {
+  try {
+    const spreadsheet = getUserSpreadsheet(userId);
+    if (!spreadsheet) return;
+
+    let sheet = spreadsheet.getSheetByName("Topic_Progress");
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet("Topic_Progress");
+      const headers = [
+        "progressId",
+        "topicId",
+        "topicTitle",
+        "lessonCompleted",
+        "miniQuizCompleted",
+        "mindmapViewed",
+        "flashcardsCompleted",
+        "quizDone",
+        "matchingDone",
+        "challengeDone",
+        "attempts",
+        "accuracy",
+        "bestScore",
+        "xpEarned",
+        "status",
+        "unlockedAt",
+        "completedAt",
+        "lastUpdated",
+      ];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const matchingDoneCol = headers.indexOf("matchingDone");
+    const lastUpdatedCol = headers.indexOf("lastUpdated");
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+    const now = new Date();
+
+    if (matchingDoneCol < 0) {
+      Logger.log("⚠️ matchingDone column not found in Topic_Progress");
+      return;
+    }
+
+    // Find existing row for this topic
+    let rowIndex = -1;
+    var topicIdStr = String(topicId).trim();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][topicIdCol]).trim() === topicIdStr) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      // Create new row
+      var progressId = "PRG_" + Date.now().toString(36);
+      var newRow = new Array(headers.length).fill("");
+      newRow[headers.indexOf("progressId")] = progressId;
+      newRow[topicIdCol] = topicId;
+      newRow[matchingDoneCol] = 1;
+      newRow[headers.indexOf("status")] = "in_progress";
+      newRow[headers.indexOf("unlockedAt")] = now;
+      newRow[headers.indexOf("lastUpdated")] = now;
+      sheet.appendRow(newRow);
+      Logger.log(
+        "✅ Created new Topic_Progress row with matchingDone=1 for: " + topicId,
+      );
+    } else {
+      // Update existing row
+      sheet.getRange(rowIndex, matchingDoneCol + 1).setValue(1);
+      if (lastUpdatedCol >= 0)
+        sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
+
+      // Check if ALL activities are now complete
+      var currentData = sheet
+        .getRange(rowIndex, 1, 1, headers.length)
+        .getValues()[0];
+      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1;
+      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1;
+      var flashcardsDone =
+        currentData[headers.indexOf("flashcardsCompleted")] === 1;
+      var quizDone = currentData[headers.indexOf("quizDone")] === 1;
+
+      if (lessonDone && mindmapDone && flashcardsDone && quizDone) {
+        if (statusCol >= 0)
+          sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
+        if (completedAtCol >= 0)
+          sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+      }
+
+      Logger.log("✅ Updated matchingDone=1 in Topic_Progress for: " + topicId);
+    }
+  } catch (error) {
+    Logger.log("❌ Error updating matchingDone: " + error.toString());
+  }
+}
+
 function getOrCreateActivityLogSheet(spreadsheet) {
   let sheet = spreadsheet.getSheetByName("Activity_Log");
   if (!sheet) {

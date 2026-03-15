@@ -901,6 +901,100 @@
     matchingState.gameCompleted = true;
     stopMatchingTimer();
     showMatchingComplete();
+    saveMatchingResultAndProgress();
+  }
+
+  // ===== SAVE RESULT + UPDATE PROGRESS =====
+  function saveMatchingResultAndProgress() {
+    var accuracy =
+      matchingState.moves > 0
+        ? Math.round((matchingState.correctCount / matchingState.moves) * 100)
+        : 0;
+
+    var topicId = matchingState.currentTopicId || "";
+    var topicTitle = matchingState.currentTopicName || "";
+
+    // 1. Save detailed matching result (also updates matchingDone in Topic_Progress)
+    var resultPayload = {
+      topicId: topicId,
+      topicTitle: topicTitle,
+      difficulty: matchingState.selectedDifficulty || "medium",
+      totalPairs: matchingState.totalPairs,
+      correctPairs: matchingState.correctCount,
+      wrongAttempts: matchingState.wrongCount,
+      score: matchingState.score,
+      elapsedTime: matchingState.elapsedTime,
+      accuracy: accuracy,
+      completed: true,
+    };
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        console.log("✅ Matching result saved:", response);
+        showMatchingSaveNotification(true, "Kết quả đã được lưu!");
+        // Invalidate progress cache so Topics page shows updated badge
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.progress = null;
+          window.globalTopicsCache.lastLoadTime = 0;
+        }
+        if (typeof window.invalidateTopicsLocalCache === "function") {
+          window.invalidateTopicsLocalCache();
+        }
+        console.log("🔄 Progress cache invalidated after matching save");
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving matching result:", error);
+        showMatchingSaveNotification(false, "Không thể lưu kết quả");
+      })
+      .saveMatchingResult(resultPayload);
+
+    // 2. Save activity log entry
+    google.script.run
+      .withSuccessHandler(function () {
+        console.log("✅ Matching activity log saved");
+      })
+      .withFailureHandler(function (error) {
+        console.error("❌ Error saving matching activity log:", error);
+      })
+      .saveActivityLog({
+        type: "Matching",
+        topicId: topicId,
+        topicTitle: topicTitle,
+        score: matchingState.score,
+        totalQuestions: matchingState.totalPairs,
+        percentage: accuracy,
+      });
+
+    // 3. Notify dashboard to refresh
+    window.dispatchEvent(new Event("dashboard-needs-refresh"));
+  }
+
+  // ===== SAVE NOTIFICATION =====
+  function showMatchingSaveNotification(success, message) {
+    var notification = document.createElement("div");
+    notification.style.cssText =
+      "position:fixed;bottom:1rem;right:1rem;padding:0.875rem 1.25rem;" +
+      "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:9999;" +
+      "transition:all 0.3s ease;display:flex;align-items:center;gap:0.5rem;" +
+      "font-size:0.875rem;font-weight:500;" +
+      "background:" +
+      (success ? "#E8F7EE" : "#FEE2E2") +
+      ";" +
+      "color:" +
+      (success ? "#2FA36B" : "#DC2626") +
+      ";" +
+      "border:1px solid " +
+      (success ? "#2FA36B" : "#DC2626") +
+      ";";
+    notification.textContent = (success ? "✓ " : "✗ ") + message;
+    document.body.appendChild(notification);
+    setTimeout(function () {
+      notification.style.opacity = "0";
+      setTimeout(function () {
+        if (notification.parentNode)
+          notification.parentNode.removeChild(notification);
+      }, 300);
+    }, 3000);
   }
 
   // ===== PAIR CHECK (legacy compat) =====
