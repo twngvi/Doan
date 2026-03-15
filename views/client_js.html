@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   /**
    * client_js.html - Client-Side JavaScript
    *
@@ -431,70 +431,7 @@
     handleGoogleLogin();
   }
 
-  /**
-   * Handle login form submission
-   */
-  function handleLoginFormSubmit() {
-    console.log("Login form submitted");
 
-    // Get form data
-    const username = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
-
-    // Validation
-    if (!username || !password) {
-      showToast("Vui lòng nhập đầy đủ thông tin", "error");
-      return false;
-    }
-
-    // Prepare payload
-    const payload = {
-      username: username,
-      password: password,
-    };
-
-    // Show loading
-    showLoading(true);
-    disableButton("btn-login");
-
-    // Call backend function
-    google.script.run
-      .withSuccessHandler(onLoginSuccess)
-      .withFailureHandler(onApiError)
-      .loginUser(payload);
-
-    return false;
-  }
-
-  /**
-   * Handle successful login
-   */
-  function onLoginSuccess(response) {
-    console.log("Login response:", JSON.stringify(response));
-    console.log("Response status:", response.status);
-    console.log("Response message:", response.message);
-    hideLoading();
-    enableButton("btn-login");
-
-    if (response.status === "success") {
-      // Save user to localStorage (auto logout when closing tab)
-      currentUser = response.user;
-      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
-      console.log("âœ… Current user synced to window:", currentUser);
-
-      // Show success message
-      showToast("Đăng nhập thành công!", "success");
-
-      // Navigate to dashboard
-      setTimeout(() => {
-        showPage("page-dashboard");
-        loadDashboardData();
-      }, 500);
-    } else {
-      showToast(response.message || "Đăng nhập thất bại", "error");
-    }
-  }
 
   /**
    * Handle register form submission - NEW VERSION
@@ -570,15 +507,14 @@
               showPage("page-verify-email");
             }, 1500);
           } else {
-            // Náº¿u khÃ´ng cáº§n xÃ¡c thá»±c thÃ¬ má»›i vá» Login
-            setTimeout(() => {
-              showPage("page-login");
-            }, 3000);
-          }
-          // --------------------------------------
-        } else {
-          showToast(response.message, "error");
+          // Náº¿u khÃ´ng cáº§n xÃ¡c thá»±c thÃ¬ má»›i vá» Login
+          setTimeout(() => {
+            showPage("page-login");
+          }, 3000);
         }
+        // --------------------------------------
+      } else {
+        showToast(response.message, "error");
       })
       .withFailureHandler(function (error) {
         hideLoading();
@@ -590,13 +526,29 @@
     return false;
   }
 
+  // ==================== Login Rate Limiting ====================
+  var _loginAttempts = [];
+  var LOGIN_MAX_ATTEMPTS = 5;
+  var LOGIN_WINDOW_MS = 5 * 60 * 1000; // 5 phút
+
   /**
-   * Handle login form submission - NEW VERSION
+   * Handle login form submission
+   * ⭐ Unified version with rate limiting
    */
   function handleLoginFormSubmit() {
-    console.log("ðŸ” Login form submitted");
+    console.log("🔑 Login form submitted");
 
-    // Get form data
+    // ⭐ RATE LIMITING: Chống brute force
+    var now = Date.now();
+    _loginAttempts = _loginAttempts.filter(function(t) { return now - t < LOGIN_WINDOW_MS; });
+    if (_loginAttempts.length >= LOGIN_MAX_ATTEMPTS) {
+      var waitSeconds = Math.ceil((LOGIN_WINDOW_MS - (now - _loginAttempts[0])) / 1000);
+      showToast("Quá nhiều lần thử. Vui lòng đợi " + waitSeconds + " giây.", "error");
+      return false;
+    }
+    _loginAttempts.push(now);
+
+    // Get form data - hỗ trợ cả login-email và login-username
     const email = document.getElementById("login-email")
       ? document.getElementById("login-email").value.trim()
       : document.getElementById("login-username").value.trim();
@@ -616,21 +568,27 @@
 
     // Show loading
     showLoading(true);
+    disableButton("btn-login");
 
     // Call backend function
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("âœ… Login Response:", response);
+        enableButton("btn-login");
+        console.log("✅ Login Response:", response);
 
         if (response.success) {
-          // â­ LÆ¯U SESSION Äáº¦Y Äá»¦
+          // ⭐ Reset login attempts khi thành công
+          _loginAttempts = [];
+
+          // ⭐ LƯU SESSION ĐẦY ĐỦ
           currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
 
-          console.log("âœ… Session saved:", {
+          console.log("✅ Session saved:", {
             userId: response.user.userId,
             email: response.user.email,
             avatarUrl: response.user.avatarUrl,
@@ -1198,41 +1156,8 @@
     alert(helpText);
   }
 
-  /**
-   * Show toast notification
-   * @param {string} message - Message to display
-   * @param {string} type - Type: success, error, info, warning
-   */
-  function showToast(message, type = "info") {
-    const toast = document.getElementById("toast");
-    const toastMessage = document.getElementById("toast-message");
-
-    if (!toast || !toastMessage) return;
-
-    // Set message
-    toastMessage.textContent = message;
-
-    // Remove all type classes
-    toast.classList.remove(
-      "toast-success",
-      "toast-error",
-      "toast-info",
-      "toast-warning",
-    );
-
-    // Add type class
-    toast.classList.add("toast-" + type);
-
-    // Show toast
-    toast.classList.remove("translate-x-full");
-    toast.classList.add("translate-x-0");
-
-    // Hide after 3 seconds
-    setTimeout(() => {
-      toast.classList.remove("translate-x-0");
-      toast.classList.add("translate-x-full");
-    }, 3000);
-  }
+  // ⭐ OLD showToast đã được gộp vào phiên bản bên dưới (Toast Notification System)
+  // Đã xóa duplicate để tránh conflict
 
   /**
    * Show resend verification option
@@ -1792,22 +1717,8 @@
     }
   });
 
-  // ==================== Dashboard Data Loading ====================
-
-  function loadDashboardData() {
-    console.log("Loading dashboard data...");
-
-    const savedUser = localStorage.getItem("currentUser");
-    if (savedUser) {
-      try {
-        currentUser = JSON.parse(savedUser);
-        console.log("Current user:", currentUser);
-        updateDashboardUserName();
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-      }
-    }
-  }
+  // ⭐ loadDashboardData đã được gộp vào phiên bản duy nhất ở trên (Dashboard section)
+  // Đã xóa duplicate để tránh conflict
 
   function updateDashboardUserName() {
     if (!currentUser) return;
