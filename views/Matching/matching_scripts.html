@@ -379,7 +379,7 @@
     };
 
     grid.innerHTML = "";
-    grid.style.display = "grid";
+    grid.style.display = "flex";
 
     topics.forEach((topic, index) => {
       const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
@@ -390,46 +390,52 @@
       card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}`;
       card.onclick = () => selectMatchingTopic(topic);
 
-      // Status badge
+      const icon = getTopicIcon(topic.title);
+
+      // Status icon (circle like MCQ)
       let statusHtml = "";
       if (!hasDoc) {
         statusHtml = `
           <div class="matching-topic-status locked">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="11" width="18" height="11" rx="2"/>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
             </svg>
-            <span>Chưa có nội dung</span>
           </div>`;
       } else if (matchingPlayed) {
         statusHtml = `
           <div class="matching-topic-status played">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
-            <span>Đã chơi</span>
           </div>`;
       } else {
         statusHtml = `
           <div class="matching-topic-status ready">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/>
               <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
             </svg>
-            <span>Sẵn sàng</span>
           </div>`;
       }
 
       card.innerHTML = `
-        <div class="matching-topic-card-icon">${getTopicIcon(topic.title)}</div>
+        <div class="matching-topic-card-index">${index + 1}</div>
+        <div class="matching-topic-card-icon">${icon}</div>
         <div class="matching-topic-card-body">
           <div class="matching-topic-card-name">${topic.title}</div>
           <div class="matching-topic-card-meta">
             <span class="matching-topic-card-category">${topic.category || "Chung"}</span>
+            ${matchingPlayed ? '<span class="matching-topic-card-badge">Đã chơi</span>' : ""}
           </div>
         </div>
         ${statusHtml}
+        <div class="matching-topic-card-arrow">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </div>
       `;
 
       // Stagger animation
@@ -928,6 +934,16 @@
       completed: true,
     };
 
+    // Activity log data (prepared before async calls)
+    var activityLogData = {
+      type: "Matching",
+      topicId: topicId,
+      topicTitle: topicTitle,
+      score: matchingState.correctCount,
+      totalQuestions: matchingState.totalPairs,
+      percentage: accuracy,
+    };
+
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("✅ Matching result saved:", response);
@@ -941,32 +957,38 @@
           window.invalidateTopicsLocalCache();
         }
         console.log("🔄 Progress cache invalidated after matching save");
+
+        // 2. Save activity log entry AFTER matching result is saved (avoid concurrent writes)
+        google.script.run
+          .withSuccessHandler(function () {
+            console.log("✅ Matching activity log saved");
+            // 3. Notify dashboard to refresh after activity is saved
+            window.dispatchEvent(new Event("dashboard-needs-refresh"));
+          })
+          .withFailureHandler(function (error) {
+            console.error("❌ Error saving matching activity log:", error);
+            // Still notify dashboard even if activity log fails
+            window.dispatchEvent(new Event("dashboard-needs-refresh"));
+          })
+          .saveActivityLog(activityLogData);
       })
       .withFailureHandler(function (error) {
         console.error("❌ Error saving matching result:", error);
         showMatchingSaveNotification(false, "Không thể lưu kết quả");
+
+        // Still try to save activity log even if matching result failed
+        google.script.run
+          .withSuccessHandler(function () {
+            console.log("✅ Matching activity log saved (after result error)");
+            window.dispatchEvent(new Event("dashboard-needs-refresh"));
+          })
+          .withFailureHandler(function (error2) {
+            console.error("❌ Error saving matching activity log:", error2);
+            window.dispatchEvent(new Event("dashboard-needs-refresh"));
+          })
+          .saveActivityLog(activityLogData);
       })
       .saveMatchingResult(resultPayload);
-
-    // 2. Save activity log entry
-    google.script.run
-      .withSuccessHandler(function () {
-        console.log("✅ Matching activity log saved");
-      })
-      .withFailureHandler(function (error) {
-        console.error("❌ Error saving matching activity log:", error);
-      })
-      .saveActivityLog({
-        type: "Matching",
-        topicId: topicId,
-        topicTitle: topicTitle,
-        score: matchingState.score,
-        totalQuestions: matchingState.totalPairs,
-        percentage: accuracy,
-      });
-
-    // 3. Notify dashboard to refresh
-    window.dispatchEvent(new Event("dashboard-needs-refresh"));
   }
 
   // ===== SAVE NOTIFICATION =====

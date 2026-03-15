@@ -51,9 +51,18 @@
    * Initialize Dashboard
    */
   let dashboardAutoRefreshInterval = null;
+  let dashboardInitialized = false;
 
   function initDashboard() {
+    // Guard: only init if dashboard is visible and user is logged in
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    if (!isLoggedIn) {
+      console.log("📊 Dashboard init skipped - not logged in");
+      return;
+    }
+
     console.log("📊 Initializing Dashboard (Gamification)...");
+    dashboardInitialized = true;
 
     const user = getUserData();
     if (user) updateDashboardUserInfo(user);
@@ -111,6 +120,13 @@
    * Called from showPage() in client_js.html
    */
   window.refreshDashboardOnReturn = function () {
+    // If dashboard was never initialized, do full init
+    if (!dashboardInitialized) {
+      console.log("🔄 First-time Dashboard init on navigation...");
+      initDashboard();
+      return;
+    }
+
     console.log(
       "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)...",
     );
@@ -191,6 +207,9 @@
       return;
     }
 
+    // Show loading state in zones (not error)
+    showLoadingStates();
+
     const loadingTimeout = setTimeout(() => {
       console.warn("⏱️ API taking too long");
     }, 10000);
@@ -203,13 +222,48 @@
           DashboardCache.lastFetch = Date.now();
           renderAllZones(response);
         } else {
-          showErrorStates("Không thể tải dữ liệu");
+          console.warn(
+            "Dashboard data returned success:false, retrying in 3s...",
+          );
+          // Retry once after a short delay instead of showing error immediately
+          setTimeout(() => {
+            google.script.run
+              .withSuccessHandler((retryResponse) => {
+                if (retryResponse && retryResponse.success) {
+                  DashboardCache.data = retryResponse;
+                  DashboardCache.lastFetch = Date.now();
+                  renderAllZones(retryResponse);
+                } else {
+                  showErrorStates("Không thể tải dữ liệu");
+                }
+              })
+              .withFailureHandler(() => {
+                showErrorStates("Không thể tải dữ liệu");
+              })
+              .getDashboardData();
+          }, 3000);
         }
       })
       .withFailureHandler((error) => {
         clearTimeout(loadingTimeout);
         console.error("❌ getDashboardData error:", error);
-        showErrorStates("Lỗi kết nối server");
+        // Retry once on failure
+        setTimeout(() => {
+          google.script.run
+            .withSuccessHandler((retryResponse) => {
+              if (retryResponse && retryResponse.success) {
+                DashboardCache.data = retryResponse;
+                DashboardCache.lastFetch = Date.now();
+                renderAllZones(retryResponse);
+              } else {
+                showErrorStates("Lỗi kết nối server");
+              }
+            })
+            .withFailureHandler(() => {
+              showErrorStates("Lỗi kết nối server");
+            })
+            .getDashboardData();
+        }, 3000);
       })
       .getDashboardData();
   }
@@ -743,6 +797,28 @@
   }
 
   /**
+   * Show loading states for all zones (instead of error on first load)
+   */
+  function showLoadingStates() {
+    const ids = [
+      "activity-history-list",
+      "quests-list",
+      "skill-progress-list",
+      "leaderboard-list",
+    ];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && !el.querySelector(".loading-state-indicator")) {
+        el.innerHTML = `
+          <div class="empty-state loading-state-indicator">
+            <div class="empty-state-icon" style="animation:pulse 1.5s infinite">⏳</div>
+            <div class="empty-state-text">Đang tải dữ liệu...</div>
+          </div>`;
+      }
+    });
+  }
+
+  /**
    * Show error states for all zones
    */
   function showErrorStates(msg) {
@@ -951,8 +1027,12 @@
     return date.toLocaleDateString("vi-VN");
   }
 
-  // Initialize when script loads
-  initDashboard();
+  // Do NOT auto-initialize dashboard on script load.
+  // Dashboard will be initialized when user navigates to it via refreshDashboardOnReturn().
+  // Only initialize if the dashboard is already visible (page restore on reload).
+  if (isDashboardVisible() && localStorage.getItem("isLoggedIn") === "true") {
+    initDashboard();
+  }
 
   // Listen for user updates
   window.addEventListener("user-info-updated", function (e) {
@@ -966,7 +1046,7 @@
   });
 
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) {
+    if (!document.hidden && dashboardInitialized) {
       const streakData = getStreakData();
       streakData.sessionStartTime = Date.now();
       saveStreakData(streakData);
@@ -983,6 +1063,7 @@
 
   // Listen for custom event from other pages (quiz/learning completion)
   window.addEventListener("dashboard-needs-refresh", function () {
+    if (!dashboardInitialized) return;
     console.log("🔄 Dashboard refresh triggered by activity event");
     DashboardCache.data = null;
     DashboardCache.lastFetch = null;
