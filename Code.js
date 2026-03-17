@@ -51,7 +51,7 @@ function doGet(e) {
   } catch (error) {
     Logger.log("Error in doGet: " + error.toString());
     return HtmlService.createHtmlOutput(
-      "<h1>Error loading application</h1><p>" + error.toString() + "</p>"
+      "<h1>Error loading application</h1><p>" + error.toString() + "</p>",
     );
   }
 }
@@ -173,7 +173,7 @@ function testGetTopicContent() {
         success: result.success,
         message: result.message,
         contentLength: result.content ? result.content.length : 0,
-      })
+      }),
   );
 
   return result;

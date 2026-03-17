@@ -55,6 +55,23 @@
       window.currentUser = null;
     }
 
+    // BƯỚC 1.5: Khôi phục Theme ngay lập tức
+    try {
+      var savedTheme = "default";
+      if (currentUser && currentUser.theme) {
+        savedTheme = currentUser.theme;
+      } else {
+        var t = localStorage.getItem("userTheme");
+        if (t) savedTheme = t;
+      }
+      if (savedTheme && savedTheme !== "default") {
+        document.body.classList.add("theme-" + savedTheme);
+      }
+      console.log("Theme restored:", savedTheme);
+    } catch (e) {
+      console.warn("Theme restore failed:", e);
+    }
+
     // BƯỚC 2: Xác định trang đích (Routing Logic)
 
     // Ưu tiên 1: Link từ email/server (window.SERVER_PARAMS.page)
@@ -767,6 +784,10 @@
     localStorage.removeItem("user");
     localStorage.removeItem("authToken");
     localStorage.removeItem("recentActivities"); // Clear activity cache
+
+    // Clear theme
+    localStorage.removeItem("userTheme");
+    document.body.classList.remove("theme-forest");
 
     // Clear auth panel state
     sessionStorage.removeItem("authPanelOpen");

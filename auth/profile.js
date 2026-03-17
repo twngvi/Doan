@@ -179,7 +179,66 @@ function changeUserPassword(passwordData) {
 }
 
 /**
- * ⭐ Lưu URL Avatar mới cho user (thay vì upload file)
+ * Save user theme preference
+ * @param {string} userId - ID of the user
+ * @param {string} themeName - Theme name ('default', 'forest', etc.)
+ * @returns {object} - {success, message}
+ */
+function saveUserTheme(userId, themeName) {
+  try {
+    Logger.log("=== SAVE USER THEME ===");
+    Logger.log("User ID: " + userId);
+    Logger.log("Theme: " + themeName);
+
+    if (!userId) {
+      return { success: false, message: "User ID is required" };
+    }
+
+    var allowedThemes = ["default", "forest"];
+    if (allowedThemes.indexOf(themeName) === -1) {
+      return { success: false, message: "Invalid theme name" };
+    }
+
+    var usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return { success: false, message: "System error" };
+    }
+
+    var data = usersSheet.getDataRange().getValues();
+    var headers = data[0];
+
+    // Find or create 'theme' column
+    var themeColIndex = headers.indexOf("theme");
+    if (themeColIndex === -1) {
+      // Add 'theme' column at the end
+      var lastCol = headers.length + 1;
+      usersSheet.getRange(1, lastCol).setValue("theme");
+      themeColIndex = lastCol - 1;
+      Logger.log("Created 'theme' column at index: " + themeColIndex);
+    }
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === userId) {
+        usersSheet.getRange(i + 1, themeColIndex + 1).setValue(themeName);
+
+        Logger.log("Theme saved successfully: " + themeName);
+        return {
+          success: true,
+          message: "Theme saved",
+          theme: themeName,
+        };
+      }
+    }
+
+    return { success: false, message: "User not found" };
+  } catch (error) {
+    Logger.log("Error in saveUserTheme: " + error.toString());
+    return { success: false, message: "Error: " + error.toString() };
+  }
+}
+
+/**
+ * Lưu URL Avatar mới cho user
  * @param {string} userId - ID của user
  * @param {string} avatarUrl - URL của avatar được chọn
  * @returns {object} - {success, avatarUrl, message}
