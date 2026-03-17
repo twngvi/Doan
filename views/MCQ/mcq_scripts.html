@@ -40,95 +40,144 @@
   }
   window.searchMcqTopics = searchMcqTopics;
 
-  // Quiz State
+  // ========== QUIZ STATE ==========
+
   let quizState = {
+    // Entry & topic
+    entrySource: null,       // 'mcq' | 'lesson'
+    selectedTopic: null,     // full topic object
     topicId: null,
     topicTitle: "",
     contentDocId: "",
-    questions: [],
+    quizMode: "instant",     // 'instant' | 'review'
+
+    // Questions & answers
+    questions: [],            // all loaded questions (raw)
+    filteredQuestions: [],     // questions after mastered filter
     currentQuestionIndex: 0,
     userAnswers: [],
-    answeredQuestions: [], // Track which questions have been answered (locked)
+    answeredQuestions: [],
     wrongAnswers: [],
-    retryQueue: [], // Queue for wrong answers to retry with different format
+    retryQueue: [],
+    masteredIds: [],
     score: 0,
+
+    // Timer
     startTime: null,
+    elapsedTime: 0,
     timerInterval: null,
+
+    // Session
+    quizSession: null,        // structured session object
+    resumeSession: null,      // saved progress for resume
+    savedProgress: null,      // raw saved progress data
+
+    // UI state
+    loading: false,
+    error: null,
     isReviewing: false,
-    allTopics: [],
-    gameMode: "instant", // 'instant' = hiện đáp án ngay, 'review' = xem đáp án sau khi nộp
     allMastered: false,
     masteredCount: 0,
     autoAdvanceTimer: null,
+    isLoadingTopic: false,
+    allTopics: [],
   };
 
+  // Legacy alias: gameMode ↔ quizMode
+  Object.defineProperty(quizState, 'gameMode', {
+    get() { return this.quizMode; },
+    set(val) { this.quizMode = val; },
+    enumerable: false,
+  });
+
+  // ========== 1. ENTRY POINT ==========
+
   /**
-   * Initialize MCQ Page
+   * detectQuizEntrySource() — Xác định luồng truy cập
+   * @returns {'lesson'|'mcq'}
+   */
+  function detectQuizEntrySource() {
+    const params = window.currentPageParams;
+    if (params && params.topicId && params.contentDocId) {
+      return 'lesson';
+    }
+    return 'mcq';
+  }
+
+  /**
+   * initMCQPage() — Entry point, gọi khi page-mcq được hiển thị
    */
   function initMCQPage() {
     console.log("🎯 Initializing MCQ Page...");
-    console.log("📋 currentPageParams:", window.currentPageParams);
-
-    // Reset quiz state when initializing
     resetQuizState();
-
-    // Start meteor shower for header
     startMCQHeaderMeteors();
     setupMCQHeaderMouseEffect();
 
-    // Check if we have valid topic params (coming from lesson or topics page)
-    const params = window.currentPageParams;
-    if (params && params.topicId && params.contentDocId) {
-      console.log("📌 Got valid topic params, starting quiz directly");
+    const entrySource = detectQuizEntrySource();
+    quizState.entrySource = entrySource;
+
+    if (entrySource === 'lesson') {
+      // Vào từ Lesson/Topics → bỏ qua chọn topic & mode, dùng instant
+      const params = window.currentPageParams;
       quizState.topicId = params.topicId;
       quizState.topicTitle = params.topicTitle || "Quiz";
       quizState.contentDocId = params.contentDocId;
+      quizState.selectedTopic = {
+        topicId: params.topicId,
+        title: params.topicTitle || "Quiz",
+        contentDocId: params.contentDocId,
+      };
+      quizState.quizMode = "instant";
 
-      // If gameMode is specified (e.g. from Lesson page), use it directly
-      if (params.gameMode) {
-        quizState.gameMode = params.gameMode;
-        showQuizView();
-        loadQuizQuestions(false);
-      } else {
-        showQuizView();
-        loadQuizQuestions(false);
-      }
+      console.log("📌 Entry from Lesson → instant mode, loading quiz directly");
+      showQuizView();
+      loadQuizData(false);
     } else {
-      console.log("📋 No valid topic params, showing topic selection");
+      // Vào từ trang MCQ → cần chọn topic
+      console.log("📋 Entry from MCQ → showing topic selection");
       showTopicSelection();
-      loadTopicsForQuiz();
+      loadAvailableTopics();
     }
   }
 
   /**
-   * Reset quiz state for new quiz
+   * resetQuizState() — Reset toàn bộ state về giá trị ban đầu
    */
   function resetQuizState() {
+    if (quizState.timerInterval) clearInterval(quizState.timerInterval);
+    if (quizState.autoAdvanceTimer) clearTimeout(quizState.autoAdvanceTimer);
+
+    quizState.entrySource = null;
+    quizState.selectedTopic = null;
     quizState.topicId = null;
     quizState.topicTitle = "";
     quizState.contentDocId = "";
+    quizState.quizMode = "instant";
     quizState.questions = [];
+    quizState.filteredQuestions = [];
     quizState.currentQuestionIndex = 0;
     quizState.userAnswers = [];
     quizState.answeredQuestions = [];
     quizState.wrongAnswers = [];
     quizState.retryQueue = [];
+    quizState.masteredIds = [];
     quizState.score = 0;
     quizState.startTime = null;
-    if (quizState.timerInterval) {
-      clearInterval(quizState.timerInterval);
-      quizState.timerInterval = null;
-    }
+    quizState.elapsedTime = 0;
+    quizState.timerInterval = null;
+    quizState.quizSession = null;
+    quizState.resumeSession = null;
+    quizState.savedProgress = null;
+    quizState.loading = false;
+    quizState.error = null;
     quizState.isReviewing = false;
-    quizState.gameMode = "instant";
     quizState.allMastered = false;
     quizState.masteredCount = 0;
+    quizState.autoAdvanceTimer = null;
     quizState.isLoadingTopic = false;
   }
 
-  /**
-   * Show topic selection view
-   */
+  // ========== 2. VIEW SWITCHING ==========
   function showTopicSelection() {
     document.getElementById("mcq-topic-selection").style.display = "block";
     document.getElementById("mcq-quiz-view").style.display = "none";
@@ -150,7 +199,6 @@
    */
   function loadTopicsForQuiz(forceRefresh = false) {
     console.log("📥 Loading topics for quiz...");
-
     const now = Date.now();
 
     // ⭐ ƯU TIÊN 1: Kiểm tra Global Cache (chia sẻ từ Topics page)
@@ -208,6 +256,9 @@
       .withFailureHandler(handleTopicsError)
       .getAllTopics();
   }
+
+  // Alias for entry point usage
+  var loadAvailableTopics = loadTopicsForQuiz;
 
   /**
    * Helper: Show empty topics state
@@ -577,7 +628,7 @@
   }
 
   /**
-   * Select topic and start quiz - Check for saved progress first
+   * handleTopicSelect / selectTopicForQuiz — Người dùng chọn topic từ danh sách
    */
   function selectTopicForQuiz(topic) {
     console.log("🎯 Selected topic for quiz:", topic);
@@ -590,7 +641,8 @@
       return;
     }
 
-    // Lưu topic tạm để dùng sau khi chọn mode
+    // Lưu topic đầy đủ vào state
+    quizState.selectedTopic = topic;
     quizState.topicId = topic.topicId;
     quizState.topicTitle = topic.title;
     quizState.contentDocId = topic.contentDocId;
@@ -598,8 +650,19 @@
     // Hiện loading trên topic list
     setTopicLoadingState(true);
 
-    // Check for saved progress first
-    checkSavedProgress(topic.topicId);
+    // Kiểm tra bài dở dang trước
+    checkExistingQuizSession(topic.topicId);
+  }
+
+  // Alias
+  var handleTopicSelect = selectTopicForQuiz;
+
+  /**
+   * checkExistingQuizSession — Kiểm tra có session quiz chưa hoàn thành không
+   * (Alias cho checkSavedProgress — chuẩn hóa tên theo spec)
+   */
+  function checkExistingQuizSession(topicId) {
+    checkSavedProgress(topicId);
   }
 
   /**
@@ -764,7 +827,7 @@
   }
 
   /**
-   * Resume quiz from saved progress
+   * Resume quiz from saved progress — uses restoreQuizSession()
    */
   function resumeQuiz() {
     closeResumeModal();
@@ -776,66 +839,72 @@
       return;
     }
 
-    // Set game mode
-    quizState.gameMode = savedProgress.gameMode || "instant";
-    quizState.score = savedProgress.score || 0;
+    // Set game mode from saved session
+    quizState.quizMode = savedProgress.gameMode || "instant";
 
     // Switch to quiz view
-    document.getElementById("mcq-topic-selection").style.display = "none";
-    document.getElementById("mcq-quiz-view").style.display = "block";
-    document.getElementById("mcq-topic-title").textContent =
-      quizState.topicTitle;
+    showQuizView();
 
     // Show mode indicator
     const modeIndicator = document.getElementById("quiz-mode-indicator");
     if (modeIndicator) {
       modeIndicator.textContent =
-        quizState.gameMode === "instant" ? "⚡ Trả lời nhanh" : "📝 Ôn tập";
-      modeIndicator.className = "quiz-mode-indicator " + quizState.gameMode;
+        quizState.quizMode === "instant" ? "⚡ Trả lời nhanh" : "📝 Ôn tập";
+      modeIndicator.className = "quiz-mode-indicator " + quizState.quizMode;
     }
 
-    // Load questions then restore state
+    // Load questions then restore state using restoreQuizSession
     showLoading();
+    quizState.loading = true;
+
     google.script.run
       .withSuccessHandler(function (result) {
-        if (result && result.questions) {
-          quizState.questions = result.questions;
+        quizState.loading = false;
 
-          // Restore user answers from saved progress
-          quizState.userAnswers = new Array(quizState.questions.length).fill(
-            null,
-          );
-          quizState.answeredQuestions = new Array(
-            quizState.questions.length,
-          ).fill(false);
-
-          savedProgress.questionDetails.forEach((detail, idx) => {
-            if (detail.wasAnswered && idx < quizState.questions.length) {
-              quizState.userAnswers[idx] = detail.userAnswer;
-              quizState.answeredQuestions[idx] = true;
-            }
-          });
-
-          // Find first unanswered question
-          let resumeIndex = savedProgress.currentQuestionIndex || 0;
-          for (let i = 0; i < quizState.questions.length; i++) {
-            if (!quizState.answeredQuestions[i]) {
-              resumeIndex = i;
-              break;
-            }
+        // Parse questions from AI response
+        var questions = null;
+        if (result && result.data) {
+          var parsedData = result.data;
+          if (typeof parsedData === "string") {
+            try { parsedData = JSON.parse(parsedData); } catch (e) { parsedData = null; }
           }
-          quizState.currentQuestionIndex = resumeIndex;
+          if (parsedData && parsedData.questions && Array.isArray(parsedData.questions)) {
+            questions = parsedData.questions.map(function (q, index) {
+              var options = q.options;
+              if (!Array.isArray(options)) {
+                options = [options.A, options.B, options.C, options.D].filter(Boolean);
+              }
+              var correctAnswer = q.correctAnswer;
+              if (typeof correctAnswer === "string") {
+                var letterToIndex = { A: 0, B: 1, C: 2, D: 3 };
+                correctAnswer = letterToIndex[correctAnswer.toUpperCase()] || 0;
+              }
+              return {
+                id: q.id || "Q" + (index + 1),
+                question: q.question,
+                options: options,
+                correctAnswer: correctAnswer,
+                explanation: q.explanation || "",
+                hint: q.hint || "",
+                difficulty: q.difficulty || "medium",
+              };
+            });
+          }
+        }
 
-          // Delete saved progress (we're resuming now)
-          google.script.run.deleteSavedQuizProgress(quizState.topicId);
+        if (questions && questions.length > 0) {
+          // Use restoreQuizSession to properly restore state
+          restoreQuizSession(savedProgress, questions);
 
-          // Start quiz
+          // Start quiz UI with restored state
           startQuizUI();
         } else {
+          // Could not parse questions, fall back to game mode selection
           showGameModeModal();
         }
       })
       .withFailureHandler(function (error) {
+        quizState.loading = false;
         console.error("Error loading questions for resume:", error);
         showGameModeModal();
       })
@@ -866,20 +935,26 @@
   }
 
   /**
-   * Close all mastered modal
+   * Close all mastered modal — Quay về màn trước
    */
   function closeAllMasteredModal() {
     document.getElementById("all-mastered-modal").style.display = "none";
-    // Go back to topics
-    showSection("topics");
+    if (quizState.entrySource === 'lesson') {
+      // Quay lại trang Lesson
+      backFromQuiz();
+    } else {
+      // Quay lại danh sách topic
+      backToTopicSelection();
+    }
   }
 
   /**
-   * Review all mastered questions
+   * Review all mastered questions — Ôn lại toàn bộ bộ câu hỏi gốc
    */
   function reviewAllMastered() {
     document.getElementById("all-mastered-modal").style.display = "none";
-    // Start quiz with all questions (already shuffled in quizState.questions)
+    // Create session with all questions (already shuffled in quizState.questions)
+    createQuizSession(quizState.questions);
     startQuizSession();
   }
 
@@ -962,10 +1037,10 @@
    */
   function startQuizWithMode(mode) {
     console.log("🎮 Starting quiz with mode:", mode);
-    quizState.gameMode = mode;
+    quizState.quizMode = mode;
     closeGameModeModal();
     showQuizView();
-    loadQuizQuestions(false);
+    loadQuizData(false);
   }
 
   /**
@@ -1050,6 +1125,140 @@
     showTopicSelection();
   }
 
+  // ========== QUIZ DATA LOADING & SESSION MANAGEMENT ==========
+
+  /**
+   * loadQuizData(forceRegenerate) — Entry point thống nhất cho cả 2 luồng
+   * Gọi từ: initMCQPage (lesson flow) hoặc startQuizWithMode (mcq flow)
+   * Load song song: questions + masteredIds + wrongAnswers
+   */
+  function loadQuizData(forceRegenerate = false) {
+    console.log("📦 loadQuizData called", {
+      topicId: quizState.topicId,
+      quizMode: quizState.quizMode,
+      forceRegenerate,
+    });
+
+    quizState.loading = true;
+    quizState.error = null;
+    loadQuizQuestions(forceRegenerate);
+  }
+
+  /**
+   * filterMasteredQuestions(allQuestions, masteredIds) — Lọc câu đã thuộc
+   * @returns {questions: Array, allMastered: boolean}
+   */
+  function filterMasteredQuestions(allQuestions, masteredIds) {
+    if (!masteredIds || masteredIds.length === 0) {
+      return { questions: allQuestions, allMastered: false };
+    }
+    var filtered = allQuestions.filter(function (q) {
+      return !masteredIds.includes(q.id);
+    });
+    console.log(
+      "✅ Filtered: " + allQuestions.length + " → " + filtered.length + " questions",
+    );
+    if (filtered.length === 0) {
+      return { questions: allQuestions, allMastered: true };
+    }
+    return { questions: filtered, allMastered: false };
+  }
+
+  /**
+   * createQuizSession(finalQuestions) — Tạo session quiz mới
+   * @returns session object
+   */
+  function createQuizSession(finalQuestions) {
+    var sessionId = "QS_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+    var session = {
+      sessionId: sessionId,
+      topicId: quizState.topicId,
+      contentDocId: quizState.contentDocId,
+      quizMode: quizState.quizMode,
+      questions: finalQuestions,
+      currentQuestionIndex: 0,
+      userAnswers: new Array(finalQuestions.length).fill(null),
+      score: 0,
+      elapsedTime: 0,
+      startedAt: new Date().toISOString(),
+      status: "in_progress",
+    };
+
+    quizState.quizSession = session;
+    quizState.questions = finalQuestions;
+    quizState.filteredQuestions = finalQuestions;
+    quizState.currentQuestionIndex = 0;
+    quizState.userAnswers = session.userAnswers;
+    quizState.answeredQuestions = new Array(finalQuestions.length).fill(false);
+    quizState.score = 0;
+    quizState.loading = false;
+    quizState.error = null;
+
+    console.log("🎮 Quiz session created:", sessionId, "with", finalQuestions.length, "questions");
+    return session;
+  }
+
+  /**
+   * restoreQuizSession(savedProgress, questions) — Khôi phục session từ bài dở dang
+   * @returns session object
+   */
+  function restoreQuizSession(savedProgress, questions) {
+    var sessionId = "QS_RESUME_" + Date.now();
+    var userAnswers = new Array(questions.length).fill(null);
+    var answeredQuestions = new Array(questions.length).fill(false);
+    var score = savedProgress.score || 0;
+
+    // Restore answers
+    if (savedProgress.questionDetails) {
+      savedProgress.questionDetails.forEach(function (detail, idx) {
+        if (detail.wasAnswered && idx < questions.length) {
+          userAnswers[idx] = detail.userAnswer;
+          answeredQuestions[idx] = true;
+        }
+      });
+    }
+
+    // Find first unanswered question
+    var resumeIndex = savedProgress.currentQuestionIndex || 0;
+    for (var i = 0; i < questions.length; i++) {
+      if (!answeredQuestions[i]) {
+        resumeIndex = i;
+        break;
+      }
+    }
+
+    var session = {
+      sessionId: sessionId,
+      topicId: quizState.topicId,
+      contentDocId: quizState.contentDocId,
+      quizMode: savedProgress.gameMode || quizState.quizMode,
+      questions: questions,
+      currentQuestionIndex: resumeIndex,
+      userAnswers: userAnswers,
+      score: score,
+      elapsedTime: 0,
+      startedAt: new Date().toISOString(),
+      status: "in_progress",
+    };
+
+    quizState.quizSession = session;
+    quizState.quizMode = session.quizMode;
+    quizState.questions = questions;
+    quizState.filteredQuestions = questions;
+    quizState.currentQuestionIndex = resumeIndex;
+    quizState.userAnswers = userAnswers;
+    quizState.answeredQuestions = answeredQuestions;
+    quizState.score = score;
+    quizState.loading = false;
+    quizState.error = null;
+
+    // Delete saved progress from server (we're resuming now)
+    google.script.run.deleteSavedQuizProgress(quizState.topicId);
+
+    console.log("▶️ Quiz session restored:", sessionId, "resuming at question", resumeIndex + 1);
+    return session;
+  }
+
   /**
    * Load quiz questions from server
    */
@@ -1091,23 +1300,7 @@
       processQuestionsWithMastered(questionsResult, masteredIds);
     }
 
-    // Load wrong answers for retry (fire and forget)
-    if (!forceRegenerate) {
-      google.script.run
-        .withSuccessHandler(function (wrongAnswers) {
-          if (wrongAnswers && wrongAnswers.length > 0) {
-            console.log(
-              "📋 Found wrong answers to retry:",
-              wrongAnswers.length,
-            );
-            quizState.wrongAnswers = wrongAnswers;
-          }
-        })
-        .withFailureHandler(function () {})
-        .getWrongAnswersForTopic(quizState.topicId);
-    }
-
-    // ⭐ PARALLEL 1: Load mastered question IDs
+    // PARALLEL 1: Load mastered question IDs
     google.script.run
       .withSuccessHandler(function (ids) {
         masteredIds = ids || [];
@@ -1141,11 +1334,11 @@
    */
   function processQuestionsWithMastered(response, masteredIds) {
     console.log("✅ Processing questions with mastered IDs...");
+    quizState.loading = false;
 
     if (!response || response.success === false) {
-      showError(
-        response?.message || response?.error || "Không thể tải câu hỏi",
-      );
+      quizState.error = response?.message || response?.error || "Không thể tải câu hỏi";
+      showError(quizState.error);
       return;
     }
 
@@ -1157,7 +1350,8 @@
           parsedData = JSON.parse(parsedData);
         } catch (parseErr) {
           console.error("❌ JSON parse error:", parseErr);
-          showError("Lỗi parse dữ liệu câu hỏi. Thử tạo lại.");
+          quizState.error = "Lỗi parse dữ liệu câu hỏi. Thử tạo lại.";
+          showError(quizState.error);
           return;
         }
       }
@@ -1168,9 +1362,8 @@
         !Array.isArray(parsedData.questions)
       ) {
         console.error("❌ Invalid question format:", parsedData);
-        showError(
-          "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.",
-        );
+        quizState.error = "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.";
+        showError(quizState.error);
         return;
       }
 
@@ -1202,42 +1395,30 @@
         };
       });
 
-      // ⭐ Filter mastered questions inline (no extra server call)
-      var allMastered = false;
-      if (masteredIds && masteredIds.length > 0) {
-        var filtered = questions.filter(function (q) {
-          return !masteredIds.includes(q.id);
-        });
-        console.log(
-          "✅ Filtered: " +
-            questions.length +
-            " → " +
-            filtered.length +
-            " questions",
-        );
+      // Store mastered IDs in state
+      quizState.masteredIds = masteredIds || [];
+      quizState.masteredCount = quizState.masteredIds.length;
 
-        if (filtered.length === 0) {
-          console.log("🏆 All questions mastered!");
-          allMastered = true;
-          questions = shuffleArray([].concat(questions));
-        } else {
-          questions = filtered;
-        }
-      }
+      // ⭐ Filter mastered questions using dedicated function
+      var filterResult = filterMasteredQuestions(questions, masteredIds);
+      quizState.allMastered = filterResult.allMastered;
 
-      quizState.questions = questions;
-      quizState.userAnswers = new Array(questions.length).fill(null);
-      quizState.allMastered = allMastered;
-      quizState.masteredCount = masteredIds ? masteredIds.length : 0;
-
-      if (allMastered) {
+      if (filterResult.allMastered) {
+        console.log("🏆 All questions mastered!");
+        // Shuffle for review mode
+        quizState.questions = shuffleArray([].concat(questions));
+        quizState.filteredQuestions = quizState.questions;
         showAllMasteredModal(masteredIds.length);
       } else {
+        // ⭐ Create quiz session with filtered questions
+        var finalQuestions = filterResult.questions;
+        createQuizSession(finalQuestions);
         startQuizSession();
       }
     } catch (error) {
       console.error("❌ Error processing questions:", error);
-      showError("Lỗi xử lý dữ liệu câu hỏi: " + error.message);
+      quizState.error = "Lỗi xử lý dữ liệu câu hỏi: " + error.message;
+      showError(quizState.error);
     }
   }
 
@@ -1246,37 +1427,48 @@
    */
   function handleLoadError(error) {
     console.error("❌ Load error:", error);
-    showError("Lỗi kết nối: " + (error.message || error));
+    quizState.loading = false;
+    quizState.error = "Lỗi kết nối: " + (error.message || error);
+    showError(quizState.error);
   }
 
   /**
    * Start quiz session
    */
-  function startQuizSession() {
+  function startQuizSession(isRestore) {
     console.log(
       "🎮 Starting quiz session with",
       quizState.questions.length,
       "questions, mode:",
-      quizState.gameMode,
+      quizState.quizMode,
+      "restore:", !!isRestore,
     );
 
-    // ⭐ Start Learning Time Tracker for quiz
+    // Update session status
+    if (quizState.quizSession) {
+      quizState.quizSession.status = "in_progress";
+    }
+    quizState.loading = false;
+    quizState.error = null;
+
     if (window.LearningTracker) {
       window.LearningTracker.start("quiz");
     }
 
-    quizState.currentQuestionIndex = 0;
-    quizState.score = 0;
+    // Only reset progress fields for new sessions (not restore)
+    if (!isRestore) {
+      quizState.currentQuestionIndex = 0;
+      quizState.score = 0;
+      quizState.answeredQuestions = new Array(quizState.questions.length).fill(false);
+    }
+
     quizState.startTime = new Date();
     quizState.isReviewing = false;
-    quizState.answeredQuestions = new Array(quizState.questions.length).fill(
-      false,
-    );
 
     document.getElementById("quiz-loading").style.display = "none";
     document.getElementById("quiz-error").style.display = "none";
     document.getElementById("quiz-stats").style.display = "grid";
-    document.getElementById("quiz-progress-bar").style.display = "block";
+    document.getElementById("quiz-progress-bar").style.display = "none";
     document.getElementById("quiz-section").style.display = "block";
     document.getElementById("quiz-results").style.display = "none";
 
@@ -1284,8 +1476,8 @@
       quizState.questions.length;
     document.getElementById("progress-total").textContent =
       quizState.questions.length;
+    document.getElementById("current-score").textContent = quizState.score;
 
-    // Hiển thị chế độ chơi hiện tại
     const modeIndicator = document.getElementById("quiz-mode-indicator");
     if (modeIndicator) {
       modeIndicator.textContent =
@@ -1295,6 +1487,13 @@
 
     startTimer();
     displayQuestion();
+  }
+
+  /**
+   * startQuizUI — Alias cho startQuizSession(true), dùng khi khôi phục bài dở dang
+   */
+  function startQuizUI() {
+    startQuizSession(true);
   }
 
   /**
@@ -1622,7 +1821,7 @@
         if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
           nextQuestion();
         } else {
-          checkAndAddRetryQuestions();
+          submitQuiz();
         }
       }, 1500);
     } else {
@@ -1670,14 +1869,16 @@
 
     console.log("💾 Saving wrong answer:", wrongData);
 
-    // Add to retry queue with shuffled MCQ format
-    const retryQuestion = createRetryMCQQuestion(question);
-    if (
-      retryQuestion &&
-      !quizState.retryQueue.some((q) => q.originalId === question.id)
-    ) {
-      quizState.retryQueue.push(retryQuestion);
-      console.log("📝 Added to retry queue:", retryQuestion.id);
+    // Add to retry queue only in review mode
+    if (quizState.gameMode === "review") {
+      const retryQuestion = createRetryMCQQuestion(question);
+      if (
+        retryQuestion &&
+        !quizState.retryQueue.some((q) => q.originalId === question.id)
+      ) {
+        quizState.retryQueue.push(retryQuestion);
+        console.log("📝 Added to retry queue:", retryQuestion.id);
+      }
     }
 
     google.script.run
@@ -1762,12 +1963,13 @@
             ? `<p class="feedback-text" style="margin-top:0.5rem;">${question.explanation}</p>`
             : ""
         }
+        ${quizState.gameMode === "review" ? `
         <p class="feedback-text" style="color:#A0AEC0;font-size:0.75rem;margin-top:0.5rem;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;">
             <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
           </svg>
           Câu này sẽ được hỏi lại để ôn tập
-        </p>
+        </p>` : ""}
       `;
     }
 
@@ -2305,26 +2507,27 @@
   function retakeWithNewQuestions() {
     console.log("🆕 Generating completely new questions...");
 
-    // Show generating modal
-    showGeneratingModal();
+    // Reset quiz state completely
+    quizState.questions = [];
+    quizState.filteredQuestions = [];
+    quizState.currentQuestionIndex = 0;
+    quizState.userAnswers = [];
+    quizState.answeredQuestions = [];
+    quizState.wrongAnswers = [];
+    quizState.retryQueue = [];
+    quizState.score = 0;
+    quizState.startTime = null;
+    quizState.elapsedTime = 0;
+    quizState.isReviewing = false;
+    quizState.quizSession = null;
 
-    // Call API to regenerate questions
-    google.script.run
-      .withSuccessHandler(function (result) {
-        hideGeneratingModal();
-        if (result && result.success !== false) {
-          handleQuestionsLoaded(result);
-        } else {
-          console.error("Failed to generate questions:", result);
-          alert("Không thể tạo câu hỏi mới. Vui lòng thử lại.");
-        }
-      })
-      .withFailureHandler(function (error) {
-        hideGeneratingModal();
-        console.error("Error generating questions:", error);
-        alert("Lỗi khi tạo câu hỏi: " + error.message);
-      })
-      .getAIContentForWeb(quizState.topicId, "questions", true);
+    // Hide results screen and show loading
+    document.getElementById("quiz-results").style.display = "none";
+    document.getElementById("quiz-section").style.display = "none";
+
+    // Use the full loadQuizQuestions flow with forceRegenerate = true
+    // This reloads mastered IDs in parallel and properly processes everything
+    loadQuizQuestions(true);
   }
 
   /**
@@ -2484,6 +2687,7 @@
    * UI State functions
    */
   function showLoading() {
+    quizState.loading = true;
     document.getElementById("quiz-loading").style.display = "block";
     document.getElementById("quiz-error").style.display = "none";
     document.getElementById("quiz-section").style.display = "none";
@@ -2493,6 +2697,8 @@
   }
 
   function showError(message) {
+    quizState.loading = false;
+    quizState.error = message;
     document.getElementById("quiz-loading").style.display = "none";
     document.getElementById("quiz-error").style.display = "block";
     document.getElementById("quiz-error-message").textContent = message;
@@ -2515,11 +2721,20 @@
   }
 
   // Make functions globally available
+  // Make functions globally available
   window.initMCQPage = initMCQPage;
+  window.detectQuizEntrySource = detectQuizEntrySource;
   window.backFromQuiz = backFromQuiz;
   window.backToTopicSelection = backToTopicSelection;
   window.selectTopicForQuiz = selectTopicForQuiz;
+  window.handleTopicSelect = handleTopicSelect;
+  window.loadAvailableTopics = loadAvailableTopics;
+  window.loadQuizData = loadQuizData;
   window.loadQuizQuestions = loadQuizQuestions;
+  window.filterMasteredQuestions = filterMasteredQuestions;
+  window.createQuizSession = createQuizSession;
+  window.restoreQuizSession = restoreQuizSession;
+  window.checkExistingQuizSession = checkExistingQuizSession;
   window.nextQuestion = nextQuestion;
   window.previousQuestion = previousQuestion;
   window.selectAnswer = selectAnswer;
