@@ -771,22 +771,17 @@
     });
   }
 
-  // ⭐ THEME MANAGEMENT
-  const AVAILABLE_THEMES = ["default", "forest"];
+  // ⭐ THEME MANAGEMENT (delegates to ThemeManager)
+  const AVAILABLE_THEMES = window.getAvailableThemes
+    ? window.getAvailableThemes()
+    : ["default", "forest"];
 
   /**
-   * Apply theme to the UI by toggling body class
+   * Apply theme to the UI (delegates to ThemeManager)
    */
   function applyTheme(themeName) {
-    // Remove all theme classes
-    AVAILABLE_THEMES.forEach(function (t) {
-      if (t !== "default") {
-        document.body.classList.remove("theme-" + t);
-      }
-    });
-    // Add new theme class (default = no class)
-    if (themeName && themeName !== "default") {
-      document.body.classList.add("theme-" + themeName);
+    if (window.ThemeManager) {
+      window.ThemeManager.applyTheme(themeName);
     }
     console.log("Theme applied:", themeName);
   }
@@ -813,46 +808,16 @@
 
     console.log("Selecting theme:", themeName);
 
-    // 1. Apply immediately
-    applyTheme(themeName);
+    // ThemeManager handles: apply CSS vars + body class + persist + save to server
+    if (window.ThemeManager) {
+      window.ThemeManager.setTheme(themeName);
+    }
 
-    // 2. Update card UI
+    // Update profile card UI
     updateThemeCardUI(themeName);
 
-    // 3. Save to localStorage
-    try {
-      localStorage.setItem("userTheme", themeName);
-      // Also update currentUser object
-      var user = window.currentUser || profileData;
-      if (user) {
-        user.theme = themeName;
-        localStorage.setItem("currentUser", JSON.stringify(user));
-        if (window.currentUser) window.currentUser.theme = themeName;
-        if (profileData) profileData.theme = themeName;
-        try {
-          sessionStorage.setItem("currentUser", JSON.stringify(user));
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.warn("localStorage save failed:", e);
-    }
-
-    // 4. Save to server
-    var user = window.currentUser || profileData;
-    if (user && user.userId) {
-      google.script.run
-        .withSuccessHandler(function (res) {
-          if (res && res.success) {
-            console.log("Theme saved to server:", themeName);
-          } else {
-            console.warn("Theme save failed:", res && res.message);
-          }
-        })
-        .withFailureHandler(function (err) {
-          console.warn("Theme save error:", err);
-        })
-        .saveUserTheme(user.userId, themeName);
-    }
+    // Keep profile-local data in sync
+    if (profileData) profileData.theme = themeName;
 
     showToast("Giao dien da duoc thay doi!", "success");
   }
@@ -861,19 +826,9 @@
    * Load theme on page init: from user data or localStorage
    */
   function loadUserTheme() {
-    var theme = "default";
-    // Priority: user object > localStorage
-    var user = window.currentUser || profileData;
-    if (user && user.theme) {
-      theme = user.theme;
-    } else {
-      try {
-        var saved = localStorage.getItem("userTheme");
-        if (saved && AVAILABLE_THEMES.includes(saved)) {
-          theme = saved;
-        }
-      } catch (e) {}
-    }
+    var theme = window.ThemeManager
+      ? window.ThemeManager.getCurrentTheme()
+      : "default";
     applyTheme(theme);
     updateThemeCardUI(theme);
     return theme;

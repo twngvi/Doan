@@ -55,19 +55,11 @@
       window.currentUser = null;
     }
 
-    // BƯỚC 1.5: Khôi phục Theme ngay lập tức
+    // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
     try {
-      var savedTheme = "default";
-      if (currentUser && currentUser.theme) {
-        savedTheme = currentUser.theme;
-      } else {
-        var t = localStorage.getItem("userTheme");
-        if (t) savedTheme = t;
+      if (window.ThemeManager) {
+        window.ThemeManager.initTheme();
       }
-      if (savedTheme && savedTheme !== "default") {
-        document.body.classList.add("theme-" + savedTheme);
-      }
-      console.log("Theme restored:", savedTheme);
     } catch (e) {
       console.warn("Theme restore failed:", e);
     }
@@ -786,8 +778,11 @@
     localStorage.removeItem("recentActivities"); // Clear activity cache
 
     // Clear theme
-    localStorage.removeItem("userTheme");
-    document.body.classList.remove("theme-forest");
+    if (window.ThemeManager) {
+      window.ThemeManager.resetTheme();
+    } else {
+      localStorage.removeItem("userTheme");
+    }
 
     // Clear auth panel state
     sessionStorage.removeItem("authPanelOpen");
