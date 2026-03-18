@@ -259,14 +259,14 @@
           // 1. Kiểm tra container trước
           if (!this.sidebar) {
             console.warn(
-              "⚠️ Sidebar container not found inside updateActiveNav"
+              "⚠️ Sidebar container not found inside updateActiveNav",
             );
             return;
           }
 
           // 2. Nếu có sidebar mới tìm links
           const navItems = this.sidebar.querySelectorAll(
-            ".nav-item[data-page]"
+            ".nav-item[data-page]",
           );
 
           if (!navItems || navItems.length === 0) {
@@ -383,6 +383,481 @@
 </script>
 <script>
   (function () {
+    "use strict";
+
+    const SEARCH_LIMIT = 20;
+    const staticEntries = [
+      {
+        id: "page-dashboard",
+        group: "pages",
+        title: "Tổng quan",
+        subtitle: "Đi đến trang Dashboard",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "dashboard tong quan home",
+        action: { type: "page", pageId: "page-dashboard" },
+      },
+      {
+        id: "page-topics",
+        group: "pages",
+        title: "Chủ đề",
+        subtitle: "Đi đến trang Topics",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "topics chu de bai hoc",
+        action: { type: "page", pageId: "page-topics" },
+      },
+      {
+        id: "page-mcq",
+        group: "pages",
+        title: "Quiz Visual",
+        subtitle: "Đi đến trang Quiz",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "quiz mcq trac nghiem",
+        action: { type: "page", pageId: "page-mcq" },
+      },
+      {
+        id: "page-matching",
+        group: "pages",
+        title: "Matching Game",
+        subtitle: "Đi đến trang Matching",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "matching noi cap game",
+        action: { type: "page", pageId: "page-matching" },
+      },
+      {
+        id: "page-profile",
+        group: "pages",
+        title: "Hồ sơ",
+        subtitle: "Đi đến trang Profile",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "profile ho so tai khoan",
+        action: { type: "page", pageId: "page-profile" },
+      },
+      {
+        id: "profile-personal",
+        group: "profile",
+        title: "Thông tin cá nhân",
+        subtitle: "Mở mục chỉnh sửa tên hiển thị",
+        tag: "Profile",
+        tagClass: "tag-profile",
+        keywords: "profile thong tin ca nhan display name",
+        action: { type: "profile", actionKey: "personal" },
+      },
+      {
+        id: "profile-password",
+        group: "profile",
+        title: "Đổi mật khẩu",
+        subtitle: "Mở mục cập nhật mật khẩu",
+        tag: "Profile",
+        tagClass: "tag-profile",
+        keywords: "profile doi mat khau password",
+        action: { type: "profile", actionKey: "password" },
+      },
+      {
+        id: "profile-avatar",
+        group: "profile",
+        title: "Đổi avatar",
+        subtitle: "Mở popup chọn avatar",
+        tag: "Profile",
+        tagClass: "tag-profile",
+        keywords: "profile doi avatar anh dai dien",
+        action: { type: "profile", actionKey: "avatar" },
+      },
+      {
+        id: "profile-theme",
+        group: "profile",
+        title: "Đổi giao diện",
+        subtitle: "Mở mục chọn theme",
+        tag: "Profile",
+        tagClass: "tag-profile",
+        keywords: "profile doi giao dien theme",
+        action: { type: "profile", actionKey: "theme" },
+      },
+    ];
+
+    const groupLabels = {
+      pages: "Trang",
+      topics: "Topics",
+      profile: "Profile",
+    };
+
+    let topicEntries = [];
+    let currentResults = [];
+    let activeIndex = -1;
+
+    function normalizeText(value) {
+      return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    }
+
+    function hasContentDoc(topic) {
+      return (
+        topic &&
+        topic.contentDocId &&
+        String(topic.contentDocId).trim().length > 10
+      );
+    }
+
+    function getTopicModeDescriptors(topic) {
+      if (!hasContentDoc(topic)) {
+        return [];
+      }
+
+      return [
+        {
+          mode: "lesson",
+          tag: "Lesson",
+          tagClass: "tag-lesson",
+          pageId: "page-lesson",
+          subtitlePrefix: "Bài học",
+          keywords: "lesson bai hoc hoc",
+        },
+        {
+          mode: "quiz",
+          tag: "Quiz",
+          tagClass: "tag-quiz",
+          pageId: "page-mcq",
+          subtitlePrefix: "Quiz",
+          keywords: "quiz mcq trac nghiem",
+        },
+        {
+          mode: "matching",
+          tag: "Matching",
+          tagClass: "tag-matching",
+          pageId: "page-matching",
+          subtitlePrefix: "Matching",
+          keywords: "matching noi cap game",
+        },
+      ];
+    }
+
+    function buildTopicEntries(topics) {
+      const entries = [];
+
+      (topics || []).forEach((topic) => {
+        const descriptors = getTopicModeDescriptors(topic);
+        descriptors.forEach((descriptor) => {
+          entries.push({
+            id: `topic-${topic.topicId}-${descriptor.mode}`,
+            group: "topics",
+            title: topic.title || "Topic",
+            subtitle: `${descriptor.subtitlePrefix} - ${topic.category || "Chung"}`,
+            tag: descriptor.tag,
+            tagClass: descriptor.tagClass,
+            keywords: `${descriptor.keywords} ${topic.topicId || ""} ${topic.category || ""}`,
+            action: {
+              type: "topic",
+              pageId: descriptor.pageId,
+              mode: descriptor.mode,
+              topic: topic,
+            },
+          });
+        });
+      });
+
+      return entries;
+    }
+
+    function fetchTopicsForSearch() {
+      const globalCache = window.globalTopicsCache;
+      if (
+        globalCache &&
+        Array.isArray(globalCache.data) &&
+        globalCache.data.length
+      ) {
+        topicEntries = buildTopicEntries(globalCache.data);
+        return;
+      }
+
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          let topics = [];
+          if (response && response.success && Array.isArray(response.topics)) {
+            topics = response.topics;
+          } else if (Array.isArray(response)) {
+            topics = response;
+          }
+
+          topicEntries = buildTopicEntries(topics);
+          const inputEl = document.getElementById("sidebarSearchInput");
+          if (inputEl && inputEl.value && inputEl.value.trim()) {
+            runSearch(inputEl.value);
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.warn("Sidebar search: load topics failed", error);
+          topicEntries = [];
+        })
+        .getAllTopics();
+    }
+
+    function buildSearchEntries() {
+      return staticEntries.concat(topicEntries);
+    }
+
+    function scoreEntry(entry, normalizedQuery) {
+      const title = normalizeText(entry.title);
+      const subtitle = normalizeText(entry.subtitle);
+      const keywords = normalizeText(entry.keywords);
+
+      if (title.startsWith(normalizedQuery)) return 100;
+      if (title.includes(normalizedQuery)) return 80;
+      if (keywords.includes(normalizedQuery)) return 60;
+      if (subtitle.includes(normalizedQuery)) return 40;
+      return -1;
+    }
+
+    function groupResults(results) {
+      const grouped = {
+        pages: [],
+        topics: [],
+        profile: [],
+      };
+
+      results.forEach((entry) => {
+        if (grouped[entry.group]) {
+          grouped[entry.group].push(entry);
+        }
+      });
+
+      return grouped;
+    }
+
+    function renderResults(results) {
+      const resultsEl = document.getElementById("sidebarSearchResults");
+      if (!resultsEl) return;
+
+      if (!results || results.length === 0) {
+        resultsEl.innerHTML =
+          '<div class="sidebar-search-empty">Không có kết quả phù hợp</div>';
+        resultsEl.classList.add("open");
+        return;
+      }
+
+      const grouped = groupResults(results);
+      const order = ["pages", "topics", "profile"];
+      const html = [];
+
+      order.forEach((groupKey) => {
+        const items = grouped[groupKey];
+        if (!items || items.length === 0) return;
+
+        html.push(
+          `<div class="sidebar-search-group"><div class="sidebar-search-group-label">${groupLabels[groupKey]}</div>`,
+        );
+        items.forEach((item, index) => {
+          html.push(`
+            <button class="sidebar-search-result-item" data-result-index="${indexMap(results, item.id)}">
+              <div class="sidebar-search-result-main">
+                <div class="sidebar-search-result-title">${escapeHtml(item.title)}</div>
+                <div class="sidebar-search-result-subtitle">${escapeHtml(item.subtitle || "")}</div>
+              </div>
+              <span class="sidebar-search-result-tag ${item.tagClass}">${item.tag}</span>
+            </button>
+          `);
+        });
+        html.push("</div>");
+      });
+
+      resultsEl.innerHTML = html.join("");
+      resultsEl.classList.add("open");
+    }
+
+    function indexMap(results, id) {
+      return results.findIndex((entry) => entry.id === id);
+    }
+
+    function clearResults() {
+      const resultsEl = document.getElementById("sidebarSearchResults");
+      if (!resultsEl) return;
+      resultsEl.classList.remove("open");
+      resultsEl.innerHTML = "";
+      currentResults = [];
+      activeIndex = -1;
+    }
+
+    function updateActiveResult() {
+      const resultEls = document.querySelectorAll(
+        ".sidebar-search-result-item",
+      );
+      resultEls.forEach((el) => el.classList.remove("active"));
+
+      if (activeIndex < 0 || activeIndex >= currentResults.length) return;
+
+      const activeEl = document.querySelector(
+        `.sidebar-search-result-item[data-result-index="${activeIndex}"]`,
+      );
+      if (activeEl) {
+        activeEl.classList.add("active");
+        activeEl.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    function runSearch(query) {
+      const normalizedQuery = normalizeText(query);
+      if (!normalizedQuery) {
+        clearResults();
+        return;
+      }
+
+      const entries = buildSearchEntries();
+      currentResults = entries
+        .map((entry) => ({
+          entry: entry,
+          score: scoreEntry(entry, normalizedQuery),
+        }))
+        .filter((item) => item.score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, SEARCH_LIMIT)
+        .map((item) => item.entry);
+
+      activeIndex = -1;
+      renderResults(currentResults);
+    }
+
+    function navigateWithResult(result) {
+      if (!result || !result.action || typeof showPage !== "function") return;
+
+      const action = result.action;
+      if (action.type === "page") {
+        window.currentPageParams = null;
+        showPage(action.pageId);
+        return;
+      }
+
+      if (action.type === "topic") {
+        const topic = action.topic || {};
+        const params = {
+          topicId: topic.topicId,
+          topicTitle: topic.title,
+          contentDocId: topic.contentDocId,
+        };
+
+        if (action.mode === "quiz") {
+          showPage(action.pageId, Object.assign({}, params, { mode: "quiz" }));
+        } else if (action.mode === "matching") {
+          showPage(
+            action.pageId,
+            Object.assign({}, params, { mode: "matching" }),
+          );
+        } else {
+          showPage(action.pageId, params);
+        }
+        return;
+      }
+
+      if (action.type === "profile") {
+        showPage("page-profile");
+        setTimeout(function () {
+          if (typeof window.triggerProfileSearchAction === "function") {
+            window.triggerProfileSearchAction(action.actionKey);
+          }
+        }, 180);
+      }
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function setupSearch() {
+      const input = document.getElementById("sidebarSearchInput");
+      const resultsEl = document.getElementById("sidebarSearchResults");
+      const searchBox = document.getElementById("sidebarSearchBox");
+      const sidebar = document.getElementById("globalSidebar");
+
+      if (!input || !resultsEl || !searchBox || !sidebar) {
+        return;
+      }
+
+      fetchTopicsForSearch();
+
+      input.addEventListener("input", function (e) {
+        runSearch(e.target.value || "");
+      });
+
+      input.addEventListener("focus", function () {
+        if (input.value && input.value.trim()) {
+          runSearch(input.value);
+        }
+      });
+
+      input.addEventListener("keydown", function (e) {
+        if (!currentResults.length) return;
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          activeIndex = Math.min(activeIndex + 1, currentResults.length - 1);
+          updateActiveResult();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          activeIndex = Math.max(activeIndex - 1, 0);
+          updateActiveResult();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          const selected =
+            activeIndex >= 0 ? currentResults[activeIndex] : currentResults[0];
+          navigateWithResult(selected);
+          input.value = "";
+          clearResults();
+        } else if (e.key === "Escape") {
+          clearResults();
+          input.blur();
+        }
+      });
+
+      resultsEl.addEventListener("click", function (e) {
+        const item = e.target.closest(".sidebar-search-result-item");
+        if (!item) return;
+
+        const index = Number(item.getAttribute("data-result-index"));
+        if (Number.isNaN(index) || !currentResults[index]) return;
+
+        navigateWithResult(currentResults[index]);
+        input.value = "";
+        clearResults();
+      });
+
+      document.addEventListener("click", function (e) {
+        if (!sidebar.contains(e.target)) {
+          clearResults();
+        }
+      });
+
+      window.addEventListener("topics-cache-updated", function () {
+        fetchTopicsForSearch();
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setupSearch);
+    } else {
+      setTimeout(setupSearch, 120);
+    }
+  })();
+</script>
+<script>
+  (function () {
     console.log("🔧 Sidebar scripts loading...");
 
     /**
@@ -427,7 +902,7 @@
             } else {
               // Fallback to default
               const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                user.displayName || user.username || "User"
+                user.displayName || user.username || "User",
               )}&size=80&background=6366f1&color=fff`;
               avatarEl.src = defaultAvatar;
               console.log("⚠️ Using default avatar");

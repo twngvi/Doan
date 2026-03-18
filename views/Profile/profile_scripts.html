@@ -10,6 +10,41 @@
     }
   }
 
+  function openProfileSection(sectionKey) {
+    const sections = document.querySelectorAll(
+      ".profile-settings-list .collapsible-section",
+    );
+    if (!sections || sections.length === 0) return;
+
+    sections.forEach((section) => section.classList.remove("open"));
+
+    const selector = `.profile-settings-list .collapsible-section[data-profile-section="${sectionKey}"]`;
+    const targetSection = document.querySelector(selector);
+    const sectionToOpen = targetSection || sections[0];
+
+    sectionToOpen.classList.add("open");
+    sectionToOpen.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function triggerProfileSearchAction(actionKey) {
+    if (!actionKey) return;
+
+    if (actionKey === "avatar") {
+      if (typeof openAvatarModal === "function") {
+        setTimeout(() => openAvatarModal(), 120);
+      }
+      return;
+    }
+
+    if (
+      actionKey === "personal" ||
+      actionKey === "password" ||
+      actionKey === "theme"
+    ) {
+      openProfileSection(actionKey);
+    }
+  }
+
   // ⭐ DANH SÁCH AVATAR TỪ DICEBEAR
   const PRESET_AVATARS = [
     // Toon Head
@@ -847,6 +882,8 @@
   window.selectTheme = selectTheme;
   window.applyTheme = applyTheme;
   window.loadUserTheme = loadUserTheme;
+  window.openProfileSection = openProfileSection;
+  window.triggerProfileSearchAction = triggerProfileSearchAction;
 
   console.log("✅ Profile scripts loaded");
   console.log("✅ initProfilePage:", typeof window.initProfilePage);
