@@ -3610,7 +3610,7 @@ function getUserSpreadsheet(userId) {
 function getQuizStatsPerTopic() {
   try {
     Logger.log("=== GET QUIZ STATS PER TOPIC ===");
-    
+
     const userEmail = Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", stats: {} };
@@ -3653,8 +3653,10 @@ function getQuizStatsPerTopic() {
       if (!topicId) continue;
 
       const score = scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0;
-      const totalQuestions = totalQuestionsCol >= 0 ? parseInt(data[i][totalQuestionsCol]) || 0 : 0;
-      const percentage = percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0;
+      const totalQuestions =
+        totalQuestionsCol >= 0 ? parseInt(data[i][totalQuestionsCol]) || 0 : 0;
+      const percentage =
+        percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0;
       const completedAt = completedAtCol >= 0 ? data[i][completedAtCol] : null;
 
       if (!statsMap[topicId]) {
@@ -3665,23 +3667,25 @@ function getQuizStatsPerTopic() {
           bestTotal: totalQuestions,
           bestPercent: percentage,
           playCount: 1,
-          lastPlayedAt: completedAt
+          lastPlayedAt: completedAt,
         };
       } else {
         // Update stats: increment playCount, update best if higher
         statsMap[topicId].playCount++;
-        
+
         // Update best score if current percentage is higher
         if (percentage > statsMap[topicId].bestPercent) {
           statsMap[topicId].bestScore = score;
           statsMap[topicId].bestTotal = totalQuestions;
           statsMap[topicId].bestPercent = percentage;
         }
-        
+
         // Update lastPlayedAt if more recent
         if (completedAt) {
           const currentDate = new Date(completedAt);
-          const lastDate = statsMap[topicId].lastPlayedAt ? new Date(statsMap[topicId].lastPlayedAt) : new Date(0);
+          const lastDate = statsMap[topicId].lastPlayedAt
+            ? new Date(statsMap[topicId].lastPlayedAt)
+            : new Date(0);
           if (currentDate > lastDate) {
             statsMap[topicId].lastPlayedAt = completedAt;
           }
@@ -3689,10 +3693,124 @@ function getQuizStatsPerTopic() {
       }
     }
 
-    Logger.log("✅ getQuizStatsPerTopic: found stats for " + Object.keys(statsMap).length + " topics");
+    Logger.log(
+      "✅ getQuizStatsPerTopic: found stats for " +
+        Object.keys(statsMap).length +
+        " topics",
+    );
     return { success: true, stats: statsMap };
   } catch (error) {
     Logger.log("❌ Error in getQuizStatsPerTopic: " + error.toString());
+    return { success: false, message: error.toString(), stats: {} };
+  }
+}
+
+/**
+ * Get matching statistics per topic for current user.
+ * Returns stats map by topicId:
+ * {hasPlayed, bestScore, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt}
+ * @returns {object} - {success, stats: {topicId: {...}, ...}}
+ */
+function getMatchingStatsPerTopic() {
+  try {
+    Logger.log("=== GET MATCHING STATS PER TOPIC ===");
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", stats: {} };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, stats: {} };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const matchingSheet = userSpreadsheet.getSheetByName("Matching_Results");
+
+    if (!matchingSheet) {
+      return { success: true, stats: {} };
+    }
+
+    const data = matchingSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, stats: {} };
+    }
+
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const scoreCol = headers.indexOf("score");
+    const accuracyCol = headers.indexOf("accuracy");
+    const totalPairsCol = headers.indexOf("totalPairs");
+    const completedCol = headers.indexOf("completed");
+    const playedAtCol = headers.indexOf("playedAt");
+
+    const statsMap = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const topicId = topicIdCol >= 0 ? String(data[i][topicIdCol]).trim() : "";
+      if (!topicId) continue;
+
+      // Ignore unfinished attempts when a completed flag exists.
+      if (completedCol >= 0) {
+        const completedVal = data[i][completedCol];
+        const isCompleted =
+          completedVal === true ||
+          completedVal === 1 ||
+          completedVal === "1" ||
+          completedVal === "TRUE";
+        if (!isCompleted) continue;
+      }
+
+      const score = scoreCol >= 0 ? parseInt(data[i][scoreCol], 10) || 0 : 0;
+      const accuracy =
+        accuracyCol >= 0 ? parseInt(data[i][accuracyCol], 10) || 0 : 0;
+      const totalPairs =
+        totalPairsCol >= 0 ? parseInt(data[i][totalPairsCol], 10) || 0 : 0;
+      const playedAt = playedAtCol >= 0 ? data[i][playedAtCol] : null;
+
+      if (!statsMap[topicId]) {
+        statsMap[topicId] = {
+          hasPlayed: true,
+          bestScore: score,
+          bestAccuracy: accuracy,
+          bestTotalPairs: totalPairs,
+          playCount: 1,
+          lastPlayedAt: playedAt,
+        };
+      } else {
+        const topicStats = statsMap[topicId];
+        topicStats.playCount++;
+
+        if (
+          score > topicStats.bestScore ||
+          (score === topicStats.bestScore && accuracy > topicStats.bestAccuracy)
+        ) {
+          topicStats.bestScore = score;
+          topicStats.bestAccuracy = accuracy;
+          topicStats.bestTotalPairs = totalPairs;
+        }
+
+        if (playedAt) {
+          const currentDate = new Date(playedAt);
+          const lastDate = topicStats.lastPlayedAt
+            ? new Date(topicStats.lastPlayedAt)
+            : new Date(0);
+          if (currentDate > lastDate) {
+            topicStats.lastPlayedAt = playedAt;
+          }
+        }
+      }
+    }
+
+    Logger.log(
+      "✅ getMatchingStatsPerTopic: found stats for " +
+        Object.keys(statsMap).length +
+        " topics",
+    );
+    return { success: true, stats: statsMap };
+  } catch (error) {
+    Logger.log("❌ Error in getMatchingStatsPerTopic: " + error.toString());
     return { success: false, message: error.toString(), stats: {} };
   }
 }

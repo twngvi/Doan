@@ -13,6 +13,16 @@
     };
   }
 
+  // Matching stats cache by topic.
+  // Format: { topicId: { hasPlayed, bestScore, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt } }
+  if (!window.matchingStatsCache) {
+    window.matchingStatsCache = {
+      stats: {},
+      lastLoadTime: 0,
+      cacheDuration: 60000,
+    };
+  }
+
   // Local cache fallback
   let matchingTopicsCache = null;
   let matchingLastLoadTime = 0;
@@ -183,6 +193,9 @@
   function loadMatchingTopics(forceRefresh) {
     console.log("📥 Loading topics for matching...");
 
+    // Load matching stats in parallel so topic cards can show played + best score.
+    loadMatchingStatsIfNeeded(forceRefresh);
+
     const loading = document.getElementById("matchingLoading");
     const grid = document.getElementById("matchingTopicsGrid");
     const empty = document.getElementById("matchingEmpty");
@@ -252,6 +265,107 @@
       })
       .withFailureHandler(handleMatchingTopicsError)
       .getAllTopics();
+  }
+
+  function loadMatchingStatsIfNeeded(forceRefresh) {
+    var now = Date.now();
+    var statsCache = window.matchingStatsCache;
+
+    if (
+      !forceRefresh &&
+      statsCache &&
+      statsCache.stats &&
+      Object.keys(statsCache.stats).length > 0 &&
+      now - statsCache.lastLoadTime < statsCache.cacheDuration
+    ) {
+      console.log("✅ Matching: using cached stats per topic");
+      return;
+    }
+
+    console.log("📊 Matching: loading stats per topic from server...");
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response && response.success && response.stats) {
+          window.matchingStatsCache.stats = response.stats;
+          window.matchingStatsCache.lastLoadTime = Date.now();
+          console.log(
+            "✅ Matching stats loaded for",
+            Object.keys(response.stats).length,
+            "topics",
+          );
+
+          // Re-render current list when stats arrive.
+          rerenderCurrentMatchingTopics();
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.warn("⚠️ Failed to load matching stats:", error);
+      })
+      .getMatchingStatsPerTopic();
+  }
+
+  function getMatchingStatsForTopic(topicId) {
+    var statsCache = window.matchingStatsCache;
+    if (!statsCache || !statsCache.stats) return null;
+    return statsCache.stats[topicId] || null;
+  }
+
+  function updateLocalMatchingStats(topicId, score, accuracy, totalPairs) {
+    if (!topicId) return;
+
+    if (!window.matchingStatsCache) {
+      window.matchingStatsCache = {
+        stats: {},
+        lastLoadTime: 0,
+        cacheDuration: 60000,
+      };
+    }
+
+    var nowIso = new Date().toISOString();
+    var stats = window.matchingStatsCache.stats[topicId];
+
+    if (!stats) {
+      window.matchingStatsCache.stats[topicId] = {
+        hasPlayed: true,
+        bestScore: score,
+        bestAccuracy: accuracy,
+        bestTotalPairs: totalPairs,
+        playCount: 1,
+        lastPlayedAt: nowIso,
+      };
+    } else {
+      stats.hasPlayed = true;
+      stats.playCount = (stats.playCount || 0) + 1;
+      stats.lastPlayedAt = nowIso;
+
+      if (
+        score > (stats.bestScore || 0) ||
+        (score === (stats.bestScore || 0) &&
+          accuracy > (stats.bestAccuracy || 0))
+      ) {
+        stats.bestScore = score;
+        stats.bestAccuracy = accuracy;
+        stats.bestTotalPairs = totalPairs;
+      }
+    }
+
+    window.matchingStatsCache.lastLoadTime = Date.now();
+  }
+
+  function rerenderCurrentMatchingTopics() {
+    if (matchingState.searchKeyword && matchingState.searchKeyword.trim()) {
+      renderMatchingTopics(matchingState.filteredTopics || []);
+      return;
+    }
+
+    if (matchingAllTopicsForSearch && matchingAllTopicsForSearch.length) {
+      renderMatchingTopics(matchingAllTopicsForSearch);
+      return;
+    }
+
+    if (matchingState.topics && matchingState.topics.length) {
+      renderMatchingTopics(matchingState.topics);
+    }
   }
 
   function handleMatchingTopicsLoaded(topics) {
@@ -384,13 +498,34 @@
     topics.forEach((topic, index) => {
       const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
       const topicProgress = userProgress[topic.topicId] || {};
-      const matchingPlayed = topicProgress.matchingDone === true;
+      const topicStats = getMatchingStatsForTopic(topic.topicId);
+      const matchingPlayed =
+        (topicStats && topicStats.hasPlayed === true) ||
+        topicProgress.matchingDone === true;
 
       const card = document.createElement("div");
       card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}`;
       card.onclick = () => selectMatchingTopic(topic);
 
       const icon = getTopicIcon(topic.title);
+
+      let bestScoreBadge = "";
+      if (topicStats && topicStats.hasPlayed) {
+        var bestScore = topicStats.bestScore || 0;
+        var playCount = topicStats.playCount || 1;
+        var scoreColor = "#6B7280";
+        if (bestScore >= 80) scoreColor = "#FFB020";
+        else if (bestScore >= 60) scoreColor = "#2FA36B";
+        else if (bestScore >= 40) scoreColor = "#5B6FF8";
+        else scoreColor = "#FF9800";
+
+        bestScoreBadge = `<span class="matching-topic-card-badge best-score" style="color:${scoreColor};border-color:${scoreColor};">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            ${bestScore} điểm${playCount > 1 ? ` (${playCount} lần)` : ""}
+          </span>`;
+      }
 
       // Status icon (circle like MCQ)
       let statusHtml = "";
@@ -428,6 +563,7 @@
           <div class="matching-topic-card-meta">
             <span class="matching-topic-card-category">${topic.category || "Chung"}</span>
             ${matchingPlayed ? '<span class="matching-topic-card-badge">Đã chơi</span>' : ""}
+            ${bestScoreBadge}
           </div>
         </div>
         ${statusHtml}
@@ -947,6 +1083,12 @@
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("✅ Matching result saved:", response);
+        updateLocalMatchingStats(
+          topicId,
+          matchingState.score,
+          accuracy,
+          matchingState.totalPairs,
+        );
         showMatchingSaveNotification(true, "Kết quả đã được lưu!");
         // Invalidate progress cache so Topics page shows updated badge
         if (window.globalTopicsCache) {
