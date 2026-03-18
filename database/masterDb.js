@@ -263,6 +263,8 @@ function processGoogleUserLogin(googleProfile) {
 
   let userRowIndex = -1;
   let existingUser = null;
+  const headers = data[0] || [];
+  const themeColIndex = headers.indexOf("theme");
   // Cột progressSheetId nằm ở index 24 (theo schemas.js)
   const PROGRESS_SHEET_COL_INDEX = 24;
 
@@ -342,6 +344,10 @@ function processGoogleUserLogin(googleProfile) {
       role: existingUser[7],
       level: existingUser[8],
       progressSheetId: progressSheetId, // Trả về ID sheet
+      theme:
+        themeColIndex >= 0 && existingUser[themeColIndex]
+          ? String(existingUser[themeColIndex])
+          : "default",
       status: "success",
     };
   } else {
@@ -383,6 +389,13 @@ function processGoogleUserLogin(googleProfile) {
 
     userSheet.appendRow(newRow);
 
+    // Ensure theme default for newly created Google users if theme column exists.
+    if (themeColIndex >= 0) {
+      userSheet
+        .getRange(userSheet.getLastRow(), themeColIndex + 1)
+        .setValue("default");
+    }
+
     // ⭐ Save first login to personal sheet & update streak
     if (progressSheetId) {
       saveLoginToPersonalSheet(progressSheetId, email, now);
@@ -403,6 +416,7 @@ function processGoogleUserLogin(googleProfile) {
       role: "USER",
       level: 1,
       progressSheetId: progressSheetId,
+      theme: "default",
       status: "success",
       isNewUser: true,
     };

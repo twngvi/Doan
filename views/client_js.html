@@ -11,6 +11,19 @@
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
 
+  function applyThemeFromAuthenticatedUser(user) {
+    try {
+      if (!user) return;
+      currentUser = user;
+      window.currentUser = user;
+      if (window.ThemeManager) {
+        window.ThemeManager.initTheme();
+      }
+    } catch (e) {
+      console.warn("Apply user theme failed:", e);
+    }
+  }
+
   // ==================== Initialization ====================
   document.addEventListener("DOMContentLoaded", function () {
     console.log("App Initializing...");
@@ -491,6 +504,7 @@
       window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       localStorage.setItem("isLoggedIn", "true");
+      applyThemeFromAuthenticatedUser(response.user);
       console.log("âœ… Current user synced to window:", currentUser);
 
       // Show success message
@@ -636,9 +650,11 @@
         if (response.success) {
           // â­ LÆ¯U SESSION Äáº¦Y Äá»¦
           currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
+          applyThemeFromAuthenticatedUser(response.user);
 
           console.log("âœ… Session saved:", {
             userId: response.user.userId,
@@ -912,8 +928,11 @@
 
         if (response.success) {
           // ÄÄƒng nháº­p thÃ nh cÃ´ng
+          currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
 

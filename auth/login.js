@@ -39,6 +39,7 @@ function loginWithEmail(credentials) {
     const levelIndex = headers.indexOf("level");
     const totalXPIndex = headers.indexOf("totalXP");
     const progressSheetIdIndex = headers.indexOf("progressSheetId");
+    const themeIndex = headers.indexOf("theme");
     const verifiedIndex = headers.indexOf("emailVerified");
     const isActiveIndex = headers.indexOf("isActive");
     const lastLoginIndex = headers.indexOf("lastLogin");
@@ -138,6 +139,10 @@ function loginWithEmail(credentials) {
             level: data[i][levelIndex],
             totalXP: data[i][totalXPIndex],
             progressSheetId: data[i][progressSheetIdIndex],
+            theme:
+              themeIndex >= 0 && data[i][themeIndex]
+                ? String(data[i][themeIndex])
+                : "default",
           },
         };
       }
@@ -168,6 +173,8 @@ function getUserSession(userId) {
     const ss = getOrCreateDatabase();
     const usersSheet = ss.getSheetByName("Users");
     const data = usersSheet.getDataRange().getValues();
+    const headers = data[0] || [];
+    const themeIndex = headers.indexOf("theme");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
@@ -187,6 +194,10 @@ function getUserSession(userId) {
             totalXP: data[i][11],
             lastLogin: data[i][15],
             isActive: data[i][17],
+            theme:
+              themeIndex >= 0 && data[i][themeIndex]
+                ? String(data[i][themeIndex])
+                : "default",
           },
         };
       }

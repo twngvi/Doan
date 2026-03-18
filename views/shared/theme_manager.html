@@ -23,22 +23,24 @@
       return !!(themeId && window.THEME_CONFIG && window.THEME_CONFIG[themeId]);
     }
 
-    /** Resolve theme from multiple sources: user object > localStorage > default */
+    /** Resolve theme from sources with user-first policy */
     function resolveTheme() {
-      // 1. From current user object (server data)
-      if (
-        window.currentUser &&
-        window.currentUser.theme &&
-        isValid(window.currentUser.theme)
-      ) {
-        return window.currentUser.theme;
+      // 1. If user is logged in: always prioritize user theme; fallback to default.
+      // This prevents new users from inheriting stale browser theme from old sessions.
+      if (window.currentUser) {
+        if (window.currentUser.theme && isValid(window.currentUser.theme)) {
+          return window.currentUser.theme;
+        }
+        return DEFAULT_THEME;
       }
-      // 2. From localStorage
+
+      // 2. Guest mode: fallback to browser-stored theme
       try {
         var stored = localStorage.getItem(STORAGE_KEY);
         if (stored && isValid(stored)) return stored;
       } catch (e) {}
-      // 3. Fallback
+
+      // 3. Final fallback
       return DEFAULT_THEME;
     }
 
@@ -110,6 +112,8 @@
       initTheme: function () {
         var themeId = resolveTheme();
         doApply(themeId);
+        // Keep storage in sync with resolved user theme/default.
+        persist(themeId);
         console.log("ThemeManager: initialized with theme:", themeId);
         return themeId;
       },
