@@ -3600,3 +3600,99 @@ function getUserSpreadsheet(userId) {
     return null;
   }
 }
+
+/**
+ * ⭐ Get quiz statistics per topic for current user
+ * Returns a Map object with topicId as key and stats as value:
+ * {hasPlayed, bestScore, bestPercent, playCount, lastPlayedAt}
+ * @returns {object} - {success, stats: {topicId: {...}, ...}}
+ */
+function getQuizStatsPerTopic() {
+  try {
+    Logger.log("=== GET QUIZ STATS PER TOPIC ===");
+    
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", stats: {} };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, stats: {} };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+
+    if (!quizSheet) {
+      return { success: true, stats: {} };
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, stats: {} };
+    }
+
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const scoreCol = headers.indexOf("score");
+    const totalQuestionsCol = headers.indexOf("totalQuestions");
+    const percentageCol = headers.indexOf("percentage");
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+
+    // Aggregate stats by topicId
+    const statsMap = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const status = statusCol >= 0 ? data[i][statusCol] : "complete";
+      // Only count completed quizzes
+      if (status === "partial") continue;
+
+      const topicId = topicIdCol >= 0 ? String(data[i][topicIdCol]).trim() : "";
+      if (!topicId) continue;
+
+      const score = scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0;
+      const totalQuestions = totalQuestionsCol >= 0 ? parseInt(data[i][totalQuestionsCol]) || 0 : 0;
+      const percentage = percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0;
+      const completedAt = completedAtCol >= 0 ? data[i][completedAtCol] : null;
+
+      if (!statsMap[topicId]) {
+        // Initialize stats for this topic
+        statsMap[topicId] = {
+          hasPlayed: true,
+          bestScore: score,
+          bestTotal: totalQuestions,
+          bestPercent: percentage,
+          playCount: 1,
+          lastPlayedAt: completedAt
+        };
+      } else {
+        // Update stats: increment playCount, update best if higher
+        statsMap[topicId].playCount++;
+        
+        // Update best score if current percentage is higher
+        if (percentage > statsMap[topicId].bestPercent) {
+          statsMap[topicId].bestScore = score;
+          statsMap[topicId].bestTotal = totalQuestions;
+          statsMap[topicId].bestPercent = percentage;
+        }
+        
+        // Update lastPlayedAt if more recent
+        if (completedAt) {
+          const currentDate = new Date(completedAt);
+          const lastDate = statsMap[topicId].lastPlayedAt ? new Date(statsMap[topicId].lastPlayedAt) : new Date(0);
+          if (currentDate > lastDate) {
+            statsMap[topicId].lastPlayedAt = completedAt;
+          }
+        }
+      }
+    }
+
+    Logger.log("✅ getQuizStatsPerTopic: found stats for " + Object.keys(statsMap).length + " topics");
+    return { success: true, stats: statsMap };
+  } catch (error) {
+    Logger.log("❌ Error in getQuizStatsPerTopic: " + error.toString());
+    return { success: false, message: error.toString(), stats: {} };
+  }
+}

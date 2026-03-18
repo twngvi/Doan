@@ -19,6 +19,16 @@
     };
   }
 
+  // ⭐ QUIZ STATS CACHE - thống kê quiz theo từng topicId
+  // Format: { topicId: { hasPlayed, bestScore, bestTotal, bestPercent, playCount, lastPlayedAt } }
+  if (!window.quizStatsCache) {
+    window.quizStatsCache = {
+      stats: {},           // Map topicId -> stats
+      lastLoadTime: 0,
+      cacheDuration: 60000 // Cache 1 phút
+    };
+  }
+
   // Fallback local cache nếu cần
   let mcqTopicsCache = null;
   let mcqLastLoadTime = 0;
@@ -196,10 +206,14 @@
   /**
    * Load topics for quiz selection - OPTIMIZED with cache
    * Ưu tiên: 1. Global cache (từ Topics page) → 2. Local cache → 3. Load từ server
+   * ⭐ Kèm theo: Load quiz stats per topic để hiển thị badge "Đã chơi" + điểm cao nhất
    */
   function loadTopicsForQuiz(forceRefresh = false) {
     console.log("📥 Loading topics for quiz...");
     const now = Date.now();
+
+    // ⭐ Load quiz stats từ server (song song với việc check cache)
+    loadQuizStatsIfNeeded(forceRefresh);
 
     // ⭐ ƯU TIÊN 1: Kiểm tra Global Cache (chia sẻ từ Topics page)
     const globalCache = window.globalTopicsCache;
@@ -255,6 +269,90 @@
       .withSuccessHandler(handleTopicsLoaded)
       .withFailureHandler(handleTopicsError)
       .getAllTopics();
+  }
+
+  /**
+   * ⭐ Load quiz stats per topic từ server nếu cần (cache expired hoặc forceRefresh)
+   */
+  function loadQuizStatsIfNeeded(forceRefresh = false) {
+    const now = Date.now();
+    const statsCache = window.quizStatsCache;
+    
+    // Check if cache is still valid
+    if (!forceRefresh && statsCache && statsCache.stats && Object.keys(statsCache.stats).length > 0) {
+      if (now - statsCache.lastLoadTime < statsCache.cacheDuration) {
+        console.log("✅ Using cached quiz stats per topic");
+        return;
+      }
+    }
+
+    console.log("📊 Loading quiz stats per topic from server...");
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response && response.success && response.stats) {
+          window.quizStatsCache.stats = response.stats;
+          window.quizStatsCache.lastLoadTime = Date.now();
+          console.log("✅ Quiz stats loaded for " + Object.keys(response.stats).length + " topics");
+          
+          // Re-render topics grid với stats mới nếu đang hiển thị
+          if (mcqAllTopicsForSearch && mcqAllTopicsForSearch.length > 0) {
+            renderTopicsGrid(mcqAllTopicsForSearch);
+          }
+        }
+      })
+      .withFailureHandler(function(error) {
+        console.warn("⚠️ Failed to load quiz stats:", error);
+      })
+      .getQuizStatsPerTopic();
+  }
+
+  /**
+   * ⭐ Helper: Get quiz stats for a specific topic
+   * @param {string} topicId 
+   * @returns {object|null} - {hasPlayed, bestScore, bestTotal, bestPercent, playCount, lastPlayedAt} or null
+   */
+  function getQuizStatsForTopic(topicId) {
+    const statsCache = window.quizStatsCache;
+    if (!statsCache || !statsCache.stats) return null;
+    return statsCache.stats[topicId] || null;
+  }
+
+  /**
+   * ⭐ Helper: Update quiz stats for a specific topic after completing quiz
+   * Gọi sau khi nộp bài để cập nhật local cache ngay lập tức
+   */
+  function updateLocalQuizStats(topicId, score, totalQuestions, percentage) {
+    if (!window.quizStatsCache) {
+      window.quizStatsCache = { stats: {}, lastLoadTime: 0, cacheDuration: 60000 };
+    }
+    
+    const stats = window.quizStatsCache.stats[topicId];
+    const now = new Date().toISOString();
+    
+    if (!stats) {
+      // First time playing this topic
+      window.quizStatsCache.stats[topicId] = {
+        hasPlayed: true,
+        bestScore: score,
+        bestTotal: totalQuestions,
+        bestPercent: percentage,
+        playCount: 1,
+        lastPlayedAt: now
+      };
+    } else {
+      // Update existing stats
+      stats.playCount++;
+      stats.lastPlayedAt = now;
+      
+      // Update best score only if new percentage is higher
+      if (percentage > stats.bestPercent) {
+        stats.bestScore = score;
+        stats.bestTotal = totalQuestions;
+        stats.bestPercent = percentage;
+      }
+    }
+    
+    console.log("✅ Updated local quiz stats for topic:", topicId, window.quizStatsCache.stats[topicId]);
   }
 
   // Alias for entry point usage
@@ -488,26 +586,25 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     };
 
-    // Get user quiz progress from global cache or empty object
-    const userProgress =
-      (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
+    // ⭐ Get quiz stats from cache (managed per topicId)
+    const quizStats = window.quizStatsCache ? window.quizStatsCache.stats : {};
 
     topics.forEach((topic, index) => {
       const item = document.createElement("div");
       const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
 
-      // Check if quiz was completed for this topic
-      const topicProgress = userProgress[topic.topicId] || {};
-      const quizPlayed = topicProgress.quizDone === true;
+      // ⭐ Get quiz stats for THIS specific topic (managed per topicId)
+      const topicStats = quizStats[topic.topicId] || null;
+      const hasPlayed = topicStats && topicStats.hasPlayed === true;
 
-      item.className = `mcq-topic-item${hasDoc ? "" : " no-content"}${quizPlayed ? " played" : ""}`;
+      item.className = `mcq-topic-item${hasDoc ? "" : " no-content"}${hasPlayed ? " played" : ""}`;
       item.onclick = () => selectTopicForQuiz(topic);
 
       const icon = getTopicIcon(topic.title);
 
       // Progress indicator
       let progressIndicator = "";
-      if (quizPlayed) {
+      if (hasPlayed) {
         progressIndicator = `
           <div class="mcq-item-status played">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -533,6 +630,26 @@
           </div>`;
       }
 
+      // ⭐ Build best score badge if topic has been played
+      let bestScoreBadge = "";
+      if (hasPlayed && topicStats) {
+        const bestPercent = topicStats.bestPercent || 0;
+        const playCount = topicStats.playCount || 1;
+        // Color based on percentage
+        let scoreColor = "#6B7280"; // gray
+        if (bestPercent >= 90) scoreColor = "#FFB020"; // gold
+        else if (bestPercent >= 70) scoreColor = "#2FA36B"; // green
+        else if (bestPercent >= 50) scoreColor = "#5B6FF8"; // blue
+        else scoreColor = "#FF9800"; // orange
+        
+        bestScoreBadge = `<span class="mcq-item-badge best-score" style="color:${scoreColor};border-color:${scoreColor};">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:3px;">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          ${bestPercent}%${playCount > 1 ? ' (' + playCount + ' lần)' : ''}
+        </span>`;
+      }
+
       item.innerHTML = `
         <div class="mcq-item-index">${index + 1}</div>
         <div class="mcq-item-icon">${icon}</div>
@@ -540,7 +657,8 @@
           <div class="mcq-item-title">${topic.title}</div>
           <div class="mcq-item-meta">
             <span class="mcq-item-category">${topic.category || "Chung"}</span>
-            ${quizPlayed ? '<span class="mcq-item-badge played">Đã chơi</span>' : ""}
+            ${hasPlayed ? '<span class="mcq-item-badge played">Đã chơi</span>' : ""}
+            ${bestScoreBadge}
           </div>
         </div>
         ${progressIndicator}
@@ -2324,6 +2442,11 @@
   function saveQuizResult(score, total, percentage, timeTaken) {
     console.log("💾 Saving quiz result to database");
 
+    // ⭐ Update local quiz stats cache IMMEDIATELY (optimistic update)
+    if (typeof updateLocalQuizStats === "function" && quizState.topicId) {
+      updateLocalQuizStats(quizState.topicId, score, total, percentage);
+    }
+
     // Tạo chi tiết từng câu hỏi
     const questionDetails = quizState.questions.map((q, index) => ({
       questionId: q.id,
@@ -2361,7 +2484,11 @@
         if (typeof window.invalidateTopicsLocalCache === "function") {
           window.invalidateTopicsLocalCache();
         }
-        console.log("🔄 Progress cache invalidated after quiz save");
+        // ⭐ Invalidate quiz stats cache to force reload on next visit
+        if (window.quizStatsCache) {
+          window.quizStatsCache.lastLoadTime = 0;
+        }
+        console.log("🔄 Progress & quiz stats cache invalidated after quiz save");
       })
       .withFailureHandler((error) => {
         console.error("❌ Error saving result:", error);
