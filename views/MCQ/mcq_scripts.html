@@ -1288,14 +1288,44 @@
    */
   function createQuizSession(finalQuestions) {
     var sessionId = "QS_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+    
+    // ⭐ Shuffle đáp án của mỗi câu hỏi để random vị trí A/B/C/D
+    var shuffledQuestions = finalQuestions.map(function(question) {
+      var options = question.options.slice(); // Copy array
+      var correctOption = options[question.correctAnswer]; // Lưu đáp án đúng
+      
+      // Fisher-Yates shuffle
+      for (var i = options.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = options[i];
+        options[i] = options[j];
+        options[j] = temp;
+      }
+      
+      // Tìm vị trí mới của đáp án đúng
+      var newCorrectIndex = options.indexOf(correctOption);
+      
+      return {
+        id: question.id,
+        question: question.question,
+        options: options,
+        correctAnswer: newCorrectIndex,
+        explanation: question.explanation,
+        hint: question.hint,
+        difficulty: question.difficulty
+      };
+    });
+    
+    console.log("🎲 Shuffled answer options for all questions");
+    
     var session = {
       sessionId: sessionId,
       topicId: quizState.topicId,
       contentDocId: quizState.contentDocId,
       quizMode: quizState.quizMode,
-      questions: finalQuestions,
+      questions: shuffledQuestions,
       currentQuestionIndex: 0,
-      userAnswers: new Array(finalQuestions.length).fill(null),
+      userAnswers: new Array(shuffledQuestions.length).fill(null),
       score: 0,
       elapsedTime: 0,
       startedAt: new Date().toISOString(),
@@ -1303,8 +1333,8 @@
     };
 
     quizState.quizSession = session;
-    quizState.questions = finalQuestions;
-    quizState.filteredQuestions = finalQuestions;
+    quizState.questions = shuffledQuestions;
+    quizState.filteredQuestions = shuffledQuestions;
     quizState.currentQuestionIndex = 0;
     quizState.userAnswers = session.userAnswers;
     quizState.answeredQuestions = new Array(finalQuestions.length).fill(false);
