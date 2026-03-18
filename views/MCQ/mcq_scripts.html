@@ -64,6 +64,7 @@
     // Questions & answers
     questions: [],            // all loaded questions (raw)
     filteredQuestions: [],     // questions after mastered filter
+    allQuestionsOriginal: [],  // ⭐ Lưu tất cả câu hỏi gốc (không bị lọc) để dùng khi retake
     currentQuestionIndex: 0,
     userAnswers: [],
     answeredQuestions: [],
@@ -1547,6 +1548,9 @@
       quizState.masteredIds = masteredIds || [];
       quizState.masteredCount = quizState.masteredIds.length;
 
+      // ⭐ Lưu tất cả câu hỏi gốc để dùng khi retake (luôn đảm bảo đủ 20 câu)
+      quizState.allQuestionsOriginal = [].concat(questions);
+
       // ⭐ Filter mastered questions using dedicated function
       var filterResult = filterMasteredQuestions(questions, masteredIds);
       quizState.allMastered = filterResult.allMastered;
@@ -2574,6 +2578,7 @@
 
   /**
    * Retake quiz - Shuffle questions and options for variety
+   * ⭐ Với chế độ "instant" (trả lời nhanh): luôn dùng TẤT CẢ câu hỏi gốc (20 câu)
    */
   function retakeQuiz() {
     console.log("🔄 Retaking quiz with shuffled questions...");
@@ -2585,8 +2590,17 @@
 
     console.log(`📊 Retry count for topic ${quizState.topicId}: ${retryCount}`);
 
-    // Option 1: Shuffle existing questions (faster, same questions different order)
-    if (quizState.questions && quizState.questions.length > 0) {
+    // ⭐ Với chế độ "instant" (trả lời nhanh): luôn lấy TẤT CẢ câu hỏi gốc
+    // để đảm bảo mỗi lần chơi lại đều có đủ 20 câu
+    if (quizState.quizMode === "instant" && quizState.allQuestionsOriginal && quizState.allQuestionsOriginal.length > 0) {
+      console.log("🎯 Mode instant: Sử dụng tất cả " + quizState.allQuestionsOriginal.length + " câu hỏi gốc");
+      // Copy lại tất cả câu hỏi gốc
+      quizState.questions = [].concat(quizState.allQuestionsOriginal);
+      shuffleQuestionsAndOptions();
+      resetQuizForRetry();
+      startQuizSession();
+    } else if (quizState.questions && quizState.questions.length > 0) {
+      // Chế độ review hoặc không có câu gốc: dùng câu hiện tại
       shuffleQuestionsAndOptions();
       resetQuizForRetry();
       startQuizSession();
