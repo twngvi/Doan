@@ -11,6 +11,19 @@
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
 
+  function applyThemeFromAuthenticatedUser(user) {
+    try {
+      if (!user) return;
+      currentUser = user;
+      window.currentUser = user;
+      if (window.ThemeManager) {
+        window.ThemeManager.initTheme();
+      }
+    } catch (e) {
+      console.warn("Apply user theme failed:", e);
+    }
+  }
+
   // ==================== Initialization ====================
   document.addEventListener("DOMContentLoaded", function () {
     console.log("App Initializing...");
@@ -53,6 +66,15 @@
       localStorage.clear();
       currentUser = null;
       window.currentUser = null;
+    }
+
+    // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
+    try {
+      if (window.ThemeManager) {
+        window.ThemeManager.initTheme();
+      }
+    } catch (e) {
+      console.warn("Theme restore failed:", e);
     }
 
     // BƯỚC 2: Xác định trang đích (Routing Logic)
@@ -432,6 +454,69 @@
   }
 
 
+<<<<<<< HEAD
+=======
+    // Get form data
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+
+    // Validation
+    if (!username || !password) {
+      showToast("Vui lòng nhập đầy đủ thông tin", "error");
+      return false;
+    }
+
+    // Prepare payload
+    const payload = {
+      username: username,
+      password: password,
+    };
+
+    // Show loading
+    showLoading(true);
+    disableButton("btn-login");
+
+    // Call backend function
+    google.script.run
+      .withSuccessHandler(onLoginSuccess)
+      .withFailureHandler(onApiError)
+      .loginUser(payload);
+
+    return false;
+  }
+
+  /**
+   * Handle successful login
+   */
+  function onLoginSuccess(response) {
+    console.log("Login response:", JSON.stringify(response));
+    console.log("Response status:", response.status);
+    console.log("Response message:", response.message);
+    hideLoading();
+    enableButton("btn-login");
+
+    if (response.status === "success") {
+      // Save user to localStorage (auto logout when closing tab)
+      currentUser = response.user;
+      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      localStorage.setItem("isLoggedIn", "true");
+      applyThemeFromAuthenticatedUser(response.user);
+      console.log("âœ… Current user synced to window:", currentUser);
+
+      // Show success message
+      showToast("Đăng nhập thành công!", "success");
+
+      // Navigate to dashboard
+      setTimeout(() => {
+        showPage("page-dashboard");
+        loadDashboardData();
+      }, 500);
+    } else {
+      showToast(response.message || "Đăng nhập thất bại", "error");
+    }
+  }
+>>>>>>> ed5aef78c3546e0bf62f272d4921d69cfde3ba50
 
   /**
    * Handle register form submission - NEW VERSION
@@ -587,6 +672,7 @@
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
+          applyThemeFromAuthenticatedUser(response.user);
 
           console.log("✅ Session saved:", {
             userId: response.user.userId,
@@ -725,6 +811,13 @@
     localStorage.removeItem("authToken");
     localStorage.removeItem("recentActivities"); // Clear activity cache
 
+    // Clear theme
+    if (window.ThemeManager) {
+      window.ThemeManager.resetTheme();
+    } else {
+      localStorage.removeItem("userTheme");
+    }
+
     // Clear auth panel state
     sessionStorage.removeItem("authPanelOpen");
     sessionStorage.removeItem("authFormType");
@@ -853,8 +946,11 @@
 
         if (response.success) {
           // ÄÄƒng nháº­p thÃ nh cÃ´ng
+          currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
 

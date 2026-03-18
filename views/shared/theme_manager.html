@@ -1,0 +1,174 @@
+<script>
+  /**
+   * theme_manager.html - Centralized Theme Manager
+   *
+   * Provides a single API for all theme operations:
+   *   ThemeManager.initTheme()       - load & apply saved theme on startup
+   *   ThemeManager.setTheme(id)      - change theme at runtime (CSS vars + body class + persist)
+   *   ThemeManager.getCurrentTheme() - return active theme id
+   *   ThemeManager.applyTheme(id)    - apply theme visually (CSS vars + body class), no persist
+   *   ThemeManager.resetTheme()      - revert to default and clear stored preference
+   *
+   * Depends on: theme_config.html (THEME_CONFIG, applyThemeConfig, getAvailableThemes)
+   */
+
+  window.ThemeManager = (function () {
+    var STORAGE_KEY = "userTheme";
+    var DEFAULT_THEME = "default";
+
+    // ---- Private helpers ----
+
+    /** Validate themeId against THEME_CONFIG */
+    function isValid(themeId) {
+      return !!(themeId && window.THEME_CONFIG && window.THEME_CONFIG[themeId]);
+    }
+
+    /** Resolve theme from sources with user-first policy */
+    function resolveTheme() {
+      // 1. If user is logged in: always prioritize user theme; fallback to default.
+      // This prevents new users from inheriting stale browser theme from old sessions.
+      if (window.currentUser) {
+        if (window.currentUser.theme && isValid(window.currentUser.theme)) {
+          return window.currentUser.theme;
+        }
+        return DEFAULT_THEME;
+      }
+
+      // 2. Guest mode: fallback to browser-stored theme
+      try {
+        var stored = localStorage.getItem(STORAGE_KEY);
+        if (stored && isValid(stored)) return stored;
+      } catch (e) {}
+
+      // 3. Final fallback
+      return DEFAULT_THEME;
+    }
+
+    /** Core apply: sets CSS variables via applyThemeConfig + stores active id */
+    function doApply(themeId) {
+      if (!isValid(themeId)) themeId = DEFAULT_THEME;
+      if (typeof window.applyThemeConfig === "function") {
+        window.applyThemeConfig(themeId);
+      }
+      // window.ACTIVE_THEME is set inside applyThemeConfig, but ensure it
+      window.ACTIVE_THEME = themeId;
+    }
+
+    /** Persist theme to localStorage and currentUser object */
+    function persist(themeId) {
+      try {
+        localStorage.setItem(STORAGE_KEY, themeId);
+        // Keep currentUser in sync
+        var user = window.currentUser;
+        if (user) {
+          user.theme = themeId;
+          localStorage.setItem("currentUser", JSON.stringify(user));
+          try {
+            sessionStorage.setItem("currentUser", JSON.stringify(user));
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.warn("ThemeManager: persist failed", e);
+      }
+    }
+
+    /** Save to server via Apps Script backend */
+    function saveToServer(themeId) {
+      var user = window.currentUser;
+      if (
+        user &&
+        user.userId &&
+        typeof google !== "undefined" &&
+        google.script &&
+        google.script.run
+      ) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.success) {
+              console.log("ThemeManager: saved to server:", themeId);
+            } else {
+              console.warn(
+                "ThemeManager: server save failed:",
+                res && res.message,
+              );
+            }
+          })
+          .withFailureHandler(function (err) {
+            console.warn("ThemeManager: server save error:", err);
+          })
+          .saveUserTheme(user.userId, themeId);
+      }
+    }
+
+    // ---- Public API ----
+
+    return {
+      /**
+       * Initialize theme on app startup.
+       * Reads from user data / localStorage, applies CSS vars + body class.
+       * Call as early as possible to avoid flash of wrong theme.
+       * @returns {string} applied theme id
+       */
+      initTheme: function () {
+        var themeId = resolveTheme();
+        doApply(themeId);
+        // Keep storage in sync with resolved user theme/default.
+        persist(themeId);
+        console.log("ThemeManager: initialized with theme:", themeId);
+        return themeId;
+      },
+
+      /**
+       * Change theme at runtime without reload.
+       * Applies visually + persists to localStorage + saves to server.
+       * @param {string} themeId
+       */
+      setTheme: function (themeId) {
+        if (!isValid(themeId)) {
+          console.warn(
+            "ThemeManager: invalid theme:",
+            themeId,
+            "- using default",
+          );
+          themeId = DEFAULT_THEME;
+        }
+        doApply(themeId);
+        persist(themeId);
+        saveToServer(themeId);
+        console.log("ThemeManager: theme changed to:", themeId);
+      },
+
+      /**
+       * Get currently active theme id.
+       * @returns {string}
+       */
+      getCurrentTheme: function () {
+        return window.ACTIVE_THEME || DEFAULT_THEME;
+      },
+
+      /**
+       * Apply theme visually only (CSS vars + body class), no persistence.
+       * Useful for previews or external callers.
+       * @param {string} themeId
+       */
+      applyTheme: function (themeId) {
+        doApply(themeId);
+      },
+
+      /**
+       * Reset to default theme and clear stored preference.
+       */
+      resetTheme: function () {
+        doApply(DEFAULT_THEME);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch (e) {}
+      },
+
+      /** Check if a theme id is valid */
+      isValidTheme: function (themeId) {
+        return isValid(themeId);
+      },
+    };
+  })();
+</script>
