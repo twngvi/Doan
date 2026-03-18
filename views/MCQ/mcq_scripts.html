@@ -1977,8 +1977,25 @@
         }
       }, 1500);
     } else {
-      // Ở chế độ review: khóa câu hỏi, hiển feedback
+      // Ở chế độ review: khóa câu hỏi, tính điểm và hiển feedback
       quizState.answeredQuestions[questionIndex] = true;
+
+      // Tính điểm real-time cho chế độ review
+      if (isCorrect) {
+        quizState.score++;
+        document.getElementById("current-score").textContent = quizState.score;
+
+        // Lưu câu đúng
+        if (question.originalId) {
+          saveMasteredQuestion({ id: question.originalId, question: question.question });
+        } else {
+          saveMasteredQuestion(question);
+        }
+      } else {
+        // Lưu câu sai để ôn lại
+        saveWrongAnswer(question, optionIndex);
+      }
+
       renderAnswerOptions(question.options, questionIndex);
       showAnswerFeedback(isCorrect, question);
     }
@@ -2284,31 +2301,7 @@
       window.LearningTracker.stop();
     }
 
-    // Tính điểm cho chế độ review (chưa tính trước đó)
-    if (quizState.gameMode === "review") {
-      quizState.score = 0;
-      quizState.questions.forEach((question, index) => {
-        const userAnswer = quizState.userAnswers[index];
-        const isFillBlank = question.questionType === "fill-blank";
-
-        // Check answer based on question type
-        let isCorrect = false;
-        if (isFillBlank) {
-          isCorrect = checkFillBlankAnswer(userAnswer, question.correctAnswer);
-        } else {
-          // Both normal MCQ and retry-mcq use index-based correctAnswer
-          isCorrect = userAnswer === question.correctAnswer;
-        }
-
-        if (isCorrect) {
-          quizState.score++;
-        } else if (userAnswer !== null) {
-          // Lưu câu sai cho chế độ review
-          saveWrongAnswer(question, userAnswer);
-        }
-      });
-    }
-
+    // Note: Điểm đã được tính real-time trong selectAnswer() cho cả 2 chế độ
     const finalScore = quizState.score;
     const totalQuestions = quizState.questions.length;
     const percentage = Math.round((finalScore / totalQuestions) * 100);
