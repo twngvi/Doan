@@ -23,9 +23,9 @@
   // Format: { topicId: { hasPlayed, bestScore, bestTotal, bestPercent, playCount, lastPlayedAt } }
   if (!window.quizStatsCache) {
     window.quizStatsCache = {
-      stats: {},           // Map topicId -> stats
+      stats: {}, // Map topicId -> stats
       lastLoadTime: 0,
-      cacheDuration: 60000 // Cache 1 phút
+      cacheDuration: 60000, // Cache 1 phút
     };
   }
 
@@ -54,17 +54,17 @@
 
   let quizState = {
     // Entry & topic
-    entrySource: null,       // 'mcq' | 'lesson'
-    selectedTopic: null,     // full topic object
+    entrySource: null, // 'mcq' | 'lesson'
+    selectedTopic: null, // full topic object
     topicId: null,
     topicTitle: "",
     contentDocId: "",
-    quizMode: "instant",     // 'instant' | 'review'
+    quizMode: "instant", // 'instant' | 'review'
 
     // Questions & answers
-    questions: [],            // all loaded questions (raw)
-    filteredQuestions: [],     // questions after mastered filter
-    allQuestionsOriginal: [],  // ⭐ Lưu tất cả câu hỏi gốc (không bị lọc) để dùng khi retake
+    questions: [], // all loaded questions (raw)
+    filteredQuestions: [], // questions after mastered filter
+    allQuestionsOriginal: [], // ⭐ Lưu tất cả câu hỏi gốc (không bị lọc) để dùng khi retake
     currentQuestionIndex: 0,
     userAnswers: [],
     answeredQuestions: [],
@@ -79,9 +79,9 @@
     timerInterval: null,
 
     // Session
-    quizSession: null,        // structured session object
-    resumeSession: null,      // saved progress for resume
-    savedProgress: null,      // raw saved progress data
+    quizSession: null, // structured session object
+    resumeSession: null, // saved progress for resume
+    savedProgress: null, // raw saved progress data
 
     // UI state
     loading: false,
@@ -95,9 +95,13 @@
   };
 
   // Legacy alias: gameMode ↔ quizMode
-  Object.defineProperty(quizState, 'gameMode', {
-    get() { return this.quizMode; },
-    set(val) { this.quizMode = val; },
+  Object.defineProperty(quizState, "gameMode", {
+    get() {
+      return this.quizMode;
+    },
+    set(val) {
+      this.quizMode = val;
+    },
     enumerable: false,
   });
 
@@ -110,9 +114,9 @@
   function detectQuizEntrySource() {
     const params = window.currentPageParams;
     if (params && params.topicId && params.contentDocId) {
-      return 'lesson';
+      return "lesson";
     }
-    return 'mcq';
+    return "mcq";
   }
 
   /**
@@ -127,7 +131,7 @@
     const entrySource = detectQuizEntrySource();
     quizState.entrySource = entrySource;
 
-    if (entrySource === 'lesson') {
+    if (entrySource === "lesson") {
       // Vào từ Lesson/Topics → bỏ qua chọn topic & mode, dùng instant
       const params = window.currentPageParams;
       quizState.topicId = params.topicId;
@@ -278,9 +282,14 @@
   function loadQuizStatsIfNeeded(forceRefresh = false) {
     const now = Date.now();
     const statsCache = window.quizStatsCache;
-    
+
     // Check if cache is still valid
-    if (!forceRefresh && statsCache && statsCache.stats && Object.keys(statsCache.stats).length > 0) {
+    if (
+      !forceRefresh &&
+      statsCache &&
+      statsCache.stats &&
+      Object.keys(statsCache.stats).length > 0
+    ) {
       if (now - statsCache.lastLoadTime < statsCache.cacheDuration) {
         console.log("✅ Using cached quiz stats per topic");
         return;
@@ -289,19 +298,23 @@
 
     console.log("📊 Loading quiz stats per topic from server...");
     google.script.run
-      .withSuccessHandler(function(response) {
+      .withSuccessHandler(function (response) {
         if (response && response.success && response.stats) {
           window.quizStatsCache.stats = response.stats;
           window.quizStatsCache.lastLoadTime = Date.now();
-          console.log("✅ Quiz stats loaded for " + Object.keys(response.stats).length + " topics");
-          
+          console.log(
+            "✅ Quiz stats loaded for " +
+              Object.keys(response.stats).length +
+              " topics",
+          );
+
           // Re-render topics grid với stats mới nếu đang hiển thị
           if (mcqAllTopicsForSearch && mcqAllTopicsForSearch.length > 0) {
             renderTopicsGrid(mcqAllTopicsForSearch);
           }
         }
       })
-      .withFailureHandler(function(error) {
+      .withFailureHandler(function (error) {
         console.warn("⚠️ Failed to load quiz stats:", error);
       })
       .getQuizStatsPerTopic();
@@ -309,7 +322,7 @@
 
   /**
    * ⭐ Helper: Get quiz stats for a specific topic
-   * @param {string} topicId 
+   * @param {string} topicId
    * @returns {object|null} - {hasPlayed, bestScore, bestTotal, bestPercent, playCount, lastPlayedAt} or null
    */
   function getQuizStatsForTopic(topicId) {
@@ -324,12 +337,16 @@
    */
   function updateLocalQuizStats(topicId, score, totalQuestions, percentage) {
     if (!window.quizStatsCache) {
-      window.quizStatsCache = { stats: {}, lastLoadTime: 0, cacheDuration: 60000 };
+      window.quizStatsCache = {
+        stats: {},
+        lastLoadTime: 0,
+        cacheDuration: 60000,
+      };
     }
-    
+
     const stats = window.quizStatsCache.stats[topicId];
     const now = new Date().toISOString();
-    
+
     if (!stats) {
       // First time playing this topic
       window.quizStatsCache.stats[topicId] = {
@@ -338,13 +355,13 @@
         bestTotal: totalQuestions,
         bestPercent: percentage,
         playCount: 1,
-        lastPlayedAt: now
+        lastPlayedAt: now,
       };
     } else {
       // Update existing stats
       stats.playCount++;
       stats.lastPlayedAt = now;
-      
+
       // Update best score only if new percentage is higher
       if (percentage > stats.bestPercent) {
         stats.bestScore = score;
@@ -352,8 +369,12 @@
         stats.bestPercent = percentage;
       }
     }
-    
-    console.log("✅ Updated local quiz stats for topic:", topicId, window.quizStatsCache.stats[topicId]);
+
+    console.log(
+      "✅ Updated local quiz stats for topic:",
+      topicId,
+      window.quizStatsCache.stats[topicId],
+    );
   }
 
   // Alias for entry point usage
@@ -638,16 +659,19 @@
         const playCount = topicStats.playCount || 1;
         // Color based on percentage
         let scoreColor = "#6B7280"; // gray
-        if (bestPercent >= 90) scoreColor = "#FFB020"; // gold
-        else if (bestPercent >= 70) scoreColor = "#2FA36B"; // green
-        else if (bestPercent >= 50) scoreColor = "#5B6FF8"; // blue
+        if (bestPercent >= 90)
+          scoreColor = "#FFB020"; // gold
+        else if (bestPercent >= 70)
+          scoreColor = "#2FA36B"; // green
+        else if (bestPercent >= 50)
+          scoreColor = "#5B6FF8"; // blue
         else scoreColor = "#FF9800"; // orange
-        
+
         bestScoreBadge = `<span class="mcq-item-badge best-score" style="color:${scoreColor};border-color:${scoreColor};">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:3px;">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
           </svg>
-          ${bestPercent}%${playCount > 1 ? ' (' + playCount + ' lần)' : ''}
+          ${bestPercent}%${playCount > 1 ? " (" + playCount + " lần)" : ""}
         </span>`;
       }
 
@@ -793,33 +817,19 @@
     if (!container) return;
 
     if (loading) {
-      // Ẩn danh sách topic, hiện loading
-      let loadingEl = document.getElementById("mcq-topic-loading-overlay");
-      if (!loadingEl) {
-        loadingEl = document.createElement("div");
-        loadingEl.id = "mcq-topic-loading-overlay";
-        loadingEl.className = "mcq-loading";
-        loadingEl.innerHTML = `
-          <div class="quiz-loading-popup">
-            <div class="quiz-loading-logo">
-              <span class="logo-o">O</span>
-              <div class="logo-dots">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-              </div>
-            </div>
-            <div class="quiz-loading-text">Đang tải...</div>
-          </div>
-        `;
-        container.parentElement.insertBefore(loadingEl, container);
-      }
-      container.style.display = "none";
-      loadingEl.style.display = "block";
+      // Không ẩn list để tránh cảm giác "reload" như trước.
+      // Chỉ khóa thao tác tạm thời trong lúc check session.
+      container.style.pointerEvents = "none";
+      container.style.opacity = "0.72";
+      document.body.style.cursor = "wait";
     } else {
+      container.style.pointerEvents = "";
+      container.style.opacity = "";
+      document.body.style.cursor = "";
+
+      // Dọn overlay cũ nếu còn sót từ phiên trước
       const loadingEl = document.getElementById("mcq-topic-loading-overlay");
       if (loadingEl) loadingEl.remove();
-      container.style.display = "flex";
     }
   }
 
@@ -985,13 +995,23 @@
         if (result && result.data) {
           var parsedData = result.data;
           if (typeof parsedData === "string") {
-            try { parsedData = JSON.parse(parsedData); } catch (e) { parsedData = null; }
+            try {
+              parsedData = JSON.parse(parsedData);
+            } catch (e) {
+              parsedData = null;
+            }
           }
-          if (parsedData && parsedData.questions && Array.isArray(parsedData.questions)) {
+          if (
+            parsedData &&
+            parsedData.questions &&
+            Array.isArray(parsedData.questions)
+          ) {
             questions = parsedData.questions.map(function (q, index) {
               var options = q.options;
               if (!Array.isArray(options)) {
-                options = [options.A, options.B, options.C, options.D].filter(Boolean);
+                options = [options.A, options.B, options.C, options.D].filter(
+                  Boolean,
+                );
               }
               var correctAnswer = q.correctAnswer;
               if (typeof correctAnswer === "string") {
@@ -1058,7 +1078,7 @@
    */
   function closeAllMasteredModal() {
     document.getElementById("all-mastered-modal").style.display = "none";
-    if (quizState.entrySource === 'lesson') {
+    if (quizState.entrySource === "lesson") {
       // Quay lại trang Lesson
       backFromQuiz();
     } else {
@@ -1275,7 +1295,11 @@
       return !masteredIds.includes(q.id);
     });
     console.log(
-      "✅ Filtered: " + allQuestions.length + " → " + filtered.length + " questions",
+      "✅ Filtered: " +
+        allQuestions.length +
+        " → " +
+        filtered.length +
+        " questions",
     );
     if (filtered.length === 0) {
       return { questions: allQuestions, allMastered: true };
@@ -1288,13 +1312,14 @@
    * @returns session object
    */
   function createQuizSession(finalQuestions) {
-    var sessionId = "QS_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
-    
+    var sessionId =
+      "QS_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+
     // ⭐ Shuffle đáp án của mỗi câu hỏi để random vị trí A/B/C/D
-    var shuffledQuestions = finalQuestions.map(function(question) {
+    var shuffledQuestions = finalQuestions.map(function (question) {
       var options = question.options.slice(); // Copy array
       var correctOption = options[question.correctAnswer]; // Lưu đáp án đúng
-      
+
       // Fisher-Yates shuffle
       for (var i = options.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
@@ -1302,10 +1327,10 @@
         options[i] = options[j];
         options[j] = temp;
       }
-      
+
       // Tìm vị trí mới của đáp án đúng
       var newCorrectIndex = options.indexOf(correctOption);
-      
+
       return {
         id: question.id,
         question: question.question,
@@ -1313,12 +1338,12 @@
         correctAnswer: newCorrectIndex,
         explanation: question.explanation,
         hint: question.hint,
-        difficulty: question.difficulty
+        difficulty: question.difficulty,
       };
     });
-    
+
     console.log("🎲 Shuffled answer options for all questions");
-    
+
     var session = {
       sessionId: sessionId,
       topicId: quizState.topicId,
@@ -1343,7 +1368,13 @@
     quizState.loading = false;
     quizState.error = null;
 
-    console.log("🎮 Quiz session created:", sessionId, "with", finalQuestions.length, "questions");
+    console.log(
+      "🎮 Quiz session created:",
+      sessionId,
+      "with",
+      finalQuestions.length,
+      "questions",
+    );
     return session;
   }
 
@@ -1404,7 +1435,12 @@
     // Delete saved progress from server (we're resuming now)
     google.script.run.deleteSavedQuizProgress(quizState.topicId);
 
-    console.log("▶️ Quiz session restored:", sessionId, "resuming at question", resumeIndex + 1);
+    console.log(
+      "▶️ Quiz session restored:",
+      sessionId,
+      "resuming at question",
+      resumeIndex + 1,
+    );
     return session;
   }
 
@@ -1486,7 +1522,8 @@
     quizState.loading = false;
 
     if (!response || response.success === false) {
-      quizState.error = response?.message || response?.error || "Không thể tải câu hỏi";
+      quizState.error =
+        response?.message || response?.error || "Không thể tải câu hỏi";
       showError(quizState.error);
       return;
     }
@@ -1511,7 +1548,8 @@
         !Array.isArray(parsedData.questions)
       ) {
         console.error("❌ Invalid question format:", parsedData);
-        quizState.error = "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.";
+        quizState.error =
+          "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.";
         showError(quizState.error);
         return;
       }
@@ -1593,7 +1631,8 @@
       quizState.questions.length,
       "questions, mode:",
       quizState.quizMode,
-      "restore:", !!isRestore,
+      "restore:",
+      !!isRestore,
     );
 
     // Update session status
@@ -1611,7 +1650,9 @@
     if (!isRestore) {
       quizState.currentQuestionIndex = 0;
       quizState.score = 0;
-      quizState.answeredQuestions = new Array(quizState.questions.length).fill(false);
+      quizState.answeredQuestions = new Array(quizState.questions.length).fill(
+        false,
+      );
     }
 
     quizState.startTime = new Date();
@@ -1952,7 +1993,10 @@
 
         // Lưu câu đúng để không hỏi lại (use originalId for retry questions)
         if (question.originalId) {
-          saveMasteredQuestion({ id: question.originalId, question: question.question });
+          saveMasteredQuestion({
+            id: question.originalId,
+            question: question.question,
+          });
         } else {
           saveMasteredQuestion(question);
         }
@@ -1987,7 +2031,10 @@
 
         // Lưu câu đúng
         if (question.originalId) {
-          saveMasteredQuestion({ id: question.originalId, question: question.question });
+          saveMasteredQuestion({
+            id: question.originalId,
+            question: question.question,
+          });
         } else {
           saveMasteredQuestion(question);
         }
@@ -2068,15 +2115,23 @@
     if (!correctAnswer) return null;
 
     // Shuffle options using Fisher-Yates
-    const indexedOptions = originalQuestion.options.map((opt, idx) => ({ text: opt, originalIdx: idx }));
+    const indexedOptions = originalQuestion.options.map((opt, idx) => ({
+      text: opt,
+      originalIdx: idx,
+    }));
     for (let i = indexedOptions.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [indexedOptions[i], indexedOptions[j]] = [indexedOptions[j], indexedOptions[i]];
+      [indexedOptions[i], indexedOptions[j]] = [
+        indexedOptions[j],
+        indexedOptions[i],
+      ];
     }
 
     // Find new correct answer index after shuffle
-    const newCorrectIndex = indexedOptions.findIndex(opt => opt.originalIdx === correctIndex);
-    const newOptions = indexedOptions.map(opt => opt.text);
+    const newCorrectIndex = indexedOptions.findIndex(
+      (opt) => opt.originalIdx === correctIndex,
+    );
+    const newOptions = indexedOptions.map((opt) => opt.text);
 
     return {
       id: `RETRY_${originalQuestion.id}`,
@@ -2132,13 +2187,17 @@
             ? `<p class="feedback-text" style="margin-top:0.5rem;">${question.explanation}</p>`
             : ""
         }
-        ${quizState.gameMode === "review" ? `
+        ${
+          quizState.gameMode === "review"
+            ? `
         <p class="feedback-text" style="color:#A0AEC0;font-size:0.75rem;margin-top:0.5rem;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;">
             <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
           </svg>
           Câu này sẽ được hỏi lại để ôn tập
-        </p>` : ""}
+        </p>`
+            : ""
+        }
       `;
     }
 
@@ -2515,7 +2574,9 @@
         if (window.quizStatsCache) {
           window.quizStatsCache.lastLoadTime = 0;
         }
-        console.log("🔄 Progress & quiz stats cache invalidated after quiz save");
+        console.log(
+          "🔄 Progress & quiz stats cache invalidated after quiz save",
+        );
       })
       .withFailureHandler((error) => {
         console.error("❌ Error saving result:", error);
@@ -2585,8 +2646,16 @@
 
     // ⭐ Với chế độ "instant" (trả lời nhanh): luôn lấy TẤT CẢ câu hỏi gốc
     // để đảm bảo mỗi lần chơi lại đều có đủ 20 câu
-    if (quizState.quizMode === "instant" && quizState.allQuestionsOriginal && quizState.allQuestionsOriginal.length > 0) {
-      console.log("🎯 Mode instant: Sử dụng tất cả " + quizState.allQuestionsOriginal.length + " câu hỏi gốc");
+    if (
+      quizState.quizMode === "instant" &&
+      quizState.allQuestionsOriginal &&
+      quizState.allQuestionsOriginal.length > 0
+    ) {
+      console.log(
+        "🎯 Mode instant: Sử dụng tất cả " +
+          quizState.allQuestionsOriginal.length +
+          " câu hỏi gốc",
+      );
       // Copy lại tất cả câu hỏi gốc
       quizState.questions = [].concat(quizState.allQuestionsOriginal);
       shuffleQuestionsAndOptions();
