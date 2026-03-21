@@ -1890,8 +1890,12 @@ function getDashboardData(userContext) {
       (a) => a.type === "Learning",
     ).length;
     const todayMCQ = todayActivities.filter((a) => a.type === "MCQ").length;
+    const todayMatching = todayActivities.filter(
+      (a) => a.type === "Matching",
+    ).length;
     const todayPerfect = todayActivities.filter(
-      (a) => a.type === "MCQ" && a.percentage === 100,
+      (a) =>
+        (a.type === "MCQ" || a.type === "Matching") && a.percentage === 100,
     ).length;
 
     // Check if user checked in today
@@ -1964,8 +1968,17 @@ function getDashboardData(userContext) {
         claimed: !!claimedQuests["daily_quiz"],
       },
       {
+        questId: "daily_matching",
+        title: "Hoàn thành 1 game matching",
+        progress: Math.min(todayMatching, 1),
+        target: 1,
+        xpReward: 50,
+        done: todayMatching >= 1,
+        claimed: !!claimedQuests["daily_matching"],
+      },
+      {
         questId: "daily_perfect",
-        title: "Đạt điểm tuyệt đối 1 bài",
+        title: "Đạt điểm tuyệt đối 1 bài quiz/matching",
         progress: Math.min(todayPerfect, 1),
         target: 1,
         xpReward: 100,
@@ -2131,8 +2144,13 @@ function completeQuestAndAwardXP(questId, userContext) {
         xp: 50,
         source: "daily_quest",
       },
+      daily_matching: {
+        title: "Hoàn thành 1 game matching",
+        xp: 50,
+        source: "daily_quest",
+      },
       daily_perfect: {
-        title: "Đạt điểm tuyệt đối 1 bài",
+        title: "Đạt điểm tuyệt đối 1 bài quiz/matching",
         xp: 100,
         source: "daily_quest",
       },
@@ -2227,6 +2245,7 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
       }
       case "daily_learn":
       case "daily_quiz":
+      case "daily_matching":
       case "daily_perfect": {
         const actSheet = spreadsheet.getSheetByName("Activity_Log");
         if (!actSheet) return { done: false };
@@ -2237,6 +2256,7 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
 
         let todayLearning = 0,
           todayMCQ = 0,
+          todayMatching = 0,
           todayPerfect = 0;
         for (let i = 1; i < actData.length; i++) {
           const ts =
@@ -2252,19 +2272,29 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
                 : 0;
             if (pct === 100) todayPerfect++;
           }
+          if (type === "Matching") {
+            todayMatching++;
+            const pct =
+              ac["percentage"] >= 0
+                ? parseInt(actData[i][ac["percentage"]])
+                : 0;
+            if (pct === 100) todayPerfect++;
+          }
         }
 
         if (questId === "daily_learn") return { done: todayLearning >= 1 };
         if (questId === "daily_quiz") return { done: todayMCQ >= 1 };
+        if (questId === "daily_matching") return { done: todayMatching >= 1 };
         if (questId === "daily_perfect") return { done: todayPerfect >= 1 };
         return { done: false };
       }
       case "daily_all_bonus": {
-        // All 4 main quests must be claimed
+        // All main quests must be claimed
         const mainQuestIds = [
           "daily_checkin",
           "daily_learn",
           "daily_quiz",
+          "daily_matching",
           "daily_perfect",
         ];
         const xpData = xpSheet.getDataRange().getValues();
