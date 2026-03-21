@@ -1,0 +1,157 @@
+<!-- Admin Panel - Hello Admin Test Page -->
+<div id="admin-panel" style="
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI', sans-serif;
+">
+  <div id="admin-content-box" style="
+    background: rgba(255,255,255,0.1);
+    padding: 60px 80px;
+    border-radius: 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+  ">
+    <div style="font-size: 4rem; margin-bottom: 20px;">🛡️</div>
+    <h1 style="
+      font-size: 3rem;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #e94560, #ff6b6b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    ">Hello Admin!</h1>
+    <p style="color: #a0a0a0; font-size: 1.2rem; margin-bottom: 30px;">
+      Chào mừng đến với Admin Panel
+    </p>
+    <div id="admin-user-info" style="
+      background: rgba(0,0,0,0.3);
+      padding: 15px 25px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    ">
+      <p style="margin: 0; color: #00d9a5;">
+        <i class="fas fa-user-shield"></i>
+        <span id="admin-email">Đang tải...</span>
+      </p>
+    </div>
+    <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px;">
+      💡 Trang Admin đang được phát triển. Các tính năng quản lý sẽ được thêm sớm.
+    </p>
+    <button onclick="handleAdminLogout()" style="
+      background: #e94560;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: transform 0.2s;
+    " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+      <i class="fas fa-sign-out-alt"></i> Đăng xuất
+    </button>
+  </div>
+</div>
+
+<script>
+// ⭐ Đợi một chút để đảm bảo localStorage đã được cập nhật
+setTimeout(function() {
+  checkAdminAccess();
+}, 100);
+
+function checkAdminAccess() {
+  // Lấy user từ nhiều nguồn có thể
+  let user = null;
+  
+  // Thử currentUser trước
+  try {
+    user = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  } catch(e) {
+    console.error('Error parsing currentUser:', e);
+  }
+  
+  // Nếu không có, thử window.currentUser
+  if (!user && window.currentUser) {
+    user = window.currentUser;
+  }
+  
+  console.log('🔍 Admin Check - User object:', user);
+  console.log('🔍 Admin Check - Role value:', user ? user.role : 'NO USER');
+  
+  const emailEl = document.getElementById('admin-email');
+  const contentBox = document.getElementById('admin-content-box');
+  
+  if (!user || !user.userId) {
+    console.log('❌ No user logged in');
+    showAccessDenied(contentBox, 'Bạn chưa đăng nhập.');
+    return;
+  }
+  
+  // Cập nhật email display
+  if (emailEl) {
+    emailEl.textContent = user.email + ' (Role: ' + (user.role || 'USER') + ')';
+  }
+  
+  // ⭐ Kiểm tra role - so sánh không phân biệt hoa thường
+  const userRole = (user.role || '').toString().toUpperCase().trim();
+  console.log('🔍 Normalized role:', userRole);
+  
+  if (userRole !== 'ADMIN') {
+    console.log('❌ User is not admin. Role:', userRole);
+    showAccessDenied(contentBox, 'Bạn cần có vai trò ADMIN để truy cập trang này. (Current role: ' + userRole + ')');
+    return;
+  }
+  
+  console.log('✅ Admin access granted!');
+}
+
+function showAccessDenied(container, message) {
+  if (container) {
+    container.innerHTML = `
+      <div style="font-size: 4rem; margin-bottom: 20px;">🚫</div>
+      <h1 style="color: #e94560;">Không có quyền truy cập</h1>
+      <p style="color: #a0a0a0;">${message}</p>
+      <button onclick="handleAdminLogout()" style="
+        background: #e94560;
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+        margin-top: 20px;
+      ">Đăng xuất và thử lại</button>
+    `;
+  }
+}
+
+// ⭐ Hàm logout cho admin
+function handleAdminLogout() {
+  // Sử dụng hàm handleLogout chung nếu có, nếu không thì xử lý thủ công
+  if (typeof handleLogout === 'function') {
+    handleLogout();
+  } else {
+    // Fallback: xóa dữ liệu user
+    window.currentUser = null;
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("userSession");
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("lastActivePage");
+    localStorage.removeItem("authToken");
+    sessionStorage.removeItem("authPanelOpen");
+    sessionStorage.removeItem("authFormType");
+    
+    // Chuyển về trang landing
+    if (typeof showPage === 'function') {
+      showPage("page-landing");
+    } else {
+      window.location.href = window.location.origin;
+    }
+  }
+}
+</script>
