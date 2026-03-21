@@ -2712,6 +2712,95 @@ function resetTopicLearningData(topicId, userContext) {
 }
 
 /**
+ * Reset ALL learning activity/progress for current user.
+ * One-call full cleanup across learning-related sheets.
+ *
+ * @param {Object=} userContext - Optional auth context from client
+ * @returns {Object} - { success, deleted: {...}, totalDeleted }
+ */
+function clearAllLearningData(userContext) {
+  try {
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const deleted = {
+      activityLog: 0,
+      topicProgress: 0,
+      quizResults: 0,
+      matchingResults: 0,
+      flashcardSessions: 0,
+      cardProgress: 0,
+      wrongAnswers: 0,
+      masteredQuestions: 0,
+      xpLog: 0,
+    };
+
+    function clearSheetDataKeepHeader(sheetName) {
+      const sheet = userSpreadsheet.getSheetByName(sheetName);
+      if (!sheet) return 0;
+
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return 0;
+
+      const count = lastRow - 1;
+      sheet.deleteRows(2, count);
+      return count;
+    }
+
+    deleted.activityLog = clearSheetDataKeepHeader("Activity_Log");
+    deleted.topicProgress = clearSheetDataKeepHeader("Topic_Progress");
+    deleted.quizResults = clearSheetDataKeepHeader("Quiz_Results");
+    deleted.matchingResults = clearSheetDataKeepHeader("Matching_Results");
+    deleted.flashcardSessions = clearSheetDataKeepHeader("FlashcardSessions");
+    deleted.cardProgress = clearSheetDataKeepHeader("CardProgress");
+    deleted.wrongAnswers = clearSheetDataKeepHeader("Wrong_Answers");
+    deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
+    deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
+
+    const totalDeleted = Object.keys(deleted).reduce(
+      (sum, key) => sum + deleted[key],
+      0,
+    );
+
+    Logger.log(
+      "✅ clearAllLearningData for " +
+        userEmail +
+        ": deleted " +
+        totalDeleted +
+        " rows",
+    );
+
+    return {
+      success: true,
+      deleted: deleted,
+      totalDeleted: totalDeleted,
+      message:
+        totalDeleted > 0
+          ? "Đã reset toàn bộ dữ liệu học"
+          : "Không có dữ liệu để reset",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in clearAllLearningData: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Backward-compatible alias.
+ */
+function resetAllLearningData(userContext) {
+  return clearAllLearningData(userContext);
+}
+
+/**
  * Save wrong answer to user's PERSONAL Google Sheet for later review
  * @param {object} wrongData - Wrong answer data
  * @returns {object} - {success, message}
