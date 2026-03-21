@@ -1,0 +1,398 @@
+<!-- Online Statistics Page Scripts -->
+<script>
+  // ========================================
+  // ONLINE STATS PAGE CONTROLLER
+  // ========================================
+
+  // State
+  let onlineUsers = [];
+  let currentFilter = 'all';
+  let searchQuery = '';
+  let refreshInterval = null;
+
+  // Initialize page
+  function initOnlineStatsPage() {
+    setupEventListeners();
+    loadOnlineUsers();
+    startAutoRefresh();
+    initMeteorEffect();
+  }
+
+  // Setup event listeners
+  function setupEventListeners() {
+    // Search input
+    const searchInput = document.getElementById('searchUser');
+    if (searchInput) {
+      searchInput.addEventListener('input', debounce((e) => {
+        searchQuery = e.target.value.toLowerCase();
+        filterAndRenderUsers();
+      }, 300));
+    }
+
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        filterAndRenderUsers();
+      });
+    });
+  }
+
+  // Load online users from server
+  async function loadOnlineUsers() {
+    showLoading(true);
+    
+    try {
+      // Simulate API call - replace with actual API endpoint
+      // const response = await fetch('/api/admin/online-users');
+      // const data = await response.json();
+      // onlineUsers = data.users;
+      
+      // Demo data for testing
+      onlineUsers = generateDemoUsers();
+      
+      updateStats();
+      filterAndRenderUsers();
+      renderActivityTimeline();
+    } catch (error) {
+      console.error('Error loading online users:', error);
+      showError('Không thể tải danh sách người dùng');
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  // Generate demo users for testing
+  function generateDemoUsers() {
+    const names = [
+      'Nguyễn Văn A', 'Trần Thị B', 'Lê Văn C', 'Phạm Thị D',
+      'Hoàng Văn E', 'Vũ Thị F', 'Đặng Văn G', 'Bùi Thị H',
+      'Đỗ Văn I', 'Ngô Thị K', 'Dương Văn L', 'Lý Thị M'
+    ];
+    
+    const activities = [
+      'Đang học bài', 'Đang làm quiz', 'Đang xem video',
+      'Đang đọc tài liệu', 'Đang ôn tập', 'Vừa đăng nhập'
+    ];
+    
+    return names.map((name, index) => ({
+      id: index + 1,
+      name: name,
+      email: `user${index + 1}@example.com`,
+      avatar: `https://api.dicebear.com/9.x/avataaars/svg?seed=${name}`,
+      status: Math.random() > 0.3 ? 'active' : 'idle',
+      activity: activities[Math.floor(Math.random() * activities.length)],
+      loginTime: new Date(Date.now() - Math.floor(Math.random() * 3600000)),
+      lastActivity: new Date(Date.now() - Math.floor(Math.random() * 600000))
+    }));
+  }
+
+  // Update statistics
+  function updateStats() {
+    const totalOnline = onlineUsers.length;
+    const activeUsers = onlineUsers.filter(u => u.status === 'active').length;
+    const idleUsers = onlineUsers.filter(u => u.status === 'idle').length;
+    
+    animateNumber('totalOnline', totalOnline);
+    animateNumber('activeNow', activeUsers);
+    animateNumber('idleUsers', idleUsers);
+    animateNumber('todayPeak', Math.max(totalOnline, parseInt(localStorage.getItem('todayPeak') || '0')));
+    
+    // Save today's peak
+    const currentPeak = parseInt(localStorage.getItem('todayPeak') || '0');
+    if (totalOnline > currentPeak) {
+      localStorage.setItem('todayPeak', totalOnline.toString());
+    }
+  }
+
+  // Animate number change
+  function animateNumber(elementId, targetValue) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    const currentValue = parseInt(element.textContent) || 0;
+    const increment = (targetValue - currentValue) / 20;
+    let current = currentValue;
+    
+    const timer = setInterval(() => {
+      current += increment;
+      if ((increment > 0 && current >= targetValue) || (increment < 0 && current <= targetValue)) {
+        element.textContent = targetValue;
+        clearInterval(timer);
+      } else {
+        element.textContent = Math.round(current);
+      }
+    }, 30);
+  }
+
+  // Filter and render users
+  function filterAndRenderUsers() {
+    let filteredUsers = [...onlineUsers];
+    
+    // Apply status filter
+    if (currentFilter === 'active') {
+      filteredUsers = filteredUsers.filter(u => u.status === 'active');
+    } else if (currentFilter === 'idle') {
+      filteredUsers = filteredUsers.filter(u => u.status === 'idle');
+    }
+    
+    // Apply search filter
+    if (searchQuery) {
+      filteredUsers = filteredUsers.filter(u => 
+        u.name.toLowerCase().includes(searchQuery) ||
+        u.email.toLowerCase().includes(searchQuery)
+      );
+    }
+    
+    renderUsers(filteredUsers);
+    updateDisplayedCount(filteredUsers.length);
+  }
+
+  // Render users grid
+  function renderUsers(users) {
+    const grid = document.getElementById('usersGrid');
+    const emptyState = document.getElementById('emptyState');
+    
+    if (!grid) return;
+    
+    if (users.length === 0) {
+      grid.innerHTML = '';
+      if (emptyState) emptyState.style.display = 'flex';
+      return;
+    }
+    
+    if (emptyState) emptyState.style.display = 'none';
+    
+    grid.innerHTML = users.map(user => `
+      <div class="user-card" data-user-id="${user.id}">
+        <div class="user-avatar">
+          <img src="${user.avatar}" alt="${user.name}">
+          <span class="status-indicator ${user.status}"></span>
+        </div>
+        <div class="user-info">
+          <h4 class="user-name">${user.name}</h4>
+          <div class="user-meta">
+            <span class="user-activity">${user.activity}</span>
+            <span class="user-time">• ${formatTimeAgo(user.lastActivity)}</span>
+          </div>
+        </div>
+        <div class="user-actions">
+          <button class="user-action-btn" onclick="viewUserDetail(${user.id})" title="Xem chi tiết">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+          <button class="user-action-btn" onclick="sendMessageToUser(${user.id})" title="Gửi tin nhắn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Update displayed count
+  function updateDisplayedCount(count) {
+    const countElement = document.getElementById('displayedCount');
+    if (countElement) {
+      countElement.textContent = `${count} người dùng`;
+    }
+  }
+
+  // Format time ago
+  function formatTimeAgo(date) {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    
+    if (seconds < 60) return 'Vừa xong';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} phút trước`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} giờ trước`;
+    return `${Math.floor(seconds / 86400)} ngày trước`;
+  }
+
+  // Render activity timeline
+  function renderActivityTimeline() {
+    const timeline = document.getElementById('activityTimeline');
+    if (!timeline) return;
+    
+    // Demo timeline data
+    const activities = [
+      { type: 'login', user: 'Nguyễn Văn A', time: new Date(Date.now() - 120000) },
+      { type: 'activity', user: 'Trần Thị B', action: 'hoàn thành bài quiz', time: new Date(Date.now() - 300000) },
+      { type: 'login', user: 'Lê Văn C', time: new Date(Date.now() - 600000) },
+      { type: 'logout', user: 'Phạm Thị D', time: new Date(Date.now() - 900000) },
+      { type: 'activity', user: 'Hoàng Văn E', action: 'bắt đầu học bài mới', time: new Date(Date.now() - 1200000) },
+    ];
+    
+    timeline.innerHTML = activities.map(act => {
+      let iconHtml = '';
+      let text = '';
+      
+      switch (act.type) {
+        case 'login':
+          iconHtml = `
+            <div class="timeline-icon login">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+              </svg>
+            </div>
+          `;
+          text = `<strong>${act.user}</strong> đã đăng nhập`;
+          break;
+        case 'logout':
+          iconHtml = `
+            <div class="timeline-icon logout">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </div>
+          `;
+          text = `<strong>${act.user}</strong> đã đăng xuất`;
+          break;
+        case 'activity':
+          iconHtml = `
+            <div class="timeline-icon activity">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+            </div>
+          `;
+          text = `<strong>${act.user}</strong> ${act.action}`;
+          break;
+      }
+      
+      return `
+        <div class="timeline-item">
+          ${iconHtml}
+          <div class="timeline-content">
+            <p class="timeline-text">${text}</p>
+            <p class="timeline-time">${formatTimeAgo(act.time)}</p>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Show/hide loading state
+  function showLoading(show) {
+    const loadingState = document.getElementById('loadingState');
+    const usersGrid = document.getElementById('usersGrid');
+    
+    if (loadingState) loadingState.style.display = show ? 'flex' : 'none';
+    if (usersGrid) usersGrid.style.display = show ? 'none' : 'grid';
+  }
+
+  // Show error message
+  function showError(message) {
+    // You can implement a toast or notification system here
+    console.error(message);
+  }
+
+  // Refresh online users
+  function refreshOnlineUsers() {
+    const refreshBtn = document.querySelector('.refresh-btn svg');
+    if (refreshBtn) {
+      refreshBtn.style.transition = 'transform 0.5s ease';
+      refreshBtn.style.transform = 'rotate(360deg)';
+      setTimeout(() => {
+        refreshBtn.style.transform = 'rotate(0deg)';
+      }, 500);
+    }
+    
+    loadOnlineUsers();
+  }
+
+  // Start auto refresh
+  function startAutoRefresh() {
+    // Refresh every 30 seconds
+    refreshInterval = setInterval(loadOnlineUsers, 30000);
+  }
+
+  // Stop auto refresh
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+  }
+
+  // View user detail
+  function viewUserDetail(userId) {
+    const user = onlineUsers.find(u => u.id === userId);
+    if (user) {
+      console.log('View user detail:', user);
+      // Implement user detail modal or navigation
+    }
+  }
+
+  // Send message to user
+  function sendMessageToUser(userId) {
+    const user = onlineUsers.find(u => u.id === userId);
+    if (user) {
+      console.log('Send message to:', user);
+      // Implement messaging functionality
+    }
+  }
+
+  // Meteor effect
+  function initMeteorEffect() {
+    const container = document.getElementById('onlineStatsMeteorContainer');
+    if (!container) return;
+    
+    // Check if galaxy effects should be hidden
+    if (document.body.classList.contains('hide-galaxy-effects')) return;
+    
+    function createMeteor() {
+      const meteor = document.createElement('div');
+      meteor.className = 'online-stats-meteor';
+      meteor.style.left = `${Math.random() * 100}%`;
+      meteor.style.top = `${Math.random() * 30}%`;
+      meteor.style.animationDuration = `${1 + Math.random() * 0.5}s`;
+      
+      container.appendChild(meteor);
+      
+      setTimeout(() => {
+        meteor.remove();
+      }, 2000);
+    }
+    
+    // Create meteors periodically
+    setInterval(() => {
+      if (Math.random() > 0.7) {
+        createMeteor();
+      }
+    }, 2000);
+  }
+
+  // Debounce utility
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initOnlineStatsPage);
+  } else {
+    initOnlineStatsPage();
+  }
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    stopAutoRefresh();
+  });
+</script>
