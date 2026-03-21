@@ -1969,7 +1969,7 @@ function getDashboardData(userContext) {
       },
       {
         questId: "daily_matching",
-        title: "Hoàn thành 1 game matching",
+        title: "Hoàn thành 1 Bài Matching",
         progress: Math.min(todayMatching, 1),
         target: 1,
         xpReward: 50,
@@ -1978,7 +1978,7 @@ function getDashboardData(userContext) {
       },
       {
         questId: "daily_perfect",
-        title: "Đạt điểm tuyệt đối 1 bài quiz/matching",
+        title: "Đạt điểm tuyệt đối 1 bài Quiz/Matching",
         progress: Math.min(todayPerfect, 1),
         target: 1,
         xpReward: 100,
@@ -2145,12 +2145,12 @@ function completeQuestAndAwardXP(questId, userContext) {
         source: "daily_quest",
       },
       daily_matching: {
-        title: "Hoàn thành 1 game matching",
+        title: "Hoàn thành 1 Bài Matching",
         xp: 50,
         source: "daily_quest",
       },
       daily_perfect: {
-        title: "Đạt điểm tuyệt đối 1 bài quiz/matching",
+        title: "Đạt điểm tuyệt đối 1 bài Quiz/Matching",
         xp: 100,
         source: "daily_quest",
       },
@@ -2598,6 +2598,117 @@ function deleteSavedQuizProgress(topicId) {
     Logger.log("❌ Error deleting saved progress: " + error.toString());
     return { success: false, message: error.toString() };
   }
+}
+
+/**
+ * Reset all learning activity/progress for one topic of current user.
+ * This clears topic-level history so Topic/Lesson can start fresh.
+ *
+ * @param {string} topicId - Topic ID to reset
+ * @param {Object=} userContext - Optional auth context from client
+ * @returns {Object} - { success, deleted: {...} }
+ */
+function clearTopicLearningData(topicId, userContext) {
+  try {
+    const topicIdStr = String(topicId || "").trim();
+    if (!topicIdStr) {
+      return { success: false, message: "Thiếu topicId" };
+    }
+
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const deleted = {
+      activityLog: 0,
+      topicProgress: 0,
+      quizResults: 0,
+      matchingResults: 0,
+      flashcardSessions: 0,
+      cardProgress: 0,
+      wrongAnswers: 0,
+      masteredQuestions: 0,
+    };
+
+    function deleteRowsByTopic(sheetName, topicColumnName) {
+      const sheet = userSpreadsheet.getSheetByName(sheetName);
+      if (!sheet) return 0;
+
+      const data = sheet.getDataRange().getValues();
+      if (!data || data.length <= 1) return 0;
+
+      const headers = data[0] || [];
+      const topicCol = headers.indexOf(topicColumnName || "topicId");
+      if (topicCol < 0) return 0;
+
+      let count = 0;
+      for (let i = data.length - 1; i >= 1; i--) {
+        const rowTopicId = String(data[i][topicCol] || "").trim();
+        if (rowTopicId === topicIdStr) {
+          sheet.deleteRow(i + 1);
+          count++;
+        }
+      }
+
+      return count;
+    }
+
+    deleted.activityLog = deleteRowsByTopic("Activity_Log", "topicId");
+    deleted.topicProgress = deleteRowsByTopic("Topic_Progress", "topicId");
+    deleted.quizResults = deleteRowsByTopic("Quiz_Results", "topicId");
+    deleted.matchingResults = deleteRowsByTopic("Matching_Results", "topicId");
+    deleted.flashcardSessions = deleteRowsByTopic(
+      "FlashcardSessions",
+      "topicId",
+    );
+    deleted.cardProgress = deleteRowsByTopic("CardProgress", "topicId");
+    deleted.wrongAnswers = deleteRowsByTopic("Wrong_Answers", "topicId");
+    deleted.masteredQuestions = deleteRowsByTopic(
+      "Mastered_Questions",
+      "topicId",
+    );
+
+    const totalDeleted = Object.keys(deleted).reduce(
+      (sum, key) => sum + deleted[key],
+      0,
+    );
+
+    Logger.log(
+      "✅ clearTopicLearningData for " +
+        topicIdStr +
+        ": deleted " +
+        totalDeleted +
+        " rows",
+    );
+
+    return {
+      success: true,
+      topicId: topicIdStr,
+      deleted: deleted,
+      totalDeleted: totalDeleted,
+      message:
+        totalDeleted > 0
+          ? "Đã xóa dữ liệu học của topic"
+          : "Không có dữ liệu để xóa",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in clearTopicLearningData: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Backward-compatible alias.
+ */
+function resetTopicLearningData(topicId, userContext) {
+  return clearTopicLearningData(topicId, userContext);
 }
 
 /**
