@@ -26,6 +26,26 @@
   }
 
   /**
+   * Build auth context payload for backend calls.
+   * Backend still verifies this payload against Users sheet.
+   */
+  function getDashboardAuthContext() {
+    const user = window.currentUser || getUserData();
+    if (!user) return null;
+    return {
+      userId: user.userId || "",
+      email: user.email || "",
+      username: user.username || "",
+      role: user.role || "",
+    };
+  }
+
+  function hasReadyDashboardAuthContext() {
+    const auth = getDashboardAuthContext();
+    return !!(auth && auth.userId);
+  }
+
+  /**
    * Get/Save streak data from localStorage
    */
   function getStreakData() {
@@ -52,6 +72,7 @@
    */
   let dashboardAutoRefreshInterval = null;
   let dashboardInitialized = false;
+  let dashboardInitRetryCount = 0;
 
   function initDashboard() {
     // Guard: only init if dashboard is visible and user is logged in
@@ -60,6 +81,23 @@
       console.log("📊 Dashboard init skipped - not logged in");
       return;
     }
+
+    if (!hasReadyDashboardAuthContext()) {
+      if (dashboardInitRetryCount < 20) {
+        dashboardInitRetryCount++;
+        console.log(
+          "⏳ Dashboard waiting for user context before loading data...",
+        );
+        setTimeout(initDashboard, 150);
+      } else {
+        console.warn(
+          "⚠️ Dashboard init aborted: missing authenticated user context",
+        );
+      }
+      return;
+    }
+
+    dashboardInitRetryCount = 0;
 
     console.log("📊 Initializing Dashboard (Gamification)...");
     dashboardInitialized = true;
@@ -240,7 +278,7 @@
               .withFailureHandler(() => {
                 showErrorStates("Không thể tải dữ liệu");
               })
-              .getDashboardData();
+              .getDashboardData(getDashboardAuthContext());
           }, 3000);
         }
       })
@@ -262,10 +300,10 @@
             .withFailureHandler(() => {
               showErrorStates("Lỗi kết nối server");
             })
-            .getDashboardData();
+            .getDashboardData(getDashboardAuthContext());
         }, 3000);
       })
-      .getDashboardData();
+      .getDashboardData(getDashboardAuthContext());
   }
 
   /**
@@ -651,7 +689,7 @@
           showToast("Lỗi khi nhận XP", "error");
         }
       })
-      .completeQuestAndAwardXP(questId);
+      .completeQuestAndAwardXP(questId, getDashboardAuthContext());
   };
 
   /**
@@ -902,7 +940,7 @@
         console.error("Failed to load streak data:", error);
         updateStreakUI(getStreakData());
       })
-      .getUserStreakData();
+      .getUserStreakData(getDashboardAuthContext());
   }
 
   /**
@@ -979,7 +1017,7 @@
         if (typeof showToast === "function")
           showToast("Lỗi khi điểm danh", "error");
       })
-      .dailyCheckin();
+      .dailyCheckin(getDashboardAuthContext());
   };
 
   /**

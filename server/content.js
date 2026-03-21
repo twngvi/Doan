@@ -1101,6 +1101,70 @@ function getUserProgressSheetIdByEmail(email) {
 }
 
 /**
+ * Resolve authenticated user email for web-app calls.
+ * Priority:
+ * 1) Google session email (if available)
+ * 2) Client auth context validated against Users sheet (userId + email)
+ *
+ * @param {Object=} userContext - { userId, email }
+ * @returns {string} verified email or empty string
+ */
+function resolveAuthenticatedEmailFromContext(userContext) {
+  try {
+    const sessionEmail = Session.getActiveUser().getEmail();
+    if (sessionEmail && sessionEmail !== "anonymous") {
+      return String(sessionEmail).trim();
+    }
+
+    if (!userContext || !userContext.userId) {
+      return "";
+    }
+
+    const userId = String(userContext.userId || "").trim();
+    const contextEmail = String(userContext.email || "").trim();
+    if (!userId) return "";
+
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) return "";
+
+    const allData = usersSheet.getDataRange().getValues();
+    if (!allData || allData.length <= 1) return "";
+
+    const headers = allData[0];
+    const userIdCol = headers.indexOf("userId");
+    const emailCol = headers.indexOf("email");
+    const isActiveCol = headers.indexOf("isActive");
+    if (userIdCol < 0 || emailCol < 0) return "";
+
+    for (let i = 1; i < allData.length; i++) {
+      if (String(allData[i][userIdCol] || "").trim() !== userId) continue;
+
+      const matchedEmail = String(allData[i][emailCol] || "").trim();
+      const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
+      const isDisabled = isActive === false || isActive === "FALSE";
+      if (isDisabled) return "";
+
+      if (contextEmail && contextEmail !== matchedEmail) {
+        return "";
+      }
+
+      return matchedEmail;
+    }
+
+    return "";
+  } catch (error) {
+    Logger.log(
+      "Error resolving authenticated email from context: " + error.toString(),
+    );
+    return "";
+  }
+}
+
+/**
  * Get or create Quiz_Results sheet in user's personal sheet
  * @param {Spreadsheet} spreadsheet - User's spreadsheet
  * @returns {Sheet} - Quiz_Results sheet
@@ -1616,9 +1680,9 @@ function saveActivityLog(data) {
  * Get all dashboard data in a single API call
  * Returns: quickStats (XP, accuracy, badges, rank), activities, quests, skillProgress, leaderboard
  */
-function getDashboardData() {
+function getDashboardData(userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in" };
     }
@@ -1988,9 +2052,9 @@ function getDashboardData() {
  * @param {string} questId - The quest identifier
  * @returns {Object} - { success, xpAwarded, newTotalXP, message }
  */
-function completeQuestAndAwardXP(questId) {
+function completeQuestAndAwardXP(questId, userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Chưa đăng nhập" };
     }
