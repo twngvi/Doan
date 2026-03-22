@@ -6,6 +6,7 @@
 
   // State
   let onlineUsers = [];
+  let recentActivities = [];
   let currentFilter = 'all';
   let searchQuery = '';
   let refreshInterval = null;
@@ -45,13 +46,13 @@
     showLoading(true);
     
     try {
-      // Simulate API call - replace with actual API endpoint
-      // const response = await fetch('/api/admin/online-users');
-      // const data = await response.json();
-      // onlineUsers = data.users;
-      
-      // Demo data for testing
-      onlineUsers = generateDemoUsers();
+      const result = await callAppsScript('getAdminOnlineUsersData');
+      if (!result || !result.success) {
+        throw new Error((result && result.message) || 'Không thể tải dữ liệu online users');
+      }
+
+      onlineUsers = (result.data && result.data.users) ? result.data.users : [];
+      recentActivities = (result.data && result.data.activities) ? result.data.activities : [];
       
       updateStats();
       filterAndRenderUsers();
@@ -62,31 +63,6 @@
     } finally {
       showLoading(false);
     }
-  }
-
-  // Generate demo users for testing
-  function generateDemoUsers() {
-    const names = [
-      'Nguyễn Văn A', 'Trần Thị B', 'Lê Văn C', 'Phạm Thị D',
-      'Hoàng Văn E', 'Vũ Thị F', 'Đặng Văn G', 'Bùi Thị H',
-      'Đỗ Văn I', 'Ngô Thị K', 'Dương Văn L', 'Lý Thị M'
-    ];
-    
-    const activities = [
-      'Đang học bài', 'Đang làm quiz', 'Đang xem video',
-      'Đang đọc tài liệu', 'Đang ôn tập', 'Vừa đăng nhập'
-    ];
-    
-    return names.map((name, index) => ({
-      id: index + 1,
-      name: name,
-      email: `user${index + 1}@example.com`,
-      avatar: `https://api.dicebear.com/9.x/avataaars/svg?seed=${name}`,
-      status: Math.random() > 0.3 ? 'active' : 'idle',
-      activity: activities[Math.floor(Math.random() * activities.length)],
-      loginTime: new Date(Date.now() - Math.floor(Math.random() * 3600000)),
-      lastActivity: new Date(Date.now() - Math.floor(Math.random() * 600000))
-    }));
   }
 
   // Update statistics
@@ -217,17 +193,19 @@
   function renderActivityTimeline() {
     const timeline = document.getElementById('activityTimeline');
     if (!timeline) return;
-    
-    // Demo timeline data
-    const activities = [
-      { type: 'login', user: 'Nguyễn Văn A', time: new Date(Date.now() - 120000) },
-      { type: 'activity', user: 'Trần Thị B', action: 'hoàn thành bài quiz', time: new Date(Date.now() - 300000) },
-      { type: 'login', user: 'Lê Văn C', time: new Date(Date.now() - 600000) },
-      { type: 'logout', user: 'Phạm Thị D', time: new Date(Date.now() - 900000) },
-      { type: 'activity', user: 'Hoàng Văn E', action: 'bắt đầu học bài mới', time: new Date(Date.now() - 1200000) },
-    ];
-    
-    timeline.innerHTML = activities.map(act => {
+
+    if (!recentActivities || recentActivities.length === 0) {
+      timeline.innerHTML = `
+        <div class="timeline-item">
+          <div class="timeline-content">
+            <p class="timeline-text">Chưa có hoạt động gần đây</p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    timeline.innerHTML = recentActivities.map(act => {
       let iconHtml = '';
       let text = '';
       
@@ -266,6 +244,16 @@
           `;
           text = `<strong>${act.user}</strong> ${act.action}`;
           break;
+        default:
+          iconHtml = `
+            <div class="timeline-icon activity">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+              </svg>
+            </div>
+          `;
+          text = `<strong>${act.user}</strong> ${act.action || 'có hoạt động'}`;
+          break;
       }
       
       return `
@@ -278,6 +266,28 @@
         </div>
       `;
     }).join('');
+  }
+
+  function callAppsScript(functionName, ...args) {
+    return new Promise((resolve, reject) => {
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        reject(new Error('google.script.run chưa sẵn sàng'));
+        return;
+      }
+
+      let runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler((error) => {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
+
+      if (typeof runner[functionName] !== 'function') {
+        reject(new Error(`Không tìm thấy hàm server: ${functionName}`));
+        return;
+      }
+
+      runner[functionName](...args);
+    });
   }
 
   // Show/hide loading state
