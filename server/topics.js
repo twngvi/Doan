@@ -562,3 +562,68 @@ function getTopicStatistics(topicId) {
     };
   }
 }
+
+/**
+ * Lấy số lượt làm Mini Quiz hôm nay
+ * @param {string} topicId
+ */
+function getMiniQuizAttempts(topicId) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "User not authenticated" };
+    }
+    const today = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+    const key = `MQ_ATTEMPTS_${userEmail}_${topicId}_${today}`;
+    const props = PropertiesService.getUserProperties();
+    const attempts = parseInt(props.getProperty(key) || "0");
+    return {
+      success: true,
+      attempts: attempts,
+      maxAttempts: 3,
+      canPlay: attempts < 3
+    };
+  } catch(error) {
+    Logger.log("Error in getMiniQuizAttempts: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Ghi nhận 1 lượt làm Mini Quiz hôm nay
+ * @param {string} topicId
+ */
+function recordMiniQuizAttempt(topicId) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      return { success: false, message: "User not authenticated" };
+    }
+    const today = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+    const key = `MQ_ATTEMPTS_${userEmail}_${topicId}_${today}`;
+    const props = PropertiesService.getUserProperties();
+    let attempts = parseInt(props.getProperty(key) || "0");
+    
+    if (attempts >= 3) {
+      return { 
+        success: false, 
+        message: "Bạn đã hết 3 lượt chơi MiniQuiz cho bài học này hôm nay.", 
+        attempts: attempts, 
+        maxAttempts: 3 
+      };
+    }
+    
+    attempts++;
+    props.setProperty(key, attempts.toString());
+    
+    return { 
+      success: true, 
+      attempts: attempts, 
+      maxAttempts: 3, 
+      remaining: 3 - attempts 
+    };
+  } catch(error) {
+    Logger.log("Error in recordMiniQuizAttempt: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}

@@ -390,7 +390,7 @@ YÊU CẦU QUAN TRỌNG:
 - CHỈ dùng kiến thức trong tài liệu
 - KHÔNG tạo cặp mà question hoặc answer quá dài (khó đọc trên thẻ)`,
 
-  MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo CHÍNH XÁC 5 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học.
+  MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo CHÍNH XÁC 10 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học.
 
 === TÀI LIỆU ===
 {docContent}
@@ -411,7 +411,7 @@ Trả về CHÍNH XÁC format JSON sau:
 }
 
 YÊU CẦU QUAN TRỌNG:
-- Tạo CHÍNH XÁC 5 câu hỏi (không nhiều hơn, không ít hơn)
+- Tạo CHÍNH XÁC 10 câu hỏi (không nhiều hơn, không ít hơn)
 - Mỗi câu có 4 đáp án (options là mảng 4 chuỗi)
 - "correctAnswer" là index từ 0-3 (0 = đáp án đầu tiên đúng)
 - Câu hỏi phải tập trung vào KIẾN THỨC TRỌNG ĐIỂM, nội dung cốt lõi nhất

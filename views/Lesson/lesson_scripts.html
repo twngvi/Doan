@@ -1971,6 +1971,40 @@
    * Handler: Mini Quiz completed (all 5 questions answered)
    */
   function onMiniQuizCompleted() {
+    const resultEl = document.getElementById("mini-quiz-result");
+    const correctCount = document.querySelectorAll(
+      "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
+    ).length;
+    const totalCount = 10;
+    
+    // Ghi nhận lượt chơi vào hệ thống
+    google.script.run
+      .withSuccessHandler(function(res) {
+         console.log("Đã ghi nhận lượt chơi MiniQuiz", res);
+         // Nếu hết lượt, khoá lại 
+         if (res && res.success === false && !tabCompletion.lessonQuiz) {
+           showToast("Bạn đã hết lượt làm quiz hôm nay cho chủ đề này.", "error");
+         }
+      })
+      .recordMiniQuizAttempt(currentLessonData?.topicId);
+
+    // Kkông đạt 10/10 -> Thất bại
+    if (correctCount < totalCount && !tabCompletion.lessonQuiz) {
+      if (resultEl) {
+        resultEl.style.display = "block";
+        resultEl.innerHTML = `
+          <div class="mq-result-card" style="background:#fff5f5; border: 1px solid #fc8181;">
+            <div class="mq-result-icon">⚠️</div>
+            <div class="mq-result-title" style="color:#c53030;">Chưa Đạt Yêu Cầu</div>
+            <div class="mq-result-score" style="color:#e53e3e;">Bạn trả lời đúng ${correctCount}/${totalCount} câu</div>
+            <div class="mq-result-msg" style="color:#742a2a;">Bạn phải đúng toàn bộ 10/10 mới được tính tiến độ 25%. Mở lại quiz để thử lại (bạn sẽ bị trừ 1 lượt chơi).</div>
+          </div>
+        `;
+      }
+      return; // Stop here, progress not saved
+    }
+
+    // Đạt 10/10 -> Thành công
     tabCompletion.lessonQuiz = true;
     // ⭐ Save to localStorage immediately
     saveLocalProgress(currentLessonData?.topicId);
@@ -1983,24 +2017,19 @@
       badge.classList.add("completed");
     }
     // Show result section
-    const resultEl = document.getElementById("mini-quiz-result");
     if (resultEl) {
-      const correctCount = document.querySelectorAll(
-        "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
-      ).length;
-      const totalCount = 5;
       resultEl.style.display = "block";
       resultEl.innerHTML = `
         <div class="mq-result-card">
           <div class="mq-result-icon">🎉</div>
-          <div class="mq-result-title">Hoàn thành Mini Quiz!</div>
+          <div class="mq-result-title">Xuất Sắc! Hoàn thành Mini Quiz!</div>
           <div class="mq-result-score">Bạn trả lời đúng ${correctCount}/${totalCount} câu</div>
           <div class="mq-result-msg">Bài học đã được ghi nhận hoàn thành. Xem giải thích ở từng câu hỏi phía trên.</div>
         </div>
       `;
     }
     updateOverallProgress();
-    console.log("🎯 Mini Quiz completed!");
+    console.log("🎯 Mini Quiz completed successfully!");
 
     // ⭐ Save mini quiz completion to backend per topic per user
     if (currentLessonData?.topicId) {
@@ -2241,7 +2270,7 @@
     if (section) section.classList.remove("locked");
     if (toggle) toggle.disabled = false;
     if (icon) icon.textContent = "📝";
-    if (desc) desc.textContent = "Nhấn để mở Mini Quiz - 5 câu hỏi trọng điểm";
+    if (desc) desc.textContent = "Nhấn để mở Mini Quiz - 10 câu hỏi trắc nghiệm khách quan";
     if (badge && !tabCompletion.lessonQuiz) {
       badge.textContent = "Sẵn sàng";
       badge.classList.add("ready");
@@ -2301,7 +2330,7 @@
   function loadMiniQuiz(forceRegenerate) {
     if (!currentLessonData?.topicId) return;
 
-    console.log("🧠 Loading Mini Quiz...");
+    console.log("🧠 Checking Mini Quiz limits...");
 
     const loadingEl = document.getElementById("mini-quiz-loading");
     const errorEl = document.getElementById("mini-quiz-error");
@@ -2316,6 +2345,39 @@
     }
     if (resultEl) resultEl.style.display = "none";
 
+    google.script.run
+      .withSuccessHandler(function(limitRes) {
+        if (!limitRes || !limitRes.success) {
+           showMiniQuizError("Lỗi hệ thống khi kiểm tra lượt chơi: " + (limitRes?.message || "Unknown error"));
+           if (loadingEl) loadingEl.style.display = "none";
+           return;
+        }
+
+        // Lưu giới hạn hiện tại vào toàn cục để render HTML cập nhật
+        window.currentMiniQuizAttempts = limitRes.attempts || 0;
+        window.currentMiniQuizMaxAttempts = limitRes.maxAttempts || 3;
+
+        // Cho qua nếu user đã done bài này. Ngược lại xét lượt chơi
+        if (!limitRes.canPlay && !tabCompletion.lessonQuiz) {
+           showMiniQuizError(`Bạn đã dùng hết ${limitRes.attempts}/${limitRes.maxAttempts} lượt thử trong hôm nay. Chủ đề môn học này sẽ tạm khoá bài kiểm tra. Vui lòng quay lại vào ngày mai!`);
+           if (loadingEl) loadingEl.style.display = "none";
+           return;
+        }
+
+        // Lượt hợp lệ, tiến hành load AI Quiz
+        fetchMiniQuizContent(forceRegenerate);
+      })
+      .withFailureHandler(function(error) {
+        showMiniQuizError(error?.message || "Lỗi mạng khi truy vấn lượt");
+        if (loadingEl) loadingEl.style.display = "none";
+      })
+      .getMiniQuizAttempts(currentLessonData.topicId);
+  }
+
+  function fetchMiniQuizContent(forceRegenerate) {
+    const loadingEl = document.getElementById("mini-quiz-loading");
+    const questionsEl = document.getElementById("mini-quiz-questions");
+    
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("✅ Mini Quiz response:", response);
@@ -2374,23 +2436,31 @@
   function renderMiniQuizQuestions(questions) {
     const container = document.getElementById("mini-quiz-questions");
     if (!container) return;
+    
+    // Default remaining text
+    let remainingText = "";
+    if (!tabCompletion.lessonQuiz) {
+       remainingText = `(Hôm nay còn ${3 - (window.currentMiniQuizAttempts || 0)}/3 lượt chơi)`;
+    } else {
+       remainingText = `(Bạn đã thi vượt qua bài này)`;
+    }
 
     container.innerHTML = `
       <div class="mq-header-info">
         <div class="mq-header-icon">🧠</div>
         <div>
           <div class="mq-header-title">Mini Quiz - Kiểm tra kiến thức</div>
-          <div class="mq-header-subtitle">Trả lời hết 5 câu để hoàn thành bài học. Mỗi câu đều có giải thích!</div>
+          <div class="mq-header-subtitle">Trả lời ĐÚNG TOÀN BỘ 10/10 câu để hoàn thành bài học. ${remainingText}</div>
         </div>
       </div>
       <div class="mq-progress-bar">
         <div class="mq-progress-fill" id="mq-progress-fill" style="width: 0%"></div>
       </div>
-      <div class="mq-progress-text" id="mq-progress-text">0/5 câu đã trả lời</div>
+      <div class="mq-progress-text" id="mq-progress-text">0/10 câu đã trả lời</div>
     `;
 
     questions.forEach(function (q, idx) {
-      if (idx >= 5) return; // Only show 5 questions
+      if (idx >= 10) return; // Only show 10 questions
 
       var qEl = document.createElement("div");
       qEl.className = "mq-question";
@@ -2422,7 +2492,7 @@
       qEl.innerHTML =
         '<div class="mq-question-number">Câu ' +
         (idx + 1) +
-        "/5</div>" +
+        "/10</div>" +
         '<p class="mq-question-text">' +
         (q.question || "") +
         "</p>" +
@@ -2492,13 +2562,13 @@
     miniQuizAnswered++;
     var progressFill = document.getElementById("mq-progress-fill");
     var progressText = document.getElementById("mq-progress-text");
-    var pct = Math.round((miniQuizAnswered / 5) * 100);
+    var pct = Math.round((miniQuizAnswered / 10) * 100);
     if (progressFill) progressFill.style.width = pct + "%";
     if (progressText)
-      progressText.textContent = miniQuizAnswered + "/5 câu đã trả lời";
+      progressText.textContent = miniQuizAnswered + "/10 câu đã trả lời";
 
-    // Check if all 5 answered
-    if (miniQuizAnswered >= 5) {
+    // Check if all 10 answered
+    if (miniQuizAnswered >= 10) {
       setTimeout(function () {
         onMiniQuizCompleted();
       }, 500);

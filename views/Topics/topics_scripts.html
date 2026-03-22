@@ -924,8 +924,23 @@
     // HELPER FUNCTIONS
     // ========================================
     function checkTopicUnlocked(topic) {
-      // TODO: Implement actual unlock logic based on user's AI level and accuracy
-      // For now, return true to allow all topics
+      if (!allTopics || allTopics.length === 0) return true;
+      
+      // Tìm index của topic hiện tại trong danh sách
+      const index = allTopics.findIndex(t => t.topicId === topic.topicId);
+      
+      // Topic đầu tiên (index 0) luôn được mở
+      if (index <= 0) return true; 
+      
+      // Kiểm tra progress của topic ngay phía trước
+      const prevTopic = allTopics[index - 1];
+      const prevProgress = userProgress[prevTopic.topicId];
+      
+      // Phải hoàn thành 100% topic trước đó mới được mở topic này
+      if (!prevProgress || !prevProgress.completed) {
+        return false;
+      }
+      
       return true;
     }
 
