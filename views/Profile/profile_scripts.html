@@ -737,6 +737,11 @@
       return;
     }
 
+    if ((profileData?.displayName || "").trim() === newDisplayName) {
+      showToast("Tên hiển thị không thay đổi", "info");
+      return;
+    }
+
     // Kiểm tra user
     if (!profileData || !profileData.userId) {
       showToast("Không tìm thấy thông tin người dùng", "error");
@@ -745,33 +750,53 @@
 
     // Hiển thị loading
     const submitBtn = e.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = "<span>⏳</span><span>Đang lưu...</span>";
+    const originalText = submitBtn ? submitBtn.innerHTML : "";
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>⏳</span><span>Đang lưu...</span>";
+    }
 
     // Gọi backend để cập nhật
     google.script.run
       .withSuccessHandler(function (response) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = originalText;
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalText;
+        }
 
         if (response.success) {
           console.log("✅ Profile updated:", response);
 
-          // Cập nhật profileData và currentUser
-          profileData.displayName = newDisplayName;
-          currentUser.displayName = newDisplayName;
-          window.currentUser.displayName = newDisplayName;
+          const updatedUser = (response && response.user) || {
+            ...(window.currentUser || profileData || {}),
+            displayName: newDisplayName,
+          };
+
+          // Cập nhật dữ liệu local state
+          profileData = { ...(profileData || {}), ...updatedUser };
+          window.currentUser = {
+            ...(window.currentUser || {}),
+            ...updatedUser,
+          };
+          if (typeof currentUser !== "undefined") {
+            currentUser = window.currentUser;
+          }
 
           // Cập nhật sessionStorage và localStorage
-          sessionStorage.setItem("currentUser", JSON.stringify(currentUser));
-          localStorage.setItem("currentUser", JSON.stringify(currentUser));
+          sessionStorage.setItem(
+            "currentUser",
+            JSON.stringify(window.currentUser),
+          );
+          localStorage.setItem(
+            "currentUser",
+            JSON.stringify(window.currentUser),
+          );
 
           // Cập nhật UI
-          updateProfileHeader(currentUser);
+          updateProfileHeader(window.currentUser);
 
           // Cập nhật tất cả nơi hiển thị tên (dashboard, sidebar, etc.)
-          updateAllUserNames(newDisplayName);
+          updateAllUserNames(window.currentUser.displayName || newDisplayName);
 
           showToast("Cập nhật thông tin thành công!", "success");
         } else {
@@ -780,12 +805,17 @@
         }
       })
       .withFailureHandler(function (error) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = originalText;
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalText;
+        }
         console.error("❌ Error:", error);
-        showToast("Lỗi kết nối server", "error");
+        showToast(
+          "Lỗi kết nối server: " + (error?.message || "Unknown"),
+          "error",
+        );
       })
-      .updateUserProfile({
+      .updateProfile({
         userId: profileData.userId,
         displayName: newDisplayName,
       });
