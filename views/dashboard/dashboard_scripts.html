@@ -74,6 +74,47 @@
   let dashboardInitialized = false;
   let dashboardInitRetryCount = 0;
   let dashboardHasLoadedOnce = false;
+  let dashboardLastBackgroundRefreshAt = 0;
+  let dashboardPendingRefreshAfterLoad = null;
+
+  const DASHBOARD_REFRESH_MIN_GAP_MS = 4000;
+
+  function requestDashboardRefresh(options = {}) {
+    const opts =
+      options && typeof options === "object"
+        ? options
+        : { forceRefresh: !!options };
+
+    const forceRefresh = !!opts.forceRefresh;
+    const backgroundRefresh = !!opts.backgroundRefresh;
+    const source = opts.source || "unknown";
+    const minGapMs =
+      typeof opts.minGapMs === "number"
+        ? Math.max(0, opts.minGapMs)
+        : DASHBOARD_REFRESH_MIN_GAP_MS;
+
+    if (!isDashboardVisible()) return;
+
+    const now = Date.now();
+    if (
+      backgroundRefresh &&
+      now - dashboardLastBackgroundRefreshAt < minGapMs
+    ) {
+      console.log("⏭️ Dashboard refresh throttled:", source);
+      return;
+    }
+
+    if (backgroundRefresh) {
+      dashboardLastBackgroundRefreshAt = now;
+    }
+
+    loadAllDashboardData({
+      ...opts,
+      forceRefresh,
+      backgroundRefresh,
+      source,
+    });
+  }
 
   function initDashboard() {
     // Guard: only init if dashboard is visible and user is logged in
@@ -115,6 +156,7 @@
     loadAllDashboardData({
       forceRefresh: false,
       backgroundRefresh: false,
+      source: "initial-load",
     });
 
     // Auto-refresh Lịch sử Thực chiến mỗi 30 giây
@@ -134,9 +176,11 @@
         console.log(
           "🔄 Auto-refreshing dashboard data (history + leaderboard)...",
         );
-        loadAllDashboardData({
+        requestDashboardRefresh({
           forceRefresh: true,
           backgroundRefresh: true,
+          source: "auto-refresh",
+          minGapMs: 10000,
         });
       }
     }, 30000); // 30 giây
@@ -172,9 +216,11 @@
     console.log(
       "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)...",
     );
-    loadAllDashboardData({
+    requestDashboardRefresh({
       forceRefresh: true,
       backgroundRefresh: true,
+      source: "route-return",
+      minGapMs: 3000,
     });
     startDashboardAutoRefresh();
   };
@@ -241,7 +287,22 @@
   function loadAllDashboardData(options) {
     // Prevent overlapping API calls from multiple triggers
     if (_dashboardIsLoading) {
-      console.log("📋 Dashboard load already in progress, skipping duplicate call");
+      const pendingOpts =
+        options && typeof options === "object"
+          ? { ...options }
+          : { forceRefresh: !!options };
+      dashboardPendingRefreshAfterLoad = {
+        forceRefresh: !!pendingOpts.forceRefresh,
+        backgroundRefresh: !!pendingOpts.backgroundRefresh,
+        source: pendingOpts.source || "queued-refresh",
+        minGapMs:
+          typeof pendingOpts.minGapMs === "number"
+            ? pendingOpts.minGapMs
+            : DASHBOARD_REFRESH_MIN_GAP_MS,
+      };
+      console.log(
+        "📋 Dashboard load already in progress, queued trailing refresh",
+      );
       return;
     }
 
@@ -256,6 +317,17 @@
     const backgroundRefresh = !!opts.backgroundRefresh;
     const initialLoad = !dashboardHasLoadedOnce && !DashboardCache.data;
 
+    const finishLoad = () => {
+      _dashboardIsLoading = false;
+      if (dashboardPendingRefreshAfterLoad) {
+        const nextRefresh = dashboardPendingRefreshAfterLoad;
+        dashboardPendingRefreshAfterLoad = null;
+        setTimeout(() => {
+          requestDashboardRefresh(nextRefresh);
+        }, 100);
+      }
+    };
+
     const now = Date.now();
     if (
       !forceRefresh &&
@@ -266,7 +338,7 @@
       console.log("📦 Using cached dashboard data");
       renderAllZones(DashboardCache.data);
       dashboardHasLoadedOnce = true;
-      _dashboardIsLoading = false;
+      finishLoad();
       return;
     }
 
@@ -277,7 +349,7 @@
     }
 
     const handleLoadError = (message) => {
-      _dashboardIsLoading = false;
+      finishLoad();
       if (initialLoad) {
         showErrorStates(message);
       } else {
@@ -297,7 +369,7 @@
           DashboardCache.lastFetch = Date.now();
           renderAllZones(response);
           dashboardHasLoadedOnce = true;
-          _dashboardIsLoading = false;
+          finishLoad();
         } else {
           console.warn(
             "Dashboard data returned success:false, retrying in 3s...",
@@ -311,7 +383,7 @@
                   DashboardCache.lastFetch = Date.now();
                   renderAllZones(retryResponse);
                   dashboardHasLoadedOnce = true;
-                  _dashboardIsLoading = false;
+                  finishLoad();
                 } else {
                   handleLoadError("Không thể tải dữ liệu");
                 }
@@ -335,7 +407,7 @@
                 DashboardCache.lastFetch = Date.now();
                 renderAllZones(retryResponse);
                 dashboardHasLoadedOnce = true;
-                _dashboardIsLoading = false;
+                finishLoad();
               } else {
                 handleLoadError("Lỗi kết nối server");
               }
@@ -699,9 +771,11 @@
           // Check if bonus quest is now claimable (refresh quests + leaderboard)
           // Always refresh to update leaderboard with new XP
           setTimeout(() => {
-            loadAllDashboardData({
+            requestDashboardRefresh({
               forceRefresh: true,
               backgroundRefresh: true,
+              source: "quest-claim",
+              minGapMs: 1500,
             });
           }, 1500);
         } else {
@@ -1029,9 +1103,11 @@
 
           // Refresh quests to show check-in quest as done
           setTimeout(() => {
-            loadAllDashboardData({
+            requestDashboardRefresh({
               forceRefresh: true,
               backgroundRefresh: true,
+              source: "daily-checkin",
+              minGapMs: 1500,
             });
           }, 1000);
         } else {
@@ -1137,9 +1213,11 @@
       // Force refresh dashboard (leaderboard + history) when tab becomes visible
       if (isDashboardVisible()) {
         console.log("🔄 Tab visible — refreshing leaderboard + history...");
-        loadAllDashboardData({
+        requestDashboardRefresh({
           forceRefresh: true,
           backgroundRefresh: true,
+          source: "tab-visible",
+          minGapMs: 6000,
         });
       }
     }
@@ -1150,9 +1228,11 @@
     if (!dashboardInitialized) return;
     console.log("🔄 Dashboard refresh triggered by activity event");
     if (isDashboardVisible()) {
-      loadAllDashboardData({
+      requestDashboardRefresh({
         forceRefresh: true,
         backgroundRefresh: true,
+        source: "activity-event",
+        minGapMs: 2500,
       });
     }
   });

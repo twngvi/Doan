@@ -33,16 +33,22 @@
   }
 
   function isSessionLoggedIn() {
-    return localStorage.getItem("isLoggedIn") === "true" && !!getHeartbeatUser();
+    return (
+      localStorage.getItem("isLoggedIn") === "true" && !!getHeartbeatUser()
+    );
   }
 
   function sendUserHeartbeat(reason = "interval") {
     const user = getHeartbeatUser();
     if (!user || !isSessionLoggedIn()) return;
-    if (typeof google === "undefined" || !google.script || !google.script.run) return;
+    if (typeof google === "undefined" || !google.script || !google.script.run)
+      return;
 
     const now = Date.now();
-    if (reason === "activity" && now - lastHeartbeatAt < HEARTBEAT_ACTIVITY_THROTTLE_MS) {
+    if (
+      reason === "activity" &&
+      now - lastHeartbeatAt < HEARTBEAT_ACTIVITY_THROTTLE_MS
+    ) {
       return;
     }
 
@@ -70,7 +76,13 @@
     window.addEventListener("focus", () => sendUserHeartbeat("focus"));
     window.addEventListener("online", () => sendUserHeartbeat("online"));
 
-    const passiveEvents = ["click", "keydown", "mousemove", "touchstart", "scroll"];
+    const passiveEvents = [
+      "click",
+      "keydown",
+      "mousemove",
+      "touchstart",
+      "scroll",
+    ];
     passiveEvents.forEach((eventName) => {
       window.addEventListener(eventName, () => sendUserHeartbeat("activity"), {
         passive: true,
@@ -211,9 +223,16 @@
 
     // ⭐ Tách riêng trang cho từng role
     const adminOnlyPages = ["admin"]; // Chỉ admin được vào
-    const userOnlyPages = ["dashboard", "topics", "mcq", "lesson", "matching", "profile"]; // Chỉ user được vào
+    const userOnlyPages = [
+      "dashboard",
+      "topics",
+      "mcq",
+      "lesson",
+      "matching",
+      "profile",
+    ]; // Chỉ user được vào
     const protectedPages = [...adminOnlyPages, ...userOnlyPages]; // Tất cả trang cần login
-    
+
     const authPages = [
       "login",
       "register",
@@ -241,15 +260,16 @@
       // Nếu không có trang yêu cầu, nhưng đã login -> kiểm tra role
       if (window.currentUser) {
         // ⭐ Admin vào trang admin, User vào dashboard
-        finalPageName = (window.currentUser.role === 'ADMIN') ? 'admin' : 'dashboard';
+        finalPageName =
+          window.currentUser.role === "ADMIN" ? "admin" : "dashboard";
       }
     }
 
     // BƯỚC 3: Kiểm tra quyền truy cập (Auth Guard)
     const isProtected = protectedPages.includes(finalPageName);
     const isAuthPage = authPages.includes(finalPageName);
-    const userRole = window.currentUser?.role || '';
-    const isAdmin = userRole === 'ADMIN';
+    const userRole = window.currentUser?.role || "";
+    const isAdmin = userRole === "ADMIN";
 
     // ⭐ ROLE-BASED ACCESS CONTROL
     if (isProtected) {
@@ -257,11 +277,13 @@
         // Đã login - kiểm tra quyền theo role
         const isAdminPage = adminOnlyPages.includes(finalPageName);
         const isUserPage = userOnlyPages.includes(finalPageName);
-        
+
         if (isAdmin) {
           // ADMIN chỉ được vào trang admin
           if (isUserPage) {
-            console.warn("🛡️ Admin không được vào trang user. Redirect về admin.");
+            console.warn(
+              "🛡️ Admin không được vào trang user. Redirect về admin.",
+            );
             targetPageId = "page-admin";
             finalPageName = "admin";
           } else {
@@ -271,7 +293,9 @@
         } else {
           // USER chỉ được vào trang user
           if (isAdminPage) {
-            console.warn("🚫 User không được vào trang admin. Redirect về dashboard.");
+            console.warn(
+              "🚫 User không được vào trang admin. Redirect về dashboard.",
+            );
             targetPageId = "page-dashboard";
             finalPageName = "dashboard";
           } else {
@@ -288,7 +312,7 @@
     } else if (isAuthPage) {
       if (window.currentUser && finalPageName !== "verify-email") {
         // ⭐ Đã login mà vào Login/Register/Landing -> Redirect theo role
-        const defaultPage = isAdmin ? 'admin' : 'dashboard';
+        const defaultPage = isAdmin ? "admin" : "dashboard";
         console.log("ℹ User already logged in. Redirecting to:", defaultPage);
         targetPageId = pageMap[defaultPage];
         finalPageName = defaultPage;
@@ -353,10 +377,17 @@
 
     // ⭐ ROLE-BASED ACCESS CONTROL
     const adminOnlyPageIds = ["page-admin"];
-    const userOnlyPageIds = ["page-dashboard", "page-topics", "page-mcq", "page-lesson", "page-matching", "page-profile"];
-    const userRole = window.currentUser?.role || '';
-    const isAdmin = userRole === 'ADMIN';
-    
+    const userOnlyPageIds = [
+      "page-dashboard",
+      "page-topics",
+      "page-mcq",
+      "page-lesson",
+      "page-matching",
+      "page-profile",
+    ];
+    const userRole = window.currentUser?.role || "";
+    const isAdmin = userRole === "ADMIN";
+
     // Kiểm tra quyền truy cập
     if (window.currentUser) {
       if (isAdmin && userOnlyPageIds.includes(pageId)) {
@@ -598,8 +629,6 @@
     handleGoogleLogin();
   }
 
-
-
   /**
    * Handle register form submission - NEW VERSION
    */
@@ -707,10 +736,17 @@
 
     // ⭐ RATE LIMITING: Chống brute force
     var now = Date.now();
-    _loginAttempts = _loginAttempts.filter(function(t) { return now - t < LOGIN_WINDOW_MS; });
+    _loginAttempts = _loginAttempts.filter(function (t) {
+      return now - t < LOGIN_WINDOW_MS;
+    });
     if (_loginAttempts.length >= LOGIN_MAX_ATTEMPTS) {
-      var waitSeconds = Math.ceil((LOGIN_WINDOW_MS - (now - _loginAttempts[0])) / 1000);
-      showToast("Quá nhiều lần thử. Vui lòng đợi " + waitSeconds + " giây.", "error");
+      var waitSeconds = Math.ceil(
+        (LOGIN_WINDOW_MS - (now - _loginAttempts[0])) / 1000,
+      );
+      showToast(
+        "Quá nhiều lần thử. Vui lòng đợi " + waitSeconds + " giây.",
+        "error",
+      );
       return false;
     }
     _loginAttempts.push(now);
@@ -768,7 +804,7 @@
 
           // ⭐ Redirect dựa vào role
           setTimeout(() => {
-            if (response.user.role === 'ADMIN') {
+            if (response.user.role === "ADMIN") {
               console.log("🛡️ Admin detected, redirecting to admin panel...");
               showPage("page-admin");
             } else {
@@ -1317,28 +1353,113 @@
    */
   let _loadingCount = 0;
   let _loadingReason = null;
+  let _loadingHideTimer = null;
+  let _loadingVisibleSince = 0;
+  let _loadingLastShowAt = 0;
+
+  const LOADING_REOPEN_COOLDOWN_MS = 900;
+  const LOADING_MIN_VISIBLE_MS = 220;
+
+  function isDashboardPageActive() {
+    const lastActivePage = localStorage.getItem("lastActivePage");
+    if (lastActivePage === "dashboard") return true;
+
+    const dashboardPage = document.getElementById("page-dashboard");
+    if (!dashboardPage) return false;
+    return dashboardPage.style.display === "block";
+  }
+
+  function shouldSuppressGlobalOverlay(reason, forceBlocking) {
+    if (forceBlocking) return false;
+
+    if (reason === "background") {
+      return true;
+    }
+
+    // While user is on dashboard, do not show full-screen overlay for
+    // implicit/background actions. Allow only explicit blocking reasons.
+    if (isDashboardPageActive()) {
+      const allowedDashboardReasons = new Set([
+        "initial-load",
+        "route-change",
+        "page-transition",
+        "blocking",
+      ]);
+      return !allowedDashboardReasons.has(reason || "");
+    }
+
+    return false;
+  }
 
   /**
    * Show/hide loading overlay
    * @param {boolean} show - true to show, false to hide
-   * @param {string} [reason] - optional reason; pass "background" to silently skip
+   * @param {string|object} [reasonOrOptions] - optional reason/options
    */
-  function showLoading(show, reason) {
+  function showLoading(show, reasonOrOptions) {
     const overlay = document.getElementById("loading-overlay");
     if (!overlay) return;
 
+    const options =
+      reasonOrOptions && typeof reasonOrOptions === "object"
+        ? reasonOrOptions
+        : { reason: reasonOrOptions };
+    const reason = options.reason || "";
+    const forceBlocking = !!options.forceBlocking;
+
     if (show) {
-      // Background refresh MUST NOT show the global overlay
-      if (reason === "background") return;
+      if (shouldSuppressGlobalOverlay(reason, forceBlocking)) {
+        return;
+      }
+
+      const now = Date.now();
+
+      if (
+        !forceBlocking &&
+        now - _loadingLastShowAt < LOADING_REOPEN_COOLDOWN_MS
+      ) {
+        return;
+      }
+
+      if (_loadingHideTimer) {
+        clearTimeout(_loadingHideTimer);
+        _loadingHideTimer = null;
+      }
 
       _loadingCount++;
       _loadingReason = reason || "unknown";
-      overlay.style.display = "flex";
+      _loadingVisibleSince = now;
+      _loadingLastShowAt = now;
+
+      if (overlay.style.display !== "flex") {
+        overlay.style.display = "flex";
+      }
     } else {
       _loadingCount = Math.max(0, _loadingCount - 1);
       if (_loadingCount === 0) {
-        overlay.style.display = "none";
-        _loadingReason = null;
+        const elapsed = Date.now() - _loadingVisibleSince;
+        const remainingVisibleMs = Math.max(
+          0,
+          LOADING_MIN_VISIBLE_MS - elapsed,
+        );
+
+        if (_loadingHideTimer) {
+          clearTimeout(_loadingHideTimer);
+          _loadingHideTimer = null;
+        }
+
+        if (remainingVisibleMs > 0) {
+          _loadingHideTimer = setTimeout(() => {
+            if (_loadingCount === 0) {
+              overlay.style.display = "none";
+              _loadingReason = null;
+            }
+            _loadingHideTimer = null;
+          }, remainingVisibleMs);
+        } else {
+          overlay.style.display = "none";
+          _loadingReason = null;
+        }
       }
     }
   }
@@ -1347,6 +1468,10 @@
    * Force-hide loading overlay — resets counter completely
    */
   function hideLoading() {
+    if (_loadingHideTimer) {
+      clearTimeout(_loadingHideTimer);
+      _loadingHideTimer = null;
+    }
     _loadingCount = 0;
     _loadingReason = null;
     const overlay = document.getElementById("loading-overlay");
