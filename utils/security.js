@@ -5,13 +5,19 @@
  */
 
 /**
- * Hash password using SHA-256
+ * Hash password using SHA-256 with salt
+ * ⭐ Security: Thêm salt để chống rainbow table attack
  */
+var PASSWORD_SALT = "O.Uiz_2024_s3cur1ty_s@lt";
+
 function hashPassword(password) {
   try {
+    // ⭐ Thêm salt trước khi hash
+    var saltedPassword = PASSWORD_SALT + password;
+    
     const hash = Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256,
-      password,
+      saltedPassword,
       Utilities.Charset.UTF_8
     );
 
@@ -23,7 +29,8 @@ function hashPassword(password) {
       .join("");
   } catch (error) {
     Logger.log("Error hashing password: " + error.toString());
-    return password;
+    // ⭐ KHÔNG trả về plain password - throw error thay vì leak password
+    throw new Error("Password hashing failed: " + error.toString());
   }
 }
 

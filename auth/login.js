@@ -1,7 +1,7 @@
 /**
  * login.js - User Login Functions
  *
- * Chứa các hàm đăng nhập và session management
+ * Chứa các hàm đăng nhập và session management 1234
  */
 
 /**

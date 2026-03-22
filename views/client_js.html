@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   /**
    * client_js.html - Client-Side JavaScript
    *
@@ -598,73 +598,7 @@
     handleGoogleLogin();
   }
 
-  /**
-   * Handle login form submission
-   */
-  function handleLoginFormSubmit() {
-    console.log("Login form submitted");
 
-    // Get form data
-    const username = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
-
-    // Validation
-    if (!username || !password) {
-      showToast("Vui lòng nhập đầy đủ thông tin", "error");
-      return false;
-    }
-
-    // Prepare payload
-    const payload = {
-      username: username,
-      password: password,
-    };
-
-    // Show loading
-    showLoading(true);
-    disableButton("btn-login");
-
-    // Call backend function
-    google.script.run
-      .withSuccessHandler(onLoginSuccess)
-      .withFailureHandler(onApiError)
-      .loginUser(payload);
-
-    return false;
-  }
-
-  /**
-   * Handle successful login
-   */
-  function onLoginSuccess(response) {
-    console.log("Login response:", JSON.stringify(response));
-    console.log("Response status:", response.status);
-    console.log("Response message:", response.message);
-    hideLoading();
-    enableButton("btn-login");
-
-    if (response.status === "success") {
-      // Save user to localStorage (auto logout when closing tab)
-      currentUser = response.user;
-      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
-      localStorage.setItem("isLoggedIn", "true");
-      startUserHeartbeat();
-      applyThemeFromAuthenticatedUser(response.user);
-      console.log("âœ… Current user synced to window:", currentUser);
-
-      // Show success message
-      showToast("Đăng nhập thành công!", "success");
-
-      // Navigate to dashboard
-      setTimeout(() => {
-        showPage("page-dashboard");
-        loadDashboardData();
-      }, 500);
-    } else {
-      showToast(response.message || "Đăng nhập thất bại", "error");
-    }
-  }
 
   /**
    * Handle register form submission - NEW VERSION
@@ -740,7 +674,6 @@
               showPage("page-verify-email");
             }, 1500);
           } else {
-            // Náº¿u khÃ´ng cáº§n xÃ¡c thá»±c thÃ¬ má»›i vá» Login
             setTimeout(() => {
               showPage("page-login");
             }, 3000);
@@ -760,13 +693,29 @@
     return false;
   }
 
+  // ==================== Login Rate Limiting ====================
+  var _loginAttempts = [];
+  var LOGIN_MAX_ATTEMPTS = 5;
+  var LOGIN_WINDOW_MS = 5 * 60 * 1000; // 5 phút
+
   /**
-   * Handle login form submission - NEW VERSION
+   * Handle login form submission
+   * ⭐ Unified version with rate limiting
    */
   function handleLoginFormSubmit() {
-    console.log("ðŸ” Login form submitted");
+    console.log("🔑 Login form submitted");
 
-    // Get form data
+    // ⭐ RATE LIMITING: Chống brute force
+    var now = Date.now();
+    _loginAttempts = _loginAttempts.filter(function(t) { return now - t < LOGIN_WINDOW_MS; });
+    if (_loginAttempts.length >= LOGIN_MAX_ATTEMPTS) {
+      var waitSeconds = Math.ceil((LOGIN_WINDOW_MS - (now - _loginAttempts[0])) / 1000);
+      showToast("Quá nhiều lần thử. Vui lòng đợi " + waitSeconds + " giây.", "error");
+      return false;
+    }
+    _loginAttempts.push(now);
+
+    // Get form data - hỗ trợ cả login-email và login-username
     const email = document.getElementById("login-email")
       ? document.getElementById("login-email").value.trim()
       : document.getElementById("login-username").value.trim();
@@ -786,15 +735,20 @@
 
     // Show loading
     showLoading(true);
+    disableButton("btn-login");
 
     // Call backend function
     google.script.run
       .withSuccessHandler(function (response) {
         hideLoading();
-        console.log("âœ… Login Response:", response);
+        enableButton("btn-login");
+        console.log("✅ Login Response:", response);
 
         if (response.success) {
-          // â­ LÆ¯U SESSION Äáº¦Y Äá»¦
+          // ⭐ Reset login attempts khi thành công
+          _loginAttempts = [];
+
+          // ⭐ LƯU SESSION ĐẦY ĐỦ
           currentUser = response.user;
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
@@ -1287,11 +1241,12 @@
       }
 
       // Navigate to dashboard
+      // showPage("page-dashboard") already calls refreshDashboardOnReturn()
+      // which handles all data loading — no need for a separate loadDashboardData()
       console.log("Navigating to dashboard...");
       setTimeout(() => {
         console.log("Showing dashboard page");
         showPage("page-dashboard");
-        loadDashboardData();
       }, 500);
     } else {
       console.error("Login failed with status:", response.status);
@@ -1356,20 +1311,46 @@
   // ==================== UI Utilities ====================
 
   /**
-   * Show loading overlay
+   * Loading overlay state — anti-duplication guard
+   * Prevents multiple triggers from stacking overlays.
+   * Background refreshes are silently ignored.
    */
-  function showLoading(show) {
+  let _loadingCount = 0;
+  let _loadingReason = null;
+
+  /**
+   * Show/hide loading overlay
+   * @param {boolean} show - true to show, false to hide
+   * @param {string} [reason] - optional reason; pass "background" to silently skip
+   */
+  function showLoading(show, reason) {
     const overlay = document.getElementById("loading-overlay");
-    if (overlay) {
-      overlay.style.display = show ? "flex" : "none";
+    if (!overlay) return;
+
+    if (show) {
+      // Background refresh MUST NOT show the global overlay
+      if (reason === "background") return;
+
+      _loadingCount++;
+      _loadingReason = reason || "unknown";
+      overlay.style.display = "flex";
+    } else {
+      _loadingCount = Math.max(0, _loadingCount - 1);
+      if (_loadingCount === 0) {
+        overlay.style.display = "none";
+        _loadingReason = null;
+      }
     }
   }
 
   /**
-   * Hide loading overlay
+   * Force-hide loading overlay — resets counter completely
    */
   function hideLoading() {
-    showLoading(false);
+    _loadingCount = 0;
+    _loadingReason = null;
+    const overlay = document.getElementById("loading-overlay");
+    if (overlay) overlay.style.display = "none";
   }
 
   /**
@@ -1396,41 +1377,8 @@
     alert(helpText);
   }
 
-  /**
-   * Show toast notification
-   * @param {string} message - Message to display
-   * @param {string} type - Type: success, error, info, warning
-   */
-  function showToast(message, type = "info") {
-    const toast = document.getElementById("toast");
-    const toastMessage = document.getElementById("toast-message");
-
-    if (!toast || !toastMessage) return;
-
-    // Set message
-    toastMessage.textContent = message;
-
-    // Remove all type classes
-    toast.classList.remove(
-      "toast-success",
-      "toast-error",
-      "toast-info",
-      "toast-warning",
-    );
-
-    // Add type class
-    toast.classList.add("toast-" + type);
-
-    // Show toast
-    toast.classList.remove("translate-x-full");
-    toast.classList.add("translate-x-0");
-
-    // Hide after 3 seconds
-    setTimeout(() => {
-      toast.classList.remove("translate-x-0");
-      toast.classList.add("translate-x-full");
-    }, 3000);
-  }
+  // ⭐ OLD showToast đã được gộp vào phiên bản bên dưới (Toast Notification System)
+  // Đã xóa duplicate để tránh conflict
 
   /**
    * Show resend verification option
@@ -1990,22 +1938,8 @@
     }
   });
 
-  // ==================== Dashboard Data Loading ====================
-
-  function loadDashboardData() {
-    console.log("Loading dashboard data...");
-
-    const savedUser = localStorage.getItem("currentUser");
-    if (savedUser) {
-      try {
-        currentUser = JSON.parse(savedUser);
-        console.log("Current user:", currentUser);
-        updateDashboardUserName();
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-      }
-    }
-  }
+  // ⭐ loadDashboardData đã được gộp vào phiên bản duy nhất ở trên (Dashboard section)
+  // Đã xóa duplicate để tránh conflict
 
   function updateDashboardUserName() {
     if (!currentUser) return;
