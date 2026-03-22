@@ -348,7 +348,7 @@ YÊU CẦU:
 - Ngôn ngữ thân thiện, dễ tiếp cận`,
 
   /**
-   * Tạo Mini Quiz - 5 câu hỏi trọng điểm từ bài học
+   * Tạo Mini Quiz - 10 câu hỏi trọng điểm từ bài học
    */
   /**
    * Tạo Matching Pairs - Ghép cặp thuật ngữ/định nghĩa
