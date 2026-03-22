@@ -29,55 +29,62 @@
     /**
      * ⭐ Merge localStorage lesson progress into progress map
      * Reads lesson_progress_<topicId> keys written by Lesson page
-     * Ensures Topics page always shows latest progress even if server is stale
+     * Options:
+     * - serverAuthoritative: if true, topics missing on server will be removed from localStorage
      */
-    function mergeLocalStorageProgress(progress) {
+    function mergeLocalStorageProgress(progress, options) {
+      var merged = Object.assign({}, progress || {});
+      var opts = options || {};
+      var serverAuthoritative = !!opts.serverAuthoritative;
+
       try {
-        for (var i = 0; i < localStorage.length; i++) {
+        for (var i = localStorage.length - 1; i >= 0; i--) {
           var key = localStorage.key(i);
-          if (key && key.indexOf("lesson_progress_") === 0) {
-            var topicId = key.replace("lesson_progress_", "");
-            var localData = JSON.parse(localStorage.getItem(key));
-            if (localData) {
-              if (!progress[topicId]) {
-                progress[topicId] = {
-                  topicId: topicId,
-                  completed: false,
-                  progress: 0,
-                };
-              }
-              // Merge: true values from either source win
-              progress[topicId].lessonCompleted =
-                progress[topicId].lessonCompleted ||
-                localData.lessonRead ||
-                false;
-              progress[topicId].mindmapViewed =
-                progress[topicId].mindmapViewed ||
-                localData.mindmapViewed ||
-                false;
-              progress[topicId].flashcardsCompleted =
-                progress[topicId].flashcardsCompleted ||
-                localData.flashcardsDone ||
-                false;
-              progress[topicId].miniQuizCompleted =
-                progress[topicId].miniQuizCompleted ||
-                localData.lessonQuiz ||
-                false;
-              // Recalculate progress percentage
-              var count = 0;
-              if (progress[topicId].lessonCompleted) count++;
-              if (progress[topicId].mindmapViewed) count++;
-              if (progress[topicId].flashcardsCompleted) count++;
-              if (progress[topicId].miniQuizCompleted) count++;
-              progress[topicId].progress = Math.round((count / 4) * 100);
-              progress[topicId].completed = count === 4;
-            }
+          if (!key || key.indexOf("lesson_progress_") !== 0) continue;
+
+          var topicId = key.replace("lesson_progress_", "");
+          var localData = JSON.parse(localStorage.getItem(key) || "null");
+          if (!localData) continue;
+
+          // If server is source of truth and topic no longer exists there (e.g. reset), clear stale local cache.
+          if (serverAuthoritative && !merged[topicId]) {
+            localStorage.removeItem(key);
+            continue;
           }
+
+          if (!merged[topicId]) {
+            merged[topicId] = {
+              topicId: topicId,
+              completed: false,
+              progress: 0,
+            };
+          }
+
+          // Merge: true values from either source win
+          merged[topicId].lessonCompleted =
+            merged[topicId].lessonCompleted || localData.lessonRead || false;
+          merged[topicId].mindmapViewed =
+            merged[topicId].mindmapViewed || localData.mindmapViewed || false;
+          merged[topicId].flashcardsCompleted =
+            merged[topicId].flashcardsCompleted ||
+            localData.flashcardsDone ||
+            false;
+          merged[topicId].miniQuizCompleted =
+            merged[topicId].miniQuizCompleted || localData.lessonQuiz || false;
+
+          // Recalculate progress percentage
+          var count = 0;
+          if (merged[topicId].lessonCompleted) count++;
+          if (merged[topicId].mindmapViewed) count++;
+          if (merged[topicId].flashcardsCompleted) count++;
+          if (merged[topicId].miniQuizCompleted) count++;
+          merged[topicId].progress = Math.round((count / 4) * 100);
+          merged[topicId].completed = count === 4;
         }
       } catch (e) {
         console.warn("⚠️ Could not merge localStorage progress:", e);
       }
-      return progress;
+      return merged;
     }
 
     // ========================================
@@ -244,13 +251,19 @@
       topicsCache = topicsResult.topics;
 
       // Xử lý progress
-      if (progressResult && progressResult.success && progressResult.progress) {
+      const hasTrustedServerProgress = !!(
+        progressResult &&
+        progressResult.success
+      );
+      if (hasTrustedServerProgress && progressResult.progress) {
         userProgress = progressResult.progress;
       } else {
         userProgress = {};
       }
-      // ⭐ Merge localStorage lesson progress for instant accuracy
-      userProgress = mergeLocalStorageProgress(userProgress);
+      // ⭐ Chỉ coi server là nguồn đúng khi call progress thành công
+      userProgress = mergeLocalStorageProgress(userProgress, {
+        serverAuthoritative: hasTrustedServerProgress,
+      });
       progressCache = userProgress;
 
       lastLoadTime = Date.now();
@@ -297,8 +310,10 @@
       google.script.run
         .withSuccessHandler(function (result) {
           if (result && result.success && result.progress) {
-            // ⭐ Merge localStorage data over server data
-            var merged = mergeLocalStorageProgress(result.progress);
+            // ⭐ Merge localStorage data, but keep server as source of truth after resets
+            var merged = mergeLocalStorageProgress(result.progress, {
+              serverAuthoritative: true,
+            });
             var hasChanges =
               JSON.stringify(userProgress) !== JSON.stringify(merged);
             userProgress = merged;

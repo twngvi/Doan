@@ -26,6 +26,26 @@
   }
 
   /**
+   * Build auth context payload for backend calls.
+   * Backend still verifies this payload against Users sheet.
+   */
+  function getDashboardAuthContext() {
+    const user = window.currentUser || getUserData();
+    if (!user) return null;
+    return {
+      userId: user.userId || "",
+      email: user.email || "",
+      username: user.username || "",
+      role: user.role || "",
+    };
+  }
+
+  function hasReadyDashboardAuthContext() {
+    const auth = getDashboardAuthContext();
+    return !!(auth && auth.userId);
+  }
+
+  /**
    * Get/Save streak data from localStorage
    */
   function getStreakData() {
@@ -52,6 +72,8 @@
    */
   let dashboardAutoRefreshInterval = null;
   let dashboardInitialized = false;
+  let dashboardInitRetryCount = 0;
+  let dashboardHasLoadedOnce = false;
 
   function initDashboard() {
     // Guard: only init if dashboard is visible and user is logged in
@@ -60,6 +82,23 @@
       console.log("📊 Dashboard init skipped - not logged in");
       return;
     }
+
+    if (!hasReadyDashboardAuthContext()) {
+      if (dashboardInitRetryCount < 20) {
+        dashboardInitRetryCount++;
+        console.log(
+          "⏳ Dashboard waiting for user context before loading data...",
+        );
+        setTimeout(initDashboard, 150);
+      } else {
+        console.warn(
+          "⚠️ Dashboard init aborted: missing authenticated user context",
+        );
+      }
+      return;
+    }
+
+    dashboardInitRetryCount = 0;
 
     console.log("📊 Initializing Dashboard (Gamification)...");
     dashboardInitialized = true;
@@ -73,7 +112,10 @@
     setupDashboardHeaderMouseEffect();
 
     // Single API call for all dashboard data
-    loadAllDashboardData();
+    loadAllDashboardData({
+      forceRefresh: false,
+      backgroundRefresh: false,
+    });
 
     // Auto-refresh Lịch sử Thực chiến mỗi 30 giây
     startDashboardAutoRefresh();
@@ -92,10 +134,10 @@
         console.log(
           "🔄 Auto-refreshing dashboard data (history + leaderboard)...",
         );
-        // Xóa cache để force reload
-        DashboardCache.data = null;
-        DashboardCache.lastFetch = null;
-        loadAllDashboardData();
+        loadAllDashboardData({
+          forceRefresh: true,
+          backgroundRefresh: true,
+        });
       }
     }, 30000); // 30 giây
   }
@@ -130,9 +172,10 @@
     console.log(
       "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)...",
     );
-    DashboardCache.data = null;
-    DashboardCache.lastFetch = null;
-    loadAllDashboardData(true);
+    loadAllDashboardData({
+      forceRefresh: true,
+      backgroundRefresh: true,
+    });
     startDashboardAutoRefresh();
   };
 
@@ -192,8 +235,16 @@
   /**
    * SINGLE API CALL - Load all dashboard data
    */
-  function loadAllDashboardData(forceRefresh) {
+  function loadAllDashboardData(options) {
     console.log("📋 Loading all dashboard data (single API)...");
+
+    const opts =
+      options && typeof options === "object"
+        ? options
+        : { forceRefresh: !!options };
+    const forceRefresh = !!opts.forceRefresh;
+    const backgroundRefresh = !!opts.backgroundRefresh;
+    const initialLoad = !dashboardHasLoadedOnce && !DashboardCache.data;
 
     const now = Date.now();
     if (
@@ -204,11 +255,23 @@
     ) {
       console.log("📦 Using cached dashboard data");
       renderAllZones(DashboardCache.data);
+      dashboardHasLoadedOnce = true;
       return;
     }
 
-    // Show loading state in zones (not error)
-    showLoadingStates();
+    // Show large loading placeholders only on first load.
+    // Background refresh should keep old data on screen.
+    if (initialLoad && !backgroundRefresh) {
+      showLoadingStates();
+    }
+
+    const handleLoadError = (message) => {
+      if (initialLoad) {
+        showErrorStates(message);
+      } else {
+        console.warn("Background refresh failed, keeping current UI:", message);
+      }
+    };
 
     const loadingTimeout = setTimeout(() => {
       console.warn("⏱️ API taking too long");
@@ -221,6 +284,7 @@
           DashboardCache.data = response;
           DashboardCache.lastFetch = Date.now();
           renderAllZones(response);
+          dashboardHasLoadedOnce = true;
         } else {
           console.warn(
             "Dashboard data returned success:false, retrying in 3s...",
@@ -233,14 +297,15 @@
                   DashboardCache.data = retryResponse;
                   DashboardCache.lastFetch = Date.now();
                   renderAllZones(retryResponse);
+                  dashboardHasLoadedOnce = true;
                 } else {
-                  showErrorStates("Không thể tải dữ liệu");
+                  handleLoadError("Không thể tải dữ liệu");
                 }
               })
               .withFailureHandler(() => {
-                showErrorStates("Không thể tải dữ liệu");
+                handleLoadError("Không thể tải dữ liệu");
               })
-              .getDashboardData();
+              .getDashboardData(getDashboardAuthContext());
           }, 3000);
         }
       })
@@ -255,17 +320,18 @@
                 DashboardCache.data = retryResponse;
                 DashboardCache.lastFetch = Date.now();
                 renderAllZones(retryResponse);
+                dashboardHasLoadedOnce = true;
               } else {
-                showErrorStates("Lỗi kết nối server");
+                handleLoadError("Lỗi kết nối server");
               }
             })
             .withFailureHandler(() => {
-              showErrorStates("Lỗi kết nối server");
+              handleLoadError("Lỗi kết nối server");
             })
-            .getDashboardData();
+            .getDashboardData(getDashboardAuthContext());
         }, 3000);
       })
-      .getDashboardData();
+      .getDashboardData(getDashboardAuthContext());
   }
 
   /**
@@ -618,9 +684,10 @@
           // Check if bonus quest is now claimable (refresh quests + leaderboard)
           // Always refresh to update leaderboard with new XP
           setTimeout(() => {
-            DashboardCache.data = null;
-            DashboardCache.lastFetch = null;
-            loadAllDashboardData(true);
+            loadAllDashboardData({
+              forceRefresh: true,
+              backgroundRefresh: true,
+            });
           }, 1500);
         } else {
           if (result && result.alreadyClaimed) {
@@ -651,7 +718,7 @@
           showToast("Lỗi khi nhận XP", "error");
         }
       })
-      .completeQuestAndAwardXP(questId);
+      .completeQuestAndAwardXP(questId, getDashboardAuthContext());
   };
 
   /**
@@ -902,7 +969,7 @@
         console.error("Failed to load streak data:", error);
         updateStreakUI(getStreakData());
       })
-      .getUserStreakData();
+      .getUserStreakData(getDashboardAuthContext());
   }
 
   /**
@@ -947,9 +1014,10 @@
 
           // Refresh quests to show check-in quest as done
           setTimeout(() => {
-            DashboardCache.data = null;
-            DashboardCache.lastFetch = null;
-            loadAllDashboardData(true);
+            loadAllDashboardData({
+              forceRefresh: true,
+              backgroundRefresh: true,
+            });
           }, 1000);
         } else {
           if (result && result.alreadyCheckedIn) {
@@ -979,7 +1047,7 @@
         if (typeof showToast === "function")
           showToast("Lỗi khi điểm danh", "error");
       })
-      .dailyCheckin();
+      .dailyCheckin(getDashboardAuthContext());
   };
 
   /**
@@ -1054,9 +1122,10 @@
       // Force refresh dashboard (leaderboard + history) when tab becomes visible
       if (isDashboardVisible()) {
         console.log("🔄 Tab visible — refreshing leaderboard + history...");
-        DashboardCache.data = null;
-        DashboardCache.lastFetch = null;
-        loadAllDashboardData(true);
+        loadAllDashboardData({
+          forceRefresh: true,
+          backgroundRefresh: true,
+        });
       }
     }
   });
@@ -1065,10 +1134,11 @@
   window.addEventListener("dashboard-needs-refresh", function () {
     if (!dashboardInitialized) return;
     console.log("🔄 Dashboard refresh triggered by activity event");
-    DashboardCache.data = null;
-    DashboardCache.lastFetch = null;
     if (isDashboardVisible()) {
-      loadAllDashboardData(true);
+      loadAllDashboardData({
+        forceRefresh: true,
+        backgroundRefresh: true,
+      });
     }
   });
 

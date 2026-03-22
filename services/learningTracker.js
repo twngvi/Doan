@@ -430,9 +430,9 @@ function calculateStreakFromCheckinHistory(spreadsheet) {
  * Also checks if user has checked in today
  * @returns {Object} - { success, currentStreak, longestStreak, lastActiveDate, checkedInToday }
  */
-function getUserStreakData() {
+function getUserStreakData(userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail) {
       return { success: false, message: "Chưa đăng nhập" };
     }
@@ -554,9 +554,9 @@ function hasCheckedInToday(spreadsheet, today) {
  *
  * @returns {Object} - { success, currentStreak, longestStreak, alreadyCheckedIn }
  */
-function dailyCheckin() {
+function dailyCheckin(userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail) {
       return { success: false, message: "Chưa đăng nhập" };
     }

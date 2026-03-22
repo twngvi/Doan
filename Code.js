@@ -144,6 +144,10 @@ function saveAvatarUrl(userId, avatarUrl) {
   return saveUserAvatarUrl(userId, avatarUrl);
 }
 
+// ⭐ Wrapper for clearing all learning data - forwards to content.js function
+// Note: The actual clearAllLearningData function is in server/content.js
+// This just ensures it's properly exposed to the frontend via google.script.run
+
 // ========================================
 // CONTENT MANAGEMENT WRAPPERS
 // ========================================

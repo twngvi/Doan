@@ -1,0 +1,414 @@
+<!-- Admin Sidebar Scripts -->
+<script>
+  // ========================================
+  // ADMIN SIDEBAR CONTROLLER
+  // ========================================
+
+  // State
+  let isAdminSidebarCollapsed = false;
+  let isMobileView = window.innerWidth <= 768;
+
+  // Initialize Admin Sidebar
+  function initAdminSidebar() {
+    setupAdminSidebarEvents();
+    loadAdminSidebarState();
+    updateOnlineCount();
+    startOnlineCountUpdater();
+  }
+
+  // Setup Event Listeners
+  function setupAdminSidebarEvents() {
+    // Toggle Button
+    const toggleBtn = document.getElementById('adminSidebarToggleBtn');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', toggleAdminSidebar);
+    }
+
+    // Navigation Items
+    document.querySelectorAll('.admin-sidebar .nav-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = item.dataset.page;
+        if (page) {
+          showAdminPage(page);
+          setActiveNavItem(item);
+          
+          // Close mobile sidebar
+          if (isMobileView) {
+            closeAdminMobileSidebar();
+          }
+        }
+      });
+    });
+
+    // Logout Button
+    const logoutBtn = document.getElementById('adminLogoutBtn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', showAdminLogoutModal);
+    }
+
+    // Logout Modal
+    const logoutConfirmBtn = document.getElementById('adminLogoutConfirmBtn');
+    const logoutCancelBtn = document.getElementById('adminLogoutCancelBtn');
+    const logoutOverlay = document.getElementById('adminLogoutModalOverlay');
+
+    if (logoutConfirmBtn) {
+      logoutConfirmBtn.addEventListener('click', handleAdminLogout);
+    }
+
+    if (logoutCancelBtn) {
+      logoutCancelBtn.addEventListener('click', hideAdminLogoutModal);
+    }
+
+    if (logoutOverlay) {
+      logoutOverlay.addEventListener('click', (e) => {
+        if (e.target === logoutOverlay) {
+          hideAdminLogoutModal();
+        }
+      });
+    }
+
+    // Back to User Button
+    const backBtn = document.getElementById('backToUserBtn');
+    if (backBtn) {
+      backBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        navigateToUserSite();
+      });
+    }
+
+    // Mobile Overlay
+    const overlay = document.getElementById('adminSidebarOverlay');
+    if (overlay) {
+      overlay.addEventListener('click', closeAdminMobileSidebar);
+    }
+
+    // Search
+    setupAdminSearch();
+
+    // Window Resize
+    window.addEventListener('resize', handleAdminResize);
+
+    // Keyboard Shortcuts
+    document.addEventListener('keydown', handleAdminKeyboard);
+  }
+
+  // Toggle Sidebar
+  function toggleAdminSidebar() {
+    const sidebar = document.getElementById('adminSidebar');
+    if (!sidebar) return;
+
+    isAdminSidebarCollapsed = !isAdminSidebarCollapsed;
+    sidebar.classList.toggle('collapsed', isAdminSidebarCollapsed);
+    document.body.classList.toggle('sidebar-collapsed', isAdminSidebarCollapsed);
+
+    // Save state
+    localStorage.setItem('adminSidebarCollapsed', isAdminSidebarCollapsed);
+  }
+
+  // Load Sidebar State
+  function loadAdminSidebarState() {
+    const saved = localStorage.getItem('adminSidebarCollapsed');
+    if (saved === 'true') {
+      isAdminSidebarCollapsed = true;
+      const sidebar = document.getElementById('adminSidebar');
+      if (sidebar) {
+        sidebar.classList.add('collapsed');
+        document.body.classList.add('sidebar-collapsed');
+      }
+    }
+  }
+
+  // Set Active Navigation Item
+  function setActiveNavItem(activeItem) {
+    document.querySelectorAll('.admin-sidebar .nav-item').forEach(item => {
+      item.classList.remove('active');
+    });
+    activeItem.classList.add('active');
+  }
+
+  // Show Admin Page
+  function showAdminPage(pageId) {
+    // Hide all admin pages
+    document.querySelectorAll('[id^="page-"]').forEach(page => {
+      page.style.display = 'none';
+    });
+
+    // Show selected page
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) {
+      targetPage.style.display = 'block';
+      
+      // Trigger page-specific init if exists
+      const initFn = window[`init${pageId.replace('page-', '').replace(/-/g, '')}`];
+      if (typeof initFn === 'function') {
+        initFn();
+      }
+    }
+
+    // Update URL hash
+    window.location.hash = pageId;
+  }
+
+  // Logout Modal
+  function showAdminLogoutModal() {
+    const modal = document.getElementById('adminLogoutModalOverlay');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  function hideAdminLogoutModal() {
+    const modal = document.getElementById('adminLogoutModalOverlay');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  function handleAdminLogout() {
+    // Clear session/token
+    window.currentUser = null;
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('userSession');
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('lastActivePage');
+    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authPanelOpen');
+    sessionStorage.removeItem('authFormType');
+    
+    // Remove admin sidebar class
+    document.body.classList.remove('has-admin-sidebar');
+    
+    // Reset landing CTA if available
+    if (typeof resetLandingCTA === 'function') {
+      resetLandingCTA();
+    }
+    
+    // Navigate to landing page
+    if (typeof showPage === 'function') {
+      showPage('page-landing');
+    } else {
+      // Reload current page without parameters
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl;
+    }
+  }
+
+  // Navigate to User Site
+  function navigateToUserSite() {
+    // Remove admin sidebar class
+    document.body.classList.remove('has-admin-sidebar');
+    
+    // Show dashboard page
+    if (typeof showPage === 'function') {
+      showPage('page-dashboard');
+    } else {
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl;
+    }
+  }
+  function openAdminMobileSidebar() {
+    const sidebar = document.getElementById('adminSidebar');
+    const overlay = document.getElementById('adminSidebarOverlay');
+    
+    if (sidebar) sidebar.classList.add('mobile-open');
+    if (overlay) overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeAdminMobileSidebar() {
+    const sidebar = document.getElementById('adminSidebar');
+    const overlay = document.getElementById('adminSidebarOverlay');
+    
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (overlay) overlay.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  // Handle Resize
+  function handleAdminResize() {
+    const wasMobile = isMobileView;
+    isMobileView = window.innerWidth <= 768;
+
+    if (wasMobile && !isMobileView) {
+      closeAdminMobileSidebar();
+    }
+  }
+
+  // Keyboard Shortcuts
+  function handleAdminKeyboard(e) {
+    // Ctrl/Cmd + B to toggle sidebar
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      toggleAdminSidebar();
+    }
+
+    // Escape to close modal
+    if (e.key === 'Escape') {
+      hideAdminLogoutModal();
+      if (isMobileView) {
+        closeAdminMobileSidebar();
+      }
+    }
+
+    // Ctrl/Cmd + K to focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      const searchInput = document.getElementById('adminSearchInput');
+      if (searchInput) {
+        searchInput.focus();
+      }
+    }
+  }
+
+  // Admin Search
+  function setupAdminSearch() {
+    const searchInput = document.getElementById('adminSearchInput');
+    const searchResults = document.getElementById('adminSearchResults');
+
+    if (!searchInput || !searchResults) return;
+
+    searchInput.addEventListener('input', debounce((e) => {
+      const query = e.target.value.trim().toLowerCase();
+      if (query.length < 2) {
+        searchResults.classList.remove('open');
+        return;
+      }
+      
+      const results = searchAdminPages(query);
+      renderAdminSearchResults(results);
+    }, 300));
+
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim().length >= 2) {
+        searchResults.classList.add('open');
+      }
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.sidebar-search-wrapper')) {
+        searchResults.classList.remove('open');
+      }
+    });
+  }
+
+  // Search Admin Pages
+  function searchAdminPages(query) {
+    const pages = [
+      { id: 'page-admin-dashboard', name: 'Tổng quan', icon: 'dashboard', keywords: ['dashboard', 'tong quan', 'home'] },
+      { id: 'page-online-stats', name: 'Đang online', icon: 'group', keywords: ['online', 'dang online', 'user', 'nguoi dung'] },
+      { id: 'page-user-management', name: 'Quản lý Users', icon: 'manage_accounts', keywords: ['user', 'quan ly', 'nguoi dung', 'account'] },
+      { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson'] },
+      { id: 'page-quiz-management', name: 'Quản lý Quiz', icon: 'quiz', keywords: ['quiz', 'cau hoi', 'trac nghiem'] },
+      { id: 'page-reports', name: 'Báo cáo', icon: 'analytics', keywords: ['report', 'bao cao', 'thong ke', 'analytics'] },
+      { id: 'page-settings', name: 'Cài đặt', icon: 'settings', keywords: ['setting', 'cai dat', 'config'] },
+    ];
+
+    return pages.filter(page => {
+      const nameMatch = page.name.toLowerCase().includes(query);
+      const keywordMatch = page.keywords.some(kw => kw.includes(query));
+      return nameMatch || keywordMatch;
+    });
+  }
+
+  // Render Search Results
+  function renderAdminSearchResults(results) {
+    const searchResults = document.getElementById('adminSearchResults');
+    if (!searchResults) return;
+
+    if (results.length === 0) {
+      searchResults.innerHTML = `
+        <div class="search-no-results">
+          <span class="material-symbols-sharp">search_off</span>
+          <p>Không tìm thấy kết quả</p>
+        </div>
+      `;
+    } else {
+      searchResults.innerHTML = results.map(result => `
+        <button class="sidebar-search-result-item" onclick="showAdminPage('${result.id}'); document.getElementById('adminSearchResults').classList.remove('open');">
+          <span class="material-symbols-sharp">${result.icon}</span>
+          <span class="result-name">${result.name}</span>
+        </button>
+      `).join('');
+    }
+
+    searchResults.classList.add('open');
+  }
+
+  // Online Count Updater
+  function updateOnlineCount() {
+    const badge = document.getElementById('onlineCountBadge');
+    if (!badge) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler((result) => {
+        if (!result || !result.success || !result.data) return;
+        const count = Number(result.data.totalOnline || 0);
+        badge.textContent = count;
+      })
+      .withFailureHandler((error) => {
+        console.error('Failed to update online badge:', error);
+      })
+      .getAdminOnlineUsersData();
+  }
+
+  function startOnlineCountUpdater() {
+    // Update every 30 seconds
+    setInterval(updateOnlineCount, 30000);
+  }
+
+  // Update Admin Info
+  function updateAdminInfo(adminData) {
+    const avatar = document.getElementById('admin-avatar');
+    const username = document.getElementById('admin-username');
+
+    if (avatar && adminData.avatar) {
+      avatar.src = adminData.avatar;
+    }
+
+    if (username && adminData.name) {
+      username.textContent = adminData.name;
+    }
+  }
+
+  // Debounce Utility
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Initialize on DOM Ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminSidebar);
+  } else {
+    initAdminSidebar();
+  }
+
+  // Handle hash navigation on load
+  window.addEventListener('load', () => {
+    const hash = window.location.hash.slice(1);
+    if (hash && hash.startsWith('page-')) {
+      showAdminPage(hash);
+      
+      // Set active nav item
+      const navItem = document.querySelector(`.admin-sidebar .nav-item[data-page="${hash}"]`);
+      if (navItem) {
+        setActiveNavItem(navItem);
+      }
+    }
+  });
+</script>

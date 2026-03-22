@@ -60,8 +60,11 @@ function handleGoogleCallback(authCode) {
     // 3. Xử lý Logic Database (Tạo user + Tạo Sheet cá nhân)
     const appUser = processGoogleUserLogin(googleUser);
 
-    // 4. Trả về HTML với nút bấm chuyển hướng (Fix lỗi SecurityError)
-    const dashboardUrl = ScriptApp.getService().getUrl() + "?page=dashboard";
+    // 4. ⭐ Xác định trang redirect dựa vào role
+    const isAdmin = appUser.role === 'ADMIN';
+    const targetPage = isAdmin ? 'admin' : 'dashboard';
+    const redirectUrl = ScriptApp.getService().getUrl() + "?page=" + targetPage;
+    const buttonText = isAdmin ? 'Vào Admin Panel' : 'Vào Dashboard';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -276,8 +279,8 @@ function handleGoogleCallback(authCode) {
             Tài khoản và dữ liệu học tập đã sẵn sàng.
           </p>
           
-          <a href="${dashboardUrl}" target="_top" class="btn-dashboard" id="redirectBtn">
-            Vào Dashboard
+          <a href="${redirectUrl}" target="_top" class="btn-dashboard" id="redirectBtn">
+            ${buttonText}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
@@ -318,8 +321,8 @@ function handleGoogleCallback(authCode) {
             localStorage.setItem("currentUser", JSON.stringify(user));
             localStorage.setItem("isLoggedIn", "true");
             localStorage.setItem("userId", user.userId);
-            localStorage.setItem("lastActivePage", "dashboard");
-            console.log("✅ Session saved to localStorage");
+            localStorage.setItem("lastActivePage", "${targetPage}");
+            console.log("✅ Session saved to localStorage, role:", user.role);
           } catch (e) {
             console.warn("⚠️ localStorage blocked:", e);
           }

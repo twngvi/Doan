@@ -1101,6 +1101,70 @@ function getUserProgressSheetIdByEmail(email) {
 }
 
 /**
+ * Resolve authenticated user email for web-app calls.
+ * Priority:
+ * 1) Google session email (if available)
+ * 2) Client auth context validated against Users sheet (userId + email)
+ *
+ * @param {Object=} userContext - { userId, email }
+ * @returns {string} verified email or empty string
+ */
+function resolveAuthenticatedEmailFromContext(userContext) {
+  try {
+    const sessionEmail = Session.getActiveUser().getEmail();
+    if (sessionEmail && sessionEmail !== "anonymous") {
+      return String(sessionEmail).trim();
+    }
+
+    if (!userContext || !userContext.userId) {
+      return "";
+    }
+
+    const userId = String(userContext.userId || "").trim();
+    const contextEmail = String(userContext.email || "").trim();
+    if (!userId) return "";
+
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) return "";
+
+    const allData = usersSheet.getDataRange().getValues();
+    if (!allData || allData.length <= 1) return "";
+
+    const headers = allData[0];
+    const userIdCol = headers.indexOf("userId");
+    const emailCol = headers.indexOf("email");
+    const isActiveCol = headers.indexOf("isActive");
+    if (userIdCol < 0 || emailCol < 0) return "";
+
+    for (let i = 1; i < allData.length; i++) {
+      if (String(allData[i][userIdCol] || "").trim() !== userId) continue;
+
+      const matchedEmail = String(allData[i][emailCol] || "").trim();
+      const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
+      const isDisabled = isActive === false || isActive === "FALSE";
+      if (isDisabled) return "";
+
+      if (contextEmail && contextEmail !== matchedEmail) {
+        return "";
+      }
+
+      return matchedEmail;
+    }
+
+    return "";
+  } catch (error) {
+    Logger.log(
+      "Error resolving authenticated email from context: " + error.toString(),
+    );
+    return "";
+  }
+}
+
+/**
  * Get or create Quiz_Results sheet in user's personal sheet
  * @param {Spreadsheet} spreadsheet - User's spreadsheet
  * @returns {Sheet} - Quiz_Results sheet
@@ -1616,9 +1680,9 @@ function saveActivityLog(data) {
  * Get all dashboard data in a single API call
  * Returns: quickStats (XP, accuracy, badges, rank), activities, quests, skillProgress, leaderboard
  */
-function getDashboardData() {
+function getDashboardData(userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in" };
     }
@@ -1826,8 +1890,12 @@ function getDashboardData() {
       (a) => a.type === "Learning",
     ).length;
     const todayMCQ = todayActivities.filter((a) => a.type === "MCQ").length;
+    const todayMatching = todayActivities.filter(
+      (a) => a.type === "Matching",
+    ).length;
     const todayPerfect = todayActivities.filter(
-      (a) => a.type === "MCQ" && a.percentage === 100,
+      (a) =>
+        (a.type === "MCQ" || a.type === "Matching") && a.percentage === 100,
     ).length;
 
     // Check if user checked in today
@@ -1900,8 +1968,17 @@ function getDashboardData() {
         claimed: !!claimedQuests["daily_quiz"],
       },
       {
+        questId: "daily_matching",
+        title: "Hoàn thành 1 Bài Matching",
+        progress: Math.min(todayMatching, 1),
+        target: 1,
+        xpReward: 50,
+        done: todayMatching >= 1,
+        claimed: !!claimedQuests["daily_matching"],
+      },
+      {
         questId: "daily_perfect",
-        title: "Đạt điểm tuyệt đối 1 bài",
+        title: "Đạt điểm tuyệt đối 1 bài Quiz/Matching",
         progress: Math.min(todayPerfect, 1),
         target: 1,
         xpReward: 100,
@@ -1988,9 +2065,9 @@ function getDashboardData() {
  * @param {string} questId - The quest identifier
  * @returns {Object} - { success, xpAwarded, newTotalXP, message }
  */
-function completeQuestAndAwardXP(questId) {
+function completeQuestAndAwardXP(questId, userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Chưa đăng nhập" };
     }
@@ -2067,8 +2144,13 @@ function completeQuestAndAwardXP(questId) {
         xp: 50,
         source: "daily_quest",
       },
+      daily_matching: {
+        title: "Hoàn thành 1 Bài Matching",
+        xp: 50,
+        source: "daily_quest",
+      },
       daily_perfect: {
-        title: "Đạt điểm tuyệt đối 1 bài",
+        title: "Đạt điểm tuyệt đối 1 bài Quiz/Matching",
         xp: 100,
         source: "daily_quest",
       },
@@ -2163,6 +2245,7 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
       }
       case "daily_learn":
       case "daily_quiz":
+      case "daily_matching":
       case "daily_perfect": {
         const actSheet = spreadsheet.getSheetByName("Activity_Log");
         if (!actSheet) return { done: false };
@@ -2173,6 +2256,7 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
 
         let todayLearning = 0,
           todayMCQ = 0,
+          todayMatching = 0,
           todayPerfect = 0;
         for (let i = 1; i < actData.length; i++) {
           const ts =
@@ -2188,19 +2272,29 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
                 : 0;
             if (pct === 100) todayPerfect++;
           }
+          if (type === "Matching") {
+            todayMatching++;
+            const pct =
+              ac["percentage"] >= 0
+                ? parseInt(actData[i][ac["percentage"]])
+                : 0;
+            if (pct === 100) todayPerfect++;
+          }
         }
 
         if (questId === "daily_learn") return { done: todayLearning >= 1 };
         if (questId === "daily_quiz") return { done: todayMCQ >= 1 };
+        if (questId === "daily_matching") return { done: todayMatching >= 1 };
         if (questId === "daily_perfect") return { done: todayPerfect >= 1 };
         return { done: false };
       }
       case "daily_all_bonus": {
-        // All 4 main quests must be claimed
+        // All main quests must be claimed
         const mainQuestIds = [
           "daily_checkin",
           "daily_learn",
           "daily_quiz",
+          "daily_matching",
           "daily_perfect",
         ];
         const xpData = xpSheet.getDataRange().getValues();
@@ -2504,6 +2598,216 @@ function deleteSavedQuizProgress(topicId) {
     Logger.log("❌ Error deleting saved progress: " + error.toString());
     return { success: false, message: error.toString() };
   }
+}
+
+/**
+ * Reset all learning activity/progress for one topic of current user.
+ * This clears topic-level history so Topic/Lesson can start fresh.
+ *
+ * @param {string} topicId - Topic ID to reset
+ * @param {Object=} userContext - Optional auth context from client
+ * @returns {Object} - { success, deleted: {...} }
+ */
+function clearTopicLearningData(topicId, userContext) {
+  try {
+    const topicIdStr = String(topicId || "").trim();
+    if (!topicIdStr) {
+      return { success: false, message: "Thiếu topicId" };
+    }
+
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const deleted = {
+      activityLog: 0,
+      topicProgress: 0,
+      quizResults: 0,
+      matchingResults: 0,
+      flashcardSessions: 0,
+      cardProgress: 0,
+      wrongAnswers: 0,
+      masteredQuestions: 0,
+    };
+
+    function deleteRowsByTopic(sheetName, topicColumnName) {
+      const sheet = userSpreadsheet.getSheetByName(sheetName);
+      if (!sheet) return 0;
+
+      const data = sheet.getDataRange().getValues();
+      if (!data || data.length <= 1) return 0;
+
+      const headers = data[0] || [];
+      const topicCol = headers.indexOf(topicColumnName || "topicId");
+      if (topicCol < 0) return 0;
+
+      let count = 0;
+      for (let i = data.length - 1; i >= 1; i--) {
+        const rowTopicId = String(data[i][topicCol] || "").trim();
+        if (rowTopicId === topicIdStr) {
+          sheet.deleteRow(i + 1);
+          count++;
+        }
+      }
+
+      return count;
+    }
+
+    deleted.activityLog = deleteRowsByTopic("Activity_Log", "topicId");
+    deleted.topicProgress = deleteRowsByTopic("Topic_Progress", "topicId");
+    deleted.quizResults = deleteRowsByTopic("Quiz_Results", "topicId");
+    deleted.matchingResults = deleteRowsByTopic("Matching_Results", "topicId");
+    deleted.flashcardSessions = deleteRowsByTopic(
+      "FlashcardSessions",
+      "topicId",
+    );
+    deleted.flashcardSessions += deleteRowsByTopic(
+      "Flashcard_Sessions",
+      "topicId",
+    );
+    deleted.cardProgress = deleteRowsByTopic("CardProgress", "topicId");
+    deleted.cardProgress += deleteRowsByTopic("Flashcard_Progress", "topicId");
+    deleted.wrongAnswers = deleteRowsByTopic("Wrong_Answers", "topicId");
+    deleted.wrongAnswers += deleteRowsByTopic("Wrong_Answer_Memory", "topicId");
+    deleted.masteredQuestions = deleteRowsByTopic(
+      "Mastered_Questions",
+      "topicId",
+    );
+
+    const totalDeleted = Object.keys(deleted).reduce(
+      (sum, key) => sum + deleted[key],
+      0,
+    );
+
+    Logger.log(
+      "✅ clearTopicLearningData for " +
+        topicIdStr +
+        ": deleted " +
+        totalDeleted +
+        " rows",
+    );
+
+    return {
+      success: true,
+      topicId: topicIdStr,
+      deleted: deleted,
+      totalDeleted: totalDeleted,
+      message:
+        totalDeleted > 0
+          ? "Đã xóa dữ liệu học của topic"
+          : "Không có dữ liệu để xóa",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in clearTopicLearningData: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Backward-compatible alias.
+ */
+function resetTopicLearningData(topicId, userContext) {
+  return clearTopicLearningData(topicId, userContext);
+}
+
+/**
+ * Reset ALL learning activity/progress for current user.
+ * One-call full cleanup across learning-related sheets.
+ *
+ * @param {Object=} userContext - Optional auth context from client
+ * @returns {Object} - { success, deleted: {...}, totalDeleted }
+ */
+function clearAllLearningData(userContext) {
+  try {
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Chưa đăng nhập" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "Không tìm thấy sheet cá nhân" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const deleted = {
+      activityLog: 0,
+      topicProgress: 0,
+      quizResults: 0,
+      matchingResults: 0,
+      flashcardSessions: 0,
+      cardProgress: 0,
+      wrongAnswers: 0,
+      masteredQuestions: 0,
+      xpLog: 0,
+    };
+
+    function clearSheetDataKeepHeader(sheetName) {
+      const sheet = userSpreadsheet.getSheetByName(sheetName);
+      if (!sheet) return 0;
+
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return 0;
+
+      const count = lastRow - 1;
+      sheet.deleteRows(2, count);
+      return count;
+    }
+
+    deleted.activityLog = clearSheetDataKeepHeader("Activity_Log");
+    deleted.topicProgress = clearSheetDataKeepHeader("Topic_Progress");
+    deleted.quizResults = clearSheetDataKeepHeader("Quiz_Results");
+    deleted.matchingResults = clearSheetDataKeepHeader("Matching_Results");
+    deleted.flashcardSessions = clearSheetDataKeepHeader("FlashcardSessions");
+    deleted.flashcardSessions +=
+      clearSheetDataKeepHeader("Flashcard_Sessions");
+    deleted.cardProgress = clearSheetDataKeepHeader("CardProgress");
+    deleted.cardProgress += clearSheetDataKeepHeader("Flashcard_Progress");
+    deleted.wrongAnswers = clearSheetDataKeepHeader("Wrong_Answers");
+    deleted.wrongAnswers += clearSheetDataKeepHeader("Wrong_Answer_Memory");
+    deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
+    deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
+
+    const totalDeleted = Object.keys(deleted).reduce(
+      (sum, key) => sum + deleted[key],
+      0,
+    );
+
+    Logger.log(
+      "✅ clearAllLearningData for " +
+        userEmail +
+        ": deleted " +
+        totalDeleted +
+        " rows",
+    );
+
+    return {
+      success: true,
+      deleted: deleted,
+      totalDeleted: totalDeleted,
+      message:
+        totalDeleted > 0
+          ? "Đã reset toàn bộ dữ liệu học"
+          : "Không có dữ liệu để reset",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in clearAllLearningData: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Backward-compatible alias.
+ */
+function resetAllLearningData(userContext) {
+  return clearAllLearningData(userContext);
 }
 
 /**
@@ -3265,6 +3569,53 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
 }
 
 /**
+ * Ensure Topic_Progress has the required columns for Lesson/Mindmap/Flashcards/MiniQuiz tracking.
+ */
+function ensureTopicProgressSchema(sheet) {
+  const requiredHeaders = [
+    "progressId",
+    "topicId",
+    "topicTitle",
+    "lessonCompleted",
+    "miniQuizCompleted",
+    "mindmapViewed",
+    "flashcardsCompleted",
+    "quizDone",
+    "matchingDone",
+    "challengeDone",
+    "attempts",
+    "accuracy",
+    "bestScore",
+    "xpEarned",
+    "status",
+    "unlockedAt",
+    "completedAt",
+    "lastUpdated",
+  ];
+
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let updatedHeaders = currentHeaders.slice();
+  let changed = false;
+
+  requiredHeaders.forEach(function (header) {
+    if (updatedHeaders.indexOf(header) === -1) {
+      updatedHeaders.push(header);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setValues([updatedHeaders]);
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    Logger.log("🔧 Topic_Progress schema updated with missing columns");
+  }
+
+  return updatedHeaders;
+}
+
+/**
  * Update Topic_Progress sheet
  */
 function updateTopicProgress(userId, topicId, progressType, progressData) {
@@ -3298,10 +3649,12 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         "lastUpdated",
       ];
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
     }
 
+    const headers = ensureTopicProgressSchema(sheet);
     const data = sheet.getDataRange().getValues();
-    const headers = data[0];
 
     // Tìm row cho topic này
     let rowIndex = -1;
@@ -3377,11 +3730,16 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       const currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      const lessonDone = lessonCol >= 0 && currentData[lessonCol] === 1;
-      const mindmapDone = mindmapCol >= 0 && currentData[mindmapCol] === 1;
+      var isChecked = function (v) {
+        return v === 1 || v === true || v === "1" || v === "TRUE";
+      };
+      const lessonDone = lessonCol >= 0 && isChecked(currentData[lessonCol]);
+      const mindmapDone =
+        mindmapCol >= 0 && isChecked(currentData[mindmapCol]);
       const flashcardsDone =
-        flashcardsCol >= 0 && currentData[flashcardsCol] === 1;
-      const miniQuizDone = miniQuizCol >= 0 && currentData[miniQuizCol] === 1;
+        flashcardsCol >= 0 && isChecked(currentData[flashcardsCol]);
+      const miniQuizDone =
+        miniQuizCol >= 0 && isChecked(currentData[miniQuizCol]);
 
       if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone) {
         const statusCol = headers.indexOf("status");
@@ -3417,19 +3775,11 @@ function getTopicProgressForWeb(topicId) {
     var sheet = spreadsheet.getSheetByName("Topic_Progress");
     if (!sheet) return { success: true, data: null };
 
+    var headers = ensureTopicProgressSchema(sheet);
     var data = sheet.getDataRange().getValues();
-    var headers = data[0];
     var topicIdStr = String(topicId).trim();
 
-    // Ensure miniQuizCompleted column exists
     var mqIdx = headers.indexOf("miniQuizCompleted");
-    if (mqIdx === -1) {
-      // Add column header
-      var newColIdx = headers.length + 1;
-      sheet.getRange(1, newColIdx).setValue("miniQuizCompleted");
-      headers.push("miniQuizCompleted");
-      mqIdx = headers.length - 1;
-    }
 
     for (var i = 1; i < data.length; i++) {
       var tidx = headers.indexOf("topicId");
@@ -3486,8 +3836,8 @@ function getLearningProgressForWeb() {
       return { success: true, data: {} }; // No progress yet
     }
 
+    const headers = ensureTopicProgressSchema(sheet);
     const data = sheet.getDataRange().getValues();
-    const headers = data[0];
     const progressMap = {};
 
     for (let i = 1; i < data.length; i++) {
@@ -3495,12 +3845,16 @@ function getLearningProgressForWeb() {
       const topicId = row[headers.indexOf("topicId")];
 
       if (topicId) {
+        const isChecked = function (v) {
+          return v === 1 || v === true || v === "1" || v === "TRUE";
+        };
         progressMap[topicId] = {
-          lessonCompleted: row[headers.indexOf("lessonCompleted")] === 1,
-          mindmapViewed: row[headers.indexOf("mindmapViewed")] === 1,
-          flashcardsCompleted:
-            row[headers.indexOf("flashcardsCompleted")] === 1,
-          quizDone: row[headers.indexOf("quizDone")] === 1,
+          lessonCompleted: isChecked(row[headers.indexOf("lessonCompleted")]),
+          mindmapViewed: isChecked(row[headers.indexOf("mindmapViewed")]),
+          flashcardsCompleted: isChecked(
+            row[headers.indexOf("flashcardsCompleted")],
+          ),
+          quizDone: isChecked(row[headers.indexOf("quizDone")]),
           status: row[headers.indexOf("status")] || "not_started",
           completedAt: row[headers.indexOf("completedAt")] || null,
           // Tính progress %
@@ -3524,12 +3878,15 @@ function getLearningProgressForWeb() {
  */
 function calculateProgressPercent(row, headers) {
   let completed = 0;
-  const total = 4; // lesson, mindmap, flashcards, quiz
+  const total = 4; // lesson, mindmap, flashcards, miniQuiz
+  const isChecked = function (v) {
+    return v === 1 || v === true || v === "1" || v === "TRUE";
+  };
 
-  if (row[headers.indexOf("lessonCompleted")] === 1) completed++;
-  if (row[headers.indexOf("mindmapViewed")] === 1) completed++;
-  if (row[headers.indexOf("flashcardsCompleted")] === 1) completed++;
-  if (row[headers.indexOf("quizDone")] === 1) completed++;
+  if (isChecked(row[headers.indexOf("lessonCompleted")])) completed++;
+  if (isChecked(row[headers.indexOf("mindmapViewed")])) completed++;
+  if (isChecked(row[headers.indexOf("flashcardsCompleted")])) completed++;
+  if (isChecked(row[headers.indexOf("miniQuizCompleted")])) completed++;
 
   return Math.round((completed / total) * 100);
 }

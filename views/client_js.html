@@ -10,6 +10,101 @@
   window.currentUser = null; // â­ GÃ¡n trá»±c tiáº¿p Ä‘á»ƒ cháº¯c cháº¯n
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
+  let heartbeatIntervalId = null;
+  let heartbeatMonitorId = null;
+  let heartbeatEventsBound = false;
+  let lastHeartbeatAt = 0;
+
+  const HEARTBEAT_INTERVAL_MS = 30000;
+  const HEARTBEAT_ACTIVITY_THROTTLE_MS = 20000;
+
+  function getStoredCurrentUser() {
+    try {
+      const raw = localStorage.getItem("currentUser");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      console.warn("Parse currentUser failed:", e);
+      return null;
+    }
+  }
+
+  function getHeartbeatUser() {
+    return window.currentUser || currentUser || getStoredCurrentUser();
+  }
+
+  function isSessionLoggedIn() {
+    return localStorage.getItem("isLoggedIn") === "true" && !!getHeartbeatUser();
+  }
+
+  function sendUserHeartbeat(reason = "interval") {
+    const user = getHeartbeatUser();
+    if (!user || !isSessionLoggedIn()) return;
+    if (typeof google === "undefined" || !google.script || !google.script.run) return;
+
+    const now = Date.now();
+    if (reason === "activity" && now - lastHeartbeatAt < HEARTBEAT_ACTIVITY_THROTTLE_MS) {
+      return;
+    }
+
+    lastHeartbeatAt = now;
+    const page = (localStorage.getItem("lastActivePage") || "").toString();
+
+    google.script.run
+      .withFailureHandler((error) => {
+        console.warn("Heartbeat failed:", error);
+      })
+      .updateUserHeartbeat({
+        userId: user.userId || "",
+        email: user.email || "",
+        page: page,
+      });
+  }
+
+  function bindHeartbeatEventsOnce() {
+    if (heartbeatEventsBound) return;
+    heartbeatEventsBound = true;
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) sendUserHeartbeat("visibility");
+    });
+    window.addEventListener("focus", () => sendUserHeartbeat("focus"));
+    window.addEventListener("online", () => sendUserHeartbeat("online"));
+
+    const passiveEvents = ["click", "keydown", "mousemove", "touchstart", "scroll"];
+    passiveEvents.forEach((eventName) => {
+      window.addEventListener(eventName, () => sendUserHeartbeat("activity"), {
+        passive: true,
+      });
+    });
+  }
+
+  function startUserHeartbeat() {
+    if (!isSessionLoggedIn()) return;
+    if (heartbeatIntervalId) return;
+
+    bindHeartbeatEventsOnce();
+    sendUserHeartbeat("start");
+    heartbeatIntervalId = setInterval(() => {
+      sendUserHeartbeat("interval");
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function stopUserHeartbeat() {
+    if (!heartbeatIntervalId) return;
+    clearInterval(heartbeatIntervalId);
+    heartbeatIntervalId = null;
+  }
+
+  function initHeartbeatMonitor() {
+    if (heartbeatMonitorId) return;
+    heartbeatMonitorId = setInterval(() => {
+      if (isSessionLoggedIn()) {
+        startUserHeartbeat();
+      } else {
+        stopUserHeartbeat();
+      }
+    }, 5000);
+  }
 
   function applyThemeFromAuthenticatedUser(user) {
     try {
@@ -68,6 +163,11 @@
       window.currentUser = null;
     }
 
+    if (isSessionLoggedIn()) {
+      startUserHeartbeat();
+    }
+    initHeartbeatMonitor();
+
     // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
     try {
       if (window.ThemeManager) {
@@ -100,6 +200,7 @@
       lesson: "page-lesson",
       matching: "page-matching",
       profile: "page-profile",
+      admin: "page-admin",
       landing: "page-landing",
       // Auth pages giờ nằm trong auth layer của landing
       login: "page-landing",
@@ -108,14 +209,11 @@
       "forgot-password": "page-landing",
     };
 
-    const protectedPages = [
-      "dashboard",
-      "topics",
-      "mcq",
-      "lesson",
-      "matching",
-      "profile",
-    ];
+    // ⭐ Tách riêng trang cho từng role
+    const adminOnlyPages = ["admin"]; // Chỉ admin được vào
+    const userOnlyPages = ["dashboard", "topics", "mcq", "lesson", "matching", "profile"]; // Chỉ user được vào
+    const protectedPages = [...adminOnlyPages, ...userOnlyPages]; // Tất cả trang cần login
+    
     const authPages = [
       "login",
       "register",
@@ -140,21 +238,47 @@
     if (requestedPageName && pageMap[requestedPageName]) {
       finalPageName = requestedPageName;
     } else {
-      // Nếu không có trang yêu cầu, nhưng đã login -> vào dashboard
+      // Nếu không có trang yêu cầu, nhưng đã login -> kiểm tra role
       if (window.currentUser) {
-        finalPageName = "dashboard";
+        // ⭐ Admin vào trang admin, User vào dashboard
+        finalPageName = (window.currentUser.role === 'ADMIN') ? 'admin' : 'dashboard';
       }
     }
 
     // BƯỚC 3: Kiểm tra quyền truy cập (Auth Guard)
     const isProtected = protectedPages.includes(finalPageName);
     const isAuthPage = authPages.includes(finalPageName);
+    const userRole = window.currentUser?.role || '';
+    const isAdmin = userRole === 'ADMIN';
 
+    // ⭐ ROLE-BASED ACCESS CONTROL
     if (isProtected) {
       if (window.currentUser) {
-        // Đã login + Trang bảo vệ -> CHO PHÉP
-        targetPageId = pageMap[finalPageName];
-        console.log(" Authenticated access to:", finalPageName);
+        // Đã login - kiểm tra quyền theo role
+        const isAdminPage = adminOnlyPages.includes(finalPageName);
+        const isUserPage = userOnlyPages.includes(finalPageName);
+        
+        if (isAdmin) {
+          // ADMIN chỉ được vào trang admin
+          if (isUserPage) {
+            console.warn("🛡️ Admin không được vào trang user. Redirect về admin.");
+            targetPageId = "page-admin";
+            finalPageName = "admin";
+          } else {
+            targetPageId = pageMap[finalPageName];
+            console.log("🛡️ Admin access to:", finalPageName);
+          }
+        } else {
+          // USER chỉ được vào trang user
+          if (isAdminPage) {
+            console.warn("🚫 User không được vào trang admin. Redirect về dashboard.");
+            targetPageId = "page-dashboard";
+            finalPageName = "dashboard";
+          } else {
+            targetPageId = pageMap[finalPageName];
+            console.log("👤 User access to:", finalPageName);
+          }
+        }
       } else {
         // Chưa login + Trang bảo vệ -> ĐÁ VỀ LOGIN
         console.warn(" Unauthorized access. Redirecting to Login.");
@@ -163,10 +287,11 @@
       }
     } else if (isAuthPage) {
       if (window.currentUser && finalPageName !== "verify-email") {
-        // Đã login mà vào Login/Register/Landing -> ĐẨY VÀO DASHBOARD
-        console.log("ℹ User already logged in. Redirecting to Dashboard.");
-        targetPageId = "page-dashboard";
-        finalPageName = "dashboard";
+        // ⭐ Đã login mà vào Login/Register/Landing -> Redirect theo role
+        const defaultPage = isAdmin ? 'admin' : 'dashboard';
+        console.log("ℹ User already logged in. Redirecting to:", defaultPage);
+        targetPageId = pageMap[defaultPage];
+        finalPageName = defaultPage;
       } else {
         // Chưa login + Trang public -> CHO PHÉP
         targetPageId = pageMap[finalPageName];
@@ -225,6 +350,25 @@
    */
   function showPage(pageId, params = {}, addToHistory = true) {
     console.log("Showing page:", pageId);
+
+    // ⭐ ROLE-BASED ACCESS CONTROL
+    const adminOnlyPageIds = ["page-admin"];
+    const userOnlyPageIds = ["page-dashboard", "page-topics", "page-mcq", "page-lesson", "page-matching", "page-profile"];
+    const userRole = window.currentUser?.role || '';
+    const isAdmin = userRole === 'ADMIN';
+    
+    // Kiểm tra quyền truy cập
+    if (window.currentUser) {
+      if (isAdmin && userOnlyPageIds.includes(pageId)) {
+        console.warn("🛡️ Admin không được vào trang user:", pageId);
+        showToast("Admin chỉ có thể truy cập Admin Panel", "warning");
+        pageId = "page-admin";
+      } else if (!isAdmin && adminOnlyPageIds.includes(pageId)) {
+        console.warn("🚫 User không được vào trang admin:", pageId);
+        showToast("Bạn không có quyền truy cập trang này", "error");
+        pageId = "page-dashboard";
+      }
+    }
 
     // ===== AUTH LAYER INTEGRATION =====
     // Các trang auth cũ giờ được xử lý trong auth layer của landing
@@ -300,6 +444,7 @@
         mcq: "Trắc nghiệm - O.Uiz",
         matching: "Nối từ - O.Uiz",
         profile: "Hồ sơ - O.Uiz",
+        admin: "Admin Panel - O.Uiz",
       };
       document.title = pageTitles[pageName] || "O.Uiz";
 
@@ -501,6 +646,7 @@
       window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       localStorage.setItem("isLoggedIn", "true");
+      startUserHeartbeat();
       applyThemeFromAuthenticatedUser(response.user);
       console.log("âœ… Current user synced to window:", currentUser);
 
@@ -672,19 +818,27 @@
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
+          startUserHeartbeat();
           applyThemeFromAuthenticatedUser(response.user);
 
           console.log("✅ Session saved:", {
             userId: response.user.userId,
             email: response.user.email,
             avatarUrl: response.user.avatarUrl,
+            role: response.user.role,
           });
 
           showToast(response.message, "success");
 
+          // ⭐ Redirect dựa vào role
           setTimeout(() => {
-            showPage("page-dashboard");
-            loadDashboardData();
+            if (response.user.role === 'ADMIN') {
+              console.log("🛡️ Admin detected, redirecting to admin panel...");
+              showPage("page-admin");
+            } else {
+              showPage("page-dashboard");
+              loadDashboardData();
+            }
           }, 1000);
         } else {
           showToast(response.message, "error");
@@ -793,6 +947,8 @@
    */
   function handleLogout() {
     console.log("Logging out...");
+
+    stopUserHeartbeat();
 
     // Clear user data from all storage
     currentUser = null;
@@ -950,6 +1106,7 @@
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          startUserHeartbeat();
           applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
@@ -1072,8 +1229,11 @@
 
         if (response.success) {
           // ÄÄƒng kÃ½ thÃ nh cÃ´ng
+          currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          startUserHeartbeat();
 
           showToast(response.message || "Đăng ký thành công!", "success");
 
@@ -1119,6 +1279,8 @@
       currentUser = response.user;
       window.currentUser = response.user;
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      localStorage.setItem("isLoggedIn", "true");
+      startUserHeartbeat();
       console.log("âœ… Current user synced to window:", currentUser.username);
 
       console.log("User saved to localStorage:", currentUser.username);
