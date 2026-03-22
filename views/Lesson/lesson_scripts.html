@@ -99,6 +99,33 @@
     }
   }
 
+  function clearLocalProgress(topicId) {
+    if (!topicId) return;
+    try {
+      localStorage.removeItem(getLocalProgressKey(topicId));
+    } catch (e) {
+      console.warn("⚠️ Could not clear local progress:", e);
+    }
+  }
+
+  function clearAllLessonLocalProgress() {
+    try {
+      var keysToRemove = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.indexOf("lesson_progress_") === 0) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(function (key) {
+        localStorage.removeItem(key);
+      });
+      console.log("🧹 Cleared lesson local cache keys:", keysToRemove.length);
+    } catch (e) {
+      console.warn("⚠️ Could not clear all lesson local cache:", e);
+    }
+  }
+
   /**
    * Initialize Lesson Page
    */
@@ -2032,22 +2059,35 @@
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("📊 Topic progress from server:", response);
-        if (response && response.success && response.data) {
-          // Merge: server true values always win over local false values
-          var merged = response.data;
-          if (localData) {
-            merged.lessonCompleted =
-              merged.lessonCompleted || localData.lessonRead || false;
-            merged.miniQuizCompleted =
-              merged.miniQuizCompleted || localData.lessonQuiz || false;
-            merged.mindmapViewed =
-              merged.mindmapViewed || localData.mindmapViewed || false;
-            merged.flashcardsCompleted =
-              merged.flashcardsCompleted || localData.flashcardsDone || false;
+        if (response && response.success) {
+          if (response.data) {
+            // Merge: server true values always win over local false values
+            var merged = response.data;
+            if (localData) {
+              merged.lessonCompleted =
+                merged.lessonCompleted || localData.lessonRead || false;
+              merged.miniQuizCompleted =
+                merged.miniQuizCompleted || localData.lessonQuiz || false;
+              merged.mindmapViewed =
+                merged.mindmapViewed || localData.mindmapViewed || false;
+              merged.flashcardsCompleted =
+                merged.flashcardsCompleted || localData.flashcardsDone || false;
+            }
+            restoreTopicProgress(merged);
+            // Update localStorage with merged data
+            saveLocalProgress(topicId);
+          } else {
+            // Server has no topic progress (e.g. user reset all data) => remove stale local cache
+            clearLocalProgress(topicId);
+            tabCompletion = {
+              lessonRead: false,
+              lessonQuiz: false,
+              mindmapViewed: false,
+              flashcardsDone: false,
+            };
+            resetAllLessonUI();
+            console.log("🧹 Cleared stale local progress for topic:", topicId);
           }
-          restoreTopicProgress(merged);
-          // Update localStorage with merged data
-          saveLocalProgress(topicId);
         }
       })
       .withFailureHandler(function (error) {
@@ -2492,6 +2532,8 @@
   window.toggleMiniQuizDropdown = toggleMiniQuizDropdown;
   window.selectMiniQuizOption = selectMiniQuizOption;
   window.loadMiniQuiz = loadMiniQuiz;
+  window.clearLocalProgress = clearLocalProgress;
+  window.clearAllLessonLocalProgress = clearAllLessonLocalProgress;
 
   console.log("✅ Lesson scripts loaded (Phase 3: AI Content Integration)");
 

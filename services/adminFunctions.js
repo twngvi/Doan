@@ -280,6 +280,295 @@ function getAdminDashboardStats() {
   }
 }
 
+/**
+ * Lấy dữ liệu trạng thái hoạt động users cho Admin Online Stats
+ * Quy ước:
+ * - active: hoạt động trong 1 phút
+ * - idle: hoạt động trong 5 phút
+ * - offline: quá 5 phút hoặc chưa có hoạt động gần đây
+ * - disabled: tài khoản bị khóa (isActive = false)
+ */
+function getAdminOnlineUsersData() {
+  try {
+    const sheet = getSheet("Users");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
+    }
+
+    const lastSeenIndex = ensureUsersColumn(sheet, "lastSeenAt");
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return {
+        success: true,
+        data: {
+          users: [],
+          activities: [],
+          totalOnline: 0,
+          totalAccounts: 0,
+          activeNow: 0,
+          idleUsers: 0,
+          offlineUsers: 0,
+          disabledUsers: 0,
+        },
+      };
+    }
+
+    const headers = data[0];
+    const col = {
+      userId: headers.indexOf("userId"),
+      email: headers.indexOf("email"),
+      displayName: headers.indexOf("displayName"),
+      username: headers.indexOf("username"),
+      avatarUrl: headers.indexOf("avatarUrl"),
+      isActive: headers.indexOf("isActive"),
+      lastLogin: headers.indexOf("lastLogin"),
+      lastActiveDate: headers.indexOf("lastActiveDate"),
+      createdAt: headers.indexOf("createdAt"),
+      lastSeenAt: lastSeenIndex,
+    };
+
+    const now = new Date();
+    const ONLINE_WINDOW_MINUTES = 5;
+    const ACTIVE_WINDOW_MINUTES = 1;
+
+    const users = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+
+      let isAccountEnabled = true;
+      if (col.isActive >= 0) {
+        const isActiveFlag = row[col.isActive];
+        if (
+          isActiveFlag === false ||
+          isActiveFlag === "false" ||
+          isActiveFlag === "FALSE"
+        ) {
+          isAccountEnabled = false;
+        }
+      }
+
+      const lastLogin =
+        col.lastLogin >= 0 ? parseAdminSheetDate(row[col.lastLogin]) : null;
+      const lastActive =
+        col.lastActiveDate >= 0
+          ? parseAdminSheetDate(row[col.lastActiveDate])
+          : null;
+      const lastSeenAt =
+        col.lastSeenAt >= 0 ? parseAdminSheetDate(row[col.lastSeenAt]) : null;
+      const createdAt =
+        col.createdAt >= 0 ? parseAdminSheetDate(row[col.createdAt]) : null;
+
+      const latestActivity = getLatestAdminDate(
+        lastSeenAt,
+        getLatestAdminDate(lastActive, lastLogin),
+      );
+
+      let minutesAgo = null;
+      if (latestActivity) {
+        minutesAgo = Math.floor((now.getTime() - latestActivity.getTime()) / 60000);
+      }
+
+      let status = "offline";
+      if (!isAccountEnabled) {
+        status = "disabled";
+      } else if (minutesAgo !== null && minutesAgo <= ACTIVE_WINDOW_MINUTES) {
+        status = "active";
+      } else if (minutesAgo !== null && minutesAgo <= ONLINE_WINDOW_MINUTES) {
+        status = "idle";
+      }
+
+      const displayName =
+        (col.displayName >= 0 && row[col.displayName]) ||
+        (col.username >= 0 && row[col.username]) ||
+        (col.email >= 0 && row[col.email]) ||
+        "Người dùng";
+
+      const email = col.email >= 0 ? row[col.email] || "" : "";
+      const avatarUrl =
+        col.avatarUrl >= 0 && row[col.avatarUrl]
+          ? row[col.avatarUrl]
+          : (email ? getGravatarUrl(email) : "");
+
+      users.push({
+        id: col.userId >= 0 ? row[col.userId] || ("USR_" + i) : ("USR_" + i),
+        name: displayName,
+        email: email,
+        avatar: avatarUrl,
+        status: status,
+        activity:
+          status === "active"
+            ? "Đang hoạt động"
+            : status === "idle"
+              ? "Tạm không hoạt động"
+              : status === "disabled"
+                ? "Tài khoản đã bị khóa"
+                : "Offline",
+        loginTime: lastLogin ? lastLogin.toISOString() : "",
+        lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : "",
+        lastActivity: latestActivity
+          ? latestActivity.toISOString()
+          : (createdAt ? createdAt.toISOString() : ""),
+        lastActivityMinutes: minutesAgo,
+      });
+    }
+
+    users.sort(function(a, b) {
+      const timeA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+      const timeB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    const activeNow = users.filter(function(u) { return u.status === "active"; }).length;
+    const idleUsers = users.filter(function(u) { return u.status === "idle"; }).length;
+    const offlineUsers = users.filter(function(u) { return u.status === "offline"; }).length;
+    const disabledUsers = users.filter(function(u) { return u.status === "disabled"; }).length;
+    const totalOnline = activeNow + idleUsers;
+
+    // Timeline đơn giản dựa trên hoạt động gần nhất
+    const activities = users
+      .filter(function(u) { return u.status === "active" || u.status === "idle"; })
+      .slice(0, 10)
+      .map(function(u) {
+      return {
+        type: u.status === "active" ? "activity" : "login",
+        user: u.name,
+        action: u.status === "active" ? "đang hoạt động" : "vừa online",
+        time: u.lastActivity,
+      };
+      });
+
+    return {
+      success: true,
+      data: {
+        users: users,
+        activities: activities,
+        totalOnline: totalOnline,
+        totalAccounts: users.length,
+        activeNow: activeNow,
+        idleUsers: idleUsers,
+        offlineUsers: offlineUsers,
+        disabledUsers: disabledUsers,
+      },
+    };
+  } catch (error) {
+    Logger.log("Error getting admin online users: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Heartbeat từ client để ghi nhận user còn đang mở web
+ * payload: { userId?: string, email?: string, page?: string }
+ */
+function updateUserHeartbeat(payload) {
+  try {
+    const sheet = getSheet("Users");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
+    }
+
+    const safePayload = payload || {};
+    const targetUserId = safePayload.userId ? String(safePayload.userId).trim() : "";
+    const targetEmail = safePayload.email
+      ? String(safePayload.email).trim().toLowerCase()
+      : "";
+
+    if (!targetUserId && !targetEmail) {
+      return { success: false, message: "Thiếu userId/email" };
+    }
+
+    const lastSeenIndex = ensureUsersColumn(sheet, "lastSeenAt");
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: false, message: "Không có dữ liệu người dùng" };
+    }
+
+    const headers = data[0];
+    const userIdIndex = headers.indexOf("userId");
+    const emailIndex = headers.indexOf("email");
+    const isActiveIndex = headers.indexOf("isActive");
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const rowUserId = userIdIndex >= 0 ? String(row[userIdIndex] || "").trim() : "";
+      const rowEmail =
+        emailIndex >= 0 ? String(row[emailIndex] || "").trim().toLowerCase() : "";
+
+      const matched =
+        (targetUserId && rowUserId && targetUserId === rowUserId) ||
+        (targetEmail && rowEmail && targetEmail === rowEmail);
+
+      if (!matched) continue;
+
+      if (isActiveIndex >= 0) {
+        const isActiveFlag = row[isActiveIndex];
+        if (
+          isActiveFlag === false ||
+          isActiveFlag === "false" ||
+          isActiveFlag === "FALSE"
+        ) {
+          return { success: false, message: "Tài khoản đang bị khóa" };
+        }
+      }
+
+      const now = new Date();
+      sheet.getRange(i + 1, lastSeenIndex + 1).setValue(now);
+
+      return {
+        success: true,
+        data: {
+          userId: rowUserId,
+          email: rowEmail,
+          lastSeenAt: now.toISOString(),
+        },
+      };
+    }
+
+    return { success: false, message: "Không tìm thấy người dùng" };
+  } catch (error) {
+    Logger.log("Error updating heartbeat: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Parse dữ liệu ngày từ sheet (Date object hoặc string)
+ */
+function parseAdminSheetDate(value) {
+  if (!value) return null;
+  if (Object.prototype.toString.call(value) === "[object Date]") {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Lấy Date mới nhất trong 2 giá trị
+ */
+function getLatestAdminDate(dateA, dateB) {
+  if (dateA && dateB) {
+    return dateA.getTime() >= dateB.getTime() ? dateA : dateB;
+  }
+  return dateA || dateB || null;
+}
+
+/**
+ * Đảm bảo cột tồn tại trong Users header, tạo mới ở cuối nếu thiếu
+ */
+function ensureUsersColumn(sheet, columnName) {
+  const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+  const headers = headerRange.getValues()[0] || [];
+  let index = headers.indexOf(columnName);
+  if (index !== -1) return index;
+
+  const newColumn = headers.length + 1;
+  sheet.getRange(1, newColumn).setValue(columnName);
+  return newColumn - 1;
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================

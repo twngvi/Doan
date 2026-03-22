@@ -343,9 +343,20 @@
     const badge = document.getElementById('onlineCountBadge');
     if (!badge) return;
 
-    // Simulate - replace with actual API call
-    const count = Math.floor(Math.random() * 50) + 10;
-    badge.textContent = count;
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler((result) => {
+        if (!result || !result.success || !result.data) return;
+        const count = Number(result.data.totalOnline || 0);
+        badge.textContent = count;
+      })
+      .withFailureHandler((error) => {
+        console.error('Failed to update online badge:', error);
+      })
+      .getAdminOnlineUsersData();
   }
 
   function startOnlineCountUpdater() {

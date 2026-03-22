@@ -10,6 +10,101 @@
   window.currentUser = null; // â­ GÃ¡n trá»±c tiáº¿p Ä‘á»ƒ cháº¯c cháº¯n
   let isGoogleAuthInProgress = false; // Prevent multiple simultaneous requests
   let googleClientInitialized = false;
+  let heartbeatIntervalId = null;
+  let heartbeatMonitorId = null;
+  let heartbeatEventsBound = false;
+  let lastHeartbeatAt = 0;
+
+  const HEARTBEAT_INTERVAL_MS = 30000;
+  const HEARTBEAT_ACTIVITY_THROTTLE_MS = 20000;
+
+  function getStoredCurrentUser() {
+    try {
+      const raw = localStorage.getItem("currentUser");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      console.warn("Parse currentUser failed:", e);
+      return null;
+    }
+  }
+
+  function getHeartbeatUser() {
+    return window.currentUser || currentUser || getStoredCurrentUser();
+  }
+
+  function isSessionLoggedIn() {
+    return localStorage.getItem("isLoggedIn") === "true" && !!getHeartbeatUser();
+  }
+
+  function sendUserHeartbeat(reason = "interval") {
+    const user = getHeartbeatUser();
+    if (!user || !isSessionLoggedIn()) return;
+    if (typeof google === "undefined" || !google.script || !google.script.run) return;
+
+    const now = Date.now();
+    if (reason === "activity" && now - lastHeartbeatAt < HEARTBEAT_ACTIVITY_THROTTLE_MS) {
+      return;
+    }
+
+    lastHeartbeatAt = now;
+    const page = (localStorage.getItem("lastActivePage") || "").toString();
+
+    google.script.run
+      .withFailureHandler((error) => {
+        console.warn("Heartbeat failed:", error);
+      })
+      .updateUserHeartbeat({
+        userId: user.userId || "",
+        email: user.email || "",
+        page: page,
+      });
+  }
+
+  function bindHeartbeatEventsOnce() {
+    if (heartbeatEventsBound) return;
+    heartbeatEventsBound = true;
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) sendUserHeartbeat("visibility");
+    });
+    window.addEventListener("focus", () => sendUserHeartbeat("focus"));
+    window.addEventListener("online", () => sendUserHeartbeat("online"));
+
+    const passiveEvents = ["click", "keydown", "mousemove", "touchstart", "scroll"];
+    passiveEvents.forEach((eventName) => {
+      window.addEventListener(eventName, () => sendUserHeartbeat("activity"), {
+        passive: true,
+      });
+    });
+  }
+
+  function startUserHeartbeat() {
+    if (!isSessionLoggedIn()) return;
+    if (heartbeatIntervalId) return;
+
+    bindHeartbeatEventsOnce();
+    sendUserHeartbeat("start");
+    heartbeatIntervalId = setInterval(() => {
+      sendUserHeartbeat("interval");
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function stopUserHeartbeat() {
+    if (!heartbeatIntervalId) return;
+    clearInterval(heartbeatIntervalId);
+    heartbeatIntervalId = null;
+  }
+
+  function initHeartbeatMonitor() {
+    if (heartbeatMonitorId) return;
+    heartbeatMonitorId = setInterval(() => {
+      if (isSessionLoggedIn()) {
+        startUserHeartbeat();
+      } else {
+        stopUserHeartbeat();
+      }
+    }, 5000);
+  }
 
   function applyThemeFromAuthenticatedUser(user) {
     try {
@@ -67,6 +162,11 @@
       currentUser = null;
       window.currentUser = null;
     }
+
+    if (isSessionLoggedIn()) {
+      startUserHeartbeat();
+    }
+    initHeartbeatMonitor();
 
     // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
     try {
@@ -549,6 +649,7 @@
       window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       localStorage.setItem("isLoggedIn", "true");
+      startUserHeartbeat();
       applyThemeFromAuthenticatedUser(response.user);
       console.log("âœ… Current user synced to window:", currentUser);
 
@@ -699,6 +800,7 @@
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
+          startUserHeartbeat();
           applyThemeFromAuthenticatedUser(response.user);
 
           console.log("✅ Session saved:", {
@@ -827,6 +929,8 @@
    */
   function handleLogout() {
     console.log("Logging out...");
+
+    stopUserHeartbeat();
 
     // Clear user data from all storage
     currentUser = null;
@@ -984,6 +1088,7 @@
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          startUserHeartbeat();
           applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
@@ -1106,8 +1211,11 @@
 
         if (response.success) {
           // ÄÄƒng kÃ½ thÃ nh cÃ´ng
+          currentUser = response.user;
+          window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           localStorage.setItem("isLoggedIn", "true");
+          startUserHeartbeat();
 
           showToast(response.message || "Đăng ký thành công!", "success");
 
@@ -1153,6 +1261,8 @@
       currentUser = response.user;
       window.currentUser = response.user;
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      localStorage.setItem("isLoggedIn", "true");
+      startUserHeartbeat();
       console.log("âœ… Current user synced to window:", currentUser.username);
 
       console.log("User saved to localStorage:", currentUser.username);
