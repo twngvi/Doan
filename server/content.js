@@ -2019,10 +2019,19 @@ function getDashboardData(userContext) {
 
     // === 6. Leaderboard (top 10 from master DB) ===
     const leaderboard = [];
+    const roleColExists = typeof col["role"] === "number";
     for (let i = 1; i < allData.length; i++) {
       const xp = parseInt(allData[i][col["totalXP"]]) || 0;
       const isActive = allData[i][col["isActive"]];
+      const role = roleColExists
+        ? String(allData[i][col["role"]] || "")
+            .trim()
+            .toUpperCase()
+        : "USER";
+
       if (isActive === false || isActive === "FALSE") continue;
+      if (role === "ADMIN") continue;
+
       leaderboard.push({
         name:
           allData[i][col["displayName"]] ||
@@ -2766,8 +2775,7 @@ function clearAllLearningData(userContext) {
     deleted.quizResults = clearSheetDataKeepHeader("Quiz_Results");
     deleted.matchingResults = clearSheetDataKeepHeader("Matching_Results");
     deleted.flashcardSessions = clearSheetDataKeepHeader("FlashcardSessions");
-    deleted.flashcardSessions +=
-      clearSheetDataKeepHeader("Flashcard_Sessions");
+    deleted.flashcardSessions += clearSheetDataKeepHeader("Flashcard_Sessions");
     deleted.cardProgress = clearSheetDataKeepHeader("CardProgress");
     deleted.cardProgress += clearSheetDataKeepHeader("Flashcard_Progress");
     deleted.wrongAnswers = clearSheetDataKeepHeader("Wrong_Answers");
@@ -3734,8 +3742,7 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         return v === 1 || v === true || v === "1" || v === "TRUE";
       };
       const lessonDone = lessonCol >= 0 && isChecked(currentData[lessonCol]);
-      const mindmapDone =
-        mindmapCol >= 0 && isChecked(currentData[mindmapCol]);
+      const mindmapDone = mindmapCol >= 0 && isChecked(currentData[mindmapCol]);
       const flashcardsDone =
         flashcardsCol >= 0 && isChecked(currentData[flashcardsCol]);
       const miniQuizDone =

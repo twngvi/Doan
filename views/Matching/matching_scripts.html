@@ -33,6 +33,7 @@
   let matchingAllTopicsForSearch = null;
   let matchingTopicsLoadTimeoutId = null;
   let matchingGoogleRunRetryCount = 0;
+  let matchingLastInitAt = 0;
 
   // ===== STATE =====
   let matchingMeteorInterval = null;
@@ -93,6 +94,7 @@
 
   // ===== PAGE INIT =====
   window.initMatchingPage = function () {
+    matchingLastInitAt = Date.now();
     console.log("🎮 Initializing Matching Page...");
     console.log("📋 currentPageParams:", window.currentPageParams);
 
@@ -192,6 +194,11 @@
     const gameWrapper = document.getElementById("matchingGameWrapper");
     if (topicSelection) topicSelection.style.display = "";
     if (gameWrapper) gameWrapper.classList.remove("active");
+  }
+
+  function isMatchingPageVisible() {
+    const page = document.getElementById("page-matching");
+    return !!page && page.style.display !== "none";
   }
 
   function isGoogleScriptRunReady() {
@@ -488,13 +495,15 @@
   window.checkMatchingTopicUnlocked = function (topicId) {
     const originalTopics = matchingAllTopicsForSearch || matchingState.topics;
     if (!originalTopics || originalTopics.length === 0) return true;
-    const index = originalTopics.findIndex(t => String(t.topicId) === String(topicId));
+    const index = originalTopics.findIndex(
+      (t) => String(t.topicId) === String(topicId),
+    );
     if (index === -1) return false; // Not found? Play it safe and lock.
     if (index === 0) return true; // First topic is always unlocked
-    
+
     const prevTopic = originalTopics[index - 1];
     const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
-    
+
     return prevStats && prevStats.bestAccuracy >= 80;
   };
 
@@ -573,8 +582,6 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     };
 
-    };
-
     grid.innerHTML = "";
     grid.style.display = "flex";
 
@@ -585,15 +592,19 @@
       const matchingPlayed =
         (topicStats && topicStats.hasPlayed === true) ||
         topicProgress.matchingDone === true;
-      
-      const isUnlocked = window.checkMatchingTopicUnlocked ? window.checkMatchingTopicUnlocked(topic.topicId) : true;
+
+      const isUnlocked = window.checkMatchingTopicUnlocked
+        ? window.checkMatchingTopicUnlocked(topic.topicId)
+        : true;
 
       const card = document.createElement("div");
       card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
-      
+
       if (!isUnlocked) {
         card.onclick = () => {
-          alert("Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% độ chính xác ở chủ đề trước đó!");
+          alert(
+            "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% độ chính xác ở chủ đề trước đó!",
+          );
         };
       } else {
         card.onclick = () => selectMatchingTopic(topic);
@@ -1492,4 +1503,32 @@
       matchingMeteorInterval = null;
     }
   };
+
+  // Fallback init watcher:
+  // If navigation flow misses initMatchingPage (e.g. showPage hook race), auto-init when page becomes visible.
+  (function setupMatchingAutoInitWatcher() {
+    let wasVisible = false;
+
+    setInterval(function () {
+      const visible = isMatchingPageVisible();
+
+      if (!visible) {
+        wasVisible = false;
+        return;
+      }
+
+      // Fire once per visibility cycle, and avoid duplicate init when showPage already called recently.
+      if (!wasVisible) {
+        wasVisible = true;
+
+        if (Date.now() - matchingLastInitAt > 1500) {
+          try {
+            window.initMatchingPage();
+          } catch (error) {
+            console.error("❌ Auto init matching failed:", error);
+          }
+        }
+      }
+    }, 400);
+  })();
 </script>
