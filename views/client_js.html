@@ -375,6 +375,12 @@
   function showPage(pageId, params = {}, addToHistory = true) {
     console.log("Showing page:", pageId);
 
+    const incomingPageName = (pageId || "").replace("page-", "");
+    if (!isAuthPageName(incomingPageName)) {
+      // Prevent stale overlay from leaking into app pages after login.
+      hideLoading();
+    }
+
     // ⭐ ROLE-BASED ACCESS CONTROL
     const adminOnlyPageIds = ["page-admin"];
     const userOnlyPageIds = [
@@ -1369,8 +1375,41 @@
     return dashboardPage.style.display === "block";
   }
 
+  function isAuthPageName(pageName) {
+    return (
+      pageName === "landing" ||
+      pageName === "login" ||
+      pageName === "register" ||
+      pageName === "verify-email" ||
+      pageName === "forgot-password"
+    );
+  }
+
+  function shouldSuppressOverlayForLoggedInApp(reason, forceBlocking) {
+    if (forceBlocking) return false;
+    if (!isSessionLoggedIn()) return false;
+
+    const currentPage = (
+      localStorage.getItem("lastActivePage") || ""
+    ).toString();
+    if (isAuthPageName(currentPage)) return false;
+
+    const allowedBlockingReasons = new Set([
+      "initial-load",
+      "route-change",
+      "page-transition",
+      "blocking",
+    ]);
+
+    return !allowedBlockingReasons.has(reason || "");
+  }
+
   function shouldSuppressGlobalOverlay(reason, forceBlocking) {
     if (forceBlocking) return false;
+
+    if (shouldSuppressOverlayForLoggedInApp(reason, forceBlocking)) {
+      return true;
+    }
 
     if (reason === "background") {
       return true;
