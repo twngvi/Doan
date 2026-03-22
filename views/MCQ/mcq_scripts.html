@@ -608,20 +608,21 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     };
 
+  // ⭐ Helper function to check if a topic is unlocked for Quiz
+  window.checkMcqTopicUnlocked = function (topicId) {
+    if (!quizState.allTopics || quizState.allTopics.length === 0) return true;
+    const index = quizState.allTopics.findIndex(t => String(t.topicId) === String(topicId));
+    if (index === -1) return false; // Not found? Play it safe and lock.
+    if (index === 0) return true; // First topic is always unlocked
+    
+    const prevTopic = quizState.allTopics[index - 1];
+    const quizStats = window.quizStatsCache && window.quizStatsCache.stats ? window.quizStatsCache.stats : {};
+    const prevStats = quizStats[prevTopic.topicId] || null;
+    
+    return prevStats && prevStats.bestPercent >= 80;
+  };
     // ⭐ Get quiz stats from cache (managed per topicId)
     const quizStats = window.quizStatsCache && window.quizStatsCache.stats ? window.quizStatsCache.stats : {};
-
-    // ⭐ Helper function to check if a topic is unlocked
-    const checkMcqTopicUnlocked = (topicId) => {
-      if (!quizState.allTopics || quizState.allTopics.length === 0) return true;
-      const index = quizState.allTopics.findIndex(t => t.topicId === topicId);
-      if (index <= 0) return true; // First topic is always unlocked
-      
-      const prevTopic = quizState.allTopics[index - 1];
-      const prevStats = quizStats[prevTopic.topicId] || null;
-      
-      return prevStats && prevStats.bestPercent >= 80;
-    };
 
     topics.forEach((topic, index) => {
       const item = document.createElement("div");
@@ -630,7 +631,7 @@
       // ⭐ Get quiz stats for THIS specific topic (managed per topicId)
       const topicStats = quizStats[topic.topicId] || null;
       const hasPlayed = topicStats && topicStats.hasPlayed === true;
-      const isUnlocked = checkMcqTopicUnlocked(topic.topicId);
+      const isUnlocked = window.checkMcqTopicUnlocked ? window.checkMcqTopicUnlocked(topic.topicId) : true;
 
       item.className = `mcq-topic-item${hasDoc ? "" : " no-content"}${hasPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
       
@@ -795,6 +796,11 @@
    */
   function selectTopicForQuiz(topic) {
     console.log("🎯 Selected topic for quiz:", topic);
+
+    if (window.checkMcqTopicUnlocked && !window.checkMcqTopicUnlocked(topic.topicId)) {
+      alert("Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% điểm số tốt nhất ở chủ đề trước đó!");
+      return;
+    }
 
     // Nếu đang loading topic khác thì không cho chọn
     if (quizState.isLoadingTopic) return;
