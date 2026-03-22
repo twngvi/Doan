@@ -492,6 +492,18 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     };
 
+    const checkMatchingTopicUnlocked = (topicId) => {
+      const originalTopics = matchingAllTopicsForSearch || topics;
+      if (!originalTopics || originalTopics.length === 0) return true;
+      const index = originalTopics.findIndex(t => t.topicId === topicId);
+      if (index <= 0) return true; // First topic is always unlocked
+      
+      const prevTopic = originalTopics[index - 1];
+      const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
+      
+      return prevStats && prevStats.bestAccuracy >= 80;
+    };
+
     grid.innerHTML = "";
     grid.style.display = "flex";
 
@@ -502,10 +514,19 @@
       const matchingPlayed =
         (topicStats && topicStats.hasPlayed === true) ||
         topicProgress.matchingDone === true;
+      
+      const isUnlocked = checkMatchingTopicUnlocked(topic.topicId);
 
       const card = document.createElement("div");
-      card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}`;
-      card.onclick = () => selectMatchingTopic(topic);
+      card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
+      
+      if (!isUnlocked) {
+        card.onclick = () => {
+          alert("Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% độ chính xác ở chủ đề trước đó!");
+        };
+      } else {
+        card.onclick = () => selectMatchingTopic(topic);
+      }
 
       const icon = getTopicIcon(topic.title);
 
@@ -529,7 +550,7 @@
 
       // Status icon (circle like MCQ)
       let statusHtml = "";
-      if (!hasDoc) {
+      if (!isUnlocked || !hasDoc) {
         statusHtml = `
           <div class="matching-topic-status locked">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
