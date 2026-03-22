@@ -48,6 +48,7 @@
     topics: [],
     filteredTopics: [],
     selectedTopic: null,
+    topicHistory: [],
     searchKeyword: "",
     loadingTopics: false,
     topicError: null,
@@ -191,8 +192,19 @@
   // ===== VIEW MANAGEMENT =====
   function showMatchingTopicSelection() {
     const topicSelection = document.getElementById("matchingTopicSelection");
+    const topicDetail = document.getElementById("matchingTopicDetail");
     const gameWrapper = document.getElementById("matchingGameWrapper");
     if (topicSelection) topicSelection.style.display = "";
+    if (topicDetail) topicDetail.style.display = "none";
+    if (gameWrapper) gameWrapper.classList.remove("active");
+  }
+
+  function showMatchingTopicDetail() {
+    const topicSelection = document.getElementById("matchingTopicSelection");
+    const topicDetail = document.getElementById("matchingTopicDetail");
+    const gameWrapper = document.getElementById("matchingGameWrapper");
+    if (topicSelection) topicSelection.style.display = "none";
+    if (topicDetail) topicDetail.style.display = "";
     if (gameWrapper) gameWrapper.classList.remove("active");
   }
 
@@ -733,8 +745,160 @@
     matchingState.currentTopicName = topic.title;
     matchingState.currentContentDocId = topic.contentDocId;
 
-    // Open difficulty selector
+    openMatchingTopicHub(topic);
+  };
+
+  function openMatchingTopicHub(topic) {
+    var titleEl = document.getElementById("matchingTopicDetailTitle");
+    var descEl = document.getElementById("matchingTopicDetailDescription");
+    var categoryEl = document.getElementById("matchingTopicDetailCategory");
+    var estimateEl = document.getElementById("matchingTopicDetailEstimate");
+
+    if (titleEl) titleEl.textContent = topic.title || "Chủ đề";
+    if (descEl)
+      descEl.textContent = topic.description || "Chưa có mô tả cho chủ đề này.";
+    if (categoryEl)
+      categoryEl.textContent = "Danh mục: " + (topic.category || "Chung");
+    if (estimateEl)
+      estimateEl.textContent =
+        "Ước tính: " + (topic.estimatedTime || "Không giới hạn");
+
+    showMatchingTopicDetail();
+    loadMatchingTopicHistory(topic.topicId);
+  }
+
+  window.startMatchingFromTopicHub = function () {
+    if (!matchingState.selectedTopic) return;
     showMatchingDifficultyModal();
+  };
+
+  function loadMatchingTopicHistory(topicId) {
+    var loadingEl = document.getElementById("matchingTopicHistoryLoading");
+    var emptyEl = document.getElementById("matchingTopicHistoryEmpty");
+    var listEl = document.getElementById("matchingTopicHistoryList");
+
+    if (loadingEl) loadingEl.style.display = "block";
+    if (emptyEl) emptyEl.style.display = "none";
+    if (listEl) listEl.innerHTML = "";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (loadingEl) loadingEl.style.display = "none";
+
+        var history =
+          response && response.success && Array.isArray(response.history)
+            ? response.history
+            : [];
+        matchingState.topicHistory = history;
+        renderMatchingTopicHistory(history);
+      })
+      .withFailureHandler(function () {
+        if (loadingEl) loadingEl.style.display = "none";
+        if (emptyEl) {
+          emptyEl.style.display = "block";
+          emptyEl.textContent = "Không thể tải lịch sử chơi.";
+        }
+      })
+      .getMatchingHistoryByTopic(topicId, 50);
+  }
+
+  function renderMatchingTopicHistory(history) {
+    var emptyEl = document.getElementById("matchingTopicHistoryEmpty");
+    var listEl = document.getElementById("matchingTopicHistoryList");
+    if (!listEl) return;
+
+    listEl.innerHTML = "";
+    if (!history || history.length === 0) {
+      if (emptyEl) emptyEl.style.display = "block";
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = "none";
+
+    history.forEach(function (item, index) {
+      var row = document.createElement("div");
+      row.className = "matching-topic-history-item";
+
+      var playedAt = item.playedAt
+        ? new Date(item.playedAt).toLocaleString("vi-VN")
+        : "-";
+      row.innerHTML =
+        '<div class="matching-topic-history-item-main">' +
+        '<div class="matching-topic-history-attempt">Lần ' +
+        (history.length - index) +
+        "</div>" +
+        '<div class="matching-topic-history-meta">' +
+        (item.score || 0) +
+        " điểm - " +
+        (item.accuracy || 0) +
+        "% - " +
+        (item.difficulty || "medium") +
+        " - " +
+        playedAt +
+        "</div>" +
+        "</div>" +
+        '<button class="matching-btn matching-btn-back" onclick="openMatchingHistoryDetail(\'' +
+        String(item.id || "") +
+        "')\">Chi tiết</button>";
+
+      listEl.appendChild(row);
+    });
+  }
+
+  window.openMatchingHistoryDetail = function (resultId) {
+    if (!resultId) return;
+
+    var modal = document.getElementById("matchingHistoryDetailModal");
+    var body = document.getElementById("matchingHistoryDetailBody");
+    if (!modal || !body) return;
+
+    modal.classList.add("active");
+    body.innerHTML = "<p>Đang tải chi tiết...</p>";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (!response || !response.success || !response.detail) {
+          body.innerHTML = "<p>Không tìm thấy chi tiết lượt chơi.</p>";
+          return;
+        }
+
+        var d = response.detail;
+        body.innerHTML =
+          '<div class="matching-history-detail-grid">' +
+          "<div><strong>Điểm:</strong> " +
+          (d.score || 0) +
+          "</div>" +
+          "<div><strong>Độ chính xác:</strong> " +
+          (d.accuracy || 0) +
+          "%</div>" +
+          "<div><strong>Độ khó:</strong> " +
+          (d.difficulty || "medium") +
+          "</div>" +
+          "<div><strong>Tổng cặp:</strong> " +
+          (d.totalPairs || 0) +
+          "</div>" +
+          "<div><strong>Đúng:</strong> " +
+          (d.correctPairs || 0) +
+          "</div>" +
+          "<div><strong>Sai:</strong> " +
+          (d.wrongAttempts || 0) +
+          "</div>" +
+          "<div><strong>Thời gian:</strong> " +
+          formatMatchingTime(d.elapsedTime || 0) +
+          "</div>" +
+          "<div><strong>Thời điểm:</strong> " +
+          (d.playedAt ? new Date(d.playedAt).toLocaleString("vi-VN") : "-") +
+          "</div>" +
+          "</div>";
+      })
+      .withFailureHandler(function () {
+        body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
+      })
+      .getMatchingResultDetailById(resultId);
+  };
+
+  window.closeMatchingHistoryDetail = function () {
+    var modal = document.getElementById("matchingHistoryDetailModal");
+    if (modal) modal.classList.remove("active");
   };
 
   // ===== DIFFICULTY MODAL =====
@@ -806,6 +970,8 @@
   function startMatchingGameFromTopic(topic) {
     // Hide topic selection, show game
     document.getElementById("matchingTopicSelection").style.display = "none";
+    var topicDetail = document.getElementById("matchingTopicDetail");
+    if (topicDetail) topicDetail.style.display = "none";
     const gameWrapper = document.getElementById("matchingGameWrapper");
     gameWrapper.classList.add("active");
 
@@ -1213,6 +1379,11 @@
         }
         console.log("🔄 Progress cache invalidated after matching save");
 
+        // Refresh topic hub history if user goes back to topic detail.
+        if (matchingState.currentTopicId) {
+          loadMatchingTopicHistory(matchingState.currentTopicId);
+        }
+
         // 2. Save activity log entry AFTER matching result is saved (avoid concurrent writes)
         google.script.run
           .withSuccessHandler(function () {
@@ -1442,6 +1613,27 @@
   }
 
   // ===== NAVIGATION =====
+  window.matchingBackToTopicHub = function () {
+    stopMatchingTimer();
+
+    document.getElementById("matchingResultOverlay").classList.remove("active");
+    document
+      .getElementById("matchingDifficultyOverlay")
+      .classList.remove("active");
+    document.getElementById("matchingGameWrapper").classList.remove("active");
+    document.getElementById("matchingBoard").innerHTML = "";
+
+    matchingState.showResultModal = false;
+    matchingState.resultData = null;
+
+    if (matchingState.selectedTopic) {
+      openMatchingTopicHub(matchingState.selectedTopic);
+      return;
+    }
+
+    showMatchingTopicSelection();
+  };
+
   window.matchingBackToTopics = function () {
     stopMatchingTimer();
 

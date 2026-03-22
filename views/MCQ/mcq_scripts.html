@@ -92,6 +92,7 @@
     autoAdvanceTimer: null,
     isLoadingTopic: false,
     allTopics: [],
+    topicHistory: [],
   };
 
   // Legacy alias: gameMode ↔ quizMode
@@ -195,6 +196,13 @@
   // ========== 2. VIEW SWITCHING ==========
   function showTopicSelection() {
     document.getElementById("mcq-topic-selection").style.display = "block";
+    document.getElementById("mcq-topic-detail-view").style.display = "none";
+    document.getElementById("mcq-quiz-view").style.display = "none";
+  }
+
+  function showTopicDetailView() {
+    document.getElementById("mcq-topic-selection").style.display = "none";
+    document.getElementById("mcq-topic-detail-view").style.display = "block";
     document.getElementById("mcq-quiz-view").style.display = "none";
   }
 
@@ -203,6 +211,7 @@
    */
   function showQuizView() {
     document.getElementById("mcq-topic-selection").style.display = "none";
+    document.getElementById("mcq-topic-detail-view").style.display = "none";
     document.getElementById("mcq-quiz-view").style.display = "block";
     document.getElementById("mcq-topic-title").textContent =
       quizState.topicTitle;
@@ -608,21 +617,29 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="26" height="26"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     };
 
-  // ⭐ Helper function to check if a topic is unlocked for Quiz
-  window.checkMcqTopicUnlocked = function (topicId) {
-    if (!quizState.allTopics || quizState.allTopics.length === 0) return true;
-    const index = quizState.allTopics.findIndex(t => String(t.topicId) === String(topicId));
-    if (index === -1) return false; // Not found? Play it safe and lock.
-    if (index === 0) return true; // First topic is always unlocked
-    
-    const prevTopic = quizState.allTopics[index - 1];
-    const quizStats = window.quizStatsCache && window.quizStatsCache.stats ? window.quizStatsCache.stats : {};
-    const prevStats = quizStats[prevTopic.topicId] || null;
-    
-    return prevStats && prevStats.bestPercent >= 80;
-  };
+    // ⭐ Helper function to check if a topic is unlocked for Quiz
+    window.checkMcqTopicUnlocked = function (topicId) {
+      if (!quizState.allTopics || quizState.allTopics.length === 0) return true;
+      const index = quizState.allTopics.findIndex(
+        (t) => String(t.topicId) === String(topicId),
+      );
+      if (index === -1) return false; // Not found? Play it safe and lock.
+      if (index === 0) return true; // First topic is always unlocked
+
+      const prevTopic = quizState.allTopics[index - 1];
+      const quizStats =
+        window.quizStatsCache && window.quizStatsCache.stats
+          ? window.quizStatsCache.stats
+          : {};
+      const prevStats = quizStats[prevTopic.topicId] || null;
+
+      return prevStats && prevStats.bestPercent >= 80;
+    };
     // ⭐ Get quiz stats from cache (managed per topicId)
-    const quizStats = window.quizStatsCache && window.quizStatsCache.stats ? window.quizStatsCache.stats : {};
+    const quizStats =
+      window.quizStatsCache && window.quizStatsCache.stats
+        ? window.quizStatsCache.stats
+        : {};
 
     topics.forEach((topic, index) => {
       const item = document.createElement("div");
@@ -631,13 +648,17 @@
       // ⭐ Get quiz stats for THIS specific topic (managed per topicId)
       const topicStats = quizStats[topic.topicId] || null;
       const hasPlayed = topicStats && topicStats.hasPlayed === true;
-      const isUnlocked = window.checkMcqTopicUnlocked ? window.checkMcqTopicUnlocked(topic.topicId) : true;
+      const isUnlocked = window.checkMcqTopicUnlocked
+        ? window.checkMcqTopicUnlocked(topic.topicId)
+        : true;
 
       item.className = `mcq-topic-item${hasDoc ? "" : " no-content"}${hasPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
-      
+
       if (!isUnlocked) {
         item.onclick = () => {
-          alert("Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% ở chủ đề trước đó!");
+          alert(
+            "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% ở chủ đề trước đó!",
+          );
         };
       } else {
         item.onclick = () => selectTopicForQuiz(topic);
@@ -797,34 +818,236 @@
   function selectTopicForQuiz(topic) {
     console.log("🎯 Selected topic for quiz:", topic);
 
-    if (window.checkMcqTopicUnlocked && !window.checkMcqTopicUnlocked(topic.topicId)) {
-      alert("Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% điểm số tốt nhất ở chủ đề trước đó!");
+    if (
+      window.checkMcqTopicUnlocked &&
+      !window.checkMcqTopicUnlocked(topic.topicId)
+    ) {
+      alert(
+        "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% điểm số tốt nhất ở chủ đề trước đó!",
+      );
       return;
     }
-
-    // Nếu đang loading topic khác thì không cho chọn
-    if (quizState.isLoadingTopic) return;
 
     if (!topic.contentDocId || topic.contentDocId.length < 10) {
       showMcqNoContentModal(topic.title);
       return;
     }
 
-    // Lưu topic đầy đủ vào state
+    openQuizTopicHub(topic);
+  }
+
+  // Alias
+  var handleTopicSelect = selectTopicForQuiz;
+
+  function openQuizTopicHub(topic) {
     quizState.selectedTopic = topic;
     quizState.topicId = topic.topicId;
     quizState.topicTitle = topic.title;
     quizState.contentDocId = topic.contentDocId;
 
-    // Hiện loading trên topic list
-    setTopicLoadingState(true);
+    var titleEl = document.getElementById("mcq-topic-detail-title");
+    var descEl = document.getElementById("mcq-topic-detail-description");
+    var categoryEl = document.getElementById("mcq-topic-detail-category");
+    var estimatedEl = document.getElementById("mcq-topic-detail-estimated");
 
-    // Kiểm tra bài dở dang trước
-    checkExistingQuizSession(topic.topicId);
+    if (titleEl) titleEl.textContent = topic.title || "Chủ đề";
+    if (descEl)
+      descEl.textContent = topic.description || "Chưa có mô tả cho chủ đề này.";
+    if (categoryEl)
+      categoryEl.textContent = "Danh mục: " + (topic.category || "Chung");
+    if (estimatedEl)
+      estimatedEl.textContent =
+        "Ước tính: " + (topic.estimatedTime || "Không giới hạn");
+
+    showTopicDetailView();
+    loadQuizTopicHistory(topic.topicId);
   }
 
-  // Alias
-  var handleTopicSelect = selectTopicForQuiz;
+  function loadQuizTopicHistory(topicId) {
+    var loadingEl = document.getElementById("mcq-topic-history-loading");
+    var emptyEl = document.getElementById("mcq-topic-history-empty");
+    var listEl = document.getElementById("mcq-topic-history-list");
+
+    if (loadingEl) loadingEl.style.display = "block";
+    if (emptyEl) emptyEl.style.display = "none";
+    if (listEl) listEl.innerHTML = "";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (loadingEl) loadingEl.style.display = "none";
+
+        var history =
+          response && response.success && Array.isArray(response.history)
+            ? response.history
+            : [];
+        quizState.topicHistory = history;
+        renderQuizTopicHistory(history);
+      })
+      .withFailureHandler(function () {
+        if (loadingEl) loadingEl.style.display = "none";
+        if (emptyEl) {
+          emptyEl.style.display = "block";
+          emptyEl.textContent = "Không thể tải lịch sử chơi.";
+        }
+      })
+      .getQuizHistoryByTopic(topicId, 50);
+  }
+
+  function renderQuizTopicHistory(history) {
+    var emptyEl = document.getElementById("mcq-topic-history-empty");
+    var listEl = document.getElementById("mcq-topic-history-list");
+    if (!listEl) return;
+
+    listEl.innerHTML = "";
+
+    if (!history || history.length === 0) {
+      if (emptyEl) emptyEl.style.display = "block";
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = "none";
+
+    history.forEach(function (item, index) {
+      var row = document.createElement("div");
+      row.className = "mcq-topic-history-item";
+
+      var completedAt = item.completedAt
+        ? new Date(item.completedAt).toLocaleString("vi-VN")
+        : "-";
+
+      row.innerHTML =
+        '<div class="mcq-topic-history-left">' +
+        '<div class="mcq-topic-history-attempt">Lần ' +
+        (history.length - index) +
+        "</div>" +
+        '<div class="mcq-topic-history-meta">' +
+        (item.score || 0) +
+        "/" +
+        (item.totalQuestions || 0) +
+        " - " +
+        (item.percentage || 0) +
+        "% - " +
+        (item.gameMode || "instant") +
+        " - " +
+        completedAt +
+        "</div>" +
+        "</div>" +
+        '<button class="btn-secondary btn-centered" onclick="openQuizHistoryDetail(\'' +
+        String(item.id || "") +
+        "')\">Chi tiết</button>";
+
+      listEl.appendChild(row);
+    });
+  }
+
+  window.startQuizFromTopicHub = function () {
+    if (!quizState.selectedTopic || quizState.isLoadingTopic) return;
+
+    setQuizTopicHubLoading(true);
+    checkExistingQuizSession(quizState.selectedTopic.topicId);
+  };
+
+  function setQuizTopicHubLoading(loading) {
+    quizState.isLoadingTopic = loading;
+    var startBtn = document.querySelector(
+      "#mcq-topic-detail-view .btn-primary",
+    );
+    if (startBtn) {
+      startBtn.disabled = !!loading;
+      startBtn.textContent = loading
+        ? "Đang chuẩn bị quiz..."
+        : "▶ Bắt đầu chơi Quiz";
+    }
+  }
+
+  window.openQuizHistoryDetail = function (resultId) {
+    if (!resultId) return;
+
+    var modal = document.getElementById("mcq-history-detail-modal");
+    var body = document.getElementById("mcq-history-detail-body");
+    if (!modal || !body) return;
+
+    modal.style.display = "flex";
+    setTimeout(function () {
+      modal.classList.add("show");
+    }, 10);
+    body.innerHTML = "<p>Đang tải chi tiết...</p>";
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (!response || !response.success || !response.detail) {
+          body.innerHTML = "<p>Không tìm thấy chi tiết lượt chơi.</p>";
+          return;
+        }
+
+        var d = response.detail;
+        var questionItems = Array.isArray(d.questionDetails)
+          ? d.questionDetails
+              .map(function (q, idx) {
+                var ua =
+                  q.userAnswer === null || q.userAnswer === undefined
+                    ? "Chưa trả lời"
+                    : "Đáp án " + String.fromCharCode(65 + q.userAnswer);
+                var ca =
+                  q.correctAnswer === null || q.correctAnswer === undefined
+                    ? "?"
+                    : "Đáp án " + String.fromCharCode(65 + q.correctAnswer);
+                return (
+                  '<div class="mcq-history-question">' +
+                  "<strong>Câu " +
+                  (idx + 1) +
+                  ":</strong> " +
+                  (q.question || "") +
+                  "<br>" +
+                  "Bạn chọn: " +
+                  ua +
+                  " | Đáp án đúng: " +
+                  ca +
+                  (q.isCorrect ? " ✅" : " ❌") +
+                  "</div>"
+                );
+              })
+              .join("")
+          : "";
+
+        body.innerHTML =
+          '<div class="mcq-history-summary">' +
+          "Điểm: <strong>" +
+          (d.score || 0) +
+          "/" +
+          (d.totalQuestions || 0) +
+          "</strong> - " +
+          (d.percentage || 0) +
+          "%<br>" +
+          "Thời gian: " +
+          (d.timeTaken || "-") +
+          "<br>" +
+          "Chế độ: " +
+          (d.gameMode || "instant") +
+          "<br>" +
+          "Hoàn thành: " +
+          (d.completedAt
+            ? new Date(d.completedAt).toLocaleString("vi-VN")
+            : "-") +
+          "</div>" +
+          '<div class="mcq-history-questions">' +
+          questionItems +
+          "</div>";
+      })
+      .withFailureHandler(function () {
+        body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
+      })
+      .getQuizResultDetailById(resultId);
+  };
+
+  window.closeQuizHistoryDetail = function () {
+    var modal = document.getElementById("mcq-history-detail-modal");
+    if (!modal) return;
+    modal.classList.remove("show");
+    setTimeout(function () {
+      modal.style.display = "none";
+    }, 250);
+  };
 
   /**
    * checkExistingQuizSession — Kiểm tra có session quiz chưa hoàn thành không
@@ -867,7 +1090,7 @@
 
     google.script.run
       .withSuccessHandler(function (savedProgress) {
-        setTopicLoadingState(false);
+        setQuizTopicHubLoading(false);
         if (
           savedProgress &&
           savedProgress.questionDetails &&
@@ -881,7 +1104,7 @@
         }
       })
       .withFailureHandler(function (error) {
-        setTopicLoadingState(false);
+        setQuizTopicHubLoading(false);
         console.log("No saved progress or error:", error);
         showGameModeModal();
       })
@@ -1228,7 +1451,7 @@
     // If quiz hasn't started or is finished, just navigate directly
     if (!hasStarted || isFinished) {
       if (target === "topic") {
-        backToTopicSelection();
+        backToQuizTopicHome();
       } else {
         showPage("page-dashboard");
       }
@@ -1266,9 +1489,17 @@
   function confirmExit() {
     closeExitModal();
     if (exitTarget === "topic") {
-      backToTopicSelection();
+      backToQuizTopicHome();
     } else {
       showPage("page-dashboard");
+    }
+  }
+
+  function backToQuizTopicHome() {
+    if (quizState.selectedTopic && quizState.selectedTopic.topicId) {
+      openQuizTopicHub(quizState.selectedTopic);
+    } else {
+      backToTopicSelection();
     }
   }
 
@@ -2588,6 +2819,9 @@
       .withSuccessHandler((response) => {
         console.log("✅ Quiz result saved:", response);
         showSaveNotification(true, "Kết quả đã được lưu!");
+        if (quizState.topicId) {
+          loadQuizTopicHistory(quizState.topicId);
+        }
         // ⭐ Invalidate progress cache so Topics page shows updated progress
         if (window.globalTopicsCache) {
           window.globalTopicsCache.progress = null;

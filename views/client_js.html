@@ -1363,6 +1363,10 @@
   let _loadingVisibleSince = 0;
   let _loadingLastShowAt = 0;
 
+  // Disable full-screen loading popup to avoid blocking user interactions
+  // during frequent background/network requests.
+  const ENABLE_GLOBAL_LOADING_OVERLAY = false;
+
   const LOADING_REOPEN_COOLDOWN_MS = 900;
   const LOADING_MIN_VISIBLE_MS = 220;
 
@@ -1438,6 +1442,16 @@
   function showLoading(show, reasonOrOptions) {
     const overlay = document.getElementById("loading-overlay");
     if (!overlay) return;
+
+    if (!ENABLE_GLOBAL_LOADING_OVERLAY) {
+      if (show) {
+        _loadingCount++;
+      } else {
+        _loadingCount = Math.max(0, _loadingCount - 1);
+      }
+      overlay.style.display = "none";
+      return;
+    }
 
     const options =
       reasonOrOptions && typeof reasonOrOptions === "object"

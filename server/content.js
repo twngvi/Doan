@@ -2492,6 +2492,361 @@ function getUserQuizResults() {
 }
 
 /**
+ * Get quiz play history for a specific topic from current user's personal sheet.
+ * @param {string} topicId
+ * @param {number=} limit
+ * @returns {{success:boolean, history:Array, message?:string}}
+ */
+function getQuizHistoryByTopic(topicId, limit) {
+  try {
+    const topicIdStr = String(topicId || "").trim();
+    if (!topicIdStr) {
+      return { success: false, message: "Thiếu topicId", history: [] };
+    }
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", history: [] };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, history: [] };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+    if (!quizSheet) {
+      return { success: true, history: [] };
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, history: [] };
+    }
+
+    const headers = data[0];
+    const idCol = headers.indexOf("id");
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const scoreCol = headers.indexOf("score");
+    const totalQuestionsCol = headers.indexOf("totalQuestions");
+    const percentageCol = headers.indexOf("percentage");
+    const timeTakenCol = headers.indexOf("timeTaken");
+    const gameModeCol = headers.indexOf("gameMode");
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+
+    const history = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
+
+      const status = statusCol >= 0 ? String(data[i][statusCol] || "") : "";
+      if (status && status === "partial") continue;
+
+      history.push({
+        id: idCol >= 0 ? String(data[i][idCol] || "") : "",
+        topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
+        topicTitle:
+          topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
+        score: scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0,
+        totalQuestions:
+          totalQuestionsCol >= 0
+            ? parseInt(data[i][totalQuestionsCol]) || 0
+            : 0,
+        percentage:
+          percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0,
+        timeTaken: timeTakenCol >= 0 ? String(data[i][timeTakenCol] || "") : "",
+        gameMode: gameModeCol >= 0 ? String(data[i][gameModeCol] || "") : "",
+        completedAt:
+          completedAtCol >= 0 ? String(data[i][completedAtCol] || "") : "",
+      });
+    }
+
+    history.sort(
+      (a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0),
+    );
+
+    const maxItems = Math.max(1, parseInt(limit, 10) || 30);
+    return { success: true, history: history.slice(0, maxItems) };
+  } catch (error) {
+    Logger.log("❌ Error in getQuizHistoryByTopic: " + error.toString());
+    return { success: false, message: error.toString(), history: [] };
+  }
+}
+
+/**
+ * Get quiz attempt detail by result ID from current user's personal sheet.
+ * @param {string} resultId
+ * @returns {{success:boolean, detail:Object|null, message?:string}}
+ */
+function getQuizResultDetailById(resultId) {
+  try {
+    const id = String(resultId || "").trim();
+    if (!id) {
+      return { success: false, message: "Thiếu resultId", detail: null };
+    }
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", detail: null };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet", detail: null };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+    if (!quizSheet) {
+      return { success: false, message: "No Quiz_Results sheet", detail: null };
+    }
+
+    const data = quizSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: false, message: "No data", detail: null };
+    }
+
+    const headers = data[0];
+    const idCol = headers.indexOf("id");
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const scoreCol = headers.indexOf("score");
+    const totalQuestionsCol = headers.indexOf("totalQuestions");
+    const percentageCol = headers.indexOf("percentage");
+    const timeTakenCol = headers.indexOf("timeTaken");
+    const gameModeCol = headers.indexOf("gameMode");
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+    const questionDetailsCol = headers.indexOf("questionDetails");
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idCol] || "").trim() !== id) continue;
+
+      let questionDetails = [];
+      if (questionDetailsCol >= 0) {
+        try {
+          questionDetails = JSON.parse(
+            String(data[i][questionDetailsCol] || "[]"),
+          );
+        } catch (e) {
+          questionDetails = [];
+        }
+      }
+
+      return {
+        success: true,
+        detail: {
+          id: id,
+          topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
+          topicTitle:
+            topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
+          score: scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0,
+          totalQuestions:
+            totalQuestionsCol >= 0
+              ? parseInt(data[i][totalQuestionsCol]) || 0
+              : 0,
+          percentage:
+            percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0,
+          timeTaken:
+            timeTakenCol >= 0 ? String(data[i][timeTakenCol] || "") : "",
+          gameMode: gameModeCol >= 0 ? String(data[i][gameModeCol] || "") : "",
+          status: statusCol >= 0 ? String(data[i][statusCol] || "") : "",
+          completedAt:
+            completedAtCol >= 0 ? String(data[i][completedAtCol] || "") : "",
+          questionDetails: Array.isArray(questionDetails)
+            ? questionDetails
+            : [],
+        },
+      };
+    }
+
+    return { success: false, message: "Không tìm thấy lần chơi", detail: null };
+  } catch (error) {
+    Logger.log("❌ Error in getQuizResultDetailById: " + error.toString());
+    return { success: false, message: error.toString(), detail: null };
+  }
+}
+
+/**
+ * Get matching play history for a specific topic from current user's personal sheet.
+ * @param {string} topicId
+ * @param {number=} limit
+ * @returns {{success:boolean, history:Array, message?:string}}
+ */
+function getMatchingHistoryByTopic(topicId, limit) {
+  try {
+    const topicIdStr = String(topicId || "").trim();
+    if (!topicIdStr) {
+      return { success: false, message: "Thiếu topicId", history: [] };
+    }
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", history: [] };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: true, history: [] };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const matchingSheet = userSpreadsheet.getSheetByName("Matching_Results");
+    if (!matchingSheet) {
+      return { success: true, history: [] };
+    }
+
+    const data = matchingSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: true, history: [] };
+    }
+
+    const headers = data[0];
+    const idCol = headers.indexOf("id");
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const difficultyCol = headers.indexOf("difficulty");
+    const totalPairsCol = headers.indexOf("totalPairs");
+    const correctPairsCol = headers.indexOf("correctPairs");
+    const wrongAttemptsCol = headers.indexOf("wrongAttempts");
+    const scoreCol = headers.indexOf("score");
+    const elapsedTimeCol = headers.indexOf("elapsedTime");
+    const accuracyCol = headers.indexOf("accuracy");
+    const completedCol = headers.indexOf("completed");
+    const playedAtCol = headers.indexOf("playedAt");
+
+    const history = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
+
+      const completed = completedCol >= 0 ? data[i][completedCol] : true;
+      if (completed === false || completed === "FALSE") continue;
+
+      history.push({
+        id: idCol >= 0 ? String(data[i][idCol] || "") : "",
+        topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
+        topicTitle:
+          topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
+        difficulty:
+          difficultyCol >= 0 ? String(data[i][difficultyCol] || "") : "medium",
+        totalPairs:
+          totalPairsCol >= 0 ? parseInt(data[i][totalPairsCol]) || 0 : 0,
+        correctPairs:
+          correctPairsCol >= 0 ? parseInt(data[i][correctPairsCol]) || 0 : 0,
+        wrongAttempts:
+          wrongAttemptsCol >= 0 ? parseInt(data[i][wrongAttemptsCol]) || 0 : 0,
+        score: scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0,
+        elapsedTime:
+          elapsedTimeCol >= 0 ? parseInt(data[i][elapsedTimeCol]) || 0 : 0,
+        accuracy: accuracyCol >= 0 ? parseInt(data[i][accuracyCol]) || 0 : 0,
+        playedAt: playedAtCol >= 0 ? String(data[i][playedAtCol] || "") : "",
+      });
+    }
+
+    history.sort(
+      (a, b) => new Date(b.playedAt || 0) - new Date(a.playedAt || 0),
+    );
+    const maxItems = Math.max(1, parseInt(limit, 10) || 30);
+    return { success: true, history: history.slice(0, maxItems) };
+  } catch (error) {
+    Logger.log("❌ Error in getMatchingHistoryByTopic: " + error.toString());
+    return { success: false, message: error.toString(), history: [] };
+  }
+}
+
+/**
+ * Get matching attempt detail by result ID from current user's personal sheet.
+ * @param {string} resultId
+ * @returns {{success:boolean, detail:Object|null, message?:string}}
+ */
+function getMatchingResultDetailById(resultId) {
+  try {
+    const id = String(resultId || "").trim();
+    if (!id) {
+      return { success: false, message: "Thiếu resultId", detail: null };
+    }
+
+    const userEmail = Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "Not logged in", detail: null };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet", detail: null };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const matchingSheet = userSpreadsheet.getSheetByName("Matching_Results");
+    if (!matchingSheet) {
+      return {
+        success: false,
+        message: "No Matching_Results sheet",
+        detail: null,
+      };
+    }
+
+    const data = matchingSheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: false, message: "No data", detail: null };
+    }
+
+    const headers = data[0];
+    const idCol = headers.indexOf("id");
+    const topicIdCol = headers.indexOf("topicId");
+    const topicTitleCol = headers.indexOf("topicTitle");
+    const difficultyCol = headers.indexOf("difficulty");
+    const totalPairsCol = headers.indexOf("totalPairs");
+    const correctPairsCol = headers.indexOf("correctPairs");
+    const wrongAttemptsCol = headers.indexOf("wrongAttempts");
+    const scoreCol = headers.indexOf("score");
+    const elapsedTimeCol = headers.indexOf("elapsedTime");
+    const accuracyCol = headers.indexOf("accuracy");
+    const completedCol = headers.indexOf("completed");
+    const playedAtCol = headers.indexOf("playedAt");
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idCol] || "").trim() !== id) continue;
+
+      return {
+        success: true,
+        detail: {
+          id: id,
+          topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
+          topicTitle:
+            topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
+          difficulty:
+            difficultyCol >= 0
+              ? String(data[i][difficultyCol] || "")
+              : "medium",
+          totalPairs:
+            totalPairsCol >= 0 ? parseInt(data[i][totalPairsCol]) || 0 : 0,
+          correctPairs:
+            correctPairsCol >= 0 ? parseInt(data[i][correctPairsCol]) || 0 : 0,
+          wrongAttempts:
+            wrongAttemptsCol >= 0
+              ? parseInt(data[i][wrongAttemptsCol]) || 0
+              : 0,
+          score: scoreCol >= 0 ? parseInt(data[i][scoreCol]) || 0 : 0,
+          elapsedTime:
+            elapsedTimeCol >= 0 ? parseInt(data[i][elapsedTimeCol]) || 0 : 0,
+          accuracy: accuracyCol >= 0 ? parseInt(data[i][accuracyCol]) || 0 : 0,
+          completed: completedCol >= 0 ? data[i][completedCol] : true,
+          playedAt: playedAtCol >= 0 ? String(data[i][playedAtCol] || "") : "",
+        },
+      };
+    }
+
+    return { success: false, message: "Không tìm thấy lần chơi", detail: null };
+  } catch (error) {
+    Logger.log("❌ Error in getMatchingResultDetailById: " + error.toString());
+    return { success: false, message: error.toString(), detail: null };
+  }
+}
+
+/**
  * Get saved progress for a topic (partial quiz)
  * @param {string} topicId - Topic ID
  * @returns {object} - Saved progress or null
