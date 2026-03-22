@@ -39,10 +39,80 @@
     if (
       actionKey === "personal" ||
       actionKey === "password" ||
-      actionKey === "theme"
+      actionKey === "theme" ||
+      actionKey === "danger"
     ) {
       openProfileSection(actionKey);
     }
+  }
+
+  function handleClearAllLearningData(event) {
+    const btn =
+      (event && event.currentTarget) ||
+      document.getElementById("btn-clear-all-learning");
+
+    const confirmed = confirm(
+      "Bạn có chắc muốn RESET TOÀN BỘ tiến độ học?\n\n" +
+        "Hành động này sẽ xóa dữ liệu Topic, Quiz, Matching, Flashcard và lịch sử hoạt động.",
+    );
+    if (!confirmed) return;
+
+    const user = profileData || window.currentUser;
+    if (!user || !user.userId) {
+      showToast("Không tìm thấy thông tin người dùng", "error");
+      return;
+    }
+
+    let originalHtml = "";
+    if (btn) {
+      originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="btn-text">Đang reset...</span>';
+    }
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+
+        if (res && res.success) {
+          try {
+            localStorage.removeItem("recentActivities");
+            localStorage.removeItem("streakData");
+            if (window.globalTopicsCache) {
+              window.globalTopicsCache.data = null;
+              window.globalTopicsCache.progress = null;
+              window.globalTopicsCache.lastLoadTime = 0;
+            }
+          } catch (e) {
+            console.warn("Cache cleanup warning:", e);
+          }
+
+          window.dispatchEvent(new Event("dashboard-needs-refresh"));
+          showToast(
+            "Đã reset toàn bộ tiến độ! Đã xóa " +
+              (res.totalDeleted || 0) +
+              " dòng dữ liệu.",
+            "success",
+          );
+        } else {
+          showToast(res?.message || "Không thể reset dữ liệu", "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+        console.error("Clear all learning data error:", error);
+        showToast("Lỗi reset dữ liệu", "error");
+      })
+      .clearAllLearningData({
+        userId: user.userId,
+        email: user.email,
+      });
   }
 
   // ⭐ DANH SÁCH AVATAR TỪ DICEBEAR
@@ -884,6 +954,7 @@
   window.loadUserTheme = loadUserTheme;
   window.openProfileSection = openProfileSection;
   window.triggerProfileSearchAction = triggerProfileSearchAction;
+  window.handleClearAllLearningData = handleClearAllLearningData;
 
   console.log("✅ Profile scripts loaded");
   console.log("✅ initProfilePage:", typeof window.initProfilePage);
