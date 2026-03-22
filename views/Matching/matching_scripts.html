@@ -27,7 +27,12 @@
   let matchingTopicsCache = null;
   let matchingLastLoadTime = 0;
   const MATCHING_CACHE_DURATION = 60000;
+  const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
+  const MATCHING_GOOGLE_RUN_MAX_RETRY = 20;
+  const MATCHING_GOOGLE_RUN_RETRY_DELAY = 200;
   let matchingAllTopicsForSearch = null;
+  let matchingTopicsLoadTimeoutId = null;
+  let matchingGoogleRunRetryCount = 0;
 
   // ===== STATE =====
   let matchingMeteorInterval = null;
@@ -189,12 +194,24 @@
     if (gameWrapper) gameWrapper.classList.remove("active");
   }
 
+  function isGoogleScriptRunReady() {
+    return (
+      typeof google !== "undefined" &&
+      google.script &&
+      typeof google.script.run !== "undefined"
+    );
+  }
+
+  function clearMatchingTopicsLoadTimeout() {
+    if (matchingTopicsLoadTimeoutId) {
+      clearTimeout(matchingTopicsLoadTimeoutId);
+      matchingTopicsLoadTimeoutId = null;
+    }
+  }
+
   // ===== TOPIC LOADING (reuse globalTopicsCache giống MCQ) =====
   function loadMatchingTopics(forceRefresh) {
     console.log("📥 Loading topics for matching...");
-
-    // Load matching stats in parallel so topic cards can show played + best score.
-    loadMatchingStatsIfNeeded(forceRefresh);
 
     const loading = document.getElementById("matchingLoading");
     const grid = document.getElementById("matchingTopicsGrid");
@@ -208,6 +225,9 @@
     if (grid) grid.style.display = "none";
     if (empty) empty.style.display = "none";
     if (searchEmpty) searchEmpty.style.display = "none";
+
+    // Load matching stats in parallel so topic cards can show played + best score.
+    loadMatchingStatsIfNeeded(forceRefresh);
 
     const now = Date.now();
 
@@ -237,8 +257,41 @@
 
     // ƯU TIÊN 3: Load từ server
     console.log("📡 Matching: Loading topics from server...");
+
+    if (!isGoogleScriptRunReady()) {
+      if (matchingGoogleRunRetryCount < MATCHING_GOOGLE_RUN_MAX_RETRY) {
+        matchingGoogleRunRetryCount++;
+        console.warn(
+          "⏳ google.script.run chưa sẵn sàng, retry:",
+          matchingGoogleRunRetryCount,
+        );
+        setTimeout(function () {
+          loadMatchingTopics(forceRefresh);
+        }, MATCHING_GOOGLE_RUN_RETRY_DELAY);
+        return;
+      }
+
+      matchingGoogleRunRetryCount = 0;
+      handleMatchingTopicsError({
+        message:
+          "Không thể kết nối Apps Script (google.script.run chưa sẵn sàng).",
+      });
+      return;
+    }
+
+    matchingGoogleRunRetryCount = 0;
+    clearMatchingTopicsLoadTimeout();
+    matchingTopicsLoadTimeoutId = setTimeout(function () {
+      if (matchingState.loadingTopics) {
+        handleMatchingTopicsError({
+          message: "Tải chủ đề quá thời gian. Vui lòng thử lại.",
+        });
+      }
+    }, MATCHING_TOPICS_LOAD_TIMEOUT);
+
     google.script.run
       .withSuccessHandler(function (response) {
+        clearMatchingTopicsLoadTimeout();
         let topics = [];
         if (response && response.success && Array.isArray(response.topics)) {
           topics = response.topics;
@@ -263,11 +316,21 @@
 
         handleMatchingTopicsLoaded(topics);
       })
-      .withFailureHandler(handleMatchingTopicsError)
+      .withFailureHandler(function (error) {
+        clearMatchingTopicsLoadTimeout();
+        handleMatchingTopicsError(error);
+      })
       .getAllTopics();
   }
 
   function loadMatchingStatsIfNeeded(forceRefresh) {
+    if (!isGoogleScriptRunReady()) {
+      console.warn(
+        "⚠️ Matching stats skipped: google.script.run chưa sẵn sàng",
+      );
+      return;
+    }
+
     var now = Date.now();
     var statsCache = window.matchingStatsCache;
 
@@ -369,6 +432,8 @@
   }
 
   function handleMatchingTopicsLoaded(topics) {
+    clearMatchingTopicsLoadTimeout();
+
     const loading = document.getElementById("matchingLoading");
     const empty = document.getElementById("matchingEmpty");
 
@@ -395,6 +460,8 @@
   }
 
   function handleMatchingTopicsError(error) {
+    clearMatchingTopicsLoadTimeout();
+
     console.error("❌ Error loading matching topics:", error);
 
     const loading = document.getElementById("matchingLoading");
