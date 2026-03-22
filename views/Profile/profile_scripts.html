@@ -475,9 +475,11 @@
 
   // ⭐ PROFILE PAGE INITIALIZATION
   let profileData = null;
+  let profileSubmitGuardBound = false;
 
   function initProfilePage() {
     console.log("Initializing Profile...");
+    bindProfileSubmitGuard();
     loadProfileData();
     setupEventListeners();
     // Start meteor shower effect (every 5 seconds)
@@ -633,11 +635,30 @@
 
     // Forms
     const profileForm = document.getElementById("profileForm");
-    if (profileForm)
-      profileForm.addEventListener("submit", handleProfileUpdate);
+    if (profileForm) {
+      profileForm.setAttribute("action", "javascript:void(0)");
+      profileForm.onsubmit = handleProfileUpdate;
+    }
 
     const pwdForm = document.getElementById("passwordForm");
-    if (pwdForm) pwdForm.addEventListener("submit", handlePasswordChange);
+    if (pwdForm) {
+      pwdForm.setAttribute("action", "javascript:void(0)");
+      pwdForm.onsubmit = handlePasswordChange;
+    }
+  }
+
+  function bindProfileSubmitGuard() {
+    if (profileSubmitGuardBound) return;
+    profileSubmitGuardBound = true;
+
+    document.addEventListener("submit", function (e) {
+      const form = e.target;
+      if (!form || !form.id) return;
+
+      if (form.id === "profileForm" || form.id === "passwordForm") {
+        e.preventDefault();
+      }
+    });
   }
 
   function checkPasswordStrength() {
@@ -786,7 +807,88 @@
 
   function handlePasswordChange(e) {
     e.preventDefault();
-    showToast("Tính năng đang phát triển", "info");
+
+    const currentPassword =
+      document.getElementById("currentPassword")?.value?.trim() || "";
+    const newPassword =
+      document.getElementById("newPassword")?.value?.trim() || "";
+    const confirmPassword =
+      document.getElementById("confirmPassword")?.value?.trim() || "";
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      showToast("Vui lòng nhập đầy đủ thông tin mật khẩu", "error");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      showToast("Mật khẩu mới phải có ít nhất 6 ký tự", "error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast("Mật khẩu xác nhận không khớp", "error");
+      return;
+    }
+
+    if (!profileData || !profileData.userId) {
+      showToast("Không tìm thấy thông tin người dùng", "error");
+      return;
+    }
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalHtml = submitBtn ? submitBtn.innerHTML : "";
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "<span>⏳</span><span>Đang đổi...</span>";
+    }
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalHtml;
+        }
+
+        if (response && response.success) {
+          showToast(response.message || "Đổi mật khẩu thành công!", "success");
+
+          const pwdForm = document.getElementById("passwordForm");
+          if (pwdForm) pwdForm.reset();
+
+          const bars = document.querySelectorAll(".strength-bar-item");
+          bars.forEach((bar) => {
+            bar.classList.remove("active");
+            bar.style.background = "#e5e7eb";
+          });
+
+          const strengthText = document.getElementById("strengthText");
+          if (strengthText) {
+            strengthText.textContent = "";
+            strengthText.style.color = "";
+          }
+
+          const matchIcon = document.getElementById("passwordMatchIcon");
+          if (matchIcon) {
+            matchIcon.classList.remove("show");
+          }
+        } else {
+          showToast(response?.message || "Không thể đổi mật khẩu", "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalHtml;
+        }
+        console.error("❌ Change password error:", error);
+        showToast("Lỗi kết nối server", "error");
+      })
+      .changePassword({
+        userId: profileData.userId,
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      });
   }
 
   // ===== RESET DATA FUNCTIONS =====
@@ -819,7 +921,7 @@
     // Get the confirm button and show loading state
     const confirmBtn = document.getElementById("confirmResetDataBtn");
     let originalText = "";
-    
+
     if (confirmBtn) {
       originalText = confirmBtn.innerHTML;
       confirmBtn.disabled = true;
@@ -839,7 +941,7 @@
         if (response.success) {
           showToast("✅ Đã xóa toàn bộ dữ liệu học tập!", "success");
           closeResetDataConfirmation();
-          
+
           // ⭐ IMPORTANT: Clear ALL client-side caches
           // This prevents blank screen issues caused by stale cache data
           try {
@@ -847,18 +949,23 @@
             const keysToRemove = [];
             for (let i = 0; i < localStorage.length; i++) {
               const key = localStorage.key(i);
-              if (key && (
-                key.indexOf("lesson_progress_") === 0 ||
-                key === "streakData" ||
-                key === "topicsCache" ||
-                key === "progressCache" ||
-                key === "dashboardCache"
-              )) {
+              if (
+                key &&
+                (key.indexOf("lesson_progress_") === 0 ||
+                  key === "streakData" ||
+                  key === "topicsCache" ||
+                  key === "progressCache" ||
+                  key === "dashboardCache")
+              ) {
                 keysToRemove.push(key);
               }
             }
-            keysToRemove.forEach(key => localStorage.removeItem(key));
-            console.log("🧹 Cleared", keysToRemove.length, "cached items from localStorage");
+            keysToRemove.forEach((key) => localStorage.removeItem(key));
+            console.log(
+              "🧹 Cleared",
+              keysToRemove.length,
+              "cached items from localStorage",
+            );
 
             // Clear global window caches and state
             if (window.DashboardCache) {
@@ -868,19 +975,19 @@
             if (window.invalidateTopicsLocalCache) {
               window.invalidateTopicsLocalCache();
             }
-            
+
             // ⭐ Reset dashboard state to force fresh load
             if (typeof window !== "undefined") {
               window.dashboardInitialized = false;
               window.dashboardInitRetryCount = 0;
               window.dashboardHasLoadedOnce = false;
             }
-            
+
             console.log("🧹 Cleared all caches and reset dashboard state");
           } catch (e) {
             console.warn("⚠️ Warning during cache clearing:", e);
           }
-          
+
           // ⭐ Navigate to Dashboard instead of reload
           // This gives fresh initialization without stale cache data
           setTimeout(() => {
@@ -891,7 +998,10 @@
             }
           }, 1500);
         } else {
-          showToast("❌ Lỗi: " + (response.message || "Không xóa được dữ liệu"), "error");
+          showToast(
+            "❌ Lỗi: " + (response.message || "Không xóa được dữ liệu"),
+            "error",
+          );
         }
       })
       .withFailureHandler(function (error) {
