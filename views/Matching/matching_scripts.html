@@ -28,7 +28,7 @@
   let matchingLastLoadTime = 0;
   const MATCHING_CACHE_DURATION = 60000;
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
-  const MATCHING_GOOGLE_RUN_MAX_RETRY = 20;
+  const MATCHING_GOOGLE_RUN_MAX_RETRY = 75;
   const MATCHING_GOOGLE_RUN_RETRY_DELAY = 200;
   let matchingAllTopicsForSearch = null;
   let matchingTopicsLoadTimeoutId = null;
@@ -265,13 +265,19 @@
     // ƯU TIÊN 3: Load từ server
     console.log("📡 Matching: Loading topics from server...");
 
+    clearMatchingTopicsLoadTimeout();
+    matchingTopicsLoadTimeoutId = setTimeout(function () {
+      if (matchingState.loadingTopics) {
+        handleMatchingTopicsError({
+          message: "Tải chủ đề quá thời gian. Vui lòng thử lại.",
+        });
+      }
+    }, MATCHING_TOPICS_LOAD_TIMEOUT);
+
+    // Chờ google.script.run sẵn sàng tương tự flow Quiz, không fail sớm.
     if (!isGoogleScriptRunReady()) {
       if (matchingGoogleRunRetryCount < MATCHING_GOOGLE_RUN_MAX_RETRY) {
         matchingGoogleRunRetryCount++;
-        console.warn(
-          "⏳ google.script.run chưa sẵn sàng, retry:",
-          matchingGoogleRunRetryCount,
-        );
         setTimeout(function () {
           loadMatchingTopics(forceRefresh);
         }, MATCHING_GOOGLE_RUN_RETRY_DELAY);
@@ -287,14 +293,6 @@
     }
 
     matchingGoogleRunRetryCount = 0;
-    clearMatchingTopicsLoadTimeout();
-    matchingTopicsLoadTimeoutId = setTimeout(function () {
-      if (matchingState.loadingTopics) {
-        handleMatchingTopicsError({
-          message: "Tải chủ đề quá thời gian. Vui lòng thử lại.",
-        });
-      }
-    }, MATCHING_TOPICS_LOAD_TIMEOUT);
 
     google.script.run
       .withSuccessHandler(function (response) {
@@ -447,7 +445,13 @@
     matchingState.loadingTopics = false;
     if (loading) loading.style.display = "none";
 
-    if (!topics || topics.length === 0) {
+    var normalizedTopics = Array.isArray(topics)
+      ? topics.filter(function (t) {
+          return t && (t.topicId || t.title);
+        })
+      : [];
+
+    if (normalizedTopics.length === 0) {
       matchingState.topics = [];
       matchingState.filteredTopics = [];
       matchingAllTopicsForSearch = [];
@@ -455,15 +459,15 @@
       return;
     }
 
-    matchingState.topics = topics;
-    matchingState.filteredTopics = topics;
-    matchingAllTopicsForSearch = topics;
+    matchingState.topics = normalizedTopics;
+    matchingState.filteredTopics = normalizedTopics;
+    matchingAllTopicsForSearch = normalizedTopics;
 
     // Sync local cache
-    matchingTopicsCache = topics;
+    matchingTopicsCache = normalizedTopics;
     matchingLastLoadTime = Date.now();
 
-    renderMatchingTopics(topics);
+    renderMatchingTopics(normalizedTopics);
   }
 
   function handleMatchingTopicsError(error) {
@@ -540,7 +544,7 @@
 
     // Concept-based SVG icons (reuse từ MCQ pattern)
     const getTopicIcon = (title) => {
-      const t = title.toLowerCase();
+      const t = String(title || "").toLowerCase();
       if (t.includes("input") || t.includes("output") || t.includes("i/o"))
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
       if (
@@ -586,6 +590,8 @@
     grid.style.display = "flex";
 
     topics.forEach((topic, index) => {
+      const topicTitle = String(topic.title || topic.topicId || "Chủ đề");
+      const topicCategory = String(topic.category || "Chung");
       const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
       const topicProgress = userProgress[topic.topicId] || {};
       const topicStats = getMatchingStatsForTopic(topic.topicId);
@@ -610,7 +616,7 @@
         card.onclick = () => selectMatchingTopic(topic);
       }
 
-      const icon = getTopicIcon(topic.title);
+      const icon = getTopicIcon(topicTitle);
 
       let bestScoreBadge = "";
       if (topicStats && topicStats.hasPlayed) {
@@ -662,9 +668,9 @@
         <div class="matching-topic-card-index">${index + 1}</div>
         <div class="matching-topic-card-icon">${icon}</div>
         <div class="matching-topic-card-body">
-          <div class="matching-topic-card-name">${topic.title}</div>
+          <div class="matching-topic-card-name">${topicTitle}</div>
           <div class="matching-topic-card-meta">
-            <span class="matching-topic-card-category">${topic.category || "Chung"}</span>
+            <span class="matching-topic-card-category">${topicCategory}</span>
             ${matchingPlayed ? '<span class="matching-topic-card-badge">Đã chơi</span>' : ""}
             ${bestScoreBadge}
           </div>
@@ -699,8 +705,12 @@
     const searchLower = query.toLowerCase();
     const filtered = matchingAllTopicsForSearch.filter(
       (topic) =>
-        topic.title.toLowerCase().includes(searchLower) ||
-        (topic.category && topic.category.toLowerCase().includes(searchLower)),
+        String(topic.title || "")
+          .toLowerCase()
+          .includes(searchLower) ||
+        String(topic.category || "")
+          .toLowerCase()
+          .includes(searchLower),
     );
 
     matchingState.filteredTopics = filtered;
