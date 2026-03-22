@@ -7,6 +7,13 @@
   // State
   let onlineUsers = [];
   let recentActivities = [];
+  let onlineSummary = {
+    totalOnline: 0,
+    activeNow: 0,
+    idleUsers: 0,
+    offlineUsers: 0,
+    disabledUsers: 0,
+  };
   let currentFilter = 'all';
   let searchQuery = '';
   let refreshInterval = null;
@@ -53,6 +60,13 @@
 
       onlineUsers = (result.data && result.data.users) ? result.data.users : [];
       recentActivities = (result.data && result.data.activities) ? result.data.activities : [];
+      onlineSummary = {
+        totalOnline: Number((result.data && result.data.totalOnline) || 0),
+        activeNow: Number((result.data && result.data.activeNow) || 0),
+        idleUsers: Number((result.data && result.data.idleUsers) || 0),
+        offlineUsers: Number((result.data && result.data.offlineUsers) || 0),
+        disabledUsers: Number((result.data && result.data.disabledUsers) || 0),
+      };
       
       updateStats();
       filterAndRenderUsers();
@@ -67,20 +81,15 @@
 
   // Update statistics
   function updateStats() {
-    const totalOnline = onlineUsers.length;
-    const activeUsers = onlineUsers.filter(u => u.status === 'active').length;
-    const idleUsers = onlineUsers.filter(u => u.status === 'idle').length;
+    const totalOnline = onlineSummary.totalOnline;
+    const activeUsers = onlineSummary.activeNow;
+    const idleUsers = onlineSummary.idleUsers;
+    const offlineUsers = onlineSummary.offlineUsers;
     
     animateNumber('totalOnline', totalOnline);
     animateNumber('activeNow', activeUsers);
     animateNumber('idleUsers', idleUsers);
-    animateNumber('todayPeak', Math.max(totalOnline, parseInt(localStorage.getItem('todayPeak') || '0')));
-    
-    // Save today's peak
-    const currentPeak = parseInt(localStorage.getItem('todayPeak') || '0');
-    if (totalOnline > currentPeak) {
-      localStorage.setItem('todayPeak', totalOnline.toString());
-    }
+    animateNumber('offlineUsers', offlineUsers);
   }
 
   // Animate number change
@@ -112,13 +121,17 @@
       filteredUsers = filteredUsers.filter(u => u.status === 'active');
     } else if (currentFilter === 'idle') {
       filteredUsers = filteredUsers.filter(u => u.status === 'idle');
+    } else if (currentFilter === 'offline') {
+      filteredUsers = filteredUsers.filter(u => u.status === 'offline');
+    } else if (currentFilter === 'disabled') {
+      filteredUsers = filteredUsers.filter(u => u.status === 'disabled');
     }
     
     // Apply search filter
     if (searchQuery) {
       filteredUsers = filteredUsers.filter(u => 
-        u.name.toLowerCase().includes(searchQuery) ||
-        u.email.toLowerCase().includes(searchQuery)
+        (u.name || '').toLowerCase().includes(searchQuery) ||
+        (u.email || '').toLowerCase().includes(searchQuery)
       );
     }
     
@@ -144,24 +157,24 @@
     grid.innerHTML = users.map(user => `
       <div class="user-card" data-user-id="${user.id}">
         <div class="user-avatar">
-          <img src="${user.avatar}" alt="${user.name}">
+          <img src="${user.avatar || ''}" alt="${user.name}">
           <span class="status-indicator ${user.status}"></span>
         </div>
         <div class="user-info">
           <h4 class="user-name">${user.name}</h4>
           <div class="user-meta">
             <span class="user-activity">${user.activity}</span>
-            <span class="user-time">• ${formatTimeAgo(user.lastActivity)}</span>
+            <span class="user-time">• ${formatTimeAgoSafe(user.lastActivity)}</span>
           </div>
         </div>
         <div class="user-actions">
-          <button class="user-action-btn" onclick="viewUserDetail(${user.id})" title="Xem chi tiết">
+          <button class="user-action-btn" onclick='viewUserDetail(${JSON.stringify(String(user.id))})' title="Xem chi tiết">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </button>
-          <button class="user-action-btn" onclick="sendMessageToUser(${user.id})" title="Gửi tin nhắn">
+          <button class="user-action-btn" onclick='sendMessageToUser(${JSON.stringify(String(user.id))})' title="Gửi tin nhắn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
@@ -187,6 +200,13 @@
     if (seconds < 3600) return `${Math.floor(seconds / 60)} phút trước`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)} giờ trước`;
     return `${Math.floor(seconds / 86400)} ngày trước`;
+  }
+
+  function formatTimeAgoSafe(date) {
+    if (!date) return 'Không có dữ liệu';
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return 'Không có dữ liệu';
+    return formatTimeAgo(parsed);
   }
 
   // Render activity timeline
@@ -335,7 +355,7 @@
 
   // View user detail
   function viewUserDetail(userId) {
-    const user = onlineUsers.find(u => u.id === userId);
+    const user = onlineUsers.find(u => String(u.id) === String(userId));
     if (user) {
       console.log('View user detail:', user);
       // Implement user detail modal or navigation
@@ -344,7 +364,7 @@
 
   // Send message to user
   function sendMessageToUser(userId) {
-    const user = onlineUsers.find(u => u.id === userId);
+    const user = onlineUsers.find(u => String(u.id) === String(userId));
     if (user) {
       console.log('Send message to:', user);
       // Implement messaging functionality

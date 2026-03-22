@@ -281,10 +281,12 @@ function getAdminDashboardStats() {
 }
 
 /**
- * Lấy dữ liệu users đang online cho trang Admin Online Stats
+ * Lấy dữ liệu trạng thái hoạt động users cho Admin Online Stats
  * Quy ước:
- * - Online: có hoạt động trong 30 phút gần nhất
- * - Active: có hoạt động trong 5 phút gần nhất
+ * - active: hoạt động trong 1 phút
+ * - idle: hoạt động trong 5 phút
+ * - offline: quá 5 phút hoặc chưa có hoạt động gần đây
+ * - disabled: tài khoản bị khóa (isActive = false)
  */
 function getAdminOnlineUsersData() {
   try {
@@ -303,8 +305,11 @@ function getAdminOnlineUsersData() {
           users: [],
           activities: [],
           totalOnline: 0,
+          totalAccounts: 0,
           activeNow: 0,
           idleUsers: 0,
+          offlineUsers: 0,
+          disabledUsers: 0,
         },
       };
     }
@@ -319,6 +324,7 @@ function getAdminOnlineUsersData() {
       isActive: headers.indexOf("isActive"),
       lastLogin: headers.indexOf("lastLogin"),
       lastActiveDate: headers.indexOf("lastActiveDate"),
+      createdAt: headers.indexOf("createdAt"),
       lastSeenAt: lastSeenIndex,
     };
 
@@ -331,7 +337,7 @@ function getAdminOnlineUsersData() {
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
 
-      // Skip user bị vô hiệu hóa
+      let isAccountEnabled = true;
       if (col.isActive >= 0) {
         const isActiveFlag = row[col.isActive];
         if (
@@ -339,7 +345,7 @@ function getAdminOnlineUsersData() {
           isActiveFlag === "false" ||
           isActiveFlag === "FALSE"
         ) {
-          continue;
+          isAccountEnabled = false;
         }
       }
 
@@ -351,21 +357,28 @@ function getAdminOnlineUsersData() {
           : null;
       const lastSeenAt =
         col.lastSeenAt >= 0 ? parseAdminSheetDate(row[col.lastSeenAt]) : null;
+      const createdAt =
+        col.createdAt >= 0 ? parseAdminSheetDate(row[col.createdAt]) : null;
 
       const latestActivity = getLatestAdminDate(
         lastSeenAt,
         getLatestAdminDate(lastActive, lastLogin),
       );
-      if (!latestActivity) {
-        continue;
+
+      let minutesAgo = null;
+      if (latestActivity) {
+        minutesAgo = Math.floor((now.getTime() - latestActivity.getTime()) / 60000);
       }
 
-      const minutesAgo = Math.floor((now.getTime() - latestActivity.getTime()) / 60000);
-      if (minutesAgo > ONLINE_WINDOW_MINUTES) {
-        continue;
+      let status = "offline";
+      if (!isAccountEnabled) {
+        status = "disabled";
+      } else if (minutesAgo !== null && minutesAgo <= ACTIVE_WINDOW_MINUTES) {
+        status = "active";
+      } else if (minutesAgo !== null && minutesAgo <= ONLINE_WINDOW_MINUTES) {
+        status = "idle";
       }
 
-      const status = minutesAgo <= ACTIVE_WINDOW_MINUTES ? "active" : "idle";
       const displayName =
         (col.displayName >= 0 && row[col.displayName]) ||
         (col.username >= 0 && row[col.username]) ||
@@ -384,39 +397,59 @@ function getAdminOnlineUsersData() {
         email: email,
         avatar: avatarUrl,
         status: status,
-        activity: status === "active" ? "Đang hoạt động" : "Tạm không hoạt động",
+        activity:
+          status === "active"
+            ? "Đang hoạt động"
+            : status === "idle"
+              ? "Tạm không hoạt động"
+              : status === "disabled"
+                ? "Tài khoản đã bị khóa"
+                : "Offline",
         loginTime: lastLogin ? lastLogin.toISOString() : "",
         lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : "",
-        lastActivity: latestActivity.toISOString(),
+        lastActivity: latestActivity
+          ? latestActivity.toISOString()
+          : (createdAt ? createdAt.toISOString() : ""),
         lastActivityMinutes: minutesAgo,
       });
     }
 
     users.sort(function(a, b) {
-      return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+      const timeA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+      const timeB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+      return timeB - timeA;
     });
 
     const activeNow = users.filter(function(u) { return u.status === "active"; }).length;
-    const idleUsers = users.length - activeNow;
+    const idleUsers = users.filter(function(u) { return u.status === "idle"; }).length;
+    const offlineUsers = users.filter(function(u) { return u.status === "offline"; }).length;
+    const disabledUsers = users.filter(function(u) { return u.status === "disabled"; }).length;
+    const totalOnline = activeNow + idleUsers;
 
     // Timeline đơn giản dựa trên hoạt động gần nhất
-    const activities = users.slice(0, 10).map(function(u) {
+    const activities = users
+      .filter(function(u) { return u.status === "active" || u.status === "idle"; })
+      .slice(0, 10)
+      .map(function(u) {
       return {
         type: u.status === "active" ? "activity" : "login",
         user: u.name,
         action: u.status === "active" ? "đang hoạt động" : "vừa online",
         time: u.lastActivity,
       };
-    });
+      });
 
     return {
       success: true,
       data: {
         users: users,
         activities: activities,
-        totalOnline: users.length,
+        totalOnline: totalOnline,
+        totalAccounts: users.length,
         activeNow: activeNow,
         idleUsers: idleUsers,
+        offlineUsers: offlineUsers,
+        disabledUsers: disabledUsers,
       },
     };
   } catch (error) {
