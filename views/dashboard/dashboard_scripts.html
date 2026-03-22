@@ -234,9 +234,19 @@
 
   /**
    * SINGLE API CALL - Load all dashboard data
+   * Guarded against concurrent calls from multiple triggers.
    */
+  let _dashboardIsLoading = false;
+
   function loadAllDashboardData(options) {
+    // Prevent overlapping API calls from multiple triggers
+    if (_dashboardIsLoading) {
+      console.log("📋 Dashboard load already in progress, skipping duplicate call");
+      return;
+    }
+
     console.log("📋 Loading all dashboard data (single API)...");
+    _dashboardIsLoading = true;
 
     const opts =
       options && typeof options === "object"
@@ -256,6 +266,7 @@
       console.log("📦 Using cached dashboard data");
       renderAllZones(DashboardCache.data);
       dashboardHasLoadedOnce = true;
+      _dashboardIsLoading = false;
       return;
     }
 
@@ -266,6 +277,7 @@
     }
 
     const handleLoadError = (message) => {
+      _dashboardIsLoading = false;
       if (initialLoad) {
         showErrorStates(message);
       } else {
@@ -285,6 +297,7 @@
           DashboardCache.lastFetch = Date.now();
           renderAllZones(response);
           dashboardHasLoadedOnce = true;
+          _dashboardIsLoading = false;
         } else {
           console.warn(
             "Dashboard data returned success:false, retrying in 3s...",
@@ -298,6 +311,7 @@
                   DashboardCache.lastFetch = Date.now();
                   renderAllZones(retryResponse);
                   dashboardHasLoadedOnce = true;
+                  _dashboardIsLoading = false;
                 } else {
                   handleLoadError("Không thể tải dữ liệu");
                 }
@@ -321,6 +335,7 @@
                 DashboardCache.lastFetch = Date.now();
                 renderAllZones(retryResponse);
                 dashboardHasLoadedOnce = true;
+                _dashboardIsLoading = false;
               } else {
                 handleLoadError("Lỗi kết nối server");
               }

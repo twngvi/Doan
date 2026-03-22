@@ -1,5 +1,5 @@
 /**
- * emailService.js - Email Sending Functions 12345
+ * emailService.js - Email Sending Functions 
  *
  * Chứa các hàm gửi email: verification, password reset
  */

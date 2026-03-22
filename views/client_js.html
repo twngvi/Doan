@@ -599,70 +599,6 @@
   }
 
 
-<<<<<<< HEAD
-=======
-    // Get form data
-    const username = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
-
-    // Validation
-    if (!username || !password) {
-      showToast("Vui lòng nhập đầy đủ thông tin", "error");
-      return false;
-    }
-
-    // Prepare payload
-    const payload = {
-      username: username,
-      password: password,
-    };
-
-    // Show loading
-    showLoading(true);
-    disableButton("btn-login");
-
-    // Call backend function
-    google.script.run
-      .withSuccessHandler(onLoginSuccess)
-      .withFailureHandler(onApiError)
-      .loginUser(payload);
-
-    return false;
-  }
-
-  /**
-   * Handle successful login
-   */
-  function onLoginSuccess(response) {
-    console.log("Login response:", JSON.stringify(response));
-    console.log("Response status:", response.status);
-    console.log("Response message:", response.message);
-    hideLoading();
-    enableButton("btn-login");
-
-    if (response.status === "success") {
-      // Save user to localStorage (auto logout when closing tab)
-      currentUser = response.user;
-      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
-      localStorage.setItem("isLoggedIn", "true");
-      startUserHeartbeat();
-      applyThemeFromAuthenticatedUser(response.user);
-      console.log("âœ… Current user synced to window:", currentUser);
-
-      // Show success message
-      showToast("Đăng nhập thành công!", "success");
-
-      // Navigate to dashboard
-      setTimeout(() => {
-        showPage("page-dashboard");
-        loadDashboardData();
-      }, 500);
-    } else {
-      showToast(response.message || "Đăng nhập thất bại", "error");
-    }
-  }
->>>>>>> ed5aef78c3546e0bf62f272d4921d69cfde3ba50
 
   /**
    * Handle register form submission - NEW VERSION
@@ -738,14 +674,14 @@
               showPage("page-verify-email");
             }, 1500);
           } else {
-          // Náº¿u khÃ´ng cáº§n xÃ¡c thá»±c thÃ¬ má»›i vá» Login
-          setTimeout(() => {
-            showPage("page-login");
-          }, 3000);
+            setTimeout(() => {
+              showPage("page-login");
+            }, 3000);
+          }
+          // --------------------------------------
+        } else {
+          showToast(response.message, "error");
         }
-        // --------------------------------------
-      } else {
-        showToast(response.message, "error");
       })
       .withFailureHandler(function (error) {
         hideLoading();
@@ -1305,11 +1241,12 @@
       }
 
       // Navigate to dashboard
+      // showPage("page-dashboard") already calls refreshDashboardOnReturn()
+      // which handles all data loading — no need for a separate loadDashboardData()
       console.log("Navigating to dashboard...");
       setTimeout(() => {
         console.log("Showing dashboard page");
         showPage("page-dashboard");
-        loadDashboardData();
       }, 500);
     } else {
       console.error("Login failed with status:", response.status);
@@ -1374,20 +1311,46 @@
   // ==================== UI Utilities ====================
 
   /**
-   * Show loading overlay
+   * Loading overlay state — anti-duplication guard
+   * Prevents multiple triggers from stacking overlays.
+   * Background refreshes are silently ignored.
    */
-  function showLoading(show) {
+  let _loadingCount = 0;
+  let _loadingReason = null;
+
+  /**
+   * Show/hide loading overlay
+   * @param {boolean} show - true to show, false to hide
+   * @param {string} [reason] - optional reason; pass "background" to silently skip
+   */
+  function showLoading(show, reason) {
     const overlay = document.getElementById("loading-overlay");
-    if (overlay) {
-      overlay.style.display = show ? "flex" : "none";
+    if (!overlay) return;
+
+    if (show) {
+      // Background refresh MUST NOT show the global overlay
+      if (reason === "background") return;
+
+      _loadingCount++;
+      _loadingReason = reason || "unknown";
+      overlay.style.display = "flex";
+    } else {
+      _loadingCount = Math.max(0, _loadingCount - 1);
+      if (_loadingCount === 0) {
+        overlay.style.display = "none";
+        _loadingReason = null;
+      }
     }
   }
 
   /**
-   * Hide loading overlay
+   * Force-hide loading overlay — resets counter completely
    */
   function hideLoading() {
-    showLoading(false);
+    _loadingCount = 0;
+    _loadingReason = null;
+    const overlay = document.getElementById("loading-overlay");
+    if (overlay) overlay.style.display = "none";
   }
 
   /**
