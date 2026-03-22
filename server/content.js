@@ -2668,8 +2668,14 @@ function clearTopicLearningData(topicId, userContext) {
       "FlashcardSessions",
       "topicId",
     );
+    deleted.flashcardSessions += deleteRowsByTopic(
+      "Flashcard_Sessions",
+      "topicId",
+    );
     deleted.cardProgress = deleteRowsByTopic("CardProgress", "topicId");
+    deleted.cardProgress += deleteRowsByTopic("Flashcard_Progress", "topicId");
     deleted.wrongAnswers = deleteRowsByTopic("Wrong_Answers", "topicId");
+    deleted.wrongAnswers += deleteRowsByTopic("Wrong_Answer_Memory", "topicId");
     deleted.masteredQuestions = deleteRowsByTopic(
       "Mastered_Questions",
       "topicId",
@@ -2760,8 +2766,12 @@ function clearAllLearningData(userContext) {
     deleted.quizResults = clearSheetDataKeepHeader("Quiz_Results");
     deleted.matchingResults = clearSheetDataKeepHeader("Matching_Results");
     deleted.flashcardSessions = clearSheetDataKeepHeader("FlashcardSessions");
+    deleted.flashcardSessions +=
+      clearSheetDataKeepHeader("Flashcard_Sessions");
     deleted.cardProgress = clearSheetDataKeepHeader("CardProgress");
+    deleted.cardProgress += clearSheetDataKeepHeader("Flashcard_Progress");
     deleted.wrongAnswers = clearSheetDataKeepHeader("Wrong_Answers");
+    deleted.wrongAnswers += clearSheetDataKeepHeader("Wrong_Answer_Memory");
     deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
     deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
 
@@ -3559,6 +3569,53 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
 }
 
 /**
+ * Ensure Topic_Progress has the required columns for Lesson/Mindmap/Flashcards/MiniQuiz tracking.
+ */
+function ensureTopicProgressSchema(sheet) {
+  const requiredHeaders = [
+    "progressId",
+    "topicId",
+    "topicTitle",
+    "lessonCompleted",
+    "miniQuizCompleted",
+    "mindmapViewed",
+    "flashcardsCompleted",
+    "quizDone",
+    "matchingDone",
+    "challengeDone",
+    "attempts",
+    "accuracy",
+    "bestScore",
+    "xpEarned",
+    "status",
+    "unlockedAt",
+    "completedAt",
+    "lastUpdated",
+  ];
+
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let updatedHeaders = currentHeaders.slice();
+  let changed = false;
+
+  requiredHeaders.forEach(function (header) {
+    if (updatedHeaders.indexOf(header) === -1) {
+      updatedHeaders.push(header);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setValues([updatedHeaders]);
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    Logger.log("🔧 Topic_Progress schema updated with missing columns");
+  }
+
+  return updatedHeaders;
+}
+
+/**
  * Update Topic_Progress sheet
  */
 function updateTopicProgress(userId, topicId, progressType, progressData) {
@@ -3592,10 +3649,12 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         "lastUpdated",
       ];
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
     }
 
+    const headers = ensureTopicProgressSchema(sheet);
     const data = sheet.getDataRange().getValues();
-    const headers = data[0];
 
     // Tìm row cho topic này
     let rowIndex = -1;
@@ -3671,11 +3730,16 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       const currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      const lessonDone = lessonCol >= 0 && currentData[lessonCol] === 1;
-      const mindmapDone = mindmapCol >= 0 && currentData[mindmapCol] === 1;
+      var isChecked = function (v) {
+        return v === 1 || v === true || v === "1" || v === "TRUE";
+      };
+      const lessonDone = lessonCol >= 0 && isChecked(currentData[lessonCol]);
+      const mindmapDone =
+        mindmapCol >= 0 && isChecked(currentData[mindmapCol]);
       const flashcardsDone =
-        flashcardsCol >= 0 && currentData[flashcardsCol] === 1;
-      const miniQuizDone = miniQuizCol >= 0 && currentData[miniQuizCol] === 1;
+        flashcardsCol >= 0 && isChecked(currentData[flashcardsCol]);
+      const miniQuizDone =
+        miniQuizCol >= 0 && isChecked(currentData[miniQuizCol]);
 
       if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone) {
         const statusCol = headers.indexOf("status");
@@ -3711,19 +3775,11 @@ function getTopicProgressForWeb(topicId) {
     var sheet = spreadsheet.getSheetByName("Topic_Progress");
     if (!sheet) return { success: true, data: null };
 
+    var headers = ensureTopicProgressSchema(sheet);
     var data = sheet.getDataRange().getValues();
-    var headers = data[0];
     var topicIdStr = String(topicId).trim();
 
-    // Ensure miniQuizCompleted column exists
     var mqIdx = headers.indexOf("miniQuizCompleted");
-    if (mqIdx === -1) {
-      // Add column header
-      var newColIdx = headers.length + 1;
-      sheet.getRange(1, newColIdx).setValue("miniQuizCompleted");
-      headers.push("miniQuizCompleted");
-      mqIdx = headers.length - 1;
-    }
 
     for (var i = 1; i < data.length; i++) {
       var tidx = headers.indexOf("topicId");
@@ -3780,8 +3836,8 @@ function getLearningProgressForWeb() {
       return { success: true, data: {} }; // No progress yet
     }
 
+    const headers = ensureTopicProgressSchema(sheet);
     const data = sheet.getDataRange().getValues();
-    const headers = data[0];
     const progressMap = {};
 
     for (let i = 1; i < data.length; i++) {
@@ -3789,12 +3845,16 @@ function getLearningProgressForWeb() {
       const topicId = row[headers.indexOf("topicId")];
 
       if (topicId) {
+        const isChecked = function (v) {
+          return v === 1 || v === true || v === "1" || v === "TRUE";
+        };
         progressMap[topicId] = {
-          lessonCompleted: row[headers.indexOf("lessonCompleted")] === 1,
-          mindmapViewed: row[headers.indexOf("mindmapViewed")] === 1,
-          flashcardsCompleted:
-            row[headers.indexOf("flashcardsCompleted")] === 1,
-          quizDone: row[headers.indexOf("quizDone")] === 1,
+          lessonCompleted: isChecked(row[headers.indexOf("lessonCompleted")]),
+          mindmapViewed: isChecked(row[headers.indexOf("mindmapViewed")]),
+          flashcardsCompleted: isChecked(
+            row[headers.indexOf("flashcardsCompleted")],
+          ),
+          quizDone: isChecked(row[headers.indexOf("quizDone")]),
           status: row[headers.indexOf("status")] || "not_started",
           completedAt: row[headers.indexOf("completedAt")] || null,
           // Tính progress %
@@ -3818,12 +3878,15 @@ function getLearningProgressForWeb() {
  */
 function calculateProgressPercent(row, headers) {
   let completed = 0;
-  const total = 4; // lesson, mindmap, flashcards, quiz
+  const total = 4; // lesson, mindmap, flashcards, miniQuiz
+  const isChecked = function (v) {
+    return v === 1 || v === true || v === "1" || v === "TRUE";
+  };
 
-  if (row[headers.indexOf("lessonCompleted")] === 1) completed++;
-  if (row[headers.indexOf("mindmapViewed")] === 1) completed++;
-  if (row[headers.indexOf("flashcardsCompleted")] === 1) completed++;
-  if (row[headers.indexOf("quizDone")] === 1) completed++;
+  if (isChecked(row[headers.indexOf("lessonCompleted")])) completed++;
+  if (isChecked(row[headers.indexOf("mindmapViewed")])) completed++;
+  if (isChecked(row[headers.indexOf("flashcardsCompleted")])) completed++;
+  if (isChecked(row[headers.indexOf("miniQuizCompleted")])) completed++;
 
   return Math.round((completed / total) * 100);
 }

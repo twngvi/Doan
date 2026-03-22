@@ -719,6 +719,122 @@
     showToast("Tính năng đang phát triển", "info");
   }
 
+  // ===== RESET DATA FUNCTIONS =====
+  function openResetDataConfirmation() {
+    const modal = document.getElementById("resetDataConfirmationModal");
+    if (modal) {
+      modal.style.display = "flex";
+    }
+  }
+
+  function closeResetDataConfirmation(event) {
+    // Nếu click vào background, đóng modal
+    if (event && event.target.id !== "resetDataConfirmationModal") {
+      return;
+    }
+    const modal = document.getElementById("resetDataConfirmationModal");
+    if (modal) {
+      modal.style.display = "none";
+    }
+  }
+
+  function confirmResetAllData() {
+    if (!profileData || !profileData.userId) {
+      showToast("Không tìm thấy thông tin người dùng", "error");
+      return;
+    }
+
+    console.log("🗑️ Resetting all learning data for user:", profileData.userId);
+
+    // Get the confirm button and show loading state
+    const confirmBtn = document.getElementById("confirmResetDataBtn");
+    let originalText = "";
+    
+    if (confirmBtn) {
+      originalText = confirmBtn.innerHTML;
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = "<span>⏳ Đang xóa...</span>";
+    }
+
+    // Gọi backend để xóa dữ liệu
+    // Note: clearAllLearningData() will use Session.getActiveUser() automatically
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = originalText;
+        }
+        console.log("✅ Reset response:", response);
+
+        if (response.success) {
+          showToast("✅ Đã xóa toàn bộ dữ liệu học tập!", "success");
+          closeResetDataConfirmation();
+          
+          // ⭐ IMPORTANT: Clear ALL client-side caches
+          // This prevents blank screen issues caused by stale cache data
+          try {
+            // Clear localStorage progress keys
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && (
+                key.indexOf("lesson_progress_") === 0 ||
+                key === "streakData" ||
+                key === "topicsCache" ||
+                key === "progressCache" ||
+                key === "dashboardCache"
+              )) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            console.log("🧹 Cleared", keysToRemove.length, "cached items from localStorage");
+
+            // Clear global window caches and state
+            if (window.DashboardCache) {
+              window.DashboardCache.data = null;
+              window.DashboardCache.lastFetch = null;
+            }
+            if (window.invalidateTopicsLocalCache) {
+              window.invalidateTopicsLocalCache();
+            }
+            
+            // ⭐ Reset dashboard state to force fresh load
+            if (typeof window !== "undefined") {
+              window.dashboardInitialized = false;
+              window.dashboardInitRetryCount = 0;
+              window.dashboardHasLoadedOnce = false;
+            }
+            
+            console.log("🧹 Cleared all caches and reset dashboard state");
+          } catch (e) {
+            console.warn("⚠️ Warning during cache clearing:", e);
+          }
+          
+          // ⭐ Navigate to Dashboard instead of reload
+          // This gives fresh initialization without stale cache data
+          setTimeout(() => {
+            if (typeof showPage === "function") {
+              showPage("page-dashboard");
+            } else {
+              location.reload();
+            }
+          }, 1500);
+        } else {
+          showToast("❌ Lỗi: " + (response.message || "Không xóa được dữ liệu"), "error");
+        }
+      })
+      .withFailureHandler(function (error) {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = originalText;
+        }
+        console.error("❌ Reset error:", error);
+        showToast("❌ Lỗi kết nối server: " + error.message, "error");
+      })
+      .clearAllLearningData();
+  }
+
   // ===== METEOR SHOWER FOR PROFILE PAGE =====
   let profileMeteorInterval = null;
   let meteorShowerTimeout = null;
