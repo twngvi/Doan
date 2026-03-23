@@ -143,16 +143,22 @@
   function renderUsers(users) {
     const grid = document.getElementById('usersGrid');
     const emptyState = document.getElementById('emptyState');
+    const loadingState = document.getElementById('loadingState');
     
     if (!grid) return;
     
+    // Always hide loading state when rendering users
+    if (loadingState) loadingState.style.display = 'none';
+    
     if (users.length === 0) {
       grid.innerHTML = '';
+      grid.style.display = 'none';
       if (emptyState) emptyState.style.display = 'flex';
       return;
     }
     
     if (emptyState) emptyState.style.display = 'none';
+    grid.style.display = 'grid';
     
     grid.innerHTML = users.map(user => `
       <div class="user-card" data-user-id="${user.id}">
@@ -314,9 +320,16 @@
   function showLoading(show) {
     const loadingState = document.getElementById('loadingState');
     const usersGrid = document.getElementById('usersGrid');
+    const emptyState = document.getElementById('emptyState');
     
-    if (loadingState) loadingState.style.display = show ? 'flex' : 'none';
-    if (usersGrid) usersGrid.style.display = show ? 'none' : 'grid';
+    if (show) {
+      if (loadingState) loadingState.style.display = 'flex';
+      if (usersGrid) usersGrid.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'none';
+    } else {
+      if (loadingState) loadingState.style.display = 'none';
+      if (usersGrid) usersGrid.style.display = 'grid';
+    }
   }
 
   // Show error message

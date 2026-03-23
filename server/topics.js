@@ -11,7 +11,7 @@ const TOPICS_CACHE_DURATION = 300000; // Cache 5 phút
 
 /**
  * Get all topics from MASTER_DB
- * Updated to read 14 columns including contentDocId
+ * Updated to read dynamic columns including contentDocId/contentDocUrl
  * ⭐ OPTIMIZED: Thêm cache phía server
  */
 function getAllTopics() {
@@ -53,6 +53,7 @@ function getAllTopics() {
     Logger.log("✅ Found sheet: " + SHEET_NAME);
 
     const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
     Logger.log("Last row: " + lastRow);
 
     if (lastRow < 2) {
@@ -64,46 +65,115 @@ function getAllTopics() {
       };
     }
 
-    // ⭐ ĐỌC 14 CỘT (A đến N) - Thêm cột contentDocId
-    const data = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    // ⭐ ĐỌC TOÀN BỘ CỘT DỰA TRÊN HEADER (hỗ trợ thêm contentDocUrl)
+    const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    const data = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
 
     Logger.log("Đã lấy được " + data.length + " dòng dữ liệu");
+
+    const col = {
+      topicId: headers.indexOf("topicId"),
+      title: headers.indexOf("title"),
+      description: headers.indexOf("description"),
+      category: headers.indexOf("category"),
+      order: headers.indexOf("order"),
+      iconUrl: headers.indexOf("iconUrl"),
+      estimatedTime: headers.indexOf("estimatedTime"),
+      prerequisiteTopics: headers.indexOf("prerequisiteTopics"),
+      isLocked: headers.indexOf("isLocked"),
+      unlockCondition: headers.indexOf("unlockCondition"),
+      createdBy: headers.indexOf("createdBy"),
+      createdAt: headers.indexOf("createdAt"),
+      updatedAt: headers.indexOf("updatedAt"),
+      contentDocId: headers.indexOf("contentDocId"),
+      contentDocUrl: headers.indexOf("contentDocUrl"),
+    };
 
     const topics = [];
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
 
-      if (!row[0]) {
+      const topicId =
+        col.topicId >= 0 && row[col.topicId] ? String(row[col.topicId]).trim() : "";
+
+      if (!topicId) {
         continue; // Skip empty rows silently for performance
       }
 
       topics.push({
-        topicId: String(row[0]).trim(),
-        title: String(row[1]),
-        description: String(row[2]),
-        category: String(row[3]),
-        order: Number(row[4]) || 0,
-        iconUrl: String(row[5] || ""),
-        estimatedTime: String(row[6] || ""),
-        prerequisiteTopics: String(row[7] || ""),
-        isLocked: Boolean(row[8]),
-        unlockCondition: String(row[9] || ""),
-        createdBy: String(row[10] || ""),
+        topicId: topicId,
+        title:
+          col.title >= 0 && row[col.title] !== undefined
+            ? String(row[col.title])
+            : "",
+        description:
+          col.description >= 0 && row[col.description] !== undefined
+            ? String(row[col.description])
+            : "",
+        category:
+          col.category >= 0 && row[col.category] !== undefined
+            ? String(row[col.category])
+            : "",
+        order:
+          col.order >= 0 && row[col.order] !== undefined
+            ? Number(row[col.order]) || 0
+            : 0,
+        iconUrl:
+          col.iconUrl >= 0 && row[col.iconUrl] !== undefined
+            ? String(row[col.iconUrl] || "")
+            : "",
+        estimatedTime:
+          col.estimatedTime >= 0 && row[col.estimatedTime] !== undefined
+            ? String(row[col.estimatedTime] || "")
+            : "",
+        prerequisiteTopics:
+          col.prerequisiteTopics >= 0 &&
+          row[col.prerequisiteTopics] !== undefined
+            ? String(row[col.prerequisiteTopics] || "")
+            : "",
+        isLocked:
+          col.isLocked >= 0 && row[col.isLocked] !== undefined
+            ? Boolean(row[col.isLocked])
+            : false,
+        unlockCondition:
+          col.unlockCondition >= 0 &&
+          row[col.unlockCondition] !== undefined
+            ? String(row[col.unlockCondition] || "")
+            : "",
+        createdBy:
+          col.createdBy >= 0 && row[col.createdBy] !== undefined
+            ? String(row[col.createdBy] || "")
+            : "",
         createdAt:
-          row[11] instanceof Date
-            ? row[11].toISOString()
-            : String(row[11] || ""),
+          col.createdAt >= 0 && row[col.createdAt] instanceof Date
+            ? row[col.createdAt].toISOString()
+            : col.createdAt >= 0
+              ? String(row[col.createdAt] || "")
+              : "",
         updatedAt:
-          row[12] instanceof Date
-            ? row[12].toISOString()
-            : String(row[12] || ""),
+          col.updatedAt >= 0 && row[col.updatedAt] instanceof Date
+            ? row[col.updatedAt].toISOString()
+            : col.updatedAt >= 0
+              ? String(row[col.updatedAt] || "")
+              : "",
 
-        // ⭐ THÊM CỘT CONTENT DOC ID
-        contentDocId: String(row[13] || ""),
+        // ⭐ THÊM CỘT CONTENT DOC ID + URL
+        contentDocId:
+          col.contentDocId >= 0 && row[col.contentDocId] !== undefined
+            ? String(row[col.contentDocId] || "")
+            : "",
+        contentDocUrl:
+          col.contentDocUrl >= 0 && row[col.contentDocUrl] !== undefined
+            ? String(row[col.contentDocUrl] || "")
+            : "",
 
         // Map thêm trường cho Frontend hiển thị
-        journey: mapCategoryToJourney(row[3]),
+        journey: mapCategoryToJourney(
+          col.category >= 0 && row[col.category] !== undefined
+            ? row[col.category]
+            : "",
+        ),
         totalStages: 5,
         minAILevel: 1,
         minAccuracy: 70,

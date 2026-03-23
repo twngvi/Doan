@@ -759,3 +759,676 @@ function clearAllAdminCache() {
     return { success: false, message: error.toString() };
   }
 }
+
+/**
+ * Lấy thông tin admin hiện tại dựa trên email đăng nhập
+ */
+function getCurrentAdminContext() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Bạn cần đăng nhập tài khoản admin." };
+    }
+
+    const sheet = getSheet("Users");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+    const roleIndex = headers.indexOf("role");
+    const userIdIndex = headers.indexOf("userId");
+
+    for (let i = 1; i < data.length; i++) {
+      if (
+        emailIndex !== -1 &&
+        String(data[i][emailIndex]).toLowerCase() === email.toLowerCase()
+      ) {
+        const role = roleIndex !== -1 ? String(data[i][roleIndex]).toUpperCase() : "";
+        if (role !== "ADMIN") {
+          return { success: false, message: "Chỉ ADMIN mới được tạo/chỉnh sửa topic." };
+        }
+
+        return {
+          success: true,
+          email: email,
+          userId: userIdIndex !== -1 ? data[i][userIdIndex] : "",
+          role: role,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: "Không tìm thấy tài khoản với email này hoặc không phải ADMIN.",
+    };
+  } catch (error) {
+    Logger.log("Error getting admin context: " + error.toString());
+    return { success: false, message: "Lỗi kiểm tra quyền admin: " + error.toString() };
+  }
+}
+
+// ========================================
+// TOPIC EDITOR FUNCTIONS
+// ========================================
+
+// Folder IDs for Topic Editor
+const TOPIC_EDITOR_CONFIG = {
+  TOPIC_DOCS_FOLDER_ID: "1b2Z59iRVfi8c_JzRh2MKYKrx170JipD3",
+  IMAGES_FOLDER_ID: "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN"
+};
+
+/**
+ * Lấy HTML của Topic Editor
+ */
+function getTopicEditorHtml() {
+  try {
+    const template = HtmlService.createTemplateFromFile('views/admin/topicEditor/topic_editor');
+    return template.evaluate().getContent();
+  } catch (error) {
+    Logger.log("Error getting topic editor HTML: " + error.toString());
+    return "<p>Lỗi tải Topic Editor: " + error.toString() + "</p>";
+  }
+}
+
+/**
+ * Lấy HTML đầy đủ của Topic Editor (styles + content + scripts)
+ */
+function getTopicEditorFullHtml() {
+  try {
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/topicEditor/topic_editor_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/topicEditor/topic_editor').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/topicEditor/topic_editor_scripts').getContent();
+
+    return styles + content + scripts;
+  } catch (error) {
+    Logger.log("Error getting topic editor full HTML: " + error.toString());
+    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Topic Editor: " + error.toString() + "</p>";
+  }
+}
+
+/**
+ * Include file HTML (styles, scripts)
+ */
+function includeTopicEditorFile(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * Upload hình ảnh lên Google Drive
+ * @param {string} base64Data - Dữ liệu hình ảnh dạng base64
+ * @param {string} fileName - Tên file
+ * @param {string} mimeType - Loại file (image/png, image/jpeg, etc.)
+ * @returns {object} - {success, imageUrl, message}
+ */
+function uploadImageToDrive(base64Data, fileName, mimeType) {
+  try {
+    Logger.log("=== UPLOAD IMAGE TO DRIVE ===");
+    Logger.log("File name: " + fileName);
+    Logger.log("Mime type: " + mimeType);
+    
+    // Get the images folder
+    const folder = DriveApp.getFolderById(TOPIC_EDITOR_CONFIG.IMAGES_FOLDER_ID);
+    
+    // Decode base64 to blob
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(base64Data),
+      mimeType,
+      fileName
+    );
+    
+    // Create unique filename
+    const uniqueFileName = Utilities.getUuid() + "_" + fileName;
+    blob.setName(uniqueFileName);
+    
+    // Upload to Drive
+    const file = folder.createFile(blob);
+    
+    // Set permissions - anyone with link can view
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    // Get direct image URL
+    const fileId = file.getId();
+    const imageUrl = "https://drive.google.com/uc?export=view&id=" + fileId;
+    
+    Logger.log("✅ Image uploaded successfully");
+    Logger.log("File ID: " + fileId);
+    Logger.log("Image URL: " + imageUrl);
+    
+    return {
+      success: true,
+      imageUrl: imageUrl,
+      fileId: fileId,
+      message: "Upload thành công!"
+    };
+  } catch (error) {
+    Logger.log("❌ Error uploading image: " + error.toString());
+    return {
+      success: false,
+      imageUrl: "",
+      message: "Lỗi upload: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Tạo Google Doc và publish topic vào MasterDB
+ * @param {object} topicData - Dữ liệu topic
+ * @returns {object} - {success, docId, docUrl, message}
+ */
+function createAndPublishTopic(topicData) {
+  try {
+    Logger.log("=== CREATE AND PUBLISH TOPIC ===");
+    Logger.log("Topic data: " + JSON.stringify(topicData));
+
+    // Quyền: chỉ ADMIN được phép
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext.success) {
+      return { success: false, message: adminContext.message };
+    }
+    
+    // Validate input
+    if (!topicData.topicId || !topicData.title || !topicData.category || !topicData.content) {
+      return {
+        success: false,
+        message: "Thiếu thông tin bắt buộc (topicId, title, category, content)"
+      };
+    }
+    
+    // Check if topicId already exists
+    const existingTopic = checkTopicIdExists(topicData.topicId);
+    if (existingTopic) {
+      return {
+        success: false,
+        message: "Topic ID '" + topicData.topicId + "' đã tồn tại. Vui lòng chọn ID khác."
+      };
+    }
+    
+    // Step 1: Create Google Doc with content
+    const docResult = createTopicDocument(topicData.title, topicData.content);
+    if (!docResult.success) {
+      return docResult;
+    }
+    
+    // Step 2: Save topic to MasterDB
+    const saveResult = saveTopicToMasterDB({
+      topicId: topicData.topicId,
+      title: topicData.title,
+      description: topicData.description || "",
+      category: topicData.category,
+      order: topicData.order || 999,
+      contentDocId: docResult.docId,
+      contentDocUrl: docResult.docUrl,
+      createdBy: adminContext.userId || adminContext.email || "ADMIN",
+    });
+    
+    if (!saveResult.success) {
+      // If save fails, try to delete the created doc
+      try {
+        DriveApp.getFileById(docResult.docId).setTrashed(true);
+      } catch (e) {
+        Logger.log("Could not trash doc after save failure: " + e.toString());
+      }
+      return saveResult;
+    }
+    
+    // Clear server topics cache so new topic appears immediately
+    try {
+      clearTopicsCache();
+    } catch (e) {
+      Logger.log("⚠️ Could not clear topics cache: " + e.toString());
+    }
+    
+    Logger.log("✅ Topic created and published successfully");
+    
+    return {
+      success: true,
+      docId: docResult.docId,
+      docUrl: docResult.docUrl,
+      topicId: topicData.topicId,
+      message: "Topic đã được publish thành công!"
+    };
+  } catch (error) {
+    Logger.log("❌ Error creating topic: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi tạo topic: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Tạo Google Doc từ nội dung HTML
+ * @param {string} title - Tiêu đề doc
+ * @param {string} htmlContent - Nội dung HTML
+ * @returns {object} - {success, docId, docUrl, message}
+  */
+function createTopicDocument(title, htmlContent) {
+  try {
+    Logger.log("=== CREATE TOPIC DOCUMENT ===");
+    Logger.log("Title: " + title);
+
+    // Get the topics folder (validate access)
+    let folder;
+    try {
+      folder = DriveApp.getFolderById(TOPIC_EDITOR_CONFIG.TOPIC_DOCS_FOLDER_ID);
+    } catch (folderErr) {
+      Logger.log("❌ Cannot access topics folder: " + folderErr.toString());
+      return {
+        success: false,
+        docId: "",
+        docUrl: "",
+        message:
+          "Không truy cập được folder lưu Docs. Kiểm tra quyền truy cập folder: " +
+          TOPIC_EDITOR_CONFIG.TOPIC_DOCS_FOLDER_ID,
+      };
+    }
+    
+    // Create new Google Doc
+    const doc = DocumentApp.create(title);
+    const docId = doc.getId();
+    
+    // Get the body and add content
+    const body = doc.getBody();
+    
+    // Convert HTML to Doc content
+    // Note: Google Docs doesn't support direct HTML insert,
+    // so we need to parse and format
+    const cleanContent = convertHtmlToDocContent(htmlContent, body);
+    
+    // Save and close
+    doc.saveAndClose();
+    
+    // Move doc to the correct folder
+    const file = DriveApp.getFileById(docId);
+    folder.addFile(file);
+    try {
+      DriveApp.getRootFolder().removeFile(file);
+    } catch (e) {
+      Logger.log("⚠️ Could not remove file from root: " + e.toString());
+    }
+    
+    // Set sharing - anyone with link can view
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    const docUrl = doc.getUrl();
+    
+    Logger.log("✅ Doc created successfully");
+    Logger.log("Doc ID: " + docId);
+    Logger.log("Doc URL: " + docUrl);
+    
+    return {
+      success: true,
+      docId: docId,
+      docUrl: docUrl,
+      message: "Tạo document thành công!"
+    };
+  } catch (error) {
+    Logger.log("❌ Error creating document: " + error.toString());
+    return {
+      success: false,
+      docId: "",
+      docUrl: "",
+      message: "Lỗi tạo document: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Chuyển đổi HTML content sang Google Doc format
+ * @param {string} html - Nội dung HTML
+ * @param {Body} body - Body của Google Doc
+ */
+function convertHtmlToDocContent(html, body) {
+  try {
+    // Remove existing content
+    body.clear();
+    
+    // Parse HTML using simple regex (Google Apps Script doesn't have DOM parser)
+    // This is a simplified version - handles basic elements
+    
+    // Process the HTML content
+    let content = html;
+    
+    // Replace common HTML entities
+    content = content.replace(/&nbsp;/g, ' ');
+    content = content.replace(/&amp;/g, '&');
+    content = content.replace(/&lt;/g, '<');
+    content = content.replace(/&gt;/g, '>');
+    content = content.replace(/&quot;/g, '"');
+    
+    // Process block elements
+    const blocks = parseHtmlBlocks(content);
+    
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      
+      switch (block.type) {
+        case 'h1':
+          const h1 = body.appendParagraph(block.text);
+          h1.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+          break;
+          
+        case 'h2':
+          const h2 = body.appendParagraph(block.text);
+          h2.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+          break;
+          
+        case 'h3':
+          const h3 = body.appendParagraph(block.text);
+          h3.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+          break;
+          
+        case 'p':
+          body.appendParagraph(block.text);
+          break;
+          
+        case 'ul':
+          for (let j = 0; j < block.items.length; j++) {
+            const li = body.appendListItem(block.items[j]);
+            li.setGlyphType(DocumentApp.GlyphType.BULLET);
+          }
+          break;
+          
+        case 'ol':
+          for (let j = 0; j < block.items.length; j++) {
+            const li = body.appendListItem(block.items[j]);
+            li.setGlyphType(DocumentApp.GlyphType.NUMBER);
+          }
+          break;
+          
+        case 'pre':
+          const code = body.appendParagraph(block.text);
+          code.setFontFamily('Consolas');
+          code.setBackgroundColor('#f1f3f4');
+          break;
+          
+        case 'callout':
+          const callout = body.appendParagraph(block.icon + ' ' + block.text);
+          // Style based on callout type
+          if (block.calloutType === 'note') {
+            callout.setBackgroundColor('#e8f5e9');
+          } else if (block.calloutType === 'warning') {
+            callout.setBackgroundColor('#fff3e0');
+          } else if (block.calloutType === 'info') {
+            callout.setBackgroundColor('#e3f2fd');
+          } else if (block.calloutType === 'danger') {
+            callout.setBackgroundColor('#ffebee');
+          }
+          break;
+          
+        case 'image':
+          try {
+            const imageBlob = UrlFetchApp.fetch(block.src).getBlob();
+            body.appendImage(imageBlob);
+          } catch (e) {
+            body.appendParagraph('[Hình ảnh: ' + block.src + ']');
+          }
+          break;
+          
+        default:
+          if (block.text && block.text.trim()) {
+            body.appendParagraph(block.text);
+          }
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    Logger.log("Error converting HTML to Doc: " + error.toString());
+    // Fallback: just add plain text
+    body.appendParagraph(html.replace(/<[^>]*>/g, ''));
+    return false;
+  }
+}
+
+/**
+ * Parse HTML thành các block elements
+ * @param {string} html - Nội dung HTML
+ * @returns {Array} - Mảng các block objects
+ */
+function parseHtmlBlocks(html) {
+  const blocks = [];
+  
+  // Regex patterns for different elements
+  const patterns = [
+    { regex: /<h1[^>]*>([\s\S]*?)<\/h1>/gi, type: 'h1' },
+    { regex: /<h2[^>]*>([\s\S]*?)<\/h2>/gi, type: 'h2' },
+    { regex: /<h3[^>]*>([\s\S]*?)<\/h3>/gi, type: 'h3' },
+    { regex: /<pre[^>]*>([\s\S]*?)<\/pre>/gi, type: 'pre' },
+    { regex: /<ul[^>]*>([\s\S]*?)<\/ul>/gi, type: 'ul' },
+    { regex: /<ol[^>]*>([\s\S]*?)<\/ol>/gi, type: 'ol' },
+    { regex: /<div class="callout callout-(\w+)"[^>]*>[\s\S]*?<span class="callout-icon"[^>]*>([^<]*)<\/span>[\s\S]*?<div class="callout-content"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<\/div>/gi, type: 'callout' },
+    { regex: /<img[^>]*src="([^"]*)"[^>]*>/gi, type: 'image' },
+    { regex: /<p[^>]*>([\s\S]*?)<\/p>/gi, type: 'p' },
+    { regex: /<div[^>]*>([\s\S]*?)<\/div>/gi, type: 'div' }
+  ];
+  
+  // Create a working copy
+  let workingHtml = html;
+  
+  // Track positions of all matches
+  const allMatches = [];
+  
+  for (const pattern of patterns) {
+    let match;
+    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
+    
+    while ((match = regex.exec(html)) !== null) {
+      const matchData = {
+        type: pattern.type,
+        index: match.index,
+        length: match[0].length,
+        fullMatch: match[0]
+      };
+      
+      if (pattern.type === 'ul' || pattern.type === 'ol') {
+        // Extract list items
+        const items = [];
+        const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+        let liMatch;
+        while ((liMatch = liRegex.exec(match[1])) !== null) {
+          items.push(stripHtml(liMatch[1]));
+        }
+        matchData.items = items;
+      } else if (pattern.type === 'callout') {
+        matchData.calloutType = match[1];
+        matchData.icon = match[2];
+        matchData.text = stripHtml(match[3]);
+      } else if (pattern.type === 'image') {
+        matchData.src = match[1];
+      } else {
+        matchData.text = stripHtml(match[1] || '');
+      }
+      
+      allMatches.push(matchData);
+    }
+  }
+  
+  // Sort by position
+  allMatches.sort((a, b) => a.index - b.index);
+  
+  // Remove nested/overlapping matches
+  const finalMatches = [];
+  let lastEnd = 0;
+  
+  for (const match of allMatches) {
+    if (match.index >= lastEnd) {
+      finalMatches.push(match);
+      lastEnd = match.index + match.length;
+    }
+  }
+  
+  return finalMatches;
+}
+
+/**
+ * Xóa HTML tags và giữ lại text
+ */
+function stripHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+/**
+ * Kiểm tra topicId đã tồn tại chưa
+ */
+function checkTopicIdExists(topicId) {
+  try {
+    const sheet = getSheet("Topics");
+    if (!sheet) return false;
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdIndex = headers.indexOf("topicId");
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdIndex] === topicId) {
+        return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    Logger.log("Error checking topicId: " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Lưu topic vào MasterDB
+ */
+function saveTopicToMasterDB(topicData) {
+  try {
+    Logger.log("=== SAVE TOPIC TO MASTERDB ===");
+    Logger.log("Topic data: " + JSON.stringify(topicData));
+    
+    const sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Topics" };
+    }
+    
+    let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    // Ensure new column for doc URL exists
+    if (headers.indexOf("contentDocUrl") === -1) {
+      const newColIndex = headers.length + 1;
+      sheet.getRange(1, newColIndex).setValue("contentDocUrl");
+      headers = headers.concat(["contentDocUrl"]);
+    }
+    
+    // Prepare row data based on schema
+    const rowData = [];
+    const now = new Date().toISOString();
+    
+    for (const header of headers) {
+      switch (header) {
+        case 'topicId':
+          rowData.push(topicData.topicId);
+          break;
+        case 'title':
+          rowData.push(topicData.title);
+          break;
+        case 'description':
+          rowData.push(topicData.description || '');
+          break;
+        case 'category':
+          rowData.push(topicData.category);
+          break;
+        case 'iconUrl':
+          rowData.push(topicData.iconUrl || '');
+          break;
+        case 'estimatedTime':
+          rowData.push(topicData.estimatedTime || '');
+          break;
+        case 'prerequisiteTopics':
+          rowData.push(topicData.prerequisiteTopics || '');
+          break;
+        case 'unlockCondition':
+          rowData.push(topicData.unlockCondition || '');
+          break;
+        case 'order':
+          rowData.push(topicData.order || 999);
+          break;
+        case 'contentDocId':
+          rowData.push(topicData.contentDocId);
+          break;
+        case 'contentDocUrl':
+          rowData.push(topicData.contentDocUrl || '');
+          break;
+        case 'createdBy':
+          rowData.push(topicData.createdBy || 'ADMIN');
+          break;
+        case 'createdAt':
+          rowData.push(now);
+          break;
+        case 'updatedAt':
+          rowData.push(now);
+          break;
+        case 'isLocked':
+          rowData.push(
+            typeof topicData.isLocked === "boolean" ? topicData.isLocked : false,
+          );
+          break;
+        default:
+          rowData.push('');
+      }
+    }
+    
+    // Append new row
+    sheet.appendRow(rowData);
+    
+    Logger.log("✅ Topic saved to MasterDB successfully");
+    
+    return {
+      success: true,
+      message: "Đã lưu topic vào MasterDB"
+    };
+  } catch (error) {
+    Logger.log("❌ Error saving topic: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi lưu topic: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Lấy danh sách categories từ Topics hiện có
+ */
+function getTopicCategories() {
+  try {
+    const sheet = getSheet("Topics");
+    if (!sheet) return { success: false, categories: [] };
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const categoryIndex = headers.indexOf("category");
+    
+    if (categoryIndex === -1) return { success: false, categories: [] };
+    
+    const categories = new Set();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][categoryIndex]) {
+        categories.add(data[i][categoryIndex]);
+      }
+    }
+    
+    return {
+      success: true,
+      categories: Array.from(categories).sort()
+    };
+  } catch (error) {
+    Logger.log("Error getting categories: " + error.toString());
+    return { success: false, categories: [] };
+  }
+}

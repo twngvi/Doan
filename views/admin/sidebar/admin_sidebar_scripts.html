@@ -302,6 +302,7 @@
       { id: 'page-online-stats', name: 'Đang online', icon: 'group', keywords: ['online', 'dang online', 'user', 'nguoi dung'] },
       { id: 'page-user-management', name: 'Quản lý Users', icon: 'manage_accounts', keywords: ['user', 'quan ly', 'nguoi dung', 'account'] },
       { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson'] },
+      { id: 'page-topic-editor', name: 'Tạo Topic mới', icon: 'add_circle', keywords: ['topic', 'tao moi', 'them', 'create', 'editor'] },
       { id: 'page-quiz-management', name: 'Quản lý Quiz', icon: 'quiz', keywords: ['quiz', 'cau hoi', 'trac nghiem'] },
       { id: 'page-reports', name: 'Báo cáo', icon: 'analytics', keywords: ['report', 'bao cao', 'thong ke', 'analytics'] },
       { id: 'page-settings', name: 'Cài đặt', icon: 'settings', keywords: ['setting', 'cai dat', 'config'] },
@@ -403,7 +404,7 @@
     const hash = window.location.hash.slice(1);
     if (hash && hash.startsWith('page-')) {
       showAdminPage(hash);
-      
+
       // Set active nav item
       const navItem = document.querySelector(`.admin-sidebar .nav-item[data-page="${hash}"]`);
       if (navItem) {
@@ -411,4 +412,92 @@
       }
     }
   });
+
+  // ========================================
+  // TOPIC EDITOR DYNAMIC LOADER
+  // ========================================
+
+  let topicEditorLoaded = false;
+
+  function inittopiceditor() {
+    if (topicEditorLoaded) {
+      // Already loaded, just re-init editor focus
+      const editor = document.getElementById('contentEditor');
+      if (editor) editor.focus();
+      return;
+    }
+
+    loadTopicEditorContent();
+  }
+
+  function loadTopicEditorContent() {
+    const container = document.getElementById('topic-editor-container');
+    if (!container) return;
+
+    // Check if google.script.run is available
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        topicEditorLoaded = true;
+
+        // Initialize editor after content is loaded
+        setTimeout(function() {
+          if (typeof initializeTopicEditor === 'function') {
+            initializeTopicEditor();
+          } else {
+            // Fallback: init editor elements directly
+            initTopicEditorFallback();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Topic Editor: ' + error.message + '</div>';
+      })
+      .getTopicEditorFullHtml();
+  }
+
+  function initTopicEditorFallback() {
+    const editor = document.getElementById('contentEditor');
+    if (editor) {
+      editor.focus();
+
+      // Handle paste - clean up pasted content
+      editor.addEventListener('paste', function(e) {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text/plain');
+        document.execCommand('insertText', false, text);
+      });
+    }
+
+    // Setup drag and drop for images
+    const uploadZone = document.getElementById('imageUploadZone');
+    if (uploadZone) {
+      uploadZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('dragover');
+      });
+
+      uploadZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        this.classList.remove('dragover');
+      });
+
+      uploadZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('dragover');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+          if (typeof handleImageUpload === 'function') {
+            handleImageUpload(files[0]);
+          }
+        }
+      });
+    }
+  }
 </script>
