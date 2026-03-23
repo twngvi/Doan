@@ -1237,6 +1237,175 @@ function getOrCreateWrongAnswersSheet(spreadsheet) {
 }
 
 /**
+ * Get or create XP_Log sheet and ensure schema for both daily quests and topic rewards.
+ */
+function getOrCreateXPLogSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName("XP_Log");
+  const requiredHeaders = [
+    "date",
+    "timestamp",
+    "questId",
+    "questTitle",
+    "xpAmount",
+    "source",
+    "topicId",
+    "eventId",
+    "meta",
+  ];
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet("XP_Log");
+    sheet.appendRow(requiredHeaders);
+    const headerRange = sheet.getRange(1, 1, 1, requiredHeaders.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#F59E0B");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const currentHeaders = sheet
+    .getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1))
+    .getValues()[0];
+  let updatedHeaders = currentHeaders.slice();
+  let changed = false;
+
+  requiredHeaders.forEach(function (header) {
+    if (updatedHeaders.indexOf(header) === -1) {
+      updatedHeaders.push(header);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setValues([updatedHeaders]);
+    sheet.getRange(1, 1, 1, updatedHeaders.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+/**
+ * Update totalXP in master DB for a given user email.
+ */
+function addXPToUserTotalByEmail(userEmail, xpDelta) {
+  try {
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailCol = headers.indexOf("email");
+    const xpCol = headers.indexOf("totalXP");
+
+    if (emailCol < 0 || xpCol < 0) return null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][emailCol]).trim() !== String(userEmail).trim()) {
+        continue;
+      }
+
+      const currentXP = parseInt(data[i][xpCol]) || 0;
+      const newTotalXP = currentXP + (parseInt(xpDelta, 10) || 0);
+      usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+      return newTotalXP;
+    }
+
+    return null;
+  } catch (error) {
+    Logger.log("❌ Error updating totalXP: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Award XP for a topic-related milestone exactly once per eventId.
+ */
+function awardTopicXPByEvent(userEmail, config) {
+  try {
+    if (!userEmail || userEmail === "anonymous") {
+      return { success: false, message: "User not logged in" };
+    }
+
+    const xpAmount = parseInt(config && config.xpAmount, 10) || 0;
+    const eventId = String((config && config.eventId) || "").trim();
+    if (!eventId || xpAmount <= 0) {
+      return { success: false, message: "Invalid XP event config" };
+    }
+
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) {
+      return { success: false, message: "No personal sheet" };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const xpSheet = getOrCreateXPLogSheet(userSpreadsheet);
+    const data = xpSheet.getDataRange().getValues();
+    const headers = data[0] || [];
+    const eventIdCol = headers.indexOf("eventId");
+    const questIdCol = headers.indexOf("questId");
+
+    for (let i = 1; i < data.length; i++) {
+      const rowEventId = eventIdCol >= 0 ? data[i][eventIdCol] : "";
+      const rowQuestId = questIdCol >= 0 ? data[i][questIdCol] : "";
+      if (
+        String(rowEventId || "").trim() === eventId ||
+        String(rowQuestId || "").trim() === eventId
+      ) {
+        return {
+          success: true,
+          awarded: false,
+          alreadyAwarded: true,
+          message: "XP already awarded for this event",
+        };
+      }
+    }
+
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+    const nowIso = new Date().toISOString();
+    const topicId = String((config && config.topicId) || "").trim();
+    const title = String((config && config.title) || eventId).trim();
+    const source = String(
+      (config && config.source) || "topic_completion",
+    ).trim();
+    const metaRaw = config && config.meta != null ? config.meta : "";
+    const meta =
+      typeof metaRaw === "string" ? metaRaw : JSON.stringify(metaRaw || {});
+
+    xpSheet.appendRow([
+      today,
+      nowIso,
+      eventId,
+      title,
+      xpAmount,
+      source,
+      topicId,
+      eventId,
+      meta,
+    ]);
+
+    const newTotalXP = addXPToUserTotalByEmail(userEmail, xpAmount);
+
+    return {
+      success: true,
+      awarded: true,
+      xpAwarded: xpAmount,
+      newTotalXP: newTotalXP,
+      eventId: eventId,
+      message: "+" + xpAmount + " XP",
+    };
+  } catch (error) {
+    Logger.log("❌ Error awarding topic XP: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * Save quiz result to user's PERSONAL Google Sheet
  * @param {object} resultData - Quiz result data
  * @returns {object} - {success, message}
@@ -1286,6 +1455,35 @@ function saveQuizResult(resultData) {
     quizSheet.appendRow(resultEntry);
 
     Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
+
+    // Award topic completion XP for completed quiz attempts (not partial autosave).
+    const quizStatus = String(resultData.status || "complete").toLowerCase();
+    if (resultData.topicId && quizStatus !== "partial") {
+      const quizXPResult = awardTopicXPByEvent(userEmail, {
+        topicId: resultData.topicId,
+        eventId: "quiz_topic_completed:" + String(resultData.topicId).trim(),
+        title:
+          "Hoan thanh Quiz chu de: " +
+          String(resultData.topicTitle || resultData.topicId),
+        xpAmount: 200,
+        source: "topic_quiz_completion",
+        meta: {
+          percentage: resultData.percentage,
+          score: resultData.score,
+          totalQuestions: resultData.totalQuestions,
+        },
+      });
+
+      if (quizXPResult && quizXPResult.awarded) {
+        Logger.log(
+          "✅ Quiz topic XP awarded: " +
+            String(resultData.topicId) +
+            " (+" +
+            String(quizXPResult.xpAwarded) +
+            ")",
+        );
+      }
+    }
 
     // ⭐ Also update quizDone in Topic_Progress
     if (resultData.topicId) {
@@ -1490,6 +1688,35 @@ function saveMatchingResult(resultData) {
 
     matchingSheet.appendRow(resultEntry);
     Logger.log("✅ Matching result saved to personal sheet");
+
+    // Award topic completion XP for completed matching attempts.
+    if (resultData.topicId && resultData.completed !== false) {
+      const matchingXPResult = awardTopicXPByEvent(userEmail, {
+        topicId: resultData.topicId,
+        eventId:
+          "matching_topic_completed:" + String(resultData.topicId).trim(),
+        title:
+          "Hoan thanh Matching chu de: " +
+          String(resultData.topicTitle || resultData.topicId),
+        xpAmount: 200,
+        source: "topic_matching_completion",
+        meta: {
+          accuracy: resultData.accuracy,
+          score: resultData.score,
+          totalPairs: resultData.totalPairs,
+        },
+      });
+
+      if (matchingXPResult && matchingXPResult.awarded) {
+        Logger.log(
+          "✅ Matching topic XP awarded: " +
+            String(resultData.topicId) +
+            " (+" +
+            String(matchingXPResult.xpAwarded) +
+            ")",
+        );
+      }
+    }
 
     // Also update matchingDone in Topic_Progress
     if (resultData.topicId) {
@@ -4110,6 +4337,32 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
           sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+
+        const userEmail = getUserEmailById(userId);
+        if (userEmail) {
+          const learningXPResult = awardTopicXPByEvent(userEmail, {
+            topicId: topicId,
+            eventId: "learning_topic_completed:" + String(topicId || "").trim(),
+            title:
+              "Hoan thanh hoc tap chu de: " +
+              String(progressData.topicTitle || topicId || ""),
+            xpAmount: 100,
+            source: "topic_learning_completion",
+            meta: {
+              progressType: progressType,
+            },
+          });
+
+          if (learningXPResult && learningXPResult.awarded) {
+            Logger.log(
+              "✅ Learning topic XP awarded: " +
+                String(topicId) +
+                " (+" +
+                String(learningXPResult.xpAwarded) +
+                ")",
+            );
+          }
+        }
       }
     }
 
@@ -4281,6 +4534,38 @@ function getUserIdByEmail(email) {
   } catch (error) {
     Logger.log("Error getting userId: " + error.toString());
     return null;
+  }
+}
+
+/**
+ * Helper: Get user email by userId
+ */
+function getUserEmailById(userId) {
+  try {
+    const masterDbId =
+      DB_CONFIG.SPREADSHEET_ID ||
+      "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const masterDb = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = masterDb.getSheetByName("Users");
+    if (!usersSheet) return "";
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const userIdIdx = headers.indexOf("userId");
+    const emailIdx = headers.indexOf("email");
+
+    if (userIdIdx === -1 || emailIdx === -1) return "";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][userIdIdx]).trim() === String(userId).trim()) {
+        return String(data[i][emailIdx] || "").trim();
+      }
+    }
+
+    return "";
+  } catch (error) {
+    Logger.log("Error getting user email by userId: " + error.toString());
+    return "";
   }
 }
 

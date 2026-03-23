@@ -14,7 +14,7 @@
   }
 
   // Matching stats cache by topic.
-  // Format: { topicId: { hasPlayed, bestScore, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt } }
+  // Format: { topicId: { hasPlayed, bestScore, bestPercent, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt } }
   if (!window.matchingStatsCache) {
     window.matchingStatsCache = {
       stats: {},
@@ -189,11 +189,20 @@
     });
   }
 
+  function setMatchingPreplayMode(isPreplay) {
+    const container = document.querySelector(
+      "#page-matching .matching-container",
+    );
+    if (!container) return;
+    container.classList.toggle("matching-game-active", !isPreplay);
+  }
+
   // ===== VIEW MANAGEMENT =====
   function showMatchingTopicSelection() {
     const topicSelection = document.getElementById("matchingTopicSelection");
     const topicDetail = document.getElementById("matchingTopicDetail");
     const gameWrapper = document.getElementById("matchingGameWrapper");
+    setMatchingPreplayMode(true);
     if (topicSelection) topicSelection.style.display = "";
     if (topicDetail) topicDetail.style.display = "none";
     if (gameWrapper) gameWrapper.classList.remove("active");
@@ -203,6 +212,7 @@
     const topicSelection = document.getElementById("matchingTopicSelection");
     const topicDetail = document.getElementById("matchingTopicDetail");
     const gameWrapper = document.getElementById("matchingGameWrapper");
+    setMatchingPreplayMode(true);
     if (topicSelection) topicSelection.style.display = "none";
     if (topicDetail) topicDetail.style.display = "";
     if (gameWrapper) gameWrapper.classList.remove("active");
@@ -390,7 +400,34 @@
     return statsCache.stats[topicId] || null;
   }
 
-  function updateLocalMatchingStats(topicId, score, accuracy, totalPairs) {
+  function getMatchingBestPercent(stats) {
+    if (!stats) return 0;
+
+    var byAccuracy = Number(stats.bestAccuracy);
+    if (Number.isFinite(byAccuracy) && byAccuracy >= 0) {
+      return Math.max(0, Math.min(100, Math.round(byAccuracy)));
+    }
+
+    var byPercent = Number(stats.bestPercent);
+    if (Number.isFinite(byPercent) && byPercent >= 0) {
+      return Math.max(0, Math.min(100, Math.round(byPercent)));
+    }
+
+    var byScore = Number(stats.bestScore);
+    var totalPairs = Number(stats.bestTotalPairs);
+    if (
+      Number.isFinite(byScore) &&
+      Number.isFinite(totalPairs) &&
+      totalPairs > 0
+    ) {
+      var percent = Math.round((byScore / (totalPairs * 10)) * 100);
+      return Math.max(0, Math.min(100, percent));
+    }
+
+    return 0;
+  }
+
+  function updateLocalMatchingStats(topicId, percent, accuracy, totalPairs) {
     if (!topicId) return;
 
     if (!window.matchingStatsCache) {
@@ -403,12 +440,21 @@
 
     var nowIso = new Date().toISOString();
     var stats = window.matchingStatsCache.stats[topicId];
+    var normalizedPercent = Math.max(
+      0,
+      Math.min(100, Math.round(percent || 0)),
+    );
+    var normalizedAccuracy = Math.max(
+      0,
+      Math.min(100, Math.round(accuracy || normalizedPercent)),
+    );
 
     if (!stats) {
       window.matchingStatsCache.stats[topicId] = {
         hasPlayed: true,
-        bestScore: score,
-        bestAccuracy: accuracy,
+        bestScore: normalizedPercent,
+        bestPercent: normalizedPercent,
+        bestAccuracy: normalizedAccuracy,
         bestTotalPairs: totalPairs,
         playCount: 1,
         lastPlayedAt: nowIso,
@@ -417,14 +463,16 @@
       stats.hasPlayed = true;
       stats.playCount = (stats.playCount || 0) + 1;
       stats.lastPlayedAt = nowIso;
+      var oldBestPercent = getMatchingBestPercent(stats);
 
       if (
-        score > (stats.bestScore || 0) ||
-        (score === (stats.bestScore || 0) &&
-          accuracy > (stats.bestAccuracy || 0))
+        normalizedPercent > oldBestPercent ||
+        (normalizedPercent === oldBestPercent &&
+          normalizedAccuracy > (stats.bestAccuracy || 0))
       ) {
-        stats.bestScore = score;
-        stats.bestAccuracy = accuracy;
+        stats.bestScore = normalizedPercent;
+        stats.bestPercent = normalizedPercent;
+        stats.bestAccuracy = normalizedAccuracy;
         stats.bestTotalPairs = totalPairs;
       }
     }
@@ -520,7 +568,7 @@
     const prevTopic = originalTopics[index - 1];
     const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
 
-    return prevStats && prevStats.bestAccuracy >= 80;
+    return prevStats && getMatchingBestPercent(prevStats) >= 80;
   };
 
   // ===== RENDER TOPICS =====
@@ -620,9 +668,7 @@
 
       if (!isUnlocked) {
         card.onclick = () => {
-          alert(
-            "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% độ chính xác ở chủ đề trước đó!",
-          );
+          showMatchingLockedTopicModal(topic.title);
         };
       } else {
         card.onclick = () => selectMatchingTopic(topic);
@@ -632,7 +678,7 @@
 
       let bestScoreBadge = "";
       if (topicStats && topicStats.hasPlayed) {
-        var bestScore = topicStats.bestScore || 0;
+        var bestScore = getMatchingBestPercent(topicStats);
         var playCount = topicStats.playCount || 1;
         var scoreColor = "#6B7280";
         if (bestScore >= 80) scoreColor = "#FFB020";
@@ -644,7 +690,7 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
-            ${bestScore} điểm${playCount > 1 ? ` (${playCount} lần)` : ""}
+            ${bestScore}%${playCount > 1 ? ` (${playCount} lần)` : ""}
           </span>`;
       }
 
@@ -732,6 +778,14 @@
   // ===== TOPIC SELECTION =====
   window.selectMatchingTopic = function (topic) {
     console.log("🎮 Selected topic for matching:", topic);
+
+    if (
+      window.checkMatchingTopicUnlocked &&
+      !window.checkMatchingTopicUnlocked(topic.topicId)
+    ) {
+      showMatchingLockedTopicModal(topic.title);
+      return;
+    }
 
     // Validate: topic phải có contentDocId
     if (!topic.contentDocId || topic.contentDocId.length < 10) {
@@ -966,9 +1020,47 @@
     if (modal) modal.classList.remove("active");
   };
 
+  // ===== LOCKED TOPIC MODAL =====
+  function showMatchingLockedTopicModal(topicTitle) {
+    let modal = document.getElementById("matching-locked-topic-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "matching-locked-topic-modal";
+      modal.className = "matching-no-content-modal";
+      document.getElementById("page-matching").appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="matching-no-content-dialog">
+        <div class="matching-no-content-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h3 class="matching-no-content-title">Chủ đề chưa mở khóa</h3>
+        <p class="matching-no-content-text">Chủ đề "<strong>${String(topicTitle || "Chủ đề")}</strong>" chưa mở khóa.</p>
+        <p class="matching-no-content-sub">Hãy đạt ít nhất <strong>80%</strong> độ chính xác ở chủ đề trước để mở khóa.</p>
+        <button class="matching-btn matching-btn-primary" onclick="closeMatchingLockedTopicModal()">Đã hiểu</button>
+      </div>
+    `;
+
+    modal.onclick = (e) => {
+      if (e.target === modal) closeMatchingLockedTopicModal();
+    };
+
+    modal.classList.add("active");
+  }
+
+  window.closeMatchingLockedTopicModal = function () {
+    const modal = document.getElementById("matching-locked-topic-modal");
+    if (modal) modal.classList.remove("active");
+  };
+
   // ===== START GAME FROM TOPIC =====
   function startMatchingGameFromTopic(topic) {
     // Hide topic selection, show game
+    setMatchingPreplayMode(false);
     document.getElementById("matchingTopicSelection").style.display = "none";
     var topicDetail = document.getElementById("matchingTopicDetail");
     if (topicDetail) topicDetail.style.display = "none";
@@ -1364,7 +1456,7 @@
         console.log("✅ Matching result saved:", response);
         updateLocalMatchingStats(
           topicId,
-          matchingState.score,
+          accuracy,
           accuracy,
           matchingState.totalPairs,
         );
@@ -1615,6 +1707,7 @@
   // ===== NAVIGATION =====
   window.matchingBackToTopicHub = function () {
     stopMatchingTimer();
+    setMatchingPreplayMode(true);
 
     document.getElementById("matchingResultOverlay").classList.remove("active");
     document
@@ -1636,6 +1729,7 @@
 
   window.matchingBackToTopics = function () {
     stopMatchingTimer();
+    setMatchingPreplayMode(true);
 
     document.getElementById("matchingResultOverlay").classList.remove("active");
     document

@@ -656,9 +656,7 @@
 
       if (!isUnlocked) {
         item.onclick = () => {
-          alert(
-            "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% ở chủ đề trước đó!",
-          );
+          showMcqLockedTopicModal(topic.title);
         };
       } else {
         item.onclick = () => selectTopicForQuiz(topic);
@@ -803,6 +801,50 @@
   }
 
   /**
+   * Show Locked Topic Modal
+   */
+  function showMcqLockedTopicModal(topicTitle) {
+    let modal = document.getElementById("mcq-locked-topic-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "mcq-locked-topic-modal";
+      modal.className = "mcq-no-content-modal";
+      modal.innerHTML = `
+        <div class="mcq-no-content-dialog">
+          <div class="mcq-no-content-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h3 class="mcq-no-content-title">Chủ đề chưa mở khóa</h3>
+          <p class="mcq-no-content-text">Bạn cần đạt ít nhất <strong>80%</strong> điểm số tốt nhất ở chủ đề trước để mở khóa chủ đề này.</p>
+          <div class="mcq-no-content-topic" id="mcq-locked-topic-name"></div>
+          <div class="mcq-no-content-buttons">
+            <button class="mcq-btn-primary" onclick="closeMcqLockedTopicModal()">Đã hiểu</button>
+          </div>
+        </div>
+      `;
+      modal.onclick = (e) => {
+        if (e.target === modal) closeMcqLockedTopicModal();
+      };
+      document.body.appendChild(modal);
+    }
+
+    const topicNameEl = document.getElementById("mcq-locked-topic-name");
+    if (topicNameEl) {
+      topicNameEl.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> ${String(topicTitle || "Chủ đề")}`;
+    }
+
+    modal.classList.add("show");
+  }
+
+  function closeMcqLockedTopicModal() {
+    const modal = document.getElementById("mcq-locked-topic-modal");
+    if (modal) modal.classList.remove("show");
+  }
+
+  /**
    * Navigate to Topics page to add content
    */
   function goToTopicsPage() {
@@ -822,9 +864,7 @@
       window.checkMcqTopicUnlocked &&
       !window.checkMcqTopicUnlocked(topic.topicId)
     ) {
-      alert(
-        "Chủ đề này chưa được mở khóa. Hãy đạt ít nhất 80% điểm số tốt nhất ở chủ đề trước đó!",
-      );
+      showMcqLockedTopicModal(topic.title);
       return;
     }
 
