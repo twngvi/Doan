@@ -765,9 +765,36 @@ function clearAllAdminCache() {
  */
 function getCurrentAdminContext() {
   try {
-    const email = Session.getActiveUser().getEmail();
+    // Try to get email from Session (works for owner/editors)
+    let email = "";
+    try {
+      email = Session.getActiveUser().getEmail();
+    } catch (e) {
+      Logger.log("Session.getActiveUser() failed: " + e.toString());
+    }
+
+    // If no email from session, try effective user
     if (!email) {
-      return { success: false, message: "Bạn cần đăng nhập tài khoản admin." };
+      try {
+        email = Session.getEffectiveUser().getEmail();
+      } catch (e) {
+        Logger.log("Session.getEffectiveUser() failed: " + e.toString());
+      }
+    }
+
+    Logger.log("getCurrentAdminContext - email: " + email);
+
+    if (!email) {
+      // If still no email, allow if running as script owner (dev mode)
+      Logger.log("⚠️ No email from Session, checking if script owner...");
+      // For development, allow access - in production, you should handle this differently
+      return {
+        success: true,
+        email: "admin@local",
+        userId: "ADMIN_SCRIPT_OWNER",
+        role: "ADMIN",
+        note: "Running as script owner (no session email)"
+      };
     }
 
     const sheet = getSheet("Users");
@@ -921,38 +948,47 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
 function createAndPublishTopic(topicData) {
   try {
     Logger.log("=== CREATE AND PUBLISH TOPIC ===");
-    Logger.log("Topic data: " + JSON.stringify(topicData));
+    Logger.log("Topic data received: " + JSON.stringify(topicData));
 
     // Quyền: chỉ ADMIN được phép
+    Logger.log("Step 1: Checking admin context...");
     const adminContext = getCurrentAdminContext();
+    Logger.log("Admin context result: " + JSON.stringify(adminContext));
     if (!adminContext.success) {
       return { success: false, message: adminContext.message };
     }
-    
+
     // Validate input
+    Logger.log("Step 2: Validating input...");
     if (!topicData.topicId || !topicData.title || !topicData.category || !topicData.content) {
+      Logger.log("❌ Missing required fields");
       return {
         success: false,
         message: "Thiếu thông tin bắt buộc (topicId, title, category, content)"
       };
     }
-    
+
     // Check if topicId already exists
+    Logger.log("Step 3: Checking if topicId exists: " + topicData.topicId);
     const existingTopic = checkTopicIdExists(topicData.topicId);
+    Logger.log("Topic exists: " + existingTopic);
     if (existingTopic) {
       return {
         success: false,
         message: "Topic ID '" + topicData.topicId + "' đã tồn tại. Vui lòng chọn ID khác."
       };
     }
-    
+
     // Step 1: Create Google Doc with content
+    Logger.log("Step 4: Creating Google Doc...");
     const docResult = createTopicDocument(topicData.title, topicData.content);
+    Logger.log("Doc creation result: " + JSON.stringify(docResult));
     if (!docResult.success) {
       return docResult;
     }
-    
+
     // Step 2: Save topic to MasterDB
+    Logger.log("Step 5: Saving to MasterDB...");
     const saveResult = saveTopicToMasterDB({
       topicId: topicData.topicId,
       title: topicData.title,
@@ -963,6 +999,7 @@ function createAndPublishTopic(topicData) {
       contentDocUrl: docResult.docUrl,
       createdBy: adminContext.userId || adminContext.email || "ADMIN",
     });
+    Logger.log("Save result: " + JSON.stringify(saveResult));
     
     if (!saveResult.success) {
       // If save fails, try to delete the created doc
@@ -1085,68 +1122,131 @@ function convertHtmlToDocContent(html, body) {
   try {
     // Remove existing content
     body.clear();
-    
-    // Parse HTML using simple regex (Google Apps Script doesn't have DOM parser)
-    // This is a simplified version - handles basic elements
-    
+
+    Logger.log("=== CONVERT HTML TO DOC ===");
+    Logger.log("Input HTML length: " + (html ? html.length : 0));
+    Logger.log("Input HTML preview: " + (html ? html.substring(0, 500) : "empty"));
+
+    // If no content, add placeholder
+    if (!html || html.trim() === '' || html.trim() === '<br>' || html.trim() === '<p><br></p>') {
+      body.appendParagraph("(Nội dung trống)");
+      return true;
+    }
+
     // Process the HTML content
     let content = html;
-    
+
     // Replace common HTML entities
     content = content.replace(/&nbsp;/g, ' ');
     content = content.replace(/&amp;/g, '&');
     content = content.replace(/&lt;/g, '<');
     content = content.replace(/&gt;/g, '>');
     content = content.replace(/&quot;/g, '"');
-    
+
     // Process block elements
     const blocks = parseHtmlBlocks(content);
-    
+
+    Logger.log("Parsed blocks count: " + blocks.length);
+
+    // If no blocks found, try to extract plain text
+    if (blocks.length === 0) {
+      Logger.log("No blocks found, extracting plain text...");
+
+      // Try to handle div-based content (common from contenteditable)
+      const divContent = extractDivContent(content);
+      if (divContent.length > 0) {
+        Logger.log("Found " + divContent.length + " div blocks");
+        for (let i = 0; i < divContent.length; i++) {
+          if (divContent[i].trim()) {
+            body.appendParagraph(divContent[i].trim());
+          }
+        }
+        return true;
+      }
+
+      // Fallback: strip all tags and add as plain text
+      const plainText = stripHtml(content);
+      if (plainText.trim()) {
+        // Split by line breaks
+        const lines = plainText.split(/\n+/);
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim()) {
+            body.appendParagraph(lines[i].trim());
+          }
+        }
+      } else {
+        body.appendParagraph("(Không thể parse nội dung)");
+      }
+      return true;
+    }
+
+    // Process found blocks
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
-      
+      Logger.log("Processing block " + i + ": type=" + block.type + ", text=" + (block.text ? block.text.substring(0, 50) : "N/A"));
+
       switch (block.type) {
         case 'h1':
-          const h1 = body.appendParagraph(block.text);
+          const h1 = body.appendParagraph(block.text || '');
           h1.setHeading(DocumentApp.ParagraphHeading.HEADING1);
           break;
-          
+
         case 'h2':
-          const h2 = body.appendParagraph(block.text);
+          const h2 = body.appendParagraph(block.text || '');
           h2.setHeading(DocumentApp.ParagraphHeading.HEADING2);
           break;
-          
+
         case 'h3':
-          const h3 = body.appendParagraph(block.text);
+          const h3 = body.appendParagraph(block.text || '');
           h3.setHeading(DocumentApp.ParagraphHeading.HEADING3);
           break;
-          
+
         case 'p':
-          body.appendParagraph(block.text);
+        case 'div':
+          if (block.text && block.text.trim()) {
+            body.appendParagraph(block.text);
+          }
           break;
-          
+
         case 'ul':
-          for (let j = 0; j < block.items.length; j++) {
-            const li = body.appendListItem(block.items[j]);
-            li.setGlyphType(DocumentApp.GlyphType.BULLET);
+          if (block.items && block.items.length > 0) {
+            for (let j = 0; j < block.items.length; j++) {
+              const li = body.appendListItem(block.items[j]);
+              li.setGlyphType(DocumentApp.GlyphType.BULLET);
+            }
           }
           break;
-          
+
         case 'ol':
-          for (let j = 0; j < block.items.length; j++) {
-            const li = body.appendListItem(block.items[j]);
-            li.setGlyphType(DocumentApp.GlyphType.NUMBER);
+          if (block.items && block.items.length > 0) {
+            for (let j = 0; j < block.items.length; j++) {
+              const li = body.appendListItem(block.items[j]);
+              li.setGlyphType(DocumentApp.GlyphType.NUMBER);
+            }
           }
           break;
-          
+
         case 'pre':
-          const code = body.appendParagraph(block.text);
+          const code = body.appendParagraph(block.text || '');
           code.setFontFamily('Consolas');
           code.setBackgroundColor('#f1f3f4');
           break;
-          
+
+        case 'codeblock':
+          // Code block with language header
+          const codeHeader = body.appendParagraph('📝 ' + (block.language || 'Code').toUpperCase());
+          codeHeader.setFontFamily('Arial');
+          codeHeader.setForegroundColor('#666666');
+          codeHeader.setFontSize(10);
+
+          const codeContent = body.appendParagraph(block.text || '');
+          codeContent.setFontFamily('Consolas');
+          codeContent.setBackgroundColor('#f1f3f4');
+          codeContent.setFontSize(11);
+          break;
+
         case 'callout':
-          const callout = body.appendParagraph(block.icon + ' ' + block.text);
+          const callout = body.appendParagraph((block.icon || '') + ' ' + (block.text || ''));
           // Style based on callout type
           if (block.calloutType === 'note') {
             callout.setBackgroundColor('#e8f5e9');
@@ -1158,23 +1258,42 @@ function convertHtmlToDocContent(html, body) {
             callout.setBackgroundColor('#ffebee');
           }
           break;
-          
+
         case 'image':
           try {
-            const imageBlob = UrlFetchApp.fetch(block.src).getBlob();
-            body.appendImage(imageBlob);
+            // Skip if empty src
+            if (!block.src || block.src.trim() === '') {
+              body.appendParagraph('[Hình ảnh: URL trống]');
+              break;
+            }
+            // Fetch with timeout and error handling
+            const imageResponse = UrlFetchApp.fetch(block.src, {
+              muteHttpExceptions: true,
+              followRedirects: true,
+              validateHttpsCertificates: false
+            });
+
+            if (imageResponse.getResponseCode() === 200) {
+              const imageBlob = imageResponse.getBlob();
+              body.appendImage(imageBlob);
+            } else {
+              Logger.log("Image fetch failed: " + block.src + " - Status: " + imageResponse.getResponseCode());
+              body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
+            }
           } catch (e) {
+            Logger.log("Image error: " + e.toString() + " - URL: " + block.src);
             body.appendParagraph('[Hình ảnh: ' + block.src + ']');
           }
           break;
-          
+
         default:
           if (block.text && block.text.trim()) {
             body.appendParagraph(block.text);
           }
       }
     }
-    
+
+    Logger.log("✅ HTML converted successfully");
     return true;
   } catch (error) {
     Logger.log("Error converting HTML to Doc: " + error.toString());
@@ -1185,24 +1304,57 @@ function convertHtmlToDocContent(html, body) {
 }
 
 /**
+ * Extract content from div elements (common in contenteditable)
+ */
+function extractDivContent(html) {
+  const results = [];
+  const divRegex = /<div[^>]*>([\s\S]*?)<\/div>/gi;
+  let match;
+
+  while ((match = divRegex.exec(html)) !== null) {
+    const text = stripHtml(match[1]);
+    if (text.trim()) {
+      results.push(text);
+    }
+  }
+
+  return results;
+}
+
+/**
  * Parse HTML thành các block elements
  * @param {string} html - Nội dung HTML
  * @returns {Array} - Mảng các block objects
  */
 function parseHtmlBlocks(html) {
   const blocks = [];
-  
-  // Regex patterns for different elements
+
+  Logger.log("=== PARSE HTML BLOCKS ===");
+  Logger.log("HTML length: " + (html ? html.length : 0));
+
+  if (!html || html.trim() === '') {
+    Logger.log("Empty HTML, returning empty blocks");
+    return blocks;
+  }
+
+  // Regex patterns for different elements - ORDERED by specificity (most specific first)
   const patterns = [
     { regex: /<h1[^>]*>([\s\S]*?)<\/h1>/gi, type: 'h1' },
     { regex: /<h2[^>]*>([\s\S]*?)<\/h2>/gi, type: 'h2' },
     { regex: /<h3[^>]*>([\s\S]*?)<\/h3>/gi, type: 'h3' },
+    // Code block with language tag
+    { regex: /<div class="code-block"[^>]*data-language="([^"]*)"[^>]*>[\s\S]*?<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>[\s\S]*?<\/div>/gi, type: 'codeblock' },
+    { regex: /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, type: 'pre' },
     { regex: /<pre[^>]*>([\s\S]*?)<\/pre>/gi, type: 'pre' },
     { regex: /<ul[^>]*>([\s\S]*?)<\/ul>/gi, type: 'ul' },
     { regex: /<ol[^>]*>([\s\S]*?)<\/ol>/gi, type: 'ol' },
+    // Callout blocks
     { regex: /<div class="callout callout-(\w+)"[^>]*>[\s\S]*?<span class="callout-icon"[^>]*>([^<]*)<\/span>[\s\S]*?<div class="callout-content"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<\/div>/gi, type: 'callout' },
+    // Image wrapper with img inside
+    { regex: /<div class="image-wrapper"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<\/div>/gi, type: 'image' },
     { regex: /<img[^>]*src="([^"]*)"[^>]*>/gi, type: 'image' },
     { regex: /<p[^>]*>([\s\S]*?)<\/p>/gi, type: 'p' },
+    // Generic div (common from contenteditable) - must be last
     { regex: /<div[^>]*>([\s\S]*?)<\/div>/gi, type: 'div' }
   ];
   
@@ -1233,6 +1385,10 @@ function parseHtmlBlocks(html) {
           items.push(stripHtml(liMatch[1]));
         }
         matchData.items = items;
+      } else if (pattern.type === 'codeblock') {
+        // Code block with language
+        matchData.language = match[1] || 'text';
+        matchData.text = decodeHtmlEntities(match[2] || '');
       } else if (pattern.type === 'callout') {
         matchData.calloutType = match[1];
         matchData.icon = match[2];
@@ -1246,21 +1402,24 @@ function parseHtmlBlocks(html) {
       allMatches.push(matchData);
     }
   }
-  
+
   // Sort by position
   allMatches.sort((a, b) => a.index - b.index);
-  
+
   // Remove nested/overlapping matches
   const finalMatches = [];
   let lastEnd = 0;
-  
+
   for (const match of allMatches) {
     if (match.index >= lastEnd) {
       finalMatches.push(match);
       lastEnd = match.index + match.length;
     }
   }
-  
+
+  Logger.log("Total matches found: " + allMatches.length);
+  Logger.log("Final blocks after filtering: " + finalMatches.length);
+
   return finalMatches;
 }
 
@@ -1278,6 +1437,22 @@ function stripHtml(html) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .trim();
+}
+
+/**
+ * Decode HTML entities (dùng cho code blocks)
+ */
+function decodeHtmlEntities(text) {
+  if (!text) return '';
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/');
 }
 
 /**

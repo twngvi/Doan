@@ -379,7 +379,7 @@ function publishTopic() {
   }
   
   showLoading('Đang tạo và publish topic...');
-  
+
   const topicData = {
     topicId: topicId,
     title: title,
@@ -388,11 +388,30 @@ function publishTopic() {
     order: parseInt(order),
     content: content
   };
-  
+
+  console.log('📤 Publishing topic:', topicData);
+
+  // Check if google.script.run is available
+  if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    hideLoading();
+    showToast('Lỗi: Không thể kết nối với server. Vui lòng tải lại trang.', 'error');
+    console.error('google.script.run not available');
+    return;
+  }
+
+  // Set a timeout to prevent infinite loading
+  const publishTimeout = setTimeout(function() {
+    hideLoading();
+    showToast('⏱️ Quá thời gian chờ. Vui lòng kiểm tra Apps Script Logs và thử lại.', 'error');
+    console.error('Publish timeout - server took too long to respond');
+  }, 120000); // 2 minutes timeout
+
   google.script.run
     .withSuccessHandler(function(result) {
+      clearTimeout(publishTimeout);
       hideLoading();
-      if (result.success) {
+      console.log('✅ Server response:', result);
+      if (result && result.success) {
         showToast('🎉 Publish thành công!', 'success');
         
         // Show success message with doc link
@@ -410,12 +429,16 @@ function publishTopic() {
           }
         }, 500);
       } else {
-        showToast('Lỗi: ' + result.message, 'error');
+        showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
       }
     })
     .withFailureHandler(function(error) {
+      clearTimeout(publishTimeout);
       hideLoading();
-      showToast('Lỗi: ' + error.message, 'error');
+      console.error('❌ Server error:', error);
+      var errorMsg = error && error.message ? error.message : String(error);
+      showToast('Lỗi: ' + errorMsg, 'error');
+      alert('Chi tiết lỗi:\n\n' + errorMsg);
     })
     .createAndPublishTopic(topicData);
 }
@@ -553,4 +576,32 @@ function showAdminSidebar() {
     })
     .getAdminSidebarHtml();
 }
+
+// ========================================
+// EXPOSE FUNCTIONS TO GLOBAL SCOPE
+// (Required when script is loaded dynamically)
+// ========================================
+window.publishTopic = publishTopic;
+window.previewContent = previewContent;
+window.resetForm = resetForm;
+window.goBackToAdmin = goBackToAdmin;
+window.formatText = formatText;
+window.formatHeading = formatHeading;
+window.insertInlineCode = insertInlineCode;
+window.openCodeModal = openCodeModal;
+window.closeCodeModal = closeCodeModal;
+window.insertCodeBlock = insertCodeBlock;
+window.insertCallout = insertCallout;
+window.openLinkModal = openLinkModal;
+window.closeLinkModal = closeLinkModal;
+window.insertLink = insertLink;
+window.openImageModal = openImageModal;
+window.closeImageModal = closeImageModal;
+window.handleImageUpload = handleImageUpload;
+window.insertImageFromUrl = insertImageFromUrl;
+window.deleteImage = deleteImage;
+window.closePreviewModal = closePreviewModal;
+window.showToast = showToast;
+window.showLoading = showLoading;
+window.hideLoading = hideLoading;
 </script>

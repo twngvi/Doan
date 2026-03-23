@@ -445,6 +445,10 @@
         container.innerHTML = html;
         topicEditorLoaded = true;
 
+        // Execute scripts that were inserted via innerHTML
+        // (scripts inserted via innerHTML are not executed automatically)
+        executeScriptsInContainer(container);
+
         // Initialize editor after content is loaded
         setTimeout(function() {
           if (typeof initializeTopicEditor === 'function') {
@@ -459,6 +463,28 @@
         container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Topic Editor: ' + error.message + '</div>';
       })
       .getTopicEditorFullHtml();
+  }
+
+  /**
+   * Execute scripts inside a container
+   * Scripts inserted via innerHTML are not executed by default
+   */
+  function executeScriptsInContainer(container) {
+    const scripts = container.querySelectorAll('script');
+    scripts.forEach(function(oldScript) {
+      const newScript = document.createElement('script');
+
+      // Copy attributes
+      Array.from(oldScript.attributes).forEach(function(attr) {
+        newScript.setAttribute(attr.name, attr.value);
+      });
+
+      // Copy inline script content
+      newScript.textContent = oldScript.textContent;
+
+      // Replace old script with new one (this will execute it)
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
   }
 
   function initTopicEditorFallback() {
