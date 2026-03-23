@@ -627,14 +627,14 @@ function dailyCheckin(userContext) {
     updateUserStreak(userEmail, today);
 
     // === AUTO-AWARD CHECKIN XP ===
-    const checkinXP = 20;
-    const xpResult = awardXPToUser(
-      userEmail,
-      checkinXP,
-      "daily_checkin",
-      "Điểm danh hằng ngày",
-    );
-    Logger.log("🌟 Auto-awarded " + checkinXP + " XP for daily check-in");
+    // Reuse quest reward pipeline so XP_Log + totalXP are updated consistently.
+    const xpResult = completeQuestAndAwardXP("daily_checkin", userContext);
+    if (!xpResult.success && !xpResult.alreadyClaimed) {
+      Logger.log(
+        "⚠️ Check-in saved but failed to award XP: " +
+          (xpResult.message || "unknown error"),
+      );
+    }
 
     // Return updated streak
     const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
@@ -643,7 +643,7 @@ function dailyCheckin(userContext) {
       currentStreak: streakResult.currentStreak,
       longestStreak: streakResult.longestStreak,
       serverToday: today,
-      xpAwarded: checkinXP,
+      xpAwarded: xpResult.success ? xpResult.xpAwarded || 0 : 0,
       newTotalXP: xpResult.newTotalXP || 0,
       message: "Điểm danh thành công!",
     };
