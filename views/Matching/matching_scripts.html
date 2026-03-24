@@ -30,6 +30,8 @@
   const MATCHING_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
   const MATCHING_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
+  const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
+  const MATCHING_STATS_PERSIST_TTL = 5 * 60 * 1000; // Cache 5 phút (khớp với server cache)
   const MATCHING_GOOGLE_RUN_MAX_RETRY = 25;
   const MATCHING_GOOGLE_RUN_RETRY_DELAY = 100;
   let matchingAllTopicsForSearch = null;
@@ -100,6 +102,52 @@
   }
 
   hydrateMatchingGlobalCacheFromPersisted();
+
+  // ===== MATCHING STATS PERSISTENCE (localStorage) =====
+  function readMatchingPersistedStatsCache() {
+    try {
+      var raw = localStorage.getItem(MATCHING_STATS_PERSIST_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var stats = parsed && parsed.stats && typeof parsed.stats === "object" ? parsed.stats : null;
+      var lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!stats || !Number.isFinite(lastLoadTime)) return null;
+      var age = Date.now() - lastLoadTime;
+      if (age > MATCHING_STATS_PERSIST_TTL) return null;
+      return { stats: stats, lastLoadTime: lastLoadTime };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeMatchingPersistedStatsCache(stats) {
+    try {
+      localStorage.setItem(
+        MATCHING_STATS_PERSIST_KEY,
+        JSON.stringify({ stats: stats || {}, lastLoadTime: Date.now() })
+      );
+    } catch (e) {}
+  }
+
+  function hydrateMatchingStatsFromPersisted() {
+    var statsCache = window.matchingStatsCache;
+    if (
+      statsCache &&
+      statsCache.stats &&
+      Object.keys(statsCache.stats).length > 0 &&
+      Date.now() - Number(statsCache.lastLoadTime || 0) < Number(statsCache.cacheDuration || 60000)
+    ) {
+      return; // Đã có cache hợp lệ trong bộ nhớ
+    }
+    var persisted = readMatchingPersistedStatsCache();
+    if (!persisted) return;
+    if (statsCache) {
+      statsCache.stats = persisted.stats;
+      statsCache.lastLoadTime = persisted.lastLoadTime;
+    }
+  }
+
+  hydrateMatchingStatsFromPersisted();
 
   // ===== STATE =====
   let matchingMeteorInterval = null;
@@ -504,6 +552,9 @@
             "topics",
           );
 
+          // ⭐ Lưu vào localStorage để tái sử dụng khi navigate lại trang
+          writeMatchingPersistedStatsCache(response.stats);
+
           // Re-render current list when stats arrive.
           rerenderCurrentMatchingTopics();
         }
@@ -598,6 +649,9 @@
     }
 
     window.matchingStatsCache.lastLoadTime = Date.now();
+
+    // ⭐ Lưu vào localStorage để tái sử dụng khi navigate lại trang
+    writeMatchingPersistedStatsCache(window.matchingStatsCache.stats);
   }
 
   function rerenderCurrentMatchingTopics() {
