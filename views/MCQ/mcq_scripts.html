@@ -1269,31 +1269,23 @@
     history.forEach(function (item, index) {
       var row = document.createElement("div");
       row.className = "mcq-topic-history-item";
+      var safeResultId = String(item.id || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
 
       var completedAt = item.completedAt
         ? new Date(item.completedAt).toLocaleString("vi-VN")
         : "-";
 
-      row.innerHTML =
-        '<div class="mcq-topic-history-left">' +
-        '<div class="mcq-topic-history-attempt">Lần ' +
-        (history.length - index) +
-        "</div>" +
-        '<div class="mcq-topic-history-meta">' +
-        (item.score || 0) +
-        "/" +
-        (item.totalQuestions || 0) +
-        " - " +
-        (item.percentage || 0) +
-        "% - " +
-        (item.gameMode || "instant") +
-        " - " +
-        completedAt +
-        "</div>" +
-        "</div>" +
-        '<button class="btn-secondary btn-centered" onclick="openQuizHistoryDetail(\'' +
-        String(item.id || "") +
-        "', this)">Chi tiết</button>';
+      row.innerHTML = `
+        <div class="mcq-topic-history-left">
+          <div class="mcq-topic-history-attempt">Lần ${history.length - index}</div>
+          <div class="mcq-topic-history-meta">
+            ${item.score || 0}/${item.totalQuestions || 0} - ${item.percentage || 0}% - ${item.gameMode || "instant"} - ${completedAt}
+          </div>
+        </div>
+        <button class="btn-secondary btn-centered" onclick="openQuizHistoryDetail('${safeResultId}', this)">Chi tiết</button>
+      `;
 
       listEl.appendChild(row);
     });
