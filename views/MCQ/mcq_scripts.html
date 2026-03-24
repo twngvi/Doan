@@ -33,7 +33,82 @@
   let mcqTopicsCache = null;
   let mcqLastLoadTime = 0;
   const MCQ_CACHE_DURATION = 60000; // Cache 1 phút
+  const MCQ_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
+  const MCQ_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
+  const MCQ_TOPICS_LOAD_TIMEOUT = 12000;
+  let mcqTopicsLoadTimeoutId = null;
   let mcqAllTopicsForSearch = null; // Store all topics for search
+
+  function clearMcqTopicsLoadTimeout() {
+    if (mcqTopicsLoadTimeoutId) {
+      clearTimeout(mcqTopicsLoadTimeoutId);
+      mcqTopicsLoadTimeoutId = null;
+    }
+  }
+
+  function readMcqPersistedTopicsCache(options) {
+    var opts = options || {};
+    var allowExpired = !!opts.allowExpired;
+
+    try {
+      var raw = localStorage.getItem(MCQ_TOPICS_PERSIST_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var topics = Array.isArray(parsed && parsed.data) ? parsed.data : null;
+      var lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!topics || !Number.isFinite(lastLoadTime)) return null;
+
+      var age = Date.now() - lastLoadTime;
+      if (!allowExpired && age > MCQ_TOPICS_PERSIST_TTL) return null;
+
+      return {
+        topics: topics,
+        lastLoadTime: lastLoadTime,
+      };
+    } catch (error) {
+      console.warn("⚠️ Failed to read persisted MCQ topics cache:", error);
+      return null;
+    }
+  }
+
+  function writeMcqPersistedTopicsCache(topics) {
+    try {
+      localStorage.setItem(
+        MCQ_TOPICS_PERSIST_KEY,
+        JSON.stringify({
+          data: Array.isArray(topics) ? topics : [],
+          lastLoadTime: Date.now(),
+        }),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist MCQ topics cache:", error);
+    }
+  }
+
+  function hydrateMcqGlobalCacheFromPersisted() {
+    var globalCache = window.globalTopicsCache;
+    if (
+      globalCache &&
+      Array.isArray(globalCache.data) &&
+      globalCache.data.length > 0 &&
+      Date.now() - Number(globalCache.lastLoadTime || 0) <
+        Number(globalCache.cacheDuration || MCQ_CACHE_DURATION)
+    ) {
+      return;
+    }
+
+    var persisted = readMcqPersistedTopicsCache();
+    if (!persisted) return;
+
+    if (globalCache) {
+      globalCache.data = persisted.topics;
+      globalCache.lastLoadTime = persisted.lastLoadTime;
+    }
+    mcqTopicsCache = persisted.topics;
+    mcqLastLoadTime = persisted.lastLoadTime;
+  }
+
+  hydrateMcqGlobalCacheFromPersisted();
 
   // Search function for MCQ topics
   function searchMcqTopics(query) {
@@ -247,6 +322,9 @@
     console.log("📥 Loading topics for quiz...");
     const now = Date.now();
 
+    hydrateMcqGlobalCacheFromPersisted();
+    clearMcqTopicsLoadTimeout();
+
     // ⭐ Load quiz stats từ server (song song với việc check cache)
     loadQuizStatsIfNeeded(forceRefresh);
 
@@ -299,6 +377,14 @@
     document.getElementById("topics-loading").style.display = "block";
     document.getElementById("topics-grid").style.display = "none";
     document.getElementById("topics-empty").style.display = "none";
+
+    mcqTopicsLoadTimeoutId = setTimeout(function () {
+      if (document.getElementById("topics-loading").style.display !== "none") {
+        handleTopicsError({
+          message: "Tải chủ đề quá thời gian. Đang dùng dữ liệu dự phòng nếu có.",
+        });
+      }
+    }, MCQ_TOPICS_LOAD_TIMEOUT);
 
     google.script.run
       .withSuccessHandler(handleTopicsLoaded)
@@ -437,6 +523,8 @@
   function handleTopicsLoaded(response) {
     console.log("✅ Topics loaded:", response);
 
+    clearMcqTopicsLoadTimeout();
+
     document.getElementById("topics-loading").style.display = "none";
 
     // Handle response format from getAllTopics()
@@ -485,6 +573,7 @@
       window.globalTopicsCache.lastLoadTime = Date.now();
       console.log(`✅ Cached ${topics.length} topics to GLOBAL cache`);
     }
+    writeMcqPersistedTopicsCache(topics);
     console.log(`✅ Cached ${topics.length} topics for MCQ`);
 
     if (topics.length === 0) {
@@ -502,6 +591,21 @@
    */
   function handleTopicsError(error) {
     console.error("❌ Error loading topics:", error);
+
+    clearMcqTopicsLoadTimeout();
+
+    var persisted = readMcqPersistedTopicsCache({ allowExpired: true });
+    if (persisted && Array.isArray(persisted.topics) && persisted.topics.length > 0) {
+      console.warn("⚠️ Falling back to persisted MCQ topics cache");
+      document.getElementById("topics-loading").style.display = "none";
+      quizState.allTopics = persisted.topics;
+      mcqTopicsCache = persisted.topics;
+      mcqLastLoadTime = persisted.lastLoadTime;
+      mcqAllTopicsForSearch = persisted.topics;
+      renderTopicsGrid(persisted.topics);
+      return;
+    }
+
     document.getElementById("topics-loading").style.display = "none";
     document.getElementById("topics-empty").style.display = "block";
     document.getElementById("topics-empty").innerHTML = `

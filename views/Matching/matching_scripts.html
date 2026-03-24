@@ -27,13 +27,79 @@
   let matchingTopicsCache = null;
   let matchingLastLoadTime = 0;
   const MATCHING_CACHE_DURATION = 60000;
+  const MATCHING_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
+  const MATCHING_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
-  const MATCHING_GOOGLE_RUN_MAX_RETRY = 75;
-  const MATCHING_GOOGLE_RUN_RETRY_DELAY = 200;
+  const MATCHING_GOOGLE_RUN_MAX_RETRY = 25;
+  const MATCHING_GOOGLE_RUN_RETRY_DELAY = 100;
   let matchingAllTopicsForSearch = null;
   let matchingTopicsLoadTimeoutId = null;
   let matchingGoogleRunRetryCount = 0;
   let matchingLastInitAt = 0;
+
+  function readMatchingPersistedTopicsCache(options) {
+    var opts = options || {};
+    var allowExpired = !!opts.allowExpired;
+
+    try {
+      var raw = localStorage.getItem(MATCHING_TOPICS_PERSIST_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var topics = Array.isArray(parsed && parsed.data) ? parsed.data : null;
+      var lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!topics || !Number.isFinite(lastLoadTime)) return null;
+
+      var age = Date.now() - lastLoadTime;
+      if (!allowExpired && age > MATCHING_TOPICS_PERSIST_TTL) return null;
+
+      return {
+        topics: topics,
+        lastLoadTime: lastLoadTime,
+      };
+    } catch (error) {
+      console.warn("⚠️ Failed to read persisted Matching topics cache:", error);
+      return null;
+    }
+  }
+
+  function writeMatchingPersistedTopicsCache(topics) {
+    try {
+      localStorage.setItem(
+        MATCHING_TOPICS_PERSIST_KEY,
+        JSON.stringify({
+          data: Array.isArray(topics) ? topics : [],
+          lastLoadTime: Date.now(),
+        }),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist Matching topics cache:", error);
+    }
+  }
+
+  function hydrateMatchingGlobalCacheFromPersisted() {
+    var globalCache = window.globalTopicsCache;
+    if (
+      globalCache &&
+      Array.isArray(globalCache.data) &&
+      globalCache.data.length > 0 &&
+      Date.now() - Number(globalCache.lastLoadTime || 0) <
+        Number(globalCache.cacheDuration || MATCHING_CACHE_DURATION)
+    ) {
+      return;
+    }
+
+    var persisted = readMatchingPersistedTopicsCache();
+    if (!persisted) return;
+
+    if (globalCache) {
+      globalCache.data = persisted.topics;
+      globalCache.lastLoadTime = persisted.lastLoadTime;
+    }
+    matchingTopicsCache = persisted.topics;
+    matchingLastLoadTime = persisted.lastLoadTime;
+  }
+
+  hydrateMatchingGlobalCacheFromPersisted();
 
   // ===== STATE =====
   let matchingMeteorInterval = null;
@@ -278,6 +344,7 @@
   // ===== TOPIC LOADING (reuse globalTopicsCache giống MCQ) =====
   function loadMatchingTopics(forceRefresh) {
     console.log("📥 Loading topics for matching...");
+    hydrateMatchingGlobalCacheFromPersisted();
 
     const loading = document.getElementById("matchingLoading");
     const grid = document.getElementById("matchingTopicsGrid");
@@ -335,6 +402,21 @@
 
     // Chờ google.script.run sẵn sàng tương tự flow Quiz, không fail sớm.
     if (!isGoogleScriptRunReady()) {
+      var persistedWhenWaiting = readMatchingPersistedTopicsCache({
+        allowExpired: true,
+      });
+      if (
+        persistedWhenWaiting &&
+        Array.isArray(persistedWhenWaiting.topics) &&
+        persistedWhenWaiting.topics.length > 0
+      ) {
+        console.warn(
+          "⚠️ Matching: google.script.run chưa sẵn sàng, dùng dữ liệu cache cục bộ",
+        );
+        handleMatchingTopicsLoaded(persistedWhenWaiting.topics);
+        return;
+      }
+
       if (matchingGoogleRunRetryCount < MATCHING_GOOGLE_RUN_MAX_RETRY) {
         matchingGoogleRunRetryCount++;
         setTimeout(function () {
@@ -377,6 +459,7 @@
           window.globalTopicsCache.data = topics;
           window.globalTopicsCache.lastLoadTime = Date.now();
         }
+        writeMatchingPersistedTopicsCache(topics);
 
         handleMatchingTopicsLoaded(topics);
       })
@@ -571,6 +654,13 @@
     clearMatchingTopicsLoadTimeout();
 
     console.error("❌ Error loading matching topics:", error);
+
+    var persisted = readMatchingPersistedTopicsCache({ allowExpired: true });
+    if (persisted && Array.isArray(persisted.topics) && persisted.topics.length > 0) {
+      console.warn("⚠️ Matching fallback to persisted topics cache");
+      handleMatchingTopicsLoaded(persisted.topics);
+      return;
+    }
 
     const loading = document.getElementById("matchingLoading");
     const empty = document.getElementById("matchingEmpty");
