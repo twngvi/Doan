@@ -233,17 +233,29 @@
         try {
           console.log("Checking visibility for:", pageId);
 
-          // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
-          if (PUBLIC_PAGES.includes(pageId)) {
+          // Handle admin sidebar and layout specifically
+          if (pageId === "page-admin") {
+            document.body.classList.add("has-admin-sidebar");
             document.body.classList.remove("has-sidebar");
             document.body.classList.add("hide-sidebar");
-            console.log("Hiding sidebar for public page");
+            console.log("Showing admin sidebar");
+            return;
           } else {
-            // Ngược lại -> Hiện Sidebar
-            document.body.classList.add("has-sidebar");
-            document.body.classList.remove("hide-sidebar");
-            this.updateActiveNav(pageId);
-            console.log("Showing sidebar for authenticated page");
+            // Remove admin sidebar for all other pages
+            document.body.classList.remove("has-admin-sidebar");
+            
+            // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
+            if (PUBLIC_PAGES.includes(pageId)) {
+              document.body.classList.remove("has-sidebar");
+              document.body.classList.add("hide-sidebar");
+              console.log("Hiding sidebar for public page");
+            } else {
+              // Ngược lại -> Hiện Sidebar
+              document.body.classList.add("has-sidebar");
+              document.body.classList.remove("hide-sidebar");
+              this.updateActiveNav(pageId);
+              console.log("Showing sidebar for authenticated page");
+            }
           }
         } catch (e) {
           console.warn("⚠️ Error in checkVisibility (Ignored):", e);
@@ -345,15 +357,22 @@
       // 2. Xử lý Sidebar SAU (Bọc trong try-catch)
       try {
         if (window.GlobalSidebar) {
-          window.GlobalSidebar.checkVisibility(pageId);
+           window.GlobalSidebar.checkVisibility(pageId);
         } else {
           // Fallback nếu GlobalSidebar chưa load xong
-          if (PUBLIC_PAGES.includes(pageId)) {
+          if (pageId === "page-admin") {
+            document.body.classList.add("has-admin-sidebar");
             document.body.classList.remove("has-sidebar");
             document.body.classList.add("hide-sidebar");
           } else {
-            document.body.classList.add("has-sidebar");
-            document.body.classList.remove("hide-sidebar");
+            document.body.classList.remove("has-admin-sidebar");
+            if (PUBLIC_PAGES.includes(pageId)) {
+              document.body.classList.remove("has-sidebar");
+              document.body.classList.add("hide-sidebar");
+            } else {
+              document.body.classList.add("has-sidebar");
+              document.body.classList.remove("hide-sidebar");
+            }
           }
         }
       } catch (e) {
