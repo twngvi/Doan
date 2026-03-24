@@ -36,6 +36,8 @@
   const MCQ_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
   const MCQ_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
   const MCQ_TOPICS_LOAD_TIMEOUT = 12000;
+  const MCQ_STATS_PERSIST_KEY = "oq_quiz_stats_cache_v1";
+  const MCQ_STATS_PERSIST_TTL = 5 * 60 * 1000; // Cache 5 phút (khớp với server cache)
   let mcqTopicsLoadTimeoutId = null;
   let mcqAllTopicsForSearch = null; // Store all topics for search
 
@@ -109,6 +111,52 @@
   }
 
   hydrateMcqGlobalCacheFromPersisted();
+
+  // ===== QUIZ STATS PERSISTENCE (localStorage) =====
+  function readMcqPersistedStatsCache() {
+    try {
+      var raw = localStorage.getItem(MCQ_STATS_PERSIST_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var stats = parsed && parsed.stats && typeof parsed.stats === "object" ? parsed.stats : null;
+      var lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!stats || !Number.isFinite(lastLoadTime)) return null;
+      var age = Date.now() - lastLoadTime;
+      if (age > MCQ_STATS_PERSIST_TTL) return null;
+      return { stats: stats, lastLoadTime: lastLoadTime };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeMcqPersistedStatsCache(stats) {
+    try {
+      localStorage.setItem(
+        MCQ_STATS_PERSIST_KEY,
+        JSON.stringify({ stats: stats || {}, lastLoadTime: Date.now() })
+      );
+    } catch (e) {}
+  }
+
+  function hydrateMcqStatsFromPersisted() {
+    var statsCache = window.quizStatsCache;
+    if (
+      statsCache &&
+      statsCache.stats &&
+      Object.keys(statsCache.stats).length > 0 &&
+      Date.now() - Number(statsCache.lastLoadTime || 0) < Number(statsCache.cacheDuration || 60000)
+    ) {
+      return; // Đã có cache hợp lệ trong bộ nhớ
+    }
+    var persisted = readMcqPersistedStatsCache();
+    if (!persisted) return;
+    if (statsCache) {
+      statsCache.stats = persisted.stats;
+      statsCache.lastLoadTime = persisted.lastLoadTime;
+    }
+  }
+
+  hydrateMcqStatsFromPersisted();
 
   // Search function for MCQ topics
   function searchMcqTopics(query) {
@@ -424,6 +472,9 @@
               " topics",
           );
 
+          // ⭐ Lưu vào localStorage để tái sử dụng khi navigate lại trang
+          writeMcqPersistedStatsCache(response.stats);
+
           // Re-render topics grid với stats mới nếu đang hiển thị
           if (mcqAllTopicsForSearch && mcqAllTopicsForSearch.length > 0) {
             renderTopicsGrid(mcqAllTopicsForSearch);
@@ -491,6 +542,9 @@
       topicId,
       window.quizStatsCache.stats[topicId],
     );
+
+    // ⭐ Lưu vào localStorage để tái sử dụng khi navigate lại trang
+    writeMcqPersistedStatsCache(window.quizStatsCache.stats);
   }
 
   // Alias for entry point usage
