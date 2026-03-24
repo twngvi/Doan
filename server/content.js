@@ -1449,6 +1449,12 @@ function saveQuizResult(resultData) {
     }
     Logger.log("User email: " + userEmail);
 
+    // Xoá cache Quiz Stats để cập nhật dữ liệu mới ở lần fetch tiếp theo
+    try {
+      CacheService.getUserCache().remove("QUIZ_STATS_" + userEmail);
+    } catch(e) {}
+
+
     // Get user's personal sheet ID
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
     if (!progressSheetId) {
@@ -1780,6 +1786,12 @@ function saveMatchingResult(resultData) {
       Logger.log("⚠️ No user email, cannot save to personal sheet");
       return { success: false, message: "User not logged in" };
     }
+
+    // Xoá cache Matching Stats để cập nhật dữ liệu mới ở lần fetch tiếp theo
+    try {
+      CacheService.getUserCache().remove("MATCHING_STATS_" + userEmail);
+    } catch(e) {}
+
 
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
     if (!progressSheetId) {
@@ -4873,6 +4885,16 @@ function getQuizStatsPerTopic() {
       return { success: false, message: "Not logged in", stats: {} };
     }
 
+    // ⭐ KIỂM TRA CACHE NGƯỜI DÙNG BẰNG TÊN MIỀN
+    const CACHE_KEY = "QUIZ_STATS_" + userEmail;
+    const cache = CacheService.getUserCache();
+    const cachedStats = cache.get(CACHE_KEY);
+    
+    if (cachedStats) {
+      Logger.log("✅ Using cached quiz stats (CacheService)");
+      return JSON.parse(cachedStats);
+    }
+
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
     if (!progressSheetId) {
       return { success: true, stats: {} };
@@ -4955,7 +4977,20 @@ function getQuizStatsPerTopic() {
         Object.keys(statsMap).length +
         " topics",
     );
-    return { success: true, stats: statsMap };
+    
+    const result = { success: true, stats: statsMap };
+    
+    // ⭐ LƯU VÀO CACHE 5 PHÚT (300 giây)
+    try {
+      const cacheString = JSON.stringify(result);
+      if (cacheString.length < 100000) {
+        CacheService.getUserCache().put("QUIZ_STATS_" + userEmail, cacheString, 300);
+      }
+    } catch(e) {
+      Logger.log("⚠️ Failed to cache quiz stats: " + e.toString());
+    }
+    
+    return result;
   } catch (error) {
     Logger.log("❌ Error in getQuizStatsPerTopic: " + error.toString());
     return { success: false, message: error.toString(), stats: {} };
@@ -4975,6 +5010,16 @@ function getMatchingStatsPerTopic() {
     const userEmail = Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", stats: {} };
+    }
+
+    // ⭐ KIỂM TRA CACHE NGƯỜI DÙNG
+    const CACHE_KEY = "MATCHING_STATS_" + userEmail;
+    const cache = CacheService.getUserCache();
+    const cachedStats = cache.get(CACHE_KEY);
+    
+    if (cachedStats) {
+      Logger.log("✅ Using cached matching stats (CacheService)");
+      return JSON.parse(cachedStats);
     }
 
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
@@ -5065,7 +5110,20 @@ function getMatchingStatsPerTopic() {
         Object.keys(statsMap).length +
         " topics",
     );
-    return { success: true, stats: statsMap };
+    
+    const result = { success: true, stats: statsMap };
+    
+    // ⭐ LƯU VÀO CACHE 5 PHÚT (300 giây)
+    try {
+      const cacheString = JSON.stringify(result);
+      if (cacheString.length < 100000) {
+        CacheService.getUserCache().put("MATCHING_STATS_" + userEmail, cacheString, 300);
+      }
+    } catch(e) {
+      Logger.log("⚠️ Failed to cache matching stats: " + e.toString());
+    }
+    
+    return result;
   } catch (error) {
     Logger.log("❌ Error in getMatchingStatsPerTopic: " + error.toString());
     return { success: false, message: error.toString(), stats: {} };

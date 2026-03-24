@@ -5,25 +5,26 @@
  */
 
 // ⭐ CACHE phía server để giảm số lần đọc spreadsheet
-let topicsCacheServer = null;
-let topicsCacheTime = 0;
-const TOPICS_CACHE_DURATION = 300000; // Cache 5 phút
+const TOPICS_CACHE_KEY = "ALL_TOPICS_CACHE";
+const TOPICS_CACHE_DURATION = 300; // Cache 5 phút (tính bằng giây trong CacheService)
 
 /**
  * Get all topics from MASTER_DB
  * Updated to read dynamic columns including contentDocId/contentDocUrl
- * ⭐ OPTIMIZED: Thêm cache phía server
+ * ⭐ OPTIMIZED: Thêm cache phía server bằng CacheService
  */
 function getAllTopics() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
 
   try {
-    const now = Date.now();
-
     // ⭐ Kiểm tra cache phía server
-    if (topicsCacheServer && now - topicsCacheTime < TOPICS_CACHE_DURATION) {
-      Logger.log("✅ Using server-side cached topics");
-      return topicsCacheServer;
+    const cache = CacheService.getScriptCache();
+    const cachedTopics = cache.get(TOPICS_CACHE_KEY);
+    
+    if (cachedTopics) {
+      Logger.log("✅ Using server-side cached topics (CacheService)");
+      // parse result back from JSON string
+      return JSON.parse(cachedTopics);
     }
 
     const SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
@@ -191,8 +192,15 @@ function getAllTopics() {
     };
 
     // ⭐ Lưu vào cache
-    topicsCacheServer = result;
-    topicsCacheTime = now;
+    try {
+      // Chunking if the string is too large (>100KB), but topics array is usually small enough.
+      const cacheString = JSON.stringify(result);
+      if (cacheString.length < 100000) {
+        CacheService.getScriptCache().put(TOPICS_CACHE_KEY, cacheString, TOPICS_CACHE_DURATION);
+      }
+    } catch(e) {
+      Logger.log("⚠️ Could not save to CacheService: " + e.toString());
+    }
 
     return result;
   } catch (error) {
@@ -211,9 +219,12 @@ function getAllTopics() {
  * ⭐ Clear topics cache (gọi khi admin cập nhật topics)
  */
 function clearTopicsCache() {
-  topicsCacheServer = null;
-  topicsCacheTime = 0;
-  Logger.log("✅ Topics cache cleared");
+  try {
+    CacheService.getScriptCache().remove(TOPICS_CACHE_KEY);
+    Logger.log("✅ Topics cache cleared");
+  } catch(e) {
+    Logger.log("⚠️ Failed to clear cache: " + e.toString());
+  }
 }
 
 /**
