@@ -1062,6 +1062,19 @@ function getDocMetadata(docId) {
  * @returns {string|null} - progressSheetId or null
  */
 function getUserProgressSheetIdByEmail(email) {
+  // ⭐ Check UserCache trước để tránh đọc spreadsheet lặp lại
+  const PROGRESS_SHEET_CACHE_KEY = "PROGRESS_SHEET_ID_" + email;
+  try {
+    const userCache = CacheService.getUserCache();
+    const cachedSheetId = userCache.get(PROGRESS_SHEET_CACHE_KEY);
+    if (cachedSheetId !== null) {
+      Logger.log("✅ getUserProgressSheetIdByEmail: cache hit for " + email);
+      return cachedSheetId === "__null__" ? null : cachedSheetId;
+    }
+  } catch (cacheErr) {
+    // Nếu cache lỗi thì vẫn tiếp tục đọc spreadsheet bình thường
+  }
+
   try {
     const normalizedEmail = String(email || "").trim().toLowerCase();
     if (!normalizedEmail) return null;
@@ -1104,7 +1117,9 @@ function getUserProgressSheetIdByEmail(email) {
       return null;
     }
 
+    let foundSheetId = null;
     for (let i = 1; i < data.length; i++) {
+<<<<<<< HEAD
       const rowEmail = String(data[i][emailIndex] || "").trim().toLowerCase();
       if (rowEmail === normalizedEmail) {
         const sheetId = String(data[i][progressSheetIdIndex] || "").trim();
@@ -1128,6 +1143,30 @@ function getUserProgressSheetIdByEmail(email) {
     cache.put(cacheKey, cacheMissSentinel, 5 * 60);
     Logger.log("User not found, cached miss: " + normalizedEmail);
     return null;
+=======
+      if (data[i][emailIndex] === email) {
+        foundSheetId = data[i][progressSheetIdIndex] || null;
+        Logger.log("Found progressSheetId for " + email + ": " + foundSheetId);
+        break;
+      }
+    }
+
+    if (!foundSheetId) {
+      Logger.log("User not found: " + email);
+    }
+
+    // ⭐ Lưu kết quả vào cache: sheet ID hợp lệ → 6 giờ; null (chưa có sheet) → 5 phút
+    try {
+      const userCache = CacheService.getUserCache();
+      if (foundSheetId) {
+        userCache.put(PROGRESS_SHEET_CACHE_KEY, foundSheetId, 21600); // 6 giờ
+      } else {
+        userCache.put(PROGRESS_SHEET_CACHE_KEY, "__null__", 300); // 5 phút (tránh lock lâu nếu sheet chưa tạo)
+      }
+    } catch (cacheErr) {}
+
+    return foundSheetId;
+>>>>>>> e0a78813f0da0f746fa5b48465099ef469a2698c
   } catch (error) {
     Logger.log("Error getting progressSheetId: " + error.toString());
     return null;
