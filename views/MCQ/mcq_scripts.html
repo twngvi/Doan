@@ -114,7 +114,7 @@
    */
   function detectQuizEntrySource() {
     const params = window.currentPageParams;
-    if (params && params.topicId && params.contentDocId) {
+    if (params && params.fromLesson) {
       return "lesson";
     }
     return "mcq";
@@ -132,28 +132,49 @@
     const entrySource = detectQuizEntrySource();
     quizState.entrySource = entrySource;
 
-    if (entrySource === "lesson") {
-      // Vào từ Lesson/Topics → bỏ qua chọn topic & mode, dùng instant
-      const params = window.currentPageParams;
-      quizState.topicId = params.topicId;
-      quizState.topicTitle = params.topicTitle || "Quiz";
-      quizState.contentDocId = params.contentDocId;
-      quizState.selectedTopic = {
-        topicId: params.topicId,
-        title: params.topicTitle || "Quiz",
-        contentDocId: params.contentDocId,
-      };
-      quizState.quizMode = "instant";
+    const params = window.currentPageParams || {};
+    console.log("📋 Showing topic selection / topic detail hub");
+    showTopicSelection();
+    loadAvailableTopics();
 
-      console.log("📌 Entry from Lesson → instant mode, loading quiz directly");
-      showQuizView();
-      loadQuizData(false);
-    } else {
-      // Vào từ trang MCQ → cần chọn topic
-      console.log("📋 Entry from MCQ → showing topic selection");
-      showTopicSelection();
-      loadAvailableTopics();
+    // Có topicId từ trang trước thì mở trang chi tiết topic, không vào chơi trực tiếp
+    if (params.topicId) {
+      openQuizTopicHubFromParams(params);
     }
+  }
+
+  function openQuizTopicHubFromParams(params) {
+    const topicId = String((params && params.topicId) || "").trim();
+    if (!topicId) return;
+
+    const allSources = [];
+    if (Array.isArray(quizState.allTopics) && quizState.allTopics.length > 0) {
+      allSources.push.apply(allSources, quizState.allTopics);
+    }
+    if (
+      window.globalTopicsCache &&
+      Array.isArray(window.globalTopicsCache.data) &&
+      window.globalTopicsCache.data.length > 0
+    ) {
+      allSources.push.apply(allSources, window.globalTopicsCache.data);
+    }
+
+    var topic = allSources.find(function (t) {
+      return String((t && t.topicId) || "").trim() === topicId;
+    });
+
+    if (!topic) {
+      topic = {
+        topicId: topicId,
+        title: params.topicTitle || "Quiz",
+        contentDocId: params.contentDocId || "",
+        category: params.category || "Chung",
+        description: "",
+        estimatedTime: "Không giới hạn",
+      };
+    }
+
+    openQuizTopicHub(topic);
   }
 
   /**
@@ -947,6 +968,12 @@
 
     if (emptyEl) emptyEl.style.display = "none";
 
+    if (quizState.openHistoryDetail) {
+      quizState.openHistoryDetail.id = null;
+      quizState.openHistoryDetail.panel = null;
+      quizState.openHistoryDetail.button = null;
+    }
+
     history.forEach(function (item, index) {
       var row = document.createElement("div");
       row.className = "mcq-topic-history-item";
@@ -974,7 +1001,7 @@
         "</div>" +
         '<button class="btn-secondary btn-centered" onclick="openQuizHistoryDetail(\'' +
         String(item.id || "") +
-        "')\">Chi tiết</button>";
+        "', this)">Chi tiết</button>';
 
       listEl.appendChild(row);
     });
@@ -1000,8 +1027,202 @@
     }
   }
 
-  window.openQuizHistoryDetail = function (resultId) {
+  function normalizeQuizHistoryTime(value) {
+    if (value === null || value === undefined || value === "") return "-";
+
+    if (typeof value === "string") {
+      var trimmed = value.trim();
+      if (!trimmed) return "-";
+      if (trimmed.indexOf(":") >= 0 && trimmed.toLowerCase().indexOf("gmt") < 0) {
+        return trimmed;
+      }
+      var parsedFromString = new Date(trimmed);
+      if (!isNaN(parsedFromString.getTime())) {
+        return formatQuizDurationFromDate(parsedFromString);
+      }
+      return trimmed;
+    }
+
+    if (value instanceof Date) {
+      return formatQuizDurationFromDate(value);
+    }
+
+    if (typeof value === "number" && isFinite(value)) {
+      if (value > 0 && value < 1) {
+        return formatQuizDurationSeconds(Math.round(value * 86400));
+      }
+      return formatQuizDurationSeconds(Math.round(value));
+    }
+
+    return String(value);
+  }
+
+  function formatQuizDurationFromDate(dateValue) {
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return "-";
+    return formatQuizDurationSeconds(
+      dateValue.getHours() * 3600 + dateValue.getMinutes() * 60 + dateValue.getSeconds(),
+    );
+  }
+
+  function formatQuizDurationSeconds(totalSeconds) {
+    var safe = Math.max(0, Number(totalSeconds) || 0);
+    var hours = Math.floor(safe / 3600);
+    var minutes = Math.floor((safe % 3600) / 60);
+    var seconds = safe % 60;
+
+    if (hours > 0) {
+      return (
+        String(hours).padStart(2, "0") +
+        ":" +
+        String(minutes).padStart(2, "0") +
+        ":" +
+        String(seconds).padStart(2, "0")
+      );
+    }
+
+    return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+  }
+
+  function renderQuizHistoryDetailHtml(detail) {
+    var d = detail || {};
+    var questionItems = Array.isArray(d.questionDetails)
+      ? d.questionDetails
+          .map(function (q, idx) {
+            var labels = ["A", "B", "C", "D", "E", "F"];
+            var userLabel =
+              q.userAnswer === null || q.userAnswer === undefined
+                ? "-"
+                : labels[q.userAnswer] || String(q.userAnswer + 1);
+            var correctLabel =
+              q.correctAnswer === null || q.correctAnswer === undefined
+                ? "-"
+                : labels[q.correctAnswer] || String(q.correctAnswer + 1);
+            var optionsHtml = Array.isArray(q.options)
+              ? q.options
+                  .map(function (opt, optIdx) {
+                    var marker = labels[optIdx] || String(optIdx + 1);
+                    var flags = [];
+                    if (optIdx === q.userAnswer) flags.push("Bạn chọn");
+                    if (optIdx === q.correctAnswer) flags.push("Đáp án đúng");
+                    var suffix = flags.length ? " (" + flags.join(" - ") + ")" : "";
+                    return (
+                      '<div class="mcq-history-option">' +
+                      marker +
+                      ". " +
+                      String(opt || "") +
+                      suffix +
+                      "</div>"
+                    );
+                  })
+                  .join("")
+              : "";
+
+            return (
+              '<div class="mcq-history-question">' +
+              "<strong>Câu " +
+              (idx + 1) +
+              ":</strong> " +
+              (q.question || "") +
+              "<br>" +
+              "Bạn chọn: " +
+              userLabel +
+              " | Đáp án đúng: " +
+              correctLabel +
+              (q.isCorrect ? " ✅" : " ❌") +
+              (optionsHtml ? '<div class="mcq-history-options">' + optionsHtml + "</div>" : "") +
+              "</div>"
+            );
+          })
+          .join("")
+      : "";
+
+    return (
+      '<div class="mcq-history-summary">' +
+      "Điểm: <strong>" +
+      (d.score || 0) +
+      "/" +
+      (d.totalQuestions || 0) +
+      "</strong> - " +
+      (d.percentage || 0) +
+      "%<br>" +
+      "Thời gian: " +
+      normalizeQuizHistoryTime(d.timeTaken) +
+      "<br>" +
+      "Chế độ: " +
+      (d.gameMode || "instant") +
+      "<br>" +
+      "Hoàn thành: " +
+      (d.completedAt ? new Date(d.completedAt).toLocaleString("vi-VN") : "-") +
+      "</div>" +
+      '<div class="mcq-history-questions">' +
+      questionItems +
+      "</div>"
+    );
+  }
+
+  window.openQuizHistoryDetail = function (resultId, triggerButton) {
     if (!resultId) return;
+
+    if (!quizState.openHistoryDetail) {
+      quizState.openHistoryDetail = {
+        id: null,
+        panel: null,
+        button: null,
+      };
+    }
+
+    if (triggerButton) {
+      var current = quizState.openHistoryDetail;
+      if (current.panel) {
+        current.panel.remove();
+      }
+      if (current.button) {
+        current.button.textContent = "Chi tiết";
+      }
+
+      if (current.id === resultId && current.button === triggerButton) {
+        current.id = null;
+        current.panel = null;
+        current.button = null;
+        return;
+      }
+
+      var row = triggerButton.closest(".mcq-topic-history-item");
+      if (!row || !row.parentNode) return;
+
+      var panel = document.createElement("div");
+      panel.className = "mcq-history-inline-detail";
+      panel.innerHTML =
+        '<div class="mcq-history-inline-loading">Đang tải chi tiết...</div>';
+      row.parentNode.insertBefore(panel, row.nextSibling);
+      triggerButton.textContent = "Đóng";
+
+      current.id = resultId;
+      current.panel = panel;
+      current.button = triggerButton;
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (!quizState.openHistoryDetail || quizState.openHistoryDetail.id !== resultId) {
+            return;
+          }
+          if (!response || !response.success || !response.detail) {
+            panel.innerHTML = '<p class="mcq-history-inline-error">Không tìm thấy chi tiết lượt chơi.</p>';
+            return;
+          }
+          panel.innerHTML = renderQuizHistoryDetailHtml(response.detail);
+          panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        })
+        .withFailureHandler(function () {
+          if (!quizState.openHistoryDetail || quizState.openHistoryDetail.id !== resultId) {
+            return;
+          }
+          panel.innerHTML = '<p class="mcq-history-inline-error">Không thể tải chi tiết lượt chơi.</p>';
+        })
+        .getQuizResultDetailById(resultId);
+
+      return;
+    }
 
     var modal = document.getElementById("mcq-history-detail-modal");
     var body = document.getElementById("mcq-history-detail-body");
@@ -1020,59 +1241,7 @@
           return;
         }
 
-        var d = response.detail;
-        var questionItems = Array.isArray(d.questionDetails)
-          ? d.questionDetails
-              .map(function (q, idx) {
-                var ua =
-                  q.userAnswer === null || q.userAnswer === undefined
-                    ? "Chưa trả lời"
-                    : "Đáp án " + String.fromCharCode(65 + q.userAnswer);
-                var ca =
-                  q.correctAnswer === null || q.correctAnswer === undefined
-                    ? "?"
-                    : "Đáp án " + String.fromCharCode(65 + q.correctAnswer);
-                return (
-                  '<div class="mcq-history-question">' +
-                  "<strong>Câu " +
-                  (idx + 1) +
-                  ":</strong> " +
-                  (q.question || "") +
-                  "<br>" +
-                  "Bạn chọn: " +
-                  ua +
-                  " | Đáp án đúng: " +
-                  ca +
-                  (q.isCorrect ? " ✅" : " ❌") +
-                  "</div>"
-                );
-              })
-              .join("")
-          : "";
-
-        body.innerHTML =
-          '<div class="mcq-history-summary">' +
-          "Điểm: <strong>" +
-          (d.score || 0) +
-          "/" +
-          (d.totalQuestions || 0) +
-          "</strong> - " +
-          (d.percentage || 0) +
-          "%<br>" +
-          "Thời gian: " +
-          (d.timeTaken || "-") +
-          "<br>" +
-          "Chế độ: " +
-          (d.gameMode || "instant") +
-          "<br>" +
-          "Hoàn thành: " +
-          (d.completedAt
-            ? new Date(d.completedAt).toLocaleString("vi-VN")
-            : "-") +
-          "</div>" +
-          '<div class="mcq-history-questions">' +
-          questionItems +
-          "</div>";
+        body.innerHTML = renderQuizHistoryDetailHtml(response.detail);
       })
       .withFailureHandler(function () {
         body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
@@ -1081,6 +1250,16 @@
   };
 
   window.closeQuizHistoryDetail = function () {
+    if (quizState.openHistoryDetail && quizState.openHistoryDetail.panel) {
+      quizState.openHistoryDetail.panel.remove();
+      if (quizState.openHistoryDetail.button) {
+        quizState.openHistoryDetail.button.textContent = "Chi tiết";
+      }
+      quizState.openHistoryDetail.id = null;
+      quizState.openHistoryDetail.panel = null;
+      quizState.openHistoryDetail.button = null;
+    }
+
     var modal = document.getElementById("mcq-history-detail-modal");
     if (!modal) return;
     modal.classList.remove("show");
@@ -2835,9 +3014,21 @@
       questionId: q.id,
       question: q.question,
       userAnswer: quizState.userAnswers[index],
+      userAnswerText:
+        quizState.userAnswers[index] !== null &&
+        quizState.userAnswers[index] !== undefined &&
+        Array.isArray(q.options)
+          ? q.options[quizState.userAnswers[index]] || ""
+          : "",
       correctAnswer: q.correctAnswer,
+      correctAnswerText:
+        q.correctAnswer !== null &&
+        q.correctAnswer !== undefined &&
+        Array.isArray(q.options)
+          ? q.options[q.correctAnswer] || ""
+          : "",
       isCorrect: quizState.userAnswers[index] === q.correctAnswer,
-      options: q.options,
+      options: Array.isArray(q.options) ? q.options.slice() : [],
     }));
 
     const resultData = {

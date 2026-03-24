@@ -1171,27 +1171,53 @@ function resolveAuthenticatedEmailFromContext(userContext) {
  */
 function getOrCreateQuizResultsSheet(spreadsheet) {
   let sheet = spreadsheet.getSheetByName("Quiz_Results");
+  const requiredHeaders = [
+    "id",
+    "userId",
+    "mode",
+    "topicId",
+    "topicTitle",
+    "score",
+    "totalQuestions",
+    "percentage",
+    "timeTaken",
+    "gameMode",
+    "status",
+    "currentQuestionIndex",
+    "completedAt",
+    "questionDetails",
+  ];
 
   if (!sheet) {
     Logger.log("Creating Quiz_Results sheet...");
     sheet = spreadsheet.insertSheet("Quiz_Results");
-    sheet.appendRow([
-      "id",
-      "topicId",
-      "topicTitle",
-      "score",
-      "totalQuestions",
-      "percentage",
-      "timeTaken",
-      "gameMode",
-      "status",
-      "currentQuestionIndex",
-      "completedAt",
-      "questionDetails",
-    ]);
+    sheet.appendRow(requiredHeaders);
 
     // Style header
-    const headerRange = sheet.getRange(1, 1, 1, 12);
+    const headerRange = sheet.getRange(1, 1, 1, requiredHeaders.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#5B6FF8");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const currentHeaders = sheet
+    .getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1))
+    .getValues()[0];
+  const nextHeaders = currentHeaders.slice();
+  let changed = false;
+
+  requiredHeaders.forEach(function (header) {
+    if (nextHeaders.indexOf(header) === -1) {
+      nextHeaders.push(header);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    sheet.getRange(1, 1, 1, nextHeaders.length).setValues([nextHeaders]);
+    const headerRange = sheet.getRange(1, 1, 1, nextHeaders.length);
     headerRange.setFontWeight("bold");
     headerRange.setBackground("#5B6FF8");
     headerRange.setFontColor("white");
@@ -1435,23 +1461,88 @@ function saveQuizResult(resultData) {
     const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
     const quizSheet = getOrCreateQuizResultsSheet(userSpreadsheet);
 
-    // Create result entry
-    const resultEntry = [
-      "QR_" + Date.now(), // id
-      resultData.topicId, // topicId
-      resultData.topicTitle, // topicTitle
-      resultData.score, // score
-      resultData.totalQuestions, // totalQuestions
-      resultData.percentage, // percentage
-      resultData.timeTaken, // timeTaken
-      resultData.gameMode || "instant", // gameMode
-      resultData.status || "complete", // status (partial/complete)
-      resultData.currentQuestionIndex || 0, // currentQuestionIndex
-      new Date().toISOString(), // completedAt
-      JSON.stringify(resultData.answers || resultData.questionDetails || []), // questionDetails
-    ];
+    const userId = getUserIdByEmail(userEmail) || "";
+    const headers = quizSheet
+      .getRange(1, 1, 1, Math.max(quizSheet.getLastColumn(), 1))
+      .getValues()[0];
 
-    // Append to sheet
+    const sourceQuestionDetails =
+      resultData.questionDetails || resultData.answers || [];
+    const normalizedQuestionDetails = Array.isArray(sourceQuestionDetails)
+      ? sourceQuestionDetails.map(function (item, idx) {
+          const options = Array.isArray(item && item.options) ? item.options : [];
+          const userAnswer =
+            item && item.userAnswer !== undefined && item.userAnswer !== null
+              ? item.userAnswer
+              : null;
+          const correctAnswer =
+            item && item.correctAnswer !== undefined && item.correctAnswer !== null
+              ? item.correctAnswer
+              : null;
+          const parsedUserIdx =
+            typeof userAnswer === "number" ? userAnswer : parseInt(userAnswer, 10);
+          const parsedCorrectIdx =
+            typeof correctAnswer === "number"
+              ? correctAnswer
+              : parseInt(correctAnswer, 10);
+          const userAnswerIndex = Number.isFinite(parsedUserIdx)
+            ? parsedUserIdx
+            : null;
+          const correctAnswerIndex = Number.isFinite(parsedCorrectIdx)
+            ? parsedCorrectIdx
+            : null;
+
+          return {
+            questionId: item && item.questionId ? String(item.questionId) : "Q_" + (idx + 1),
+            question: item && item.question ? String(item.question) : "",
+            options: options,
+            userAnswer: userAnswerIndex,
+            userAnswerText:
+              userAnswerIndex !== null && options[userAnswerIndex] !== undefined
+                ? String(options[userAnswerIndex])
+                : item && item.userAnswerText
+                  ? String(item.userAnswerText)
+                  : "",
+            correctAnswer: correctAnswerIndex,
+            correctAnswerText:
+              correctAnswerIndex !== null && options[correctAnswerIndex] !== undefined
+                ? String(options[correctAnswerIndex])
+                : item && item.correctAnswerText
+                  ? String(item.correctAnswerText)
+                  : "",
+            isCorrect:
+              item && typeof item.isCorrect === "boolean"
+                ? item.isCorrect
+                : userAnswerIndex !== null &&
+                    correctAnswerIndex !== null &&
+                    userAnswerIndex === correctAnswerIndex,
+          };
+        })
+      : [];
+
+    const rowMap = {
+      id: "QR_" + Date.now(),
+      userId: userId,
+      mode: "quiz",
+      topicId: resultData.topicId || "",
+      topicTitle: resultData.topicTitle || "",
+      score: resultData.score || 0,
+      totalQuestions: resultData.totalQuestions || 0,
+      percentage: resultData.percentage || 0,
+      timeTaken: resultData.timeTaken || "",
+      gameMode: resultData.gameMode || "instant",
+      status: resultData.status || "complete",
+      currentQuestionIndex: resultData.currentQuestionIndex || 0,
+      completedAt: resultData.completedAt || new Date().toISOString(),
+      questionDetails: JSON.stringify(normalizedQuestionDetails),
+    };
+
+    const resultEntry = headers.map(function (header) {
+      return Object.prototype.hasOwnProperty.call(rowMap, header)
+        ? rowMap[header]
+        : "";
+    });
+
     quizSheet.appendRow(resultEntry);
 
     Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
@@ -1620,29 +1711,57 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
  */
 function getOrCreateMatchingResultsSheet(spreadsheet) {
   let sheet = spreadsheet.getSheetByName("Matching_Results");
+  const requiredHeaders = [
+    "id",
+    "userId",
+    "mode",
+    "topicId",
+    "topicTitle",
+    "difficulty",
+    "totalPairs",
+    "correctPairs",
+    "wrongAttempts",
+    "score",
+    "elapsedTime",
+    "accuracy",
+    "completed",
+    "playedAt",
+    "pairDetails",
+  ];
+
   if (!sheet) {
     sheet = spreadsheet.insertSheet("Matching_Results");
-    const headers = [
-      "id",
-      "topicId",
-      "topicTitle",
-      "difficulty",
-      "totalPairs",
-      "correctPairs",
-      "wrongAttempts",
-      "score",
-      "elapsedTime",
-      "accuracy",
-      "completed",
-      "playedAt",
-    ];
-    sheet.appendRow(headers);
-    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    sheet.appendRow(requiredHeaders);
+    const headerRange = sheet.getRange(1, 1, 1, requiredHeaders.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#a78bfa");
+    headerRange.setFontColor("white");
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const currentHeaders = sheet
+    .getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1))
+    .getValues()[0];
+  const nextHeaders = currentHeaders.slice();
+  let changed = false;
+
+  requiredHeaders.forEach(function (header) {
+    if (nextHeaders.indexOf(header) === -1) {
+      nextHeaders.push(header);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    sheet.getRange(1, 1, 1, nextHeaders.length).setValues([nextHeaders]);
+    const headerRange = sheet.getRange(1, 1, 1, nextHeaders.length);
     headerRange.setFontWeight("bold");
     headerRange.setBackground("#a78bfa");
     headerRange.setFontColor("white");
     sheet.setFrozenRows(1);
   }
+
   return sheet;
 }
 
@@ -1671,20 +1790,50 @@ function saveMatchingResult(resultData) {
     const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
     const matchingSheet = getOrCreateMatchingResultsSheet(userSpreadsheet);
 
-    const resultEntry = [
-      "MR_" + Date.now(),
-      resultData.topicId,
-      resultData.topicTitle,
-      resultData.difficulty || "medium",
-      resultData.totalPairs || 0,
-      resultData.correctPairs || 0,
-      resultData.wrongAttempts || 0,
-      resultData.score || 0,
-      resultData.elapsedTime || 0,
-      resultData.accuracy || 0,
-      resultData.completed !== false,
-      new Date().toISOString(),
-    ];
+    const userId = getUserIdByEmail(userEmail) || "";
+    const headers = matchingSheet
+      .getRange(1, 1, 1, Math.max(matchingSheet.getLastColumn(), 1))
+      .getValues()[0];
+
+    const sourcePairDetails = Array.isArray(resultData.pairDetails)
+      ? resultData.pairDetails
+      : [];
+    const normalizedPairDetails = sourcePairDetails.map(function (item, idx) {
+      return {
+        order: item && Number.isFinite(parseInt(item.order, 10))
+          ? parseInt(item.order, 10)
+          : idx + 1,
+        leftText: item && item.leftText ? String(item.leftText) : "",
+        userMatchedRight:
+          item && item.userMatchedRight ? String(item.userMatchedRight) : "",
+        correctRight: item && item.correctRight ? String(item.correctRight) : "",
+        isCorrect: !!(item && item.isCorrect),
+      };
+    });
+
+    const rowMap = {
+      id: "MR_" + Date.now(),
+      userId: userId,
+      mode: "matching",
+      topicId: resultData.topicId || "",
+      topicTitle: resultData.topicTitle || "",
+      difficulty: resultData.difficulty || "medium",
+      totalPairs: resultData.totalPairs || 0,
+      correctPairs: resultData.correctPairs || 0,
+      wrongAttempts: resultData.wrongAttempts || 0,
+      score: resultData.score || 0,
+      elapsedTime: resultData.elapsedTime || 0,
+      accuracy: resultData.accuracy || 0,
+      completed: resultData.completed !== false,
+      playedAt: resultData.playedAt || new Date().toISOString(),
+      pairDetails: JSON.stringify(normalizedPairDetails),
+    };
+
+    const resultEntry = headers.map(function (header) {
+      return Object.prototype.hasOwnProperty.call(rowMap, header)
+        ? rowMap[header]
+        : "";
+    });
 
     matchingSheet.appendRow(resultEntry);
     Logger.log("✅ Matching result saved to personal sheet");
@@ -2754,6 +2903,8 @@ function getQuizHistoryByTopic(topicId, limit) {
 
     const headers = data[0];
     const idCol = headers.indexOf("id");
+    const userIdCol = headers.indexOf("userId");
+    const modeCol = headers.indexOf("mode");
     const topicIdCol = headers.indexOf("topicId");
     const topicTitleCol = headers.indexOf("topicTitle");
     const scoreCol = headers.indexOf("score");
@@ -2768,11 +2919,16 @@ function getQuizHistoryByTopic(topicId, limit) {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
 
+      const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "quiz";
+      if (mode && mode !== "quiz") continue;
+
       const status = statusCol >= 0 ? String(data[i][statusCol] || "") : "";
       if (status && status === "partial") continue;
 
       history.push({
         id: idCol >= 0 ? String(data[i][idCol] || "") : "",
+        userId: userIdCol >= 0 ? String(data[i][userIdCol] || "") : "",
+        mode: mode || "quiz",
         topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
         topicTitle:
           topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
@@ -2837,6 +2993,8 @@ function getQuizResultDetailById(resultId) {
 
     const headers = data[0];
     const idCol = headers.indexOf("id");
+    const userIdCol = headers.indexOf("userId");
+    const modeCol = headers.indexOf("mode");
     const topicIdCol = headers.indexOf("topicId");
     const topicTitleCol = headers.indexOf("topicTitle");
     const scoreCol = headers.indexOf("score");
@@ -2862,10 +3020,71 @@ function getQuizResultDetailById(resultId) {
         }
       }
 
+      const normalizedQuestionDetails = Array.isArray(questionDetails)
+        ? questionDetails.map(function (item, idx) {
+            const options = Array.isArray(item && item.options) ? item.options : [];
+            const userAnswer =
+              item && item.userAnswer !== undefined && item.userAnswer !== null
+                ? item.userAnswer
+                : null;
+            const correctAnswer =
+              item && item.correctAnswer !== undefined && item.correctAnswer !== null
+                ? item.correctAnswer
+                : null;
+            const parsedUserIdx =
+              typeof userAnswer === "number"
+                ? userAnswer
+                : parseInt(userAnswer, 10);
+            const parsedCorrectIdx =
+              typeof correctAnswer === "number"
+                ? correctAnswer
+                : parseInt(correctAnswer, 10);
+            const userAnswerIndex = Number.isFinite(parsedUserIdx)
+              ? parsedUserIdx
+              : null;
+            const correctAnswerIndex = Number.isFinite(parsedCorrectIdx)
+              ? parsedCorrectIdx
+              : null;
+
+            return {
+              questionId:
+                item && item.questionId ? String(item.questionId) : "Q_" + (idx + 1),
+              question: item && item.question ? String(item.question) : "",
+              options: options,
+              userAnswer: userAnswerIndex,
+              userAnswerText:
+                item && item.userAnswerText
+                  ? String(item.userAnswerText)
+                  : userAnswerIndex !== null && options[userAnswerIndex] !== undefined
+                    ? String(options[userAnswerIndex])
+                    : "",
+              correctAnswer: correctAnswerIndex,
+              correctAnswerText:
+                item && item.correctAnswerText
+                  ? String(item.correctAnswerText)
+                  : correctAnswerIndex !== null &&
+                      options[correctAnswerIndex] !== undefined
+                    ? String(options[correctAnswerIndex])
+                    : "",
+              isCorrect:
+                item && typeof item.isCorrect === "boolean"
+                  ? item.isCorrect
+                  : userAnswerIndex !== null &&
+                      correctAnswerIndex !== null &&
+                      userAnswerIndex === correctAnswerIndex,
+            };
+          })
+        : [];
+
+      const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "quiz";
+      if (mode && mode !== "quiz") continue;
+
       return {
         success: true,
         detail: {
           id: id,
+          userId: userIdCol >= 0 ? String(data[i][userIdCol] || "") : "",
+          mode: mode || "quiz",
           topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
           topicTitle:
             topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
@@ -2882,9 +3101,7 @@ function getQuizResultDetailById(resultId) {
           status: statusCol >= 0 ? String(data[i][statusCol] || "") : "",
           completedAt:
             completedAtCol >= 0 ? String(data[i][completedAtCol] || "") : "",
-          questionDetails: Array.isArray(questionDetails)
-            ? questionDetails
-            : [],
+          questionDetails: normalizedQuestionDetails,
         },
       };
     }
@@ -2932,6 +3149,8 @@ function getMatchingHistoryByTopic(topicId, limit) {
 
     const headers = data[0];
     const idCol = headers.indexOf("id");
+    const userIdCol = headers.indexOf("userId");
+    const modeCol = headers.indexOf("mode");
     const topicIdCol = headers.indexOf("topicId");
     const topicTitleCol = headers.indexOf("topicTitle");
     const difficultyCol = headers.indexOf("difficulty");
@@ -2943,16 +3162,31 @@ function getMatchingHistoryByTopic(topicId, limit) {
     const accuracyCol = headers.indexOf("accuracy");
     const completedCol = headers.indexOf("completed");
     const playedAtCol = headers.indexOf("playedAt");
+    const pairDetailsCol = headers.indexOf("pairDetails");
 
     const history = [];
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
 
+      const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "matching";
+      if (mode && mode !== "matching") continue;
+
       const completed = completedCol >= 0 ? data[i][completedCol] : true;
       if (completed === false || completed === "FALSE") continue;
 
+      let pairDetails = [];
+      if (pairDetailsCol >= 0) {
+        try {
+          pairDetails = JSON.parse(String(data[i][pairDetailsCol] || "[]"));
+        } catch (e) {
+          pairDetails = [];
+        }
+      }
+
       history.push({
         id: idCol >= 0 ? String(data[i][idCol] || "") : "",
+        userId: userIdCol >= 0 ? String(data[i][userIdCol] || "") : "",
+        mode: mode || "matching",
         topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
         topicTitle:
           topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
@@ -2969,6 +3203,7 @@ function getMatchingHistoryByTopic(topicId, limit) {
           elapsedTimeCol >= 0 ? parseInt(data[i][elapsedTimeCol]) || 0 : 0,
         accuracy: accuracyCol >= 0 ? parseInt(data[i][accuracyCol]) || 0 : 0,
         playedAt: playedAtCol >= 0 ? String(data[i][playedAtCol] || "") : "",
+        pairDetails: Array.isArray(pairDetails) ? pairDetails : [],
       });
     }
 
@@ -3022,6 +3257,8 @@ function getMatchingResultDetailById(resultId) {
 
     const headers = data[0];
     const idCol = headers.indexOf("id");
+    const userIdCol = headers.indexOf("userId");
+    const modeCol = headers.indexOf("mode");
     const topicIdCol = headers.indexOf("topicId");
     const topicTitleCol = headers.indexOf("topicTitle");
     const difficultyCol = headers.indexOf("difficulty");
@@ -3033,14 +3270,29 @@ function getMatchingResultDetailById(resultId) {
     const accuracyCol = headers.indexOf("accuracy");
     const completedCol = headers.indexOf("completed");
     const playedAtCol = headers.indexOf("playedAt");
+    const pairDetailsCol = headers.indexOf("pairDetails");
 
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][idCol] || "").trim() !== id) continue;
+
+      const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "matching";
+      if (mode && mode !== "matching") continue;
+
+      let pairDetails = [];
+      if (pairDetailsCol >= 0) {
+        try {
+          pairDetails = JSON.parse(String(data[i][pairDetailsCol] || "[]"));
+        } catch (e) {
+          pairDetails = [];
+        }
+      }
 
       return {
         success: true,
         detail: {
           id: id,
+          userId: userIdCol >= 0 ? String(data[i][userIdCol] || "") : "",
+          mode: mode || "matching",
           topicId: topicIdCol >= 0 ? String(data[i][topicIdCol] || "") : "",
           topicTitle:
             topicTitleCol >= 0 ? String(data[i][topicTitleCol] || "") : "",
@@ -3062,6 +3314,7 @@ function getMatchingResultDetailById(resultId) {
           accuracy: accuracyCol >= 0 ? parseInt(data[i][accuracyCol]) || 0 : 0,
           completed: completedCol >= 0 ? data[i][completedCol] : true,
           playedAt: playedAtCol >= 0 ? String(data[i][playedAtCol] || "") : "",
+          pairDetails: Array.isArray(pairDetails) ? pairDetails : [],
         },
       };
     }

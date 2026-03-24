@@ -82,6 +82,7 @@
     attemptCount: 0,
     wrongCount: 0,
     correctCount: 0,
+    pairAttemptDetails: [],
     gameCompleted: false,
     isCheckingMatch: false,
     // Result modal
@@ -102,31 +103,56 @@
     startMatchingHeaderMeteors();
     setupMatchingHeaderMouseEffect();
 
-    // Check if navigated with params (e.g. from Lesson page)
+    // Check if navigated with params (from dashboard/lesson/topics)
     const params = window.currentPageParams;
-    if (params && params.topicId && params.contentDocId) {
-      console.log("📌 Got valid topic params, opening difficulty selector");
-      matchingState.selectedTopic = {
-        topicId: params.topicId,
-        title: params.topicTitle || "Matching",
-        contentDocId: params.contentDocId,
-      };
-      matchingState.currentTopicId = params.topicId;
-      matchingState.currentTopicName = params.topicTitle || "Matching";
-      matchingState.currentContentDocId = params.contentDocId;
+    showMatchingTopicSelection();
+    loadMatchingTopics();
 
-      // Load topics in background (for "back to topics" flow)
-      showMatchingTopicSelection();
-      loadMatchingTopics();
-
-      // Open difficulty modal immediately
-      showMatchingDifficultyModal();
+    if (params && params.topicId) {
+      console.log("📌 Got topic params, opening topic detail hub");
+      openMatchingTopicHubFromParams(params);
     } else {
       console.log("📋 No topic params, showing topic selection");
-      showMatchingTopicSelection();
-      loadMatchingTopics();
     }
   };
+
+  function openMatchingTopicHubFromParams(params) {
+    var topicId = String((params && params.topicId) || "").trim();
+    if (!topicId) return;
+
+    var allSources = [];
+    if (Array.isArray(matchingState.topics) && matchingState.topics.length > 0) {
+      allSources = allSources.concat(matchingState.topics);
+    }
+    if (
+      window.globalTopicsCache &&
+      Array.isArray(window.globalTopicsCache.data) &&
+      window.globalTopicsCache.data.length > 0
+    ) {
+      allSources = allSources.concat(window.globalTopicsCache.data);
+    }
+
+    var topic = allSources.find(function (t) {
+      return String((t && t.topicId) || "").trim() === topicId;
+    });
+
+    if (!topic) {
+      topic = {
+        topicId: topicId,
+        title: params.topicTitle || "Matching",
+        contentDocId: params.contentDocId || "",
+        category: params.category || "Chung",
+        description: "",
+        estimatedTime: "Không giới hạn",
+      };
+    }
+
+    matchingState.selectedTopic = topic;
+    matchingState.currentTopicId = topic.topicId;
+    matchingState.currentTopicName = topic.title;
+    matchingState.currentContentDocId = topic.contentDocId || "";
+    openMatchingTopicHub(topic);
+  }
 
   // ===== HEADER EFFECTS =====
   function startMatchingHeaderMeteors() {
@@ -879,6 +905,12 @@
     }
     if (emptyEl) emptyEl.style.display = "none";
 
+    if (matchingState.openHistoryDetail) {
+      matchingState.openHistoryDetail.id = null;
+      matchingState.openHistoryDetail.panel = null;
+      matchingState.openHistoryDetail.button = null;
+    }
+
     history.forEach(function (item, index) {
       var row = document.createElement("div");
       row.className = "matching-topic-history-item";
@@ -903,14 +935,132 @@
         "</div>" +
         '<button class="matching-btn matching-btn-back" onclick="openMatchingHistoryDetail(\'' +
         String(item.id || "") +
-        "')\">Chi tiết</button>";
+        "', this)">Chi tiết</button>';
 
       listEl.appendChild(row);
     });
   }
 
-  window.openMatchingHistoryDetail = function (resultId) {
+  function renderMatchingHistoryDetailHtml(detail) {
+    var d = detail || {};
+    var pairItems = Array.isArray(d.pairDetails)
+      ? d.pairDetails
+          .map(function (p, idx) {
+            return (
+              '<div class="matching-history-pair-item">' +
+              "<strong>Lượt " +
+              (p.order || idx + 1) +
+              ":</strong> " +
+              (p.leftText || "-") +
+              "<br>" +
+              "Bạn ghép: " +
+              (p.userMatchedRight || "-") +
+              " | Đúng: " +
+              (p.correctRight || "-") +
+              (p.isCorrect ? " ✅" : " ❌") +
+              "</div>"
+            );
+          })
+          .join("")
+      : "";
+
+    return (
+      '<div class="matching-history-detail-grid">' +
+      "<div><strong>Điểm:</strong> " +
+      (d.score || 0) +
+      "</div>" +
+      "<div><strong>Độ chính xác:</strong> " +
+      (d.accuracy || 0) +
+      "%</div>" +
+      "<div><strong>Độ khó:</strong> " +
+      (d.difficulty || "medium") +
+      "</div>" +
+      "<div><strong>Tổng cặp:</strong> " +
+      (d.totalPairs || 0) +
+      "</div>" +
+      "<div><strong>Đúng:</strong> " +
+      (d.correctPairs || 0) +
+      "</div>" +
+      "<div><strong>Sai:</strong> " +
+      (d.wrongAttempts || 0) +
+      "</div>" +
+      "<div><strong>Thời gian:</strong> " +
+      formatMatchingTime(d.elapsedTime || 0) +
+      "</div>" +
+      "<div><strong>Thời điểm:</strong> " +
+      (d.playedAt ? new Date(d.playedAt).toLocaleString("vi-VN") : "-") +
+      "</div>" +
+      "</div>" +
+      (pairItems
+        ? '<div class="matching-history-detail-pairs"><h4>Chi tiết từng cặp</h4>' +
+          pairItems +
+          "</div>"
+        : "")
+    );
+  }
+
+  window.openMatchingHistoryDetail = function (resultId, triggerButton) {
     if (!resultId) return;
+
+    if (!matchingState.openHistoryDetail) {
+      matchingState.openHistoryDetail = {
+        id: null,
+        panel: null,
+        button: null,
+      };
+    }
+
+    if (triggerButton) {
+      var current = matchingState.openHistoryDetail;
+      if (current.panel) {
+        current.panel.remove();
+      }
+      if (current.button) {
+        current.button.textContent = "Chi tiết";
+      }
+
+      if (current.id === resultId && current.button === triggerButton) {
+        current.id = null;
+        current.panel = null;
+        current.button = null;
+        return;
+      }
+
+      var row = triggerButton.closest(".matching-topic-history-item");
+      if (!row || !row.parentNode) return;
+
+      var panel = document.createElement("div");
+      panel.className = "matching-history-inline-detail";
+      panel.innerHTML = '<div class="matching-history-inline-loading">Đang tải chi tiết...</div>';
+      row.parentNode.insertBefore(panel, row.nextSibling);
+      triggerButton.textContent = "Đóng";
+
+      current.id = resultId;
+      current.panel = panel;
+      current.button = triggerButton;
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (!matchingState.openHistoryDetail || matchingState.openHistoryDetail.id !== resultId) {
+            return;
+          }
+          if (!response || !response.success || !response.detail) {
+            panel.innerHTML = '<p class="matching-history-inline-error">Không tìm thấy chi tiết lượt chơi.</p>';
+            return;
+          }
+          panel.innerHTML = renderMatchingHistoryDetailHtml(response.detail);
+          panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        })
+        .withFailureHandler(function () {
+          if (!matchingState.openHistoryDetail || matchingState.openHistoryDetail.id !== resultId) {
+            return;
+          }
+          panel.innerHTML = '<p class="matching-history-inline-error">Không thể tải chi tiết lượt chơi.</p>';
+        })
+        .getMatchingResultDetailById(resultId);
+
+      return;
+    }
 
     var modal = document.getElementById("matchingHistoryDetailModal");
     var body = document.getElementById("matchingHistoryDetailBody");
@@ -926,34 +1076,7 @@
           return;
         }
 
-        var d = response.detail;
-        body.innerHTML =
-          '<div class="matching-history-detail-grid">' +
-          "<div><strong>Điểm:</strong> " +
-          (d.score || 0) +
-          "</div>" +
-          "<div><strong>Độ chính xác:</strong> " +
-          (d.accuracy || 0) +
-          "%</div>" +
-          "<div><strong>Độ khó:</strong> " +
-          (d.difficulty || "medium") +
-          "</div>" +
-          "<div><strong>Tổng cặp:</strong> " +
-          (d.totalPairs || 0) +
-          "</div>" +
-          "<div><strong>Đúng:</strong> " +
-          (d.correctPairs || 0) +
-          "</div>" +
-          "<div><strong>Sai:</strong> " +
-          (d.wrongAttempts || 0) +
-          "</div>" +
-          "<div><strong>Thời gian:</strong> " +
-          formatMatchingTime(d.elapsedTime || 0) +
-          "</div>" +
-          "<div><strong>Thời điểm:</strong> " +
-          (d.playedAt ? new Date(d.playedAt).toLocaleString("vi-VN") : "-") +
-          "</div>" +
-          "</div>";
+        body.innerHTML = renderMatchingHistoryDetailHtml(response.detail);
       })
       .withFailureHandler(function () {
         body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
@@ -962,6 +1085,16 @@
   };
 
   window.closeMatchingHistoryDetail = function () {
+    if (matchingState.openHistoryDetail && matchingState.openHistoryDetail.panel) {
+      matchingState.openHistoryDetail.panel.remove();
+      if (matchingState.openHistoryDetail.button) {
+        matchingState.openHistoryDetail.button.textContent = "Chi tiết";
+      }
+      matchingState.openHistoryDetail.id = null;
+      matchingState.openHistoryDetail.panel = null;
+      matchingState.openHistoryDetail.button = null;
+    }
+
     var modal = document.getElementById("matchingHistoryDetailModal");
     if (modal) modal.classList.remove("active");
   };
@@ -1097,6 +1230,7 @@
     matchingState.attemptCount = 0;
     matchingState.wrongCount = 0;
     matchingState.correctCount = 0;
+    matchingState.pairAttemptDetails = [];
     matchingState.gameCompleted = false;
     matchingState.isCheckingMatch = false;
     matchingState.matchingPairs = [];
@@ -1374,6 +1508,21 @@
     matchingState.attemptCount++;
     matchingState.moves++;
 
+    var pairData = Array.isArray(matchingState.matchingPairs)
+      ? matchingState.matchingPairs
+      : [];
+    var leftPair = pairData[leftId] || null;
+    var rightPair = pairData[rightId] || null;
+    var isCorrectPair = leftId === rightId;
+
+    matchingState.pairAttemptDetails.push({
+      order: matchingState.attemptCount,
+      leftText: leftPair && leftPair.question ? leftPair.question : "",
+      userMatchedRight: rightPair && rightPair.answer ? rightPair.answer : "",
+      correctRight: leftPair && leftPair.answer ? leftPair.answer : "",
+      isCorrect: isCorrectPair,
+    });
+
     if (leftId === rightId) {
       // Correct match
       markMatched(leftId);
@@ -1451,6 +1600,9 @@
       elapsedTime: matchingState.elapsedTime,
       accuracy: accuracy,
       completed: true,
+      pairDetails: Array.isArray(matchingState.pairAttemptDetails)
+        ? matchingState.pairAttemptDetails.slice()
+        : [],
     };
 
     // Activity log data (prepared before async calls)
@@ -1619,9 +1771,71 @@
   }
 
   function formatMatchingTime(seconds) {
-    var m = String(Math.floor(seconds / 60)).padStart(2, "0");
-    var s = String(seconds % 60).padStart(2, "0");
+    var normalized = normalizeMatchingElapsedSeconds(seconds);
+    var m = String(Math.floor(normalized / 60)).padStart(2, "0");
+    var s = String(normalized % 60).padStart(2, "0");
     return m + ":" + s;
+  }
+
+  function normalizeMatchingElapsedSeconds(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === "") return 0;
+
+    if (typeof rawValue === "number" && isFinite(rawValue)) {
+      if (rawValue > 0 && rawValue < 1) {
+        return Math.max(0, Math.round(rawValue * 86400));
+      }
+      return Math.max(0, Math.round(rawValue));
+    }
+
+    if (typeof rawValue === "string") {
+      var trimmed = rawValue.trim();
+      if (!trimmed) return 0;
+
+      var parts = trimmed.split(":");
+      if (parts.length >= 2 && trimmed.toLowerCase().indexOf("gmt") < 0) {
+        var hh = 0;
+        var mm = 0;
+        var ss = 0;
+        if (parts.length === 2) {
+          mm = parseInt(parts[0], 10) || 0;
+          ss = parseInt(parts[1], 10) || 0;
+        } else {
+          hh = parseInt(parts[0], 10) || 0;
+          mm = parseInt(parts[1], 10) || 0;
+          ss = parseInt(parts[2], 10) || 0;
+        }
+        return Math.max(0, hh * 3600 + mm * 60 + ss);
+      }
+
+      var parsedDate = new Date(trimmed);
+      if (!isNaN(parsedDate.getTime())) {
+        return Math.max(
+          0,
+          parsedDate.getHours() * 3600 +
+            parsedDate.getMinutes() * 60 +
+            parsedDate.getSeconds(),
+        );
+      }
+
+      var parsedFloat = parseFloat(trimmed);
+      if (isFinite(parsedFloat)) {
+        if (parsedFloat > 0 && parsedFloat < 1) {
+          return Math.max(0, Math.round(parsedFloat * 86400));
+        }
+        return Math.max(0, Math.round(parsedFloat));
+      }
+
+      return 0;
+    }
+
+    if (rawValue instanceof Date && !isNaN(rawValue.getTime())) {
+      return Math.max(
+        0,
+        rawValue.getHours() * 3600 + rawValue.getMinutes() * 60 + rawValue.getSeconds(),
+      );
+    }
+
+    return 0;
   }
 
   // ===== UI UPDATE =====
