@@ -215,7 +215,9 @@
     }
     const searchLower = query.toLowerCase();
     const filtered = mcqAllTopicsForSearch.filter((topic) =>
-      topic.title.toLowerCase().includes(searchLower),
+      String((topic && topic.title) || "")
+        .toLowerCase()
+        .includes(searchLower),
     );
     renderTopicsGrid(filtered);
   }
@@ -306,7 +308,13 @@
     const params = window.currentPageParams || {};
     console.log("📋 Showing topic selection / topic detail hub");
     showTopicSelection();
-    loadAvailableTopics();
+    setTopicsListLoadingState(true);
+    try {
+      loadAvailableTopics();
+    } catch (error) {
+      console.error("❌ initMCQPage failed to load topics:", error);
+      handleTopicsError({ message: error && error.message ? error.message : "Lỗi khởi tạo trang quiz" });
+    }
 
     // Có topicId từ trang trước thì mở trang chi tiết topic, không vào chơi trực tiếp
     if (params.topicId) {
@@ -409,6 +417,18 @@
       quizState.topicTitle;
   }
 
+  function setTopicsListLoadingState(isLoading) {
+    const loadingEl = document.getElementById("topics-loading");
+    const gridEl = document.getElementById("topics-grid");
+    const emptyEl = document.getElementById("topics-empty");
+
+    if (loadingEl) loadingEl.style.display = isLoading ? "block" : "none";
+    if (isLoading) {
+      if (gridEl) gridEl.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "none";
+    }
+  }
+
   /**
    * Load topics for quiz selection - OPTIMIZED with cache
    * Ưu tiên: 1. Global cache (từ Topics page) → 2. Local cache → 3. Load từ server
@@ -420,6 +440,9 @@
 
     hydrateMcqGlobalCacheFromPersisted();
     clearMcqTopicsLoadTimeout();
+
+    // Luôn reset trạng thái loading ngay khi bắt đầu để tránh treo UI cũ.
+    setTopicsListLoadingState(true);
 
     // ⭐ Load quiz stats từ server (song song với việc check cache)
     loadQuizStatsIfNeeded(forceRefresh);
@@ -438,7 +461,7 @@
       mcqLastLoadTime = globalCache.lastLoadTime;
       mcqAllTopicsForSearch = globalCache.data;
 
-      document.getElementById("topics-loading").style.display = "none";
+      setTopicsListLoadingState(false);
 
       if (globalCache.data.length === 0) {
         showEmptyTopicsState();
@@ -458,7 +481,7 @@
       quizState.allTopics = mcqTopicsCache;
       mcqAllTopicsForSearch = mcqTopicsCache;
 
-      document.getElementById("topics-loading").style.display = "none";
+      setTopicsListLoadingState(false);
 
       if (mcqTopicsCache.length === 0) {
         showEmptyTopicsState();
@@ -470,12 +493,11 @@
 
     // ⭐ ƯU TIÊN 3: Load từ server
     // Show loading state
-    document.getElementById("topics-loading").style.display = "block";
-    document.getElementById("topics-grid").style.display = "none";
-    document.getElementById("topics-empty").style.display = "none";
+    setTopicsListLoadingState(true);
 
     mcqTopicsLoadTimeoutId = setTimeout(function () {
-      if (document.getElementById("topics-loading").style.display !== "none") {
+      const loadingEl = document.getElementById("topics-loading");
+      if (loadingEl && loadingEl.style.display !== "none") {
         handleTopicsError({
           message: "Tải chủ đề quá thời gian. Đang dùng dữ liệu dự phòng nếu có.",
         });
@@ -594,17 +616,15 @@
       topicId,
       window.quizStatsCache.stats[topicId],
     );
-<<<<<<< HEAD
+
     window.quizStatsCache.lastLoadTime = Date.now();
     writeQuizStatsPersistedCache(
       window.quizStatsCache.stats,
       window.quizStatsCache.lastLoadTime,
     );
-=======
 
     // ⭐ Lưu vào localStorage để tái sử dụng khi navigate lại trang
     writeMcqPersistedStatsCache(window.quizStatsCache.stats);
->>>>>>> e0a78813f0da0f746fa5b48465099ef469a2698c
   }
 
   // Alias for entry point usage
@@ -639,22 +659,23 @@
 
     clearMcqTopicsLoadTimeout();
 
-    document.getElementById("topics-loading").style.display = "none";
-
     // Handle response format from getAllTopics()
     // It returns {success: true, topics: [...], count: N}
     let topics = [];
 
-    if (response && response.success && Array.isArray(response.topics)) {
-      topics = response.topics;
-    } else if (Array.isArray(response)) {
-      // Direct array response
-      topics = response;
-    } else if (response && !response.success) {
-      // Error response
-      console.error("❌ Server error:", response.message);
-      document.getElementById("topics-empty").style.display = "block";
-      document.getElementById("topics-empty").innerHTML = `
+    try {
+      setTopicsListLoadingState(false);
+
+      if (response && response.success && Array.isArray(response.topics)) {
+        topics = response.topics;
+      } else if (Array.isArray(response)) {
+        // Direct array response
+        topics = response;
+      } else if (response && !response.success) {
+        // Error response
+        console.error("❌ Server error:", response.message);
+        document.getElementById("topics-empty").style.display = "block";
+        document.getElementById("topics-empty").innerHTML = `
         <div class="mcq-empty-state">
           <div class="empty-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -674,30 +695,54 @@
           </button>
         </div>
       `;
-      return;
+        return;
+      }
+
+      // Chuẩn hóa dữ liệu để tránh crash khi render.
+      topics = (Array.isArray(topics) ? topics : [])
+        .filter(function (topic) {
+          return topic && typeof topic === "object";
+        })
+        .map(function (topic, index) {
+          return {
+            topicId: String(topic.topicId || topic.id || ""),
+            title: String(topic.title || "Chủ đề chưa đặt tên"),
+            description: String(topic.description || ""),
+            category: String(topic.category || "Chung"),
+            estimatedTime: String(topic.estimatedTime || "Không giới hạn"),
+            contentDocId: String(topic.contentDocId || ""),
+            order: Number(topic.order) || index + 1,
+          };
+        });
+
+      // ⭐ Lưu vào LOCAL cache
+      mcqTopicsCache = topics;
+      mcqLastLoadTime = Date.now();
+
+      // ⭐ Lưu vào GLOBAL cache (để chia sẻ với Topics page và các page khác)
+      if (window.globalTopicsCache) {
+        window.globalTopicsCache.data = topics;
+        window.globalTopicsCache.lastLoadTime = Date.now();
+        console.log(`✅ Cached ${topics.length} topics to GLOBAL cache`);
+      }
+      writeMcqPersistedTopicsCache(topics);
+      console.log(`✅ Cached ${topics.length} topics for MCQ`);
+
+      if (topics.length === 0) {
+        showEmptyTopicsState();
+        return;
+      }
+
+      quizState.allTopics = topics;
+      mcqAllTopicsForSearch = topics;
+      renderTopicsGrid(topics);
+    } catch (renderError) {
+      console.error("❌ Error while processing loaded topics:", renderError);
+      handleTopicsError({ message: renderError.message || "Lỗi render chủ đề" });
+    } finally {
+      // Chốt an toàn: không để loading bị treo dù có lỗi bất ngờ.
+      setTopicsListLoadingState(false);
     }
-
-    // ⭐ Lưu vào LOCAL cache
-    mcqTopicsCache = topics;
-    mcqLastLoadTime = Date.now();
-
-    // ⭐ Lưu vào GLOBAL cache (để chia sẻ với Topics page và các page khác)
-    if (window.globalTopicsCache) {
-      window.globalTopicsCache.data = topics;
-      window.globalTopicsCache.lastLoadTime = Date.now();
-      console.log(`✅ Cached ${topics.length} topics to GLOBAL cache`);
-    }
-    writeMcqPersistedTopicsCache(topics);
-    console.log(`✅ Cached ${topics.length} topics for MCQ`);
-
-    if (topics.length === 0) {
-      showEmptyTopicsState();
-      return;
-    }
-
-    quizState.allTopics = topics;
-    mcqAllTopicsForSearch = topics;
-    renderTopicsGrid(topics);
   }
 
   /**
@@ -711,7 +756,7 @@
     var persisted = readMcqPersistedTopicsCache({ allowExpired: true });
     if (persisted && Array.isArray(persisted.topics) && persisted.topics.length > 0) {
       console.warn("⚠️ Falling back to persisted MCQ topics cache");
-      document.getElementById("topics-loading").style.display = "none";
+      setTopicsListLoadingState(false);
       quizState.allTopics = persisted.topics;
       mcqTopicsCache = persisted.topics;
       mcqLastLoadTime = persisted.lastLoadTime;
@@ -720,7 +765,7 @@
       return;
     }
 
-    document.getElementById("topics-loading").style.display = "none";
+    setTopicsListLoadingState(false);
     document.getElementById("topics-empty").style.display = "block";
     document.getElementById("topics-empty").innerHTML = `
       <div class="mcq-empty-state">
@@ -749,6 +794,22 @@
    */
   function renderTopicsGrid(topics) {
     const container = document.getElementById("topics-grid");
+    if (!container) {
+      console.error("❌ topics-grid container not found");
+      return;
+    }
+
+    const safeTopics = Array.isArray(topics)
+      ? topics.filter((topic) => topic && typeof topic === "object")
+      : [];
+
+    if (safeTopics.length === 0) {
+      container.innerHTML = "";
+      container.style.display = "none";
+      showEmptyTopicsState();
+      return;
+    }
+
     container.innerHTML = "";
     container.style.display = "flex";
     container.className = "mcq-topics-list";
@@ -866,6 +927,7 @@
       if (index === 0) return true; // First topic is always unlocked
 
       const prevTopic = quizState.allTopics[index - 1];
+      if (!prevTopic || !prevTopic.topicId) return false;
       const quizStats =
         window.quizStatsCache && window.quizStatsCache.stats
           ? window.quizStatsCache.stats
@@ -880,28 +942,40 @@
         ? window.quizStatsCache.stats
         : {};
 
-    topics.forEach((topic, index) => {
+    safeTopics.forEach((topic, index) => {
       const item = document.createElement("div");
-      const hasDoc = topic.contentDocId && topic.contentDocId.length > 10;
+      const topicTitle = String((topic && topic.title) || "Chủ đề chưa đặt tên");
+      const topicCategory = String((topic && topic.category) || "Chung");
+      const topicId = String((topic && topic.topicId) || "");
+      const contentDocId = String((topic && topic.contentDocId) || "");
+      const hasDoc = contentDocId.length > 10;
 
       // ⭐ Get quiz stats for THIS specific topic (managed per topicId)
-      const topicStats = quizStats[topic.topicId] || null;
+      const topicStats = quizStats[topicId] || null;
       const hasPlayed = topicStats && topicStats.hasPlayed === true;
       const isUnlocked = window.checkMcqTopicUnlocked
-        ? window.checkMcqTopicUnlocked(topic.topicId)
+        ? window.checkMcqTopicUnlocked(topicId)
         : true;
 
       item.className = `mcq-topic-item${hasDoc ? "" : " no-content"}${hasPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
 
       if (!isUnlocked) {
         item.onclick = () => {
-          showMcqLockedTopicModal(topic.title);
+          showMcqLockedTopicModal(topicTitle);
         };
       } else {
-        item.onclick = () => selectTopicForQuiz(topic);
+        item.onclick = () =>
+          selectTopicForQuiz(
+            Object.assign({}, topic, {
+              title: topicTitle,
+              category: topicCategory,
+              topicId: topicId,
+              contentDocId: contentDocId,
+            }),
+          );
       }
 
-      const icon = getTopicIcon(topic.title);
+      const icon = getTopicIcon(topicTitle);
 
       // Progress indicator
       let progressIndicator = "";
@@ -958,9 +1032,9 @@
         <div class="mcq-item-index">${index + 1}</div>
         <div class="mcq-item-icon">${icon}</div>
         <div class="mcq-item-content">
-          <div class="mcq-item-title">${topic.title}</div>
+          <div class="mcq-item-title">${topicTitle}</div>
           <div class="mcq-item-meta">
-            <span class="mcq-item-category">${topic.category || "Chung"}</span>
+            <span class="mcq-item-category">${topicCategory}</span>
             ${hasPlayed ? '<span class="mcq-item-badge played">Đã chơi</span>' : ""}
             ${bestScoreBadge}
           </div>
