@@ -1119,7 +1119,6 @@ function getUserProgressSheetIdByEmail(email) {
 
     let foundSheetId = null;
     for (let i = 1; i < data.length; i++) {
-<<<<<<< HEAD
       const rowEmail = String(data[i][emailIndex] || "").trim().toLowerCase();
       if (rowEmail === normalizedEmail) {
         const sheetId = String(data[i][progressSheetIdIndex] || "").trim();
@@ -1143,30 +1142,6 @@ function getUserProgressSheetIdByEmail(email) {
     cache.put(cacheKey, cacheMissSentinel, 5 * 60);
     Logger.log("User not found, cached miss: " + normalizedEmail);
     return null;
-=======
-      if (data[i][emailIndex] === email) {
-        foundSheetId = data[i][progressSheetIdIndex] || null;
-        Logger.log("Found progressSheetId for " + email + ": " + foundSheetId);
-        break;
-      }
-    }
-
-    if (!foundSheetId) {
-      Logger.log("User not found: " + email);
-    }
-
-    // ⭐ Lưu kết quả vào cache: sheet ID hợp lệ → 6 giờ; null (chưa có sheet) → 5 phút
-    try {
-      const userCache = CacheService.getUserCache();
-      if (foundSheetId) {
-        userCache.put(PROGRESS_SHEET_CACHE_KEY, foundSheetId, 21600); // 6 giờ
-      } else {
-        userCache.put(PROGRESS_SHEET_CACHE_KEY, "__null__", 300); // 5 phút (tránh lock lâu nếu sheet chưa tạo)
-      }
-    } catch (cacheErr) {}
-
-    return foundSheetId;
->>>>>>> e0a78813f0da0f746fa5b48465099ef469a2698c
   } catch (error) {
     Logger.log("Error getting progressSheetId: " + error.toString());
     return null;
