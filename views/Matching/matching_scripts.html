@@ -32,14 +32,14 @@
   const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
   const MATCHING_STATS_PERSIST_TTL = 5 * 60 * 1000;
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
-  const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
-  const MATCHING_STATS_PERSIST_TTL = 5 * 60 * 1000; // Cache 5 phút (khớp với server cache)
   const MATCHING_GOOGLE_RUN_MAX_RETRY = 25;
   const MATCHING_GOOGLE_RUN_RETRY_DELAY = 100;
   let matchingAllTopicsForSearch = null;
   let matchingTopicsLoadTimeoutId = null;
   let matchingGoogleRunRetryCount = 0;
   let matchingLastInitAt = 0;
+  let matchingTopicsRequestSeq = 0;
+  let matchingActiveTopicsRequestId = 0;
 
   function readMatchingPersistedTopicsCache(options) {
     var opts = options || {};
@@ -444,23 +444,47 @@
     }
   }
 
-  // ===== TOPIC LOADING (reuse globalTopicsCache giống MCQ) =====
-  function loadMatchingTopics(forceRefresh) {
-    console.log("📥 Loading topics for matching...");
-    hydrateMatchingGlobalCacheFromPersisted();
-
+  function setMatchingTopicsLoadingState(isLoading) {
     const loading = document.getElementById("matchingLoading");
     const grid = document.getElementById("matchingTopicsGrid");
     const empty = document.getElementById("matchingEmpty");
     const searchEmpty = document.getElementById("matchingSearchEmpty");
 
+    if (loading) loading.style.display = isLoading ? "flex" : "none";
+    if (isLoading) {
+      if (grid) grid.style.display = "none";
+      if (empty) empty.style.display = "none";
+      if (searchEmpty) searchEmpty.style.display = "none";
+    }
+  }
+
+  function getMatchingErrorMessage(error) {
+    if (!error) return "Không thể kết nối server";
+    if (typeof error === "string") return error;
+    if (error && typeof error.message === "string" && error.message.trim()) {
+      return error.message;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch (e) {
+      return String(error);
+    }
+  }
+
+  // ===== TOPIC LOADING (reuse globalTopicsCache giống MCQ) =====
+  function loadMatchingTopics(forceRefresh) {
+    console.log("📥 Loading topics for matching...");
+    hydrateMatchingGlobalCacheFromPersisted();
+
+    const requestId = ++matchingTopicsRequestSeq;
+    matchingActiveTopicsRequestId = requestId;
+    const isStaleRequest = function () {
+      return requestId !== matchingActiveTopicsRequestId;
+    };
+
     matchingState.loadingTopics = true;
     matchingState.topicError = null;
-
-    if (loading) loading.style.display = "flex";
-    if (grid) grid.style.display = "none";
-    if (empty) empty.style.display = "none";
-    if (searchEmpty) searchEmpty.style.display = "none";
+    setMatchingTopicsLoadingState(true);
 
     // Load matching stats in parallel so topic cards can show played + best score.
     loadMatchingStatsIfNeeded(forceRefresh);
@@ -476,6 +500,7 @@
       now - globalCache.lastLoadTime < globalCache.cacheDuration
     ) {
       console.log("✅ Matching: Using GLOBAL cached topics");
+      if (isStaleRequest()) return;
       handleMatchingTopicsLoaded(globalCache.data);
       return;
     }
@@ -487,6 +512,7 @@
       now - matchingLastLoadTime < MATCHING_CACHE_DURATION
     ) {
       console.log("✅ Matching: Using LOCAL cached topics");
+      if (isStaleRequest()) return;
       handleMatchingTopicsLoaded(matchingTopicsCache);
       return;
     }
@@ -496,6 +522,7 @@
 
     clearMatchingTopicsLoadTimeout();
     matchingTopicsLoadTimeoutId = setTimeout(function () {
+      if (isStaleRequest()) return;
       if (matchingState.loadingTopics) {
         handleMatchingTopicsError({
           message: "Tải chủ đề quá thời gian. Vui lòng thử lại.",
@@ -516,6 +543,7 @@
         console.warn(
           "⚠️ Matching: google.script.run chưa sẵn sàng, dùng dữ liệu cache cục bộ",
         );
+        if (isStaleRequest()) return;
         handleMatchingTopicsLoaded(persistedWhenWaiting.topics);
         return;
       }
@@ -523,6 +551,7 @@
       if (matchingGoogleRunRetryCount < MATCHING_GOOGLE_RUN_MAX_RETRY) {
         matchingGoogleRunRetryCount++;
         setTimeout(function () {
+          if (isStaleRequest()) return;
           loadMatchingTopics(forceRefresh);
         }, MATCHING_GOOGLE_RUN_RETRY_DELAY);
         return;
@@ -540,6 +569,7 @@
 
     google.script.run
       .withSuccessHandler(function (response) {
+        if (isStaleRequest()) return;
         clearMatchingTopicsLoadTimeout();
         let topics = [];
         if (response && response.success && Array.isArray(response.topics)) {
@@ -567,6 +597,7 @@
         handleMatchingTopicsLoaded(topics);
       })
       .withFailureHandler(function (error) {
+        if (isStaleRequest()) return;
         clearMatchingTopicsLoadTimeout();
         handleMatchingTopicsError(error);
       })
@@ -735,36 +766,55 @@
 
   function handleMatchingTopicsLoaded(topics) {
     clearMatchingTopicsLoadTimeout();
-
-    const loading = document.getElementById("matchingLoading");
-    const empty = document.getElementById("matchingEmpty");
-
     matchingState.loadingTopics = false;
-    if (loading) loading.style.display = "none";
+    setMatchingTopicsLoadingState(false);
 
-    var normalizedTopics = Array.isArray(topics)
-      ? topics.filter(function (t) {
-          return t && (t.topicId || t.title);
-        })
-      : [];
+    try {
+      var normalizedTopics = Array.isArray(topics)
+        ? topics
+            .filter(function (t) {
+              return t && (t.topicId || t.title);
+            })
+            .map(function (t, idx) {
+              return {
+                topicId: String(t.topicId || t.id || ""),
+                title: String(t.title || "Chủ đề chưa đặt tên"),
+                description: String(t.description || ""),
+                category: String(t.category || "Chung"),
+                estimatedTime: String(t.estimatedTime || "Không giới hạn"),
+                contentDocId: String(t.contentDocId || ""),
+                order: Number(t.order) || idx + 1,
+              };
+            })
+        : [];
 
-    if (normalizedTopics.length === 0) {
-      matchingState.topics = [];
-      matchingState.filteredTopics = [];
-      matchingAllTopicsForSearch = [];
-      if (empty) empty.style.display = "block";
-      return;
+      if (normalizedTopics.length === 0) {
+        matchingState.topics = [];
+        matchingState.filteredTopics = [];
+        matchingAllTopicsForSearch = [];
+        var emptyEl = document.getElementById("matchingEmpty");
+        if (emptyEl) emptyEl.style.display = "block";
+        return;
+      }
+
+      matchingState.topics = normalizedTopics;
+      matchingState.filteredTopics = normalizedTopics;
+      matchingAllTopicsForSearch = normalizedTopics;
+
+      // Sync local cache
+      matchingTopicsCache = normalizedTopics;
+      matchingLastLoadTime = Date.now();
+
+      renderMatchingTopics(normalizedTopics);
+    } catch (renderError) {
+      console.error("❌ Matching render topics failed:", renderError);
+      handleMatchingTopicsError({
+        message: renderError && renderError.message ? renderError.message : "Lỗi render danh sách chủ đề",
+      });
+    } finally {
+      matchingState.loadingTopics = false;
+      setMatchingTopicsLoadingState(false);
     }
-
-    matchingState.topics = normalizedTopics;
-    matchingState.filteredTopics = normalizedTopics;
-    matchingAllTopicsForSearch = normalizedTopics;
-
-    // Sync local cache
-    matchingTopicsCache = normalizedTopics;
-    matchingLastLoadTime = Date.now();
-
-    renderMatchingTopics(normalizedTopics);
   }
 
   function handleMatchingTopicsError(error) {
@@ -779,13 +829,12 @@
       return;
     }
 
-    const loading = document.getElementById("matchingLoading");
     const empty = document.getElementById("matchingEmpty");
 
     matchingState.loadingTopics = false;
-    matchingState.topicError = error.message || "Không thể kết nối server";
+    matchingState.topicError = getMatchingErrorMessage(error);
 
-    if (loading) loading.style.display = "none";
+    setMatchingTopicsLoadingState(false);
     if (empty) {
       empty.style.display = "block";
       empty.innerHTML = `
@@ -810,6 +859,7 @@
     if (index === 0) return true; // First topic is always unlocked
 
     const prevTopic = originalTopics[index - 1];
+    if (!prevTopic || !prevTopic.topicId) return false;
     const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
 
     return prevStats && getMatchingBestPercent(prevStats) >= 80;
@@ -832,9 +882,10 @@
       if (matchingState.searchKeyword.trim()) {
         if (searchEmpty) {
           searchEmpty.style.display = "block";
-          searchEmpty.querySelector(
+          var keywordEl = searchEmpty.querySelector(
             ".matching-search-empty-keyword",
-          ).textContent = matchingState.searchKeyword;
+          );
+          if (keywordEl) keywordEl.textContent = matchingState.searchKeyword;
         }
       } else {
         if (empty) empty.style.display = "block";
@@ -1121,28 +1172,22 @@
     history.forEach(function (item, index) {
       var row = document.createElement("div");
       row.className = "matching-topic-history-item";
+      var safeResultId = String(item.id || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
 
       var playedAt = item.playedAt
         ? new Date(item.playedAt).toLocaleString("vi-VN")
         : "-";
-      row.innerHTML =
-        '<div class="matching-topic-history-item-main">' +
-        '<div class="matching-topic-history-attempt">Lần ' +
-        (history.length - index) +
-        "</div>" +
-        '<div class="matching-topic-history-meta">' +
-        (item.score || 0) +
-        " điểm - " +
-        (item.accuracy || 0) +
-        "% - " +
-        (item.difficulty || "medium") +
-        " - " +
-        playedAt +
-        "</div>" +
-        "</div>" +
-        '<button class="matching-btn matching-btn-back" onclick="openMatchingHistoryDetail(\'' +
-        String(item.id || "") +
-        "', this)">Chi tiết</button>';
+      row.innerHTML = `
+        <div class="matching-topic-history-item-main">
+          <div class="matching-topic-history-attempt">Lần ${history.length - index}</div>
+          <div class="matching-topic-history-meta">
+            ${item.score || 0} điểm - ${item.accuracy || 0}% - ${item.difficulty || "medium"} - ${playedAt}
+          </div>
+        </div>
+        <button class="matching-btn matching-btn-back" onclick="openMatchingHistoryDetail('${safeResultId}', this)">Chi tiết</button>
+      `;
 
       listEl.appendChild(row);
     });
