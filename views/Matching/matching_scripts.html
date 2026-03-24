@@ -19,7 +19,7 @@
     window.matchingStatsCache = {
       stats: {},
       lastLoadTime: 0,
-      cacheDuration: 60000,
+      cacheDuration: 5 * 60 * 1000,
     };
   }
 
@@ -29,6 +29,8 @@
   const MATCHING_CACHE_DURATION = 60000;
   const MATCHING_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
   const MATCHING_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
+  const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
+  const MATCHING_STATS_PERSIST_TTL = 5 * 60 * 1000;
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
   const MATCHING_GOOGLE_RUN_MAX_RETRY = 25;
   const MATCHING_GOOGLE_RUN_RETRY_DELAY = 100;
@@ -100,6 +102,59 @@
   }
 
   hydrateMatchingGlobalCacheFromPersisted();
+  hydrateMatchingStatsCacheFromPersisted();
+
+  function readMatchingStatsPersistedCache(options) {
+    var opts = options || {};
+    var allowExpired = !!opts.allowExpired;
+
+    try {
+      var raw = localStorage.getItem(MATCHING_STATS_PERSIST_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var stats =
+        parsed && parsed.stats && typeof parsed.stats === "object"
+          ? parsed.stats
+          : null;
+      var lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!stats || !Number.isFinite(lastLoadTime)) return null;
+
+      var age = Date.now() - lastLoadTime;
+      if (!allowExpired && age > MATCHING_STATS_PERSIST_TTL) return null;
+
+      return {
+        stats: stats,
+        lastLoadTime: lastLoadTime,
+      };
+    } catch (error) {
+      console.warn("⚠️ Failed to read persisted Matching stats cache:", error);
+      return null;
+    }
+  }
+
+  function writeMatchingStatsPersistedCache(stats, lastLoadTime) {
+    try {
+      localStorage.setItem(
+        MATCHING_STATS_PERSIST_KEY,
+        JSON.stringify({
+          stats: stats && typeof stats === "object" ? stats : {},
+          lastLoadTime: Number(lastLoadTime) || Date.now(),
+        }),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist Matching stats cache:", error);
+    }
+  }
+
+  function hydrateMatchingStatsCacheFromPersisted() {
+    if (!window.matchingStatsCache) return;
+    var persisted = readMatchingStatsPersistedCache();
+    if (!persisted) return;
+
+    window.matchingStatsCache.stats = persisted.stats;
+    window.matchingStatsCache.lastLoadTime = persisted.lastLoadTime;
+    window.matchingStatsCache.cacheDuration = MATCHING_STATS_PERSIST_TTL;
+  }
 
   // ===== STATE =====
   let matchingMeteorInterval = null;
@@ -498,6 +553,10 @@
         if (response && response.success && response.stats) {
           window.matchingStatsCache.stats = response.stats;
           window.matchingStatsCache.lastLoadTime = Date.now();
+          writeMatchingStatsPersistedCache(
+            window.matchingStatsCache.stats,
+            window.matchingStatsCache.lastLoadTime,
+          );
           console.log(
             "✅ Matching stats loaded for",
             Object.keys(response.stats).length,
@@ -598,6 +657,10 @@
     }
 
     window.matchingStatsCache.lastLoadTime = Date.now();
+    writeMatchingStatsPersistedCache(
+      window.matchingStatsCache.stats,
+      window.matchingStatsCache.lastLoadTime,
+    );
   }
 
   function rerenderCurrentMatchingTopics() {

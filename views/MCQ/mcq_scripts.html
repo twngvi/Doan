@@ -25,7 +25,7 @@
     window.quizStatsCache = {
       stats: {}, // Map topicId -> stats
       lastLoadTime: 0,
-      cacheDuration: 60000, // Cache 1 phút
+      cacheDuration: 5 * 60 * 1000, // Cache 5 phút
     };
   }
 
@@ -35,6 +35,8 @@
   const MCQ_CACHE_DURATION = 60000; // Cache 1 phút
   const MCQ_TOPICS_PERSIST_KEY = "oq_topics_cache_v1";
   const MCQ_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
+  const QUIZ_STATS_PERSIST_KEY = "oq_quiz_stats_cache_v1";
+  const QUIZ_STATS_PERSIST_TTL = 5 * 60 * 1000;
   const MCQ_TOPICS_LOAD_TIMEOUT = 12000;
   let mcqTopicsLoadTimeoutId = null;
   let mcqAllTopicsForSearch = null; // Store all topics for search
@@ -109,6 +111,52 @@
   }
 
   hydrateMcqGlobalCacheFromPersisted();
+  hydrateQuizStatsCacheFromPersisted();
+
+  function readQuizStatsPersistedCache(options) {
+    const opts = options || {};
+    const allowExpired = !!opts.allowExpired;
+    try {
+      const raw = localStorage.getItem(QUIZ_STATS_PERSIST_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const stats = parsed && typeof parsed.stats === "object" ? parsed.stats : null;
+      const lastLoadTime = Number(parsed && parsed.lastLoadTime);
+      if (!stats || !Number.isFinite(lastLoadTime)) return null;
+
+      const age = Date.now() - lastLoadTime;
+      if (!allowExpired && age > QUIZ_STATS_PERSIST_TTL) return null;
+
+      return { stats, lastLoadTime };
+    } catch (error) {
+      console.warn("⚠️ Failed to read persisted quiz stats cache:", error);
+      return null;
+    }
+  }
+
+  function writeQuizStatsPersistedCache(stats, lastLoadTime) {
+    try {
+      localStorage.setItem(
+        QUIZ_STATS_PERSIST_KEY,
+        JSON.stringify({
+          stats: stats && typeof stats === "object" ? stats : {},
+          lastLoadTime: Number(lastLoadTime) || Date.now(),
+        }),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist quiz stats cache:", error);
+    }
+  }
+
+  function hydrateQuizStatsCacheFromPersisted() {
+    if (!window.quizStatsCache) return;
+    const persisted = readQuizStatsPersistedCache();
+    if (!persisted) return;
+
+    window.quizStatsCache.stats = persisted.stats;
+    window.quizStatsCache.lastLoadTime = persisted.lastLoadTime;
+    window.quizStatsCache.cacheDuration = QUIZ_STATS_PERSIST_TTL;
+  }
 
   // Search function for MCQ topics
   function searchMcqTopics(query) {
@@ -418,6 +466,10 @@
         if (response && response.success && response.stats) {
           window.quizStatsCache.stats = response.stats;
           window.quizStatsCache.lastLoadTime = Date.now();
+          writeQuizStatsPersistedCache(
+            window.quizStatsCache.stats,
+            window.quizStatsCache.lastLoadTime,
+          );
           console.log(
             "✅ Quiz stats loaded for " +
               Object.keys(response.stats).length +
@@ -490,6 +542,11 @@
       "✅ Updated local quiz stats for topic:",
       topicId,
       window.quizStatsCache.stats[topicId],
+    );
+    window.quizStatsCache.lastLoadTime = Date.now();
+    writeQuizStatsPersistedCache(
+      window.quizStatsCache.stats,
+      window.quizStatsCache.lastLoadTime,
     );
   }
 
@@ -3168,6 +3225,7 @@
         // ⭐ Invalidate quiz stats cache to force reload on next visit
         if (window.quizStatsCache) {
           window.quizStatsCache.lastLoadTime = 0;
+          writeQuizStatsPersistedCache(window.quizStatsCache.stats, 0);
         }
         console.log(
           "🔄 Progress & quiz stats cache invalidated after quiz save",

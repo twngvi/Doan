@@ -1063,6 +1063,26 @@ function getDocMetadata(docId) {
  */
 function getUserProgressSheetIdByEmail(email) {
   try {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const cache = CacheService.getUserCache();
+    const cacheKey = "USER_PROGRESS_SHEET_" + normalizedEmail;
+    const cacheMissSentinel = "__NO_PROGRESS_SHEET__";
+
+    const cachedValue = cache.get(cacheKey);
+    if (cachedValue) {
+      if (cachedValue === cacheMissSentinel) {
+        Logger.log(
+          "Using cached missing progressSheetId for user: " + normalizedEmail,
+        );
+        return null;
+      }
+
+      Logger.log("Using cached progressSheetId for " + normalizedEmail);
+      return cachedValue;
+    }
+
     const masterDbId =
       DB_CONFIG.SPREADSHEET_ID ||
       "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
@@ -1085,14 +1105,28 @@ function getUserProgressSheetIdByEmail(email) {
     }
 
     for (let i = 1; i < data.length; i++) {
-      if (data[i][emailIndex] === email) {
-        const sheetId = data[i][progressSheetIdIndex];
-        Logger.log("Found progressSheetId for " + email + ": " + sheetId);
-        return sheetId || null;
+      const rowEmail = String(data[i][emailIndex] || "").trim().toLowerCase();
+      if (rowEmail === normalizedEmail) {
+        const sheetId = String(data[i][progressSheetIdIndex] || "").trim();
+        if (sheetId) {
+          cache.put(cacheKey, sheetId, 6 * 60 * 60);
+          Logger.log(
+            "Found and cached progressSheetId for " + normalizedEmail + ": " + sheetId,
+          );
+          return sheetId;
+        }
+
+        cache.put(cacheKey, cacheMissSentinel, 5 * 60);
+        Logger.log(
+          "User found but progressSheetId empty, cached miss for: " +
+            normalizedEmail,
+        );
+        return null;
       }
     }
 
-    Logger.log("User not found: " + email);
+    cache.put(cacheKey, cacheMissSentinel, 5 * 60);
+    Logger.log("User not found, cached miss: " + normalizedEmail);
     return null;
   } catch (error) {
     Logger.log("Error getting progressSheetId: " + error.toString());
