@@ -974,7 +974,7 @@
     if (typeof showToast === "function") {
       showToast("Đã đăng xuất", "info");
     } else {
-      alert("Đã đăng xuất");
+      showAppAlert("Đã đăng xuất");
     }
 
     // Navigate to login
@@ -1024,7 +1024,7 @@
   /**
    * Show Account Chooser - HÆ°á»›ng dáº«n user Ä‘Äƒng xuáº¥t vÃ  chá»n tÃ i khoáº£n khÃ¡c
    */
-  function showAccountChooser() {
+  async function showAccountChooser() {
     const message = `Äá»ƒ chá»n tÃ i khoáº£n Google khÃ¡c:
 
   1. Má»Ÿ tab má»›i
@@ -1036,11 +1036,15 @@
   â€¢ Sá»­ dá»¥ng cháº¿ Ä‘á»™ áº©n danh (Incognito)
   â€¢ Má»Ÿ URL nÃ y trong profile Chrome khÃ¡c`;
 
-    if (
-      confirm(
-        message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?",
-      )
-    ) {
+    const shouldOpen = await showAppConfirm(
+      message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?",
+      {
+        title: "Chá»n tÃ i khoáº£n Google",
+        confirmText: "Má»Ÿ Google Accounts",
+        cancelText: "ÄÃ³ng",
+      },
+    );
+    if (shouldOpen) {
       window.open("https://accounts.google.com/SignOutOptions", "_blank");
       showToast("Vui lòng đăng xuất Google rồi quay lại đây", "info");
     }
@@ -1071,7 +1075,7 @@
 
     // âœ… Gá»i autoLoginWithGoogle() - tá»± Ä‘á»™ng láº¥y email tá»« Google Account
     google.script.run
-      .withSuccessHandler(function (response) {
+      .withSuccessHandler(async function (response) {
         clearTimeout(timeoutId);
         isGoogleAuthInProgress = false;
         hideLoading();
@@ -1103,9 +1107,15 @@
           );
 
           // Chá»‰ há»i tÃªn, email Ä‘Ã£ Ä‘Æ°á»£c tá»± Ä‘á»™ng láº¥y
-          const fullName = prompt(
+          const fullName = await showAppPrompt(
             "Nhập họ tên của bạn:",
             response.email.split("@")[0],
+            {
+              title: "Hoàn tất đăng ký",
+              confirmText: "Tiếp tục",
+              cancelText: "Hủy",
+              placeholder: "Nhập họ tên",
+            },
           );
 
           if (fullName) {
@@ -1552,7 +1562,7 @@
   ðŸ’¡ Máº¹o: DÃ¹ng nhiá»u Profile trong Chrome Ä‘á»ƒ quáº£n lÃ½ nhiá»u tÃ i khoáº£n dá»… dÃ ng hÆ¡n!
       `.trim();
 
-    alert(helpText);
+    showAppAlert(helpText, { title: "Hướng dẫn đổi tài khoản" });
   }
 
   // ⭐ OLD showToast đã được gộp vào phiên bản bên dưới (Toast Notification System)
@@ -1719,36 +1729,7 @@
    * Show forgot password modal
    */
   function showForgotPasswordModal() {
-    const email = prompt("Nhập email của bạn để nhận link reset mật khẩu:");
-
-    if (!email) {
-      return;
-    }
-
-    if (!isValidEmail(email)) {
-      showToast("Email không hợp lệ", "error");
-      return;
-    }
-
-    showLoading(true);
-
-    google.script.run
-      .withSuccessHandler(function (response) {
-        hideLoading();
-        console.log("âœ… Forgot Password Response:", response);
-
-        if (response.success) {
-          showToast(response.message, "success");
-        } else {
-          showToast(response.message, "error");
-        }
-      })
-      .withFailureHandler(function (error) {
-        hideLoading();
-        console.error("âŒ Forgot Password Error:", error);
-        showToast("Lỗi: " + error.message, "error");
-      })
-      .requestResetPassword(email);
+    showPage("page-forgot-password");
   }
 
   /**
@@ -1959,8 +1940,17 @@
   /**
    * Show reset password form (Legacy - kept for compatibility)
    */
-  function showResetPasswordForm(token) {
-    const newPassword = prompt("Nhập mật khẩu mới (tối thiểu 6 ký tự):");
+  async function showResetPasswordForm(token) {
+    const newPassword = await showAppPrompt(
+      "Nhập mật khẩu mới (tối thiểu 6 ký tự):",
+      "",
+      {
+        title: "Đặt lại mật khẩu",
+        confirmText: "Tiếp tục",
+        cancelText: "Hủy",
+        placeholder: "Mật khẩu mới",
+      },
+    );
 
     if (!newPassword) {
       return;
@@ -1972,7 +1962,16 @@
       return;
     }
 
-    const confirmPassword = prompt("Xác nhận mật khẩu mới:");
+    const confirmPassword = await showAppPrompt(
+      "Xác nhận mật khẩu mới:",
+      "",
+      {
+        title: "Xác nhận mật khẩu",
+        confirmText: "Xác nhận",
+        cancelText: "Hủy",
+        placeholder: "Nhập lại mật khẩu",
+      },
+    );
 
     if (newPassword !== confirmPassword) {
       showToast("Mật khẩu xác nhận không khớp", "error");
@@ -2008,6 +2007,187 @@
       });
   }
 
+  // ==================== App Dialog System ====================
+  let appDialogQueue = [];
+  let appDialogActive = false;
+
+  function getAppDialogElements() {
+    return {
+      overlay: document.getElementById("app-dialog-overlay"),
+      title: document.getElementById("app-dialog-title"),
+      message: document.getElementById("app-dialog-message"),
+      inputWrap: document.getElementById("app-dialog-input-wrap"),
+      input: document.getElementById("app-dialog-input"),
+      okBtn: document.getElementById("app-dialog-ok"),
+      cancelBtn: document.getElementById("app-dialog-cancel"),
+    };
+  }
+
+  function showAppAlert(message, options) {
+    const opts = options || {};
+    return openAppDialog({
+      type: "alert",
+      title: opts.title || "Thông báo",
+      message: String(message || ""),
+      confirmText: opts.confirmText || "OK",
+      cancelText: opts.cancelText || "Đóng",
+      allowBackdropClose: opts.allowBackdropClose !== false,
+    });
+  }
+
+  function showAppConfirm(message, options) {
+    const opts = options || {};
+    return openAppDialog({
+      type: "confirm",
+      title: opts.title || "Xác nhận",
+      message: String(message || ""),
+      confirmText: opts.confirmText || "Đồng ý",
+      cancelText: opts.cancelText || "Hủy",
+      allowBackdropClose: opts.allowBackdropClose !== false,
+    });
+  }
+
+  function showAppPrompt(message, defaultValue, options) {
+    const opts = options || {};
+    return openAppDialog({
+      type: "prompt",
+      title: opts.title || "Nhập thông tin",
+      message: String(message || ""),
+      confirmText: opts.confirmText || "Xác nhận",
+      cancelText: opts.cancelText || "Hủy",
+      defaultValue: defaultValue || "",
+      placeholder: opts.placeholder || "",
+      allowBackdropClose: opts.allowBackdropClose !== false,
+    });
+  }
+
+  function openAppDialog(config) {
+    return new Promise(function (resolve) {
+      appDialogQueue.push({ config: config, resolve: resolve });
+      processAppDialogQueue();
+    });
+  }
+
+  function processAppDialogQueue() {
+    if (appDialogActive || appDialogQueue.length === 0) return;
+    appDialogActive = true;
+
+    const payload = appDialogQueue.shift();
+    const config = payload.config;
+    const resolve = payload.resolve;
+    const els = getAppDialogElements();
+
+    if (!els.overlay || !els.title || !els.message || !els.okBtn || !els.cancelBtn) {
+      appDialogActive = false;
+      console.warn("App dialog elements are missing in DOM");
+      if (config.type === "confirm") resolve(false);
+      else if (config.type === "prompt") resolve(null);
+      else resolve(true);
+      processAppDialogQueue();
+      return;
+    }
+
+    const isPrompt = config.type === "prompt";
+    const isConfirm = config.type === "confirm";
+    const allowBackdropClose = config.allowBackdropClose !== false;
+
+    els.title.textContent = config.title || "Thông báo";
+    els.message.textContent = config.message || "";
+    els.okBtn.textContent = config.confirmText || "OK";
+    els.cancelBtn.textContent = config.cancelText || "Hủy";
+    els.cancelBtn.style.display = isConfirm || isPrompt ? "inline-flex" : "none";
+
+    if (isPrompt && els.inputWrap && els.input) {
+      els.inputWrap.style.display = "block";
+      els.input.value = String(config.defaultValue || "");
+      els.input.placeholder = config.placeholder || "";
+    } else if (els.inputWrap && els.input) {
+      els.inputWrap.style.display = "none";
+      els.input.value = "";
+      els.input.placeholder = "";
+    }
+
+    let closed = false;
+    let keyHandler = null;
+
+    function cleanup() {
+      els.overlay.classList.remove("active");
+      els.overlay.setAttribute("aria-hidden", "true");
+      els.okBtn.onclick = null;
+      els.cancelBtn.onclick = null;
+      els.overlay.onclick = null;
+      if (keyHandler) document.removeEventListener("keydown", keyHandler);
+    }
+
+    function finalize(value) {
+      if (closed) return;
+      closed = true;
+      cleanup();
+      resolve(value);
+      appDialogActive = false;
+      processAppDialogQueue();
+    }
+
+    els.okBtn.onclick = function () {
+      if (isPrompt && els.input) {
+        finalize(els.input.value);
+        return;
+      }
+      finalize(true);
+    };
+
+    els.cancelBtn.onclick = function () {
+      if (isPrompt) {
+        finalize(null);
+        return;
+      }
+      finalize(false);
+    };
+
+    els.overlay.onclick = function (event) {
+      if (!allowBackdropClose || event.target !== els.overlay) return;
+      if (isPrompt) {
+        finalize(null);
+      } else if (isConfirm) {
+        finalize(false);
+      } else {
+        finalize(true);
+      }
+    };
+
+    keyHandler = function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!allowBackdropClose) return;
+        if (isPrompt) {
+          finalize(null);
+        } else if (isConfirm) {
+          finalize(false);
+        } else {
+          finalize(true);
+        }
+      } else if (event.key === "Enter" && isPrompt && document.activeElement === els.input) {
+        event.preventDefault();
+        finalize(els.input.value);
+      }
+    };
+
+    document.addEventListener("keydown", keyHandler);
+    els.overlay.classList.add("active");
+    els.overlay.setAttribute("aria-hidden", "false");
+
+    if (isPrompt && els.input) {
+      setTimeout(function () {
+        els.input.focus();
+        els.input.select();
+      }, 20);
+    } else {
+      setTimeout(function () {
+        els.okBtn.focus();
+      }, 20);
+    }
+  }
+
   // Make functions available globally
   window.showPage = showPage;
   window.handleLoginFormSubmit = handleLoginFormSubmit;
@@ -2017,6 +2197,9 @@
   window.resetLandingCTA = resetLandingCTA;
   window.showToast = showToast;
   window.showNotification = showToast; // Alias for compatibility
+  window.showAppAlert = showAppAlert;
+  window.showAppConfirm = showAppConfirm;
+  window.showAppPrompt = showAppPrompt;
   window.showForgotPasswordModal = showForgotPasswordModal;
   window.handleGoogleLogin = handleGoogleLogin;
   window.showAccountChooser = showAccountChooser;

@@ -31,6 +31,7 @@
   const MATCHING_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
   const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
   const MATCHING_STATS_PERSIST_TTL = 5 * 60 * 1000;
+  const MATCHING_UNLOCKED_TOPICS_PERSIST_KEY = "oq_matching_unlocked_topics_v1";
   const MATCHING_TOPICS_LOAD_TIMEOUT = 15000;
   const MATCHING_GOOGLE_RUN_MAX_RETRY = 25;
   const MATCHING_GOOGLE_RUN_RETRY_DELAY = 100;
@@ -40,6 +41,56 @@
   let matchingLastInitAt = 0;
   let matchingTopicsRequestSeq = 0;
   let matchingActiveTopicsRequestId = 0;
+
+  function readMatchingUnlockedTopicsCache() {
+    try {
+      var raw = localStorage.getItem(MATCHING_UNLOCKED_TOPICS_PERSIST_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return {};
+      return parsed;
+    } catch (error) {
+      console.warn("⚠️ Failed to read Matching unlocked topics cache:", error);
+      return {};
+    }
+  }
+
+  function writeMatchingUnlockedTopicsCache(unlockedMap) {
+    try {
+      localStorage.setItem(
+        MATCHING_UNLOCKED_TOPICS_PERSIST_KEY,
+        JSON.stringify(unlockedMap && typeof unlockedMap === "object" ? unlockedMap : {}),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist Matching unlocked topics cache:", error);
+    }
+  }
+
+  function ensureMatchingUnlockedTopicsCache() {
+    if (
+      !window.matchingUnlockedTopicsCache ||
+      typeof window.matchingUnlockedTopicsCache !== "object"
+    ) {
+      window.matchingUnlockedTopicsCache = readMatchingUnlockedTopicsCache();
+    }
+    return window.matchingUnlockedTopicsCache;
+  }
+
+  function isMatchingTopicPermanentlyUnlocked(topicId) {
+    var id = String(topicId || "").trim();
+    if (!id) return false;
+    var cache = ensureMatchingUnlockedTopicsCache();
+    return cache[id] === true;
+  }
+
+  function markMatchingTopicUnlocked(topicId) {
+    var id = String(topicId || "").trim();
+    if (!id) return;
+    var cache = ensureMatchingUnlockedTopicsCache();
+    if (cache[id] === true) return;
+    cache[id] = true;
+    writeMatchingUnlockedTopicsCache(cache);
+  }
 
   function readMatchingPersistedTopicsCache(options) {
     var opts = options || {};
@@ -105,6 +156,7 @@
 
   hydrateMatchingGlobalCacheFromPersisted();
   hydrateMatchingStatsCacheFromPersisted();
+  ensureMatchingUnlockedTopicsCache();
 
   function readMatchingStatsPersistedCache(options) {
     var opts = options || {};
@@ -408,20 +460,24 @@
     const topicSelection = document.getElementById("matchingTopicSelection");
     const topicDetail = document.getElementById("matchingTopicDetail");
     const gameWrapper = document.getElementById("matchingGameWrapper");
+    const resultView = document.getElementById("matchingResultView");
     setMatchingPreplayMode(true);
     if (topicSelection) topicSelection.style.display = "";
     if (topicDetail) topicDetail.style.display = "none";
     if (gameWrapper) gameWrapper.classList.remove("active");
+    if (resultView) resultView.style.display = "none";
   }
 
   function showMatchingTopicDetail() {
     const topicSelection = document.getElementById("matchingTopicSelection");
     const topicDetail = document.getElementById("matchingTopicDetail");
     const gameWrapper = document.getElementById("matchingGameWrapper");
+    const resultView = document.getElementById("matchingResultView");
     setMatchingPreplayMode(true);
     if (topicSelection) topicSelection.style.display = "none";
     if (topicDetail) topicDetail.style.display = "";
     if (gameWrapper) gameWrapper.classList.remove("active");
+    if (resultView) resultView.style.display = "none";
   }
 
   function isMatchingPageVisible() {
@@ -630,7 +686,11 @@
     google.script.run
       .withSuccessHandler(function (response) {
         if (response && response.success && response.stats) {
-          window.matchingStatsCache.stats = response.stats;
+          var existingStats =
+            window.matchingStatsCache && window.matchingStatsCache.stats
+              ? window.matchingStatsCache.stats
+              : {};
+          window.matchingStatsCache.stats = mergeMatchingStatsMap(existingStats, response.stats);
           window.matchingStatsCache.lastLoadTime = Date.now();
           writeMatchingStatsPersistedCache(
             window.matchingStatsCache.stats,
@@ -686,6 +746,46 @@
     }
 
     return 0;
+  }
+
+  function mergeMatchingStatEntry(existing, incoming) {
+    var oldStat = existing && typeof existing === "object" ? existing : {};
+    var newStat = incoming && typeof incoming === "object" ? incoming : {};
+
+    var oldBest = getMatchingBestPercent(oldStat);
+    var newBest = getMatchingBestPercent(newStat);
+    var keepIncomingAsBest = newBest >= oldBest;
+    var bestSource = keepIncomingAsBest ? newStat : oldStat;
+
+    return {
+      hasPlayed: Boolean(oldStat.hasPlayed || newStat.hasPlayed),
+      bestScore: Number(bestSource.bestScore || 0),
+      bestPercent: Math.max(oldBest, newBest),
+      bestAccuracy: Number(bestSource.bestAccuracy || Math.max(oldBest, newBest)),
+      bestTotalPairs: Number(bestSource.bestTotalPairs || 0),
+      playCount: Math.max(Number(oldStat.playCount || 0), Number(newStat.playCount || 0)),
+      lastPlayedAt: newStat.lastPlayedAt || oldStat.lastPlayedAt || null,
+    };
+  }
+
+  function mergeMatchingStatsMap(existingMap, incomingMap) {
+    var merged = {};
+    var base = existingMap && typeof existingMap === "object" ? existingMap : {};
+    var incoming = incomingMap && typeof incomingMap === "object" ? incomingMap : {};
+    var allIds = {};
+
+    Object.keys(base).forEach(function (id) {
+      allIds[id] = true;
+    });
+    Object.keys(incoming).forEach(function (id) {
+      allIds[id] = true;
+    });
+
+    Object.keys(allIds).forEach(function (id) {
+      merged[id] = mergeMatchingStatEntry(base[id], incoming[id]);
+    });
+
+    return merged;
   }
 
   function updateLocalMatchingStats(topicId, percent, accuracy, totalPairs) {
@@ -860,9 +960,18 @@
 
     const prevTopic = originalTopics[index - 1];
     if (!prevTopic || !prevTopic.topicId) return false;
-    const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
 
-    return prevStats && getMatchingBestPercent(prevStats) >= 80;
+    if (isMatchingTopicPermanentlyUnlocked(topicId)) {
+      return true;
+    }
+
+    const prevStats = getMatchingStatsForTopic(prevTopic.topicId);
+    var unlockedNow = prevStats && getMatchingBestPercent(prevStats) >= 80;
+    if (unlockedNow) {
+      markMatchingTopicUnlocked(topicId);
+    }
+
+    return unlockedNow;
   };
 
   // ===== RENDER TOPICS =====
@@ -1025,6 +1134,7 @@
           <div class="matching-topic-card-meta">
             <span class="matching-topic-card-category">${topicCategory}</span>
             ${matchingPlayed ? '<span class="matching-topic-card-badge">Đã chơi</span>' : ""}
+            ${!matchingPlayed && isUnlocked ? '<span class="matching-topic-card-badge">Đã mở khóa</span>' : ""}
             ${bestScoreBadge}
           </div>
         </div>
@@ -1462,7 +1572,9 @@
     var topicDetail = document.getElementById("matchingTopicDetail");
     if (topicDetail) topicDetail.style.display = "none";
     const gameWrapper = document.getElementById("matchingGameWrapper");
+    const resultView = document.getElementById("matchingResultView");
     gameWrapper.classList.add("active");
+    if (resultView) resultView.style.display = "none";
 
     // Reset game state
     matchingState.leftItems = [];
@@ -2103,6 +2215,49 @@
   }
 
   // ===== GAME COMPLETE =====
+  function renderMatchingResultAttempts() {
+    var attemptsContainer = document.getElementById("matchingResultAttempts");
+    if (!attemptsContainer) return;
+
+    var details = Array.isArray(matchingState.pairAttemptDetails)
+      ? matchingState.pairAttemptDetails
+      : [];
+
+    if (details.length === 0) {
+      attemptsContainer.innerHTML =
+        '<div class="review-item">Không có dữ liệu chi tiết cho lượt ghép này.</div>';
+      return;
+    }
+
+    attemptsContainer.innerHTML = details
+      .map(function (item, index) {
+        var cls = item && item.isCorrect ? "correct" : "incorrect";
+        var leftText = item && item.leftText ? item.leftText : "(Trống)";
+        var matchedText =
+          item && item.userMatchedRight ? item.userMatchedRight : "(Trống)";
+        var correctText = item && item.correctRight ? item.correctRight : "(Trống)";
+
+        return (
+          '<div class="review-item ' +
+          cls +
+          '">' +
+          '<div class="review-question">Lượt ' +
+          (index + 1) +
+          ": " +
+          leftText +
+          "</div>" +
+          '<div class="review-answer">Bạn ghép: ' +
+          matchedText +
+          "</div>" +
+          '<div class="review-correct">Đáp án đúng: ' +
+          correctText +
+          "</div>" +
+          "</div>"
+        );
+      })
+      .join("");
+  }
+
   function showMatchingComplete() {
     // Build result data
     var accuracy =
@@ -2147,7 +2302,7 @@
       subtitle = "Hãy thử lại để cải thiện kết quả!";
     }
 
-    // Populate result modal
+    // Populate result view
     document.getElementById("matchingResultTrophy").textContent = trophy;
     document.getElementById("matchingResultTitle").textContent = title;
     document.getElementById("matchingResultSubtitle").textContent = subtitle;
@@ -2165,6 +2320,8 @@
     // Stats
     document.getElementById("matchingResultScore").textContent =
       matchingState.resultData.score;
+    var accuracyEl = document.getElementById("matchingResultAccuracy");
+    if (accuracyEl) accuracyEl.textContent = matchingState.resultData.accuracy;
     document.getElementById("matchingResultTime").textContent =
       formatMatchingTime(matchingState.resultData.time);
     document.getElementById("matchingResultCorrect").textContent =
@@ -2178,8 +2335,26 @@
     document.getElementById("matchingResultMoves").textContent =
       matchingState.resultData.moves;
 
-    // Show overlay
-    document.getElementById("matchingResultOverlay").classList.add("active");
+    var feedback = document.querySelector("#matchingResultFeedback p");
+    if (feedback) {
+      if (matchingState.resultData.accuracy >= 90) {
+        feedback.textContent = "Xuất sắc! Tốc độ và độ chính xác của bạn rất cao.";
+      } else if (matchingState.resultData.accuracy >= 75) {
+        feedback.textContent = "Rất tốt! Bạn đã nắm chủ đề khá chắc.";
+      } else if (matchingState.resultData.accuracy >= 50) {
+        feedback.textContent = "Khá ổn, bạn có thể luyện thêm để tăng độ chính xác.";
+      } else {
+        feedback.textContent = "Cần luyện tập thêm. Thử lại để cải thiện kết quả nhé!";
+      }
+    }
+
+    renderMatchingResultAttempts();
+
+    // Show result page and hide game board
+    var gameWrapper = document.getElementById("matchingGameWrapper");
+    if (gameWrapper) gameWrapper.classList.remove("active");
+    var resultView = document.getElementById("matchingResultView");
+    if (resultView) resultView.style.display = "block";
   }
 
   // ===== NAVIGATION =====
@@ -2187,11 +2362,12 @@
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
-    document.getElementById("matchingResultOverlay").classList.remove("active");
     document
       .getElementById("matchingDifficultyOverlay")
       .classList.remove("active");
     document.getElementById("matchingGameWrapper").classList.remove("active");
+    var resultView = document.getElementById("matchingResultView");
+    if (resultView) resultView.style.display = "none";
     document.getElementById("matchingBoard").innerHTML = "";
 
     matchingState.showResultModal = false;
@@ -2209,11 +2385,12 @@
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
-    document.getElementById("matchingResultOverlay").classList.remove("active");
     document
       .getElementById("matchingDifficultyOverlay")
       .classList.remove("active");
     document.getElementById("matchingGameWrapper").classList.remove("active");
+    var resultView = document.getElementById("matchingResultView");
+    if (resultView) resultView.style.display = "none";
     document.getElementById("matchingBoard").innerHTML = "";
 
     // Always switch via centralized view handler to avoid list/detail overlap.
@@ -2237,7 +2414,8 @@
   };
 
   window.matchingRestartGame = function () {
-    document.getElementById("matchingResultOverlay").classList.remove("active");
+    var resultView = document.getElementById("matchingResultView");
+    if (resultView) resultView.style.display = "none";
 
     // Reset result state
     matchingState.showResultModal = false;
@@ -2252,7 +2430,8 @@
   window.matchingGoToDashboard = function () {
     stopMatchingTimer();
 
-    document.getElementById("matchingResultOverlay").classList.remove("active");
+    var resultView = document.getElementById("matchingResultView");
+    if (resultView) resultView.style.display = "none";
 
     // Reset result state
     matchingState.showResultModal = false;

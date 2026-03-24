@@ -339,7 +339,7 @@ function closePreviewModal() {
 // PUBLISH TOPIC
 // ========================================
 
-function publishTopic() {
+async function publishTopic() {
   // Validate form
   const topicId = document.getElementById('topicId').value.trim();
   const title = document.getElementById('topicTitle').value.trim();
@@ -374,7 +374,19 @@ function publishTopic() {
   }
   
   // Confirm publish
-  if (!confirm('Bạn có chắc muốn publish topic này?\n\nTopic: ' + title)) {
+  const shouldPublish =
+    typeof window.showAppConfirm === 'function'
+      ? await window.showAppConfirm(
+          'Bạn có chắc muốn publish topic này?\n\nTopic: ' + title,
+          {
+            title: 'Xác nhận publish',
+            confirmText: 'Publish',
+            cancelText: 'Hủy'
+          }
+        )
+      : false;
+
+  if (!shouldPublish) {
     return;
   }
   
@@ -415,16 +427,29 @@ function publishTopic() {
         showToast('🎉 Publish thành công!', 'success');
         
         // Show success message with doc link
-        setTimeout(function() {
-          alert(
-            '✅ Topic đã được publish thành công!\n\n' +
-            '📄 Doc ID: ' + result.docId + '\n' +
-            '🔗 Link: ' + result.docUrl + '\n\n' +
-            'Topic đã được thêm vào MasterDB.'
-          );
-          
+        setTimeout(async function() {
+          if (typeof window.showAppAlert === 'function') {
+            await window.showAppAlert(
+              '✅ Topic đã được publish thành công!\n\n' +
+              '📄 Doc ID: ' + result.docId + '\n' +
+              '🔗 Link: ' + result.docUrl + '\n\n' +
+              'Topic đã được thêm vào MasterDB.',
+              { title: 'Publish thành công', confirmText: 'Đã hiểu' }
+            );
+          } else {
+            console.warn('showAppAlert is unavailable');
+          }
+
           // Reset form
-          if (confirm('Bạn có muốn tạo topic mới?')) {
+          const shouldCreateNew =
+            typeof window.showAppConfirm === 'function'
+              ? await window.showAppConfirm('Bạn có muốn tạo topic mới?', {
+                  title: 'Tạo topic mới',
+                  confirmText: 'Tạo mới',
+                  cancelText: 'Không'
+                })
+              : false;
+          if (shouldCreateNew) {
             resetForm();
           }
         }, 500);
@@ -438,7 +463,11 @@ function publishTopic() {
       console.error('❌ Server error:', error);
       var errorMsg = error && error.message ? error.message : String(error);
       showToast('Lỗi: ' + errorMsg, 'error');
-      alert('Chi tiết lỗi:\n\n' + errorMsg);
+      if (typeof window.showAppAlert === 'function') {
+        window.showAppAlert('Chi tiết lỗi:\n\n' + errorMsg, { title: 'Lỗi publish topic' });
+      } else {
+        console.warn('showAppAlert is unavailable');
+      }
     })
     .createAndPublishTopic(topicData);
 }
@@ -547,11 +576,19 @@ function showToast(message, type) {
   }, 3000);
 }
 
-function goBackToAdmin() {
+async function goBackToAdmin() {
   // Check if there's unsaved content
   const content = document.getElementById('contentEditor').innerHTML.trim();
   if (content && content !== '<br>' && content !== '<p><br></p>') {
-    if (!confirm('Bạn có nội dung chưa lưu. Bạn có chắc muốn thoát?')) {
+    const shouldLeave =
+      typeof window.showAppConfirm === 'function'
+        ? await window.showAppConfirm('Bạn có nội dung chưa lưu. Bạn có chắc muốn thoát?', {
+            title: 'Xác nhận thoát',
+            confirmText: 'Thoát',
+            cancelText: 'Ở lại'
+          })
+        : false;
+    if (!shouldLeave) {
       return;
     }
   }

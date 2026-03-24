@@ -46,15 +46,22 @@
     }
   }
 
-  function handleClearAllLearningData(event) {
+  async function handleClearAllLearningData(event) {
     const btn =
       (event && event.currentTarget) ||
       document.getElementById("btn-clear-all-learning");
 
-    const confirmed = confirm(
-      "Bạn có chắc muốn RESET TOÀN BỘ tiến độ học?\n\n" +
-        "Hành động này sẽ xóa dữ liệu Topic, Quiz, Matching, Flashcard và lịch sử hoạt động.",
-    );
+    const confirmed =
+      typeof window.showAppConfirm === "function"
+        ? await window.showAppConfirm(
+            "Bạn có chắc muốn RESET TOÀN BỘ tiến độ học?\n\nHành động này sẽ xóa dữ liệu Topic, Quiz, Matching, Flashcard và lịch sử hoạt động.",
+            {
+              title: "Xác nhận reset dữ liệu",
+              confirmText: "Reset toàn bộ",
+              cancelText: "Hủy",
+            },
+          )
+        : false;
     if (!confirmed) return;
 
     const user = profileData || window.currentUser;

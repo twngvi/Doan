@@ -37,6 +37,7 @@
   const MCQ_TOPICS_PERSIST_TTL = 10 * 60 * 1000;
   const QUIZ_STATS_PERSIST_KEY = "oq_quiz_stats_cache_v1";
   const QUIZ_STATS_PERSIST_TTL = 5 * 60 * 1000;
+  const MCQ_UNLOCKED_TOPICS_PERSIST_KEY = "oq_mcq_unlocked_topics_v1";
   const MCQ_TOPICS_LOAD_TIMEOUT = 12000;
   const MCQ_STATS_PERSIST_KEY = "oq_quiz_stats_cache_v1";
   const MCQ_STATS_PERSIST_TTL = 5 * 60 * 1000; // Cache 5 phút (khớp với server cache)
@@ -48,6 +49,53 @@
       clearTimeout(mcqTopicsLoadTimeoutId);
       mcqTopicsLoadTimeoutId = null;
     }
+  }
+
+  function readMcqUnlockedTopicsCache() {
+    try {
+      var raw = localStorage.getItem(MCQ_UNLOCKED_TOPICS_PERSIST_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return {};
+      return parsed;
+    } catch (error) {
+      console.warn("⚠️ Failed to read MCQ unlocked topics cache:", error);
+      return {};
+    }
+  }
+
+  function writeMcqUnlockedTopicsCache(unlockedMap) {
+    try {
+      localStorage.setItem(
+        MCQ_UNLOCKED_TOPICS_PERSIST_KEY,
+        JSON.stringify(unlockedMap && typeof unlockedMap === "object" ? unlockedMap : {}),
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to persist MCQ unlocked topics cache:", error);
+    }
+  }
+
+  function ensureMcqUnlockedTopicsCache() {
+    if (!window.mcqUnlockedTopicsCache || typeof window.mcqUnlockedTopicsCache !== "object") {
+      window.mcqUnlockedTopicsCache = readMcqUnlockedTopicsCache();
+    }
+    return window.mcqUnlockedTopicsCache;
+  }
+
+  function isMcqTopicPermanentlyUnlocked(topicId) {
+    var id = String(topicId || "").trim();
+    if (!id) return false;
+    var cache = ensureMcqUnlockedTopicsCache();
+    return cache[id] === true;
+  }
+
+  function markMcqTopicUnlocked(topicId) {
+    var id = String(topicId || "").trim();
+    if (!id) return;
+    var cache = ensureMcqUnlockedTopicsCache();
+    if (cache[id] === true) return;
+    cache[id] = true;
+    writeMcqUnlockedTopicsCache(cache);
   }
 
   function readMcqPersistedTopicsCache(options) {
@@ -114,6 +162,7 @@
 
   hydrateMcqGlobalCacheFromPersisted();
   hydrateQuizStatsCacheFromPersisted();
+  ensureMcqUnlockedTopicsCache();
 
   function readQuizStatsPersistedCache(options) {
     const opts = options || {};
@@ -534,7 +583,11 @@
     google.script.run
       .withSuccessHandler(function (response) {
         if (response && response.success && response.stats) {
-          window.quizStatsCache.stats = response.stats;
+          var existingStats =
+            window.quizStatsCache && window.quizStatsCache.stats
+              ? window.quizStatsCache.stats
+              : {};
+          window.quizStatsCache.stats = mergeQuizStatsMap(existingStats, response.stats);
           window.quizStatsCache.lastLoadTime = Date.now();
           writeQuizStatsPersistedCache(
             window.quizStatsCache.stats,
@@ -570,6 +623,62 @@
     const statsCache = window.quizStatsCache;
     if (!statsCache || !statsCache.stats) return null;
     return statsCache.stats[topicId] || null;
+  }
+
+  function getQuizBestPercent(stats) {
+    if (!stats || typeof stats !== "object") return 0;
+
+    var byPercent = Number(stats.bestPercent);
+    if (Number.isFinite(byPercent) && byPercent >= 0) {
+      return Math.max(0, Math.min(100, Math.round(byPercent)));
+    }
+
+    var byScore = Number(stats.bestScore);
+    var byTotal = Number(stats.bestTotal);
+    if (Number.isFinite(byScore) && Number.isFinite(byTotal) && byTotal > 0) {
+      return Math.max(0, Math.min(100, Math.round((byScore / byTotal) * 100)));
+    }
+
+    return 0;
+  }
+
+  function mergeQuizStatEntry(existing, incoming) {
+    var oldStat = existing && typeof existing === "object" ? existing : {};
+    var newStat = incoming && typeof incoming === "object" ? incoming : {};
+
+    var oldBest = getQuizBestPercent(oldStat);
+    var newBest = getQuizBestPercent(newStat);
+    var keepIncomingAsBest = newBest >= oldBest;
+    var bestSource = keepIncomingAsBest ? newStat : oldStat;
+
+    return {
+      hasPlayed: Boolean(oldStat.hasPlayed || newStat.hasPlayed),
+      bestScore: Number(bestSource.bestScore || 0),
+      bestTotal: Number(bestSource.bestTotal || 0),
+      bestPercent: Math.max(oldBest, newBest),
+      playCount: Math.max(Number(oldStat.playCount || 0), Number(newStat.playCount || 0)),
+      lastPlayedAt: newStat.lastPlayedAt || oldStat.lastPlayedAt || null,
+    };
+  }
+
+  function mergeQuizStatsMap(existingMap, incomingMap) {
+    var merged = {};
+    var base = existingMap && typeof existingMap === "object" ? existingMap : {};
+    var incoming = incomingMap && typeof incomingMap === "object" ? incomingMap : {};
+    var allIds = {};
+
+    Object.keys(base).forEach(function (id) {
+      allIds[id] = true;
+    });
+    Object.keys(incoming).forEach(function (id) {
+      allIds[id] = true;
+    });
+
+    Object.keys(allIds).forEach(function (id) {
+      merged[id] = mergeQuizStatEntry(base[id], incoming[id]);
+    });
+
+    return merged;
   }
 
   /**
@@ -928,13 +1037,23 @@
 
       const prevTopic = quizState.allTopics[index - 1];
       if (!prevTopic || !prevTopic.topicId) return false;
+
+      if (isMcqTopicPermanentlyUnlocked(topicId)) {
+        return true;
+      }
+
       const quizStats =
         window.quizStatsCache && window.quizStatsCache.stats
           ? window.quizStatsCache.stats
           : {};
       const prevStats = quizStats[prevTopic.topicId] || null;
 
-      return prevStats && prevStats.bestPercent >= 80;
+      var unlockedNow = prevStats && getQuizBestPercent(prevStats) >= 80;
+      if (unlockedNow) {
+        markMcqTopicUnlocked(topicId);
+      }
+
+      return unlockedNow;
     };
     // ⭐ Get quiz stats from cache (managed per topicId)
     const quizStats =
@@ -1008,7 +1127,7 @@
       // ⭐ Build best score badge if topic has been played
       let bestScoreBadge = "";
       if (hasPlayed && topicStats) {
-        const bestPercent = topicStats.bestPercent || 0;
+        const bestPercent = getQuizBestPercent(topicStats);
         const playCount = topicStats.playCount || 1;
         // Color based on percentage
         let scoreColor = "#6B7280"; // gray
@@ -1036,6 +1155,7 @@
           <div class="mcq-item-meta">
             <span class="mcq-item-category">${topicCategory}</span>
             ${hasPlayed ? '<span class="mcq-item-badge played">Đã chơi</span>' : ""}
+            ${!hasPlayed && isUnlocked ? '<span class="mcq-item-badge">Đã mở khóa</span>' : ""}
             ${bestScoreBadge}
           </div>
         </div>
@@ -3097,17 +3217,25 @@
   /**
    * Submit quiz - Calculate final score for review mode
    */
-  function submitQuiz() {
+  async function submitQuiz() {
     const unansweredCount = quizState.userAnswers.filter(
       (a) => a === null,
     ).length;
 
     if (unansweredCount > 0) {
-      if (
-        !confirm(
-          `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn có chắc muốn nộp bài?`,
-        )
-      ) {
+      const shouldSubmit =
+        typeof window.showAppConfirm === "function"
+          ? await window.showAppConfirm(
+              `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn có chắc muốn nộp bài?`,
+              {
+                title: "Xác nhận nộp bài",
+                confirmText: "Nộp bài",
+                cancelText: "Tiếp tục làm",
+              },
+            )
+          : false;
+
+      if (!shouldSubmit) {
         return;
       }
     }
@@ -3658,8 +3786,18 @@
           `;
         }
         // Still allow exit even if save failed
-        if (confirm("Không thể lưu tiến trình. Bạn có muốn thoát không?")) {
-          backToTopicSelection();
+        if (typeof window.showAppConfirm === "function") {
+          window
+            .showAppConfirm("Không thể lưu tiến trình. Bạn có muốn thoát không?", {
+              title: "Lưu tiến trình thất bại",
+              confirmText: "Thoát",
+              cancelText: "Ở lại",
+            })
+            .then(function (shouldExit) {
+              if (shouldExit) backToTopicSelection();
+            });
+        } else {
+          console.warn("showAppConfirm is unavailable");
         }
       })
       .saveQuizResult(progressData);
