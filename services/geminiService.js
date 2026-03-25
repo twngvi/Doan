@@ -211,13 +211,9 @@ const GeminiService = {
       }
     }
 
+    // Nếu đã có session user hợp lệ từ Google login, ưu tiên dùng session user
+    // Không cần check mismatch với userId từ frontend vì session là nguồn tin cậy
     if (sessionUser) {
-      if (userContext && userContext.userId) {
-        const requestedUserId = String(userContext.userId || "").trim();
-        if (requestedUserId && requestedUserId !== sessionUser.userId) {
-          throw new Error("Phiên đăng nhập không khớp với userId yêu cầu");
-        }
-      }
       return {
         userId: sessionUser.userId,
         email: sessionUser.email,
