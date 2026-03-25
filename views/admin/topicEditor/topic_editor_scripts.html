@@ -144,8 +144,145 @@ function insertCallout(type) {
     </div>
     <p><br></p>
   `;
-  
+
   document.execCommand('insertHTML', false, calloutHtml);
+  document.getElementById('contentEditor').focus();
+}
+
+// ========================================
+// BLOCK MARKERS (for Google Doc syntax)
+// ========================================
+
+function toggleBlockMarkersMenu() {
+  const menu = document.getElementById('blockMarkersMenu');
+  menu.classList.toggle('active');
+
+  // Close menu when clicking outside
+  if (menu.classList.contains('active')) {
+    document.addEventListener('click', closeBlockMarkersMenuOnClickOutside);
+  }
+}
+
+function closeBlockMarkersMenuOnClickOutside(e) {
+  const menu = document.getElementById('blockMarkersMenu');
+  const toggle = e.target.closest('.toolbar-dropdown');
+
+  if (!toggle) {
+    menu.classList.remove('active');
+    document.removeEventListener('click', closeBlockMarkersMenuOnClickOutside);
+  }
+}
+
+function insertBlockMarker(type) {
+  const menu = document.getElementById('blockMarkersMenu');
+  menu.classList.remove('active');
+
+  const markers = {
+    'NOTE': { open: '[[NOTE]]', close: '[[/NOTE]]', placeholder: 'Ghi chú của bạn ở đây...' },
+    'TIP': { open: '[[TIP]]', close: '[[/TIP]]', placeholder: 'Mẹo hữu ích ở đây...' },
+    'WARNING': { open: '[[WARNING]]', close: '[[/WARNING]]', placeholder: 'Cảnh báo quan trọng ở đây...' },
+    'HIGHLIGHT': { open: '[[HIGHLIGHT]]', close: '[[/HIGHLIGHT]]', placeholder: 'Nội dung cần nhấn mạnh...' },
+    'EXAMPLE': { open: '[[EXAMPLE]]', close: '[[/EXAMPLE]]', placeholder: 'Ví dụ minh họa ở đây...' },
+    'CHECKPOINT': { open: '[[CHECKPOINT]]', close: '[[/CHECKPOINT]]', placeholder: 'Câu hỏi kiểm tra hiểu bài...' },
+    'TASK': { open: '[[TASK]]', close: '[[/TASK]]', placeholder: 'Mô tả nhiệm vụ cần thực hiện...' },
+    'QA': { open: '[[QA]]', close: '[[/QA]]', placeholder: 'Câu hỏi: ...\nTrả lời: ...' },
+    'TERMINAL': { open: '[[TERMINAL]]', close: '[[/TERMINAL]]', placeholder: '>>> print("Hello World")\nHello World' },
+    'GRID': { open: '[[GRID]]', close: '[[/GRID]]', placeholder: '• Item 1\n• Item 2\n• Item 3' },
+    'RESOURCES': { open: '[[RESOURCES]]', close: '[[/RESOURCES]]', placeholder: '• Link tài liệu 1\n• Link tài liệu 2' },
+  };
+
+  const marker = markers[type];
+  if (!marker) return;
+
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || marker.placeholder;
+
+  const html = `<p>${marker.open}</p><p>${selectedText}</p><p>${marker.close}</p><p><br></p>`;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+function insertColorMarker(color) {
+  const menu = document.getElementById('blockMarkersMenu');
+  menu.classList.remove('active');
+
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || 'Nội dung có màu ở đây...';
+
+  const html = `<p>[[COLOR:${color}]]</p><p>${selectedText}</p><p>[[/COLOR]]</p><p><br></p>`;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+// Code Marker Modal
+function openCodeMarkerModal() {
+  const menu = document.getElementById('blockMarkersMenu');
+  menu.classList.remove('active');
+
+  saveSelection();
+  document.getElementById('codeMarkerModal').classList.add('active');
+  document.getElementById('codeMarkerContent').value = '';
+  document.getElementById('codeMarkerContent').focus();
+}
+
+function closeCodeMarkerModal() {
+  document.getElementById('codeMarkerModal').classList.remove('active');
+  restoreSelection();
+}
+
+function insertCodeMarker() {
+  const language = document.getElementById('codeMarkerLanguage').value;
+  const code = document.getElementById('codeMarkerContent').value;
+
+  if (!code.trim()) {
+    showToast('Vui lòng nhập code', 'warning');
+    return;
+  }
+
+  closeCodeMarkerModal();
+  restoreSelection();
+
+  // Escape HTML for display but keep the text content
+  const escapedCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const html = `<p>[[CODE:${language}]]</p><pre>${escapedCode}</pre><p>[[/CODE]]</p><p><br></p>`;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+// Figure Modal
+function openFigureModal() {
+  const menu = document.getElementById('blockMarkersMenu');
+  menu.classList.remove('active');
+
+  saveSelection();
+  document.getElementById('figureModal').classList.add('active');
+  document.getElementById('figureCaption').value = '';
+  document.getElementById('figureCaption').focus();
+}
+
+function closeFigureModal() {
+  document.getElementById('figureModal').classList.remove('active');
+  restoreSelection();
+}
+
+function insertFigureMarker() {
+  const caption = document.getElementById('figureCaption').value.trim();
+
+  if (!caption) {
+    showToast('Vui lòng nhập caption', 'warning');
+    return;
+  }
+
+  closeFigureModal();
+  restoreSelection();
+
+  const html = `<p>[[FIGURE:${caption}]]</p><p>(Chèn hình ảnh ở đây)</p><p>[[/FIGURE]]</p><p><br></p>`;
+
+  document.execCommand('insertHTML', false, html);
   document.getElementById('contentEditor').focus();
 }
 
@@ -248,7 +385,7 @@ function handleImageUpload(file) {
     return;
   }
   
-  showLoading('Đang upload hình ảnh...');
+  showTopicEditorLoading('Đang upload hình ảnh...');
   
   // Convert to base64
   const reader = new FileReader();
@@ -260,7 +397,7 @@ function handleImageUpload(file) {
     // Upload to Google Drive
     google.script.run
       .withSuccessHandler(function(result) {
-        hideLoading();
+        hideTopicEditorLoading();
         if (result.success) {
           closeImageModal();
           restoreSelection();
@@ -271,7 +408,7 @@ function handleImageUpload(file) {
         }
       })
       .withFailureHandler(function(error) {
-        hideLoading();
+        hideTopicEditorLoading();
         showToast('Lỗi: ' + error.message, 'error');
       })
       .uploadImageToDrive(base64Data, fileName, mimeType);
@@ -390,7 +527,7 @@ async function publishTopic() {
     return;
   }
   
-  showLoading('Đang tạo và publish topic...');
+  showTopicEditorLoading('Đang tạo và publish topic...');
 
   const topicData = {
     topicId: topicId,
@@ -405,7 +542,7 @@ async function publishTopic() {
 
   // Check if google.script.run is available
   if (typeof google === 'undefined' || !google.script || !google.script.run) {
-    hideLoading();
+    hideTopicEditorLoading();
     showToast('Lỗi: Không thể kết nối với server. Vui lòng tải lại trang.', 'error');
     console.error('google.script.run not available');
     return;
@@ -413,60 +550,87 @@ async function publishTopic() {
 
   // Set a timeout to prevent infinite loading
   const publishTimeout = setTimeout(function() {
-    hideLoading();
-    showToast('⏱️ Quá thời gian chờ. Vui lòng kiểm tra Apps Script Logs và thử lại.', 'error');
+    hideTopicEditorLoading();
+    showToast('⏱️ Quá thời gian chờ (60s). Vui lòng kiểm tra Apps Script Logs và thử lại.', 'error');
     console.error('Publish timeout - server took too long to respond');
-  }, 120000); // 2 minutes timeout
+  }, 60000); // 60 seconds timeout
 
   google.script.run
     .withSuccessHandler(function(result) {
       clearTimeout(publishTimeout);
-      hideLoading();
+      hideTopicEditorLoading();
       console.log('✅ Server response:', result);
-      if (result && result.success) {
-        showToast('🎉 Publish thành công!', 'success');
-        
-        // Show success message with doc link
-        setTimeout(async function() {
-          if (typeof window.showAppAlert === 'function') {
-            await window.showAppAlert(
-              '✅ Topic đã được publish thành công!\n\n' +
-              '📄 Doc ID: ' + result.docId + '\n' +
-              '🔗 Link: ' + result.docUrl + '\n\n' +
-              'Topic đã được thêm vào MasterDB.',
-              { title: 'Publish thành công', confirmText: 'Đã hiểu' }
-            );
-          } else {
-            console.warn('showAppAlert is unavailable');
-          }
 
-          // Reset form
-          const shouldCreateNew =
-            typeof window.showAppConfirm === 'function'
-              ? await window.showAppConfirm('Bạn có muốn tạo topic mới?', {
-                  title: 'Tạo topic mới',
-                  confirmText: 'Tạo mới',
-                  cancelText: 'Không'
-                })
-              : false;
-          if (shouldCreateNew) {
-            resetForm();
-          }
-        }, 500);
-      } else {
-        showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
+      try {
+        if (result && result.success) {
+          showToast('🎉 Publish thành công!', 'success');
+
+          // Show success message with doc link - use simple alert if dialog fails
+          setTimeout(function() {
+            try {
+              var message = '✅ Topic đã được publish thành công!\n\n' +
+                '📄 Doc ID: ' + result.docId + '\n' +
+                '🔗 Link: ' + result.docUrl + '\n\n' +
+                'Topic đã được thêm vào MasterDB.';
+
+              if (typeof window.showAppAlert === 'function') {
+                window.showAppAlert(message, { title: 'Publish thành công', confirmText: 'Đã hiểu' })
+                  .then(function() {
+                    askCreateNew();
+                  })
+                  .catch(function(e) {
+                    console.warn('showAppAlert error:', e);
+                    askCreateNew();
+                  });
+              } else {
+                alert(message);
+                askCreateNew();
+              }
+            } catch (e) {
+              console.error('Success dialog error:', e);
+              askCreateNew();
+            }
+
+            function askCreateNew() {
+              try {
+                if (typeof window.showAppConfirm === 'function') {
+                  window.showAppConfirm('Bạn có muốn tạo topic mới?', {
+                    title: 'Tạo topic mới',
+                    confirmText: 'Tạo mới',
+                    cancelText: 'Không'
+                  }).then(function(shouldCreateNew) {
+                    if (shouldCreateNew) resetForm();
+                  }).catch(function(e) {
+                    console.warn('showAppConfirm error:', e);
+                  });
+                }
+              } catch (e) {
+                console.warn('askCreateNew error:', e);
+              }
+            }
+          }, 500);
+        } else {
+          showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
+        }
+      } catch (e) {
+        console.error('Success handler error:', e);
+        showToast('Có lỗi xảy ra khi xử lý kết quả', 'error');
       }
     })
     .withFailureHandler(function(error) {
       clearTimeout(publishTimeout);
-      hideLoading();
+      hideTopicEditorLoading();
       console.error('❌ Server error:', error);
       var errorMsg = error && error.message ? error.message : String(error);
       showToast('Lỗi: ' + errorMsg, 'error');
-      if (typeof window.showAppAlert === 'function') {
-        window.showAppAlert('Chi tiết lỗi:\n\n' + errorMsg, { title: 'Lỗi publish topic' });
-      } else {
-        console.warn('showAppAlert is unavailable');
+
+      try {
+        if (typeof window.showAppAlert === 'function') {
+          window.showAppAlert('Chi tiết lỗi:\n\n' + errorMsg, { title: 'Lỗi publish topic' })
+            .catch(function(e) { console.warn('Alert error:', e); });
+        }
+      } catch (e) {
+        console.warn('Failure handler alert error:', e);
       }
     })
     .createAndPublishTopic(topicData);
@@ -551,13 +715,34 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function showLoading(text) {
-  document.getElementById('loadingText').textContent = text || 'Đang xử lý...';
-  document.getElementById('loadingOverlay').classList.add('active');
+function showTopicEditorLoading(text) {
+  try {
+    var loadingText = document.getElementById('loadingText');
+    var loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingText) loadingText.textContent = text || 'Đang xử lý...';
+    if (loadingOverlay) {
+      loadingOverlay.classList.add('active');
+      loadingOverlay.style.display = 'flex'; // Force show
+      console.log('[TopicEditor] Loading shown:', text);
+    }
+  } catch (e) {
+    console.error('showTopicEditorLoading error:', e);
+  }
 }
 
-function hideLoading() {
-  document.getElementById('loadingOverlay').classList.remove('active');
+function hideTopicEditorLoading() {
+  try {
+    var loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+      loadingOverlay.classList.remove('active');
+      loadingOverlay.style.display = 'none'; // Force hide
+      console.log('[TopicEditor] Loading hidden');
+    } else {
+      console.warn('loadingOverlay element not found');
+    }
+  } catch (e) {
+    console.error('hideTopicEditorLoading error:', e);
+  }
 }
 
 function showToast(message, type) {
@@ -639,6 +824,15 @@ window.insertImageFromUrl = insertImageFromUrl;
 window.deleteImage = deleteImage;
 window.closePreviewModal = closePreviewModal;
 window.showToast = showToast;
-window.showLoading = showLoading;
-window.hideLoading = hideLoading;
+// Block Markers functions
+window.toggleBlockMarkersMenu = toggleBlockMarkersMenu;
+window.insertBlockMarker = insertBlockMarker;
+window.insertColorMarker = insertColorMarker;
+window.openCodeMarkerModal = openCodeMarkerModal;
+window.closeCodeMarkerModal = closeCodeMarkerModal;
+window.insertCodeMarker = insertCodeMarker;
+window.openFigureModal = openFigureModal;
+window.closeFigureModal = closeFigureModal;
+window.insertFigureMarker = insertFigureMarker;
+// Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
 </script>

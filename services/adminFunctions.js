@@ -1181,6 +1181,9 @@ function convertHtmlToDocContent(html, body) {
     }
 
     // Process found blocks
+    let imageCount = 0;
+    const MAX_IMAGES = 10; // Giới hạn số ảnh để tránh timeout
+
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       Logger.log("Processing block " + i + ": type=" + block.type + ", text=" + (block.text ? block.text.substring(0, 50) : "N/A"));
@@ -1266,6 +1269,12 @@ function convertHtmlToDocContent(html, body) {
               body.appendParagraph('[Hình ảnh: URL trống]');
               break;
             }
+            // Giới hạn số lượng ảnh để tránh timeout
+            if (imageCount >= MAX_IMAGES) {
+              body.appendParagraph('[Hình ảnh: ' + block.src + '] (bỏ qua - đã đạt giới hạn)');
+              break;
+            }
+            imageCount++;
             // Fetch with timeout and error handling
             const imageResponse = UrlFetchApp.fetch(block.src, {
               muteHttpExceptions: true,
@@ -1367,8 +1376,11 @@ function parseHtmlBlocks(html) {
   for (const pattern of patterns) {
     let match;
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
-    
-    while ((match = regex.exec(html)) !== null) {
+    let matchCount = 0;
+    const MAX_MATCHES = 200; // Giới hạn số lần match để tránh timeout
+
+    while ((match = regex.exec(html)) !== null && matchCount < MAX_MATCHES) {
+      matchCount++;
       const matchData = {
         type: pattern.type,
         index: match.index,
