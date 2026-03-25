@@ -16,20 +16,295 @@ const GeminiService = {
   // API Endpoint - gemini-pro hoạt động trên v1
   API_ENDPOINT: "https://generativelanguage.googleapis.com/v1/",
 
+  USER_KEY_PREFIX: AI_CONFIG.GEMINI_USER_KEY_PREFIX || "GEMINI_USER_KEY_",
+  KEY_SECRET_PROPERTY:
+    AI_CONFIG.GEMINI_KEY_ENCRYPTION_SECRET_PROPERTY ||
+    "GEMINI_KEY_ENCRYPTION_SECRET",
+
+  _lastSetupApiKeyError: "",
+
+  _normalizeApiKey: function (apiKey) {
+    var key = String(apiKey || "").trim();
+
+    // Remove accidental wrapping quotes when users copy/paste from docs/chat.
+    key = key.replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, "");
+
+    // Remove hidden unicode and any whitespace/newlines introduced by copy/paste.
+    key = key.replace(/[\u200B-\u200D\uFEFF]/g, "");
+    key = key.replace(/\s+/g, "");
+
+    return key;
+  },
+
+  _maskApiKey: function (apiKey) {
+    const key = this._normalizeApiKey(apiKey);
+    if (!key) return "";
+    if (key.length <= 10) return "***";
+    return key.substring(0, 6) + "..." + key.substring(key.length - 4);
+  },
+
+  _isValidApiKeyFormat: function (apiKey) {
+    const key = this._normalizeApiKey(apiKey);
+    return /^AIza[\w-]{30,}$/.test(key);
+  },
+
+  _getEncryptionSecret: function () {
+    const props = PropertiesService.getScriptProperties();
+    let secret = props.getProperty(this.KEY_SECRET_PROPERTY);
+
+    if (!secret) {
+      secret =
+        Utilities.getUuid().replace(/-/g, "") +
+        Utilities.getUuid().replace(/-/g, "");
+      props.setProperty(this.KEY_SECRET_PROPERTY, secret);
+    }
+
+    return secret;
+  },
+
+  _xorCipher: function (text, secret) {
+    const textChars = String(text || "").split("");
+    const secretChars = String(secret || "").split("");
+    const output = [];
+
+    for (let i = 0; i < textChars.length; i++) {
+      const textCode = textChars[i].charCodeAt(0);
+      const secretCode = secretChars[i % secretChars.length].charCodeAt(0);
+      output.push(String.fromCharCode(textCode ^ secretCode));
+    }
+
+    return output.join("");
+  },
+
+  _encryptApiKey: function (plainKey) {
+    const key = this._normalizeApiKey(plainKey);
+    const secret = this._getEncryptionSecret();
+    const cipherText = this._xorCipher(key, secret);
+    return Utilities.base64EncodeWebSafe(cipherText, Utilities.Charset.UTF_8);
+  },
+
+  _decryptApiKey: function (encryptedKey) {
+    try {
+      const decoded = Utilities.newBlob(
+        Utilities.base64DecodeWebSafe(String(encryptedKey || "")),
+      ).getDataAsString("UTF-8");
+      const secret = this._getEncryptionSecret();
+      return this._xorCipher(decoded, secret);
+    } catch (error) {
+      Logger.log("Error decrypting API key: " + error.toString());
+      return "";
+    }
+  },
+
+  _hashApiKey: function (apiKey) {
+    const digest = Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      this._normalizeApiKey(apiKey),
+      Utilities.Charset.UTF_8,
+    );
+    return digest
+      .map(function (byte) {
+        const value = byte < 0 ? byte + 256 : byte;
+        return ("0" + value.toString(16)).slice(-2);
+      })
+      .join("");
+  },
+
+  _getUsersSheet: function () {
+    const ss = getOrCreateDatabase();
+    return ss ? ss.getSheetByName("Users") : null;
+  },
+
+  _ensureKeySheets: function () {
+    const ss = getOrCreateDatabase();
+    if (!ss) return;
+
+    const keySheetConfig = DB_CONFIG?.SHEETS?.AI_USER_KEYS;
+    const usageSheetConfig = DB_CONFIG?.SHEETS?.AI_KEY_USAGE_LOGS;
+
+    if (keySheetConfig && !ss.getSheetByName(keySheetConfig.name)) {
+      createSheet(ss, keySheetConfig);
+    }
+    if (usageSheetConfig && !ss.getSheetByName(usageSheetConfig.name)) {
+      createSheet(ss, usageSheetConfig);
+    }
+  },
+
+  _findUserById: function (userId) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return null;
+
+    const usersSheet = this._getUsersSheet();
+    if (!usersSheet) return null;
+
+    const data = usersSheet.getDataRange().getValues();
+    if (!data || data.length < 2) return null;
+
+    const headers = data[0];
+    const userIdCol = headers.indexOf("userId");
+    const emailCol = headers.indexOf("email");
+    const isActiveCol = headers.indexOf("isActive");
+
+    if (userIdCol < 0) return null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][userIdCol] || "").trim() !== normalizedUserId) {
+        continue;
+      }
+
+      return {
+        userId: normalizedUserId,
+        email: String(data[i][emailCol] || "").trim(),
+        isActive:
+          isActiveCol < 0
+            ? true
+            : !(data[i][isActiveCol] === false || data[i][isActiveCol] === "FALSE"),
+      };
+    }
+
+    return null;
+  },
+
+  _findUserByEmail: function (email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const usersSheet = this._getUsersSheet();
+    if (!usersSheet) return null;
+
+    const data = usersSheet.getDataRange().getValues();
+    if (!data || data.length < 2) return null;
+
+    const headers = data[0];
+    const userIdCol = headers.indexOf("userId");
+    const emailCol = headers.indexOf("email");
+    const isActiveCol = headers.indexOf("isActive");
+
+    if (userIdCol < 0 || emailCol < 0) return null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][emailCol] || "").trim().toLowerCase() !== normalizedEmail) {
+        continue;
+      }
+
+      return {
+        userId: String(data[i][userIdCol] || "").trim(),
+        email: String(data[i][emailCol] || "").trim(),
+        isActive:
+          isActiveCol < 0
+            ? true
+            : !(data[i][isActiveCol] === false || data[i][isActiveCol] === "FALSE"),
+      };
+    }
+
+    return null;
+  },
+
+  resolveAuthenticatedUser: function (userContext) {
+    const sessionEmail = String(Session.getActiveUser().getEmail() || "").trim();
+    let sessionUser = null;
+
+    if (sessionEmail && sessionEmail !== "anonymous") {
+      sessionUser = this._findUserByEmail(sessionEmail);
+      if (sessionUser && !sessionUser.isActive) {
+        throw new Error("Tài khoản đang bị vô hiệu hóa");
+      }
+    }
+
+    if (sessionUser) {
+      if (userContext && userContext.userId) {
+        const requestedUserId = String(userContext.userId || "").trim();
+        if (requestedUserId && requestedUserId !== sessionUser.userId) {
+          throw new Error("Phiên đăng nhập không khớp với userId yêu cầu");
+        }
+      }
+      return {
+        userId: sessionUser.userId,
+        email: sessionUser.email,
+      };
+    }
+
+    const fallbackUserId = String((userContext && userContext.userId) || "").trim();
+    if (!fallbackUserId) {
+      throw new Error("Không xác định được người dùng hiện tại");
+    }
+
+    const fallbackUser = this._findUserById(fallbackUserId);
+    if (!fallbackUser || !fallbackUser.isActive) {
+      throw new Error("Người dùng không hợp lệ hoặc đã bị khóa");
+    }
+
+    if (userContext && userContext.email) {
+      const providedEmail = String(userContext.email || "").trim().toLowerCase();
+      if (providedEmail && providedEmail !== String(fallbackUser.email || "").trim().toLowerCase()) {
+        throw new Error("Email ngữ cảnh không khớp tài khoản");
+      }
+    }
+
+    return {
+      userId: fallbackUser.userId,
+      email: fallbackUser.email,
+    };
+  },
+
+  _findUserKeyRecord: function (userId) {
+    this._ensureKeySheets();
+    const sheet = getSheet("AI_User_Keys");
+    if (!sheet) return null;
+
+    const data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][1] || "").trim() === String(userId || "").trim()) {
+        return {
+          rowIndex: i + 1,
+          values: data[i],
+        };
+      }
+    }
+
+    return null;
+  },
+
+  _logKeyUsage: function (usageData) {
+    try {
+      this._ensureKeySheets();
+      const sheet = getSheet("AI_Key_Usage_Logs");
+      if (!sheet) return;
+
+      const usageId = generateNextId(sheet, "AKL");
+      sheet.appendRow([
+        usageId,
+        usageData.userId || "",
+        usageData.topicId || "",
+        usageData.contentType || "",
+        usageData.model || AI_CONFIG.GEMINI_MODEL_DEFAULT,
+        usageData.status || "UNKNOWN",
+        usageData.httpCode || "",
+        usageData.errorMessage || "",
+        usageData.durationMs || 0,
+        new Date(),
+      ]);
+    } catch (error) {
+      Logger.log("Error logging key usage: " + error.toString());
+    }
+  },
+
   /**
    * Lấy API Key từ Script Properties
    * @returns {string|null} API Key hoặc null nếu chưa setup
    */
-  getApiKey: function () {
+  getApiKey: function (userContext) {
     try {
-      const key = PropertiesService.getScriptProperties().getProperty(
-        AI_CONFIG.GEMINI_API_KEY_PROPERTY,
-      );
-      if (!key) {
-        Logger.log("⚠️ GEMINI_API_KEY chưa được setup trong Script Properties");
+      const user = this.resolveAuthenticatedUser(userContext);
+      const record = this._findUserKeyRecord(user.userId);
+      if (!record || !record.values[4]) {
         return null;
       }
-      return key;
+
+      const decrypted = this._decryptApiKey(record.values[4]);
+      return this._normalizeApiKey(decrypted) || null;
     } catch (error) {
       Logger.log("Error getting API key: " + error.toString());
       return null;
@@ -41,19 +316,75 @@ const GeminiService = {
    * @param {string} apiKey - Gemini API Key
    * @returns {boolean} Success status
    */
-  setupApiKey: function (apiKey) {
+  setupApiKey: function (apiKey, userContext) {
     try {
-      if (!apiKey || apiKey.length < 10) {
-        throw new Error("Invalid API key format");
+      this._lastSetupApiKeyError = "";
+      const user = this.resolveAuthenticatedUser(userContext);
+      const normalizedKey = this._normalizeApiKey(apiKey);
+
+      if (!this._isValidApiKeyFormat(normalizedKey)) {
+        throw new Error("Định dạng Gemini API key không hợp lệ");
       }
-      PropertiesService.getScriptProperties().setProperty(
-        AI_CONFIG.GEMINI_API_KEY_PROPERTY,
-        apiKey,
-      );
-      Logger.log("✅ Gemini API Key đã được lưu thành công!");
+
+      const validated = this.validateUserApiKey(user, normalizedKey);
+      if (!validated.success) {
+        throw new Error(validated.message || "API key không hợp lệ");
+      }
+
+      this._ensureKeySheets();
+      const sheet = getSheet("AI_User_Keys");
+      if (!sheet) {
+        throw new Error("AI_User_Keys sheet not found");
+      }
+
+      const encryptedKey = this._encryptApiKey(normalizedKey);
+      const keyHash = this._hashApiKey(normalizedKey);
+      const now = new Date();
+      const record = this._findUserKeyRecord(user.userId);
+
+      if (record) {
+        sheet.getRange(record.rowIndex, 3).setValue(this._maskApiKey(normalizedKey));
+        sheet.getRange(record.rowIndex, 4).setValue(keyHash);
+        sheet.getRange(record.rowIndex, 5).setValue(encryptedKey);
+        sheet.getRange(record.rowIndex, 6).setValue(true);
+        sheet.getRange(record.rowIndex, 7).setValue("ACTIVE");
+        sheet.getRange(record.rowIndex, 8).setValue(now);
+        sheet.getRange(record.rowIndex, 10).setValue("");
+        sheet.getRange(record.rowIndex, 12).setValue(now);
+      } else {
+        const keyId = generateNextId(sheet, "AUK");
+        sheet.appendRow([
+          keyId,
+          user.userId,
+          this._maskApiKey(normalizedKey),
+          keyHash,
+          encryptedKey,
+          true,
+          "ACTIVE",
+          now,
+          "",
+          "",
+          now,
+          now,
+        ]);
+      }
+
+      logActivity({
+        level: "INFO",
+        category: "AI",
+        userId: user.userId,
+        action: "UPSERT_GEMINI_API_KEY",
+        details: "Updated personal Gemini API key",
+      });
+
       return true;
     } catch (error) {
-      Logger.log("Error setting API key: " + error.toString());
+      this._lastSetupApiKeyError =
+        (error && (error.message || error.toString())) ||
+        "Không rõ nguyên nhân";
+      Logger.log(
+        "Error setting API key: " + this._lastSetupApiKeyError,
+      );
       return false;
     }
   },
@@ -62,25 +393,25 @@ const GeminiService = {
    * Kiểm tra API Key có hoạt động không
    * @returns {Object} Status và thông tin
    */
-  testConnection: function () {
+  testConnection: function (userContext) {
     try {
-      const apiKey = this.getApiKey();
+      const apiKey = this.getApiKey(userContext);
       if (!apiKey) {
         return {
           success: false,
-          message:
-            "API Key chưa được setup. Vui lòng chạy: ADMIN_setupGeminiApiKey()",
+          code: "AI_KEY_NOT_CONFIGURED",
+          message: "Bạn chưa cấu hình Gemini API key cá nhân trong Profile/Settings.",
         };
       }
 
       // Test với request đơn giản
       const testPrompt = "Respond with exactly: CONNECTION_OK";
-      const response = this._callAPI(testPrompt, { maxTokens: 50 });
+      const response = this._callAPI(testPrompt, { maxTokens: 50 }, userContext);
 
       if (response && response.includes("CONNECTION_OK")) {
         return {
           success: true,
-          message: "✅ Gemini API kết nối thành công!",
+          message: "✅ Gemini API key cá nhân hoạt động bình thường!",
           model: AI_CONFIG.GEMINI_MODEL_DEFAULT,
         };
       } else {
@@ -104,10 +435,15 @@ const GeminiService = {
    * @param {Object} config - Cấu hình (temperature, maxTokens, model)
    * @returns {string|Object} Response từ AI
    */
-  _callAPI: function (prompt, config = {}) {
-    const apiKey = this.getApiKey();
+  _callAPI: function (prompt, config = {}, userContext) {
+    const user = this.resolveAuthenticatedUser(userContext);
+    const apiKey = this.getApiKey(user);
     if (!apiKey) {
-      throw new Error("Gemini API Key chưa được setup");
+      const keyError = new Error(
+        "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng cập nhật trong Profile/Settings.",
+      );
+      keyError.code = "AI_KEY_NOT_CONFIGURED";
+      throw keyError;
     }
 
     const model = config.model || AI_CONFIG.GEMINI_MODEL_DEFAULT;
@@ -163,29 +499,108 @@ const GeminiService = {
     const processingTime = Date.now() - startTime;
     const responseText = response.getContentText();
 
+    const keyRecord = this._findUserKeyRecord(user.userId);
+    if (keyRecord) {
+      const now = new Date();
+      const sheet = getSheet("AI_User_Keys");
+      if (sheet) {
+        sheet.getRange(keyRecord.rowIndex, 9).setValue(now);
+        sheet.getRange(keyRecord.rowIndex, 12).setValue(now);
+      }
+    }
+
     if (responseCode !== 200) {
       let errorMsg = responseText;
       try {
         const errorJson = JSON.parse(responseText);
         errorMsg = errorJson.error?.message || responseText;
       } catch (e) {}
+
+      if (keyRecord) {
+        const sheet = getSheet("AI_User_Keys");
+        if (sheet) {
+          sheet.getRange(keyRecord.rowIndex, 6).setValue(false);
+          sheet.getRange(keyRecord.rowIndex, 7).setValue("ERROR");
+          sheet.getRange(keyRecord.rowIndex, 10).setValue(errorMsg);
+          sheet.getRange(keyRecord.rowIndex, 12).setValue(new Date());
+        }
+      }
+
+      this._logKeyUsage({
+        userId: user.userId,
+        topicId: config.topicId || "",
+        contentType: config.contentType || "",
+        model: model,
+        status: "FAILED",
+        httpCode: responseCode,
+        errorMessage: errorMsg,
+        durationMs: processingTime,
+      });
+
       throw new Error("Gemini API Error (" + responseCode + "): " + errorMsg);
     }
 
     const json = JSON.parse(responseText);
 
     if (json.error) {
+      this._logKeyUsage({
+        userId: user.userId,
+        topicId: config.topicId || "",
+        contentType: config.contentType || "",
+        model: model,
+        status: "FAILED",
+        httpCode: 200,
+        errorMessage: json.error.message || "Gemini API Error",
+        durationMs: processingTime,
+      });
       throw new Error("Gemini API Error: " + json.error.message);
     }
 
     // Extract text từ response
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
+      this._logKeyUsage({
+        userId: user.userId,
+        topicId: config.topicId || "",
+        contentType: config.contentType || "",
+        model: model,
+        status: "FAILED",
+        httpCode: 200,
+        errorMessage: "Empty response from Gemini API",
+        durationMs: processingTime,
+      });
       throw new Error("Empty response from Gemini API");
     }
 
-    // Log usage
-    Logger.log("✅ Gemini API call successful. Time: " + processingTime + "ms");
+    this._logKeyUsage({
+      userId: user.userId,
+      topicId: config.topicId || "",
+      contentType: config.contentType || "",
+      model: model,
+      status: "SUCCESS",
+      httpCode: 200,
+      errorMessage: "",
+      durationMs: processingTime,
+    });
+
+    // Mark key as active/valid
+    if (keyRecord) {
+      const sheet = getSheet("AI_User_Keys");
+      if (sheet) {
+        sheet.getRange(keyRecord.rowIndex, 6).setValue(true);
+        sheet.getRange(keyRecord.rowIndex, 7).setValue("ACTIVE");
+        sheet.getRange(keyRecord.rowIndex, 10).setValue("");
+        sheet.getRange(keyRecord.rowIndex, 12).setValue(new Date());
+      }
+    }
+
+    Logger.log(
+      "✅ Gemini API call successful for user " +
+        user.userId +
+        ". Time: " +
+        processingTime +
+        "ms",
+    );
 
     // Try parse as JSON if expected
     if (config.expectJson) {
@@ -210,15 +625,20 @@ const GeminiService = {
    * @param {number} maxRetries
    * @returns {string|Object}
    */
-  callWithRetry: function (prompt, config = {}, maxRetries = 2) {
+  callWithRetry: function (prompt, config = {}, userContext, maxRetries = 2) {
     let lastError;
 
     for (let i = 0; i < maxRetries; i++) {
       try {
-        return this._callAPI(prompt, config);
+        return this._callAPI(prompt, config, userContext);
       } catch (error) {
         lastError = error;
         const errorStr = error.toString();
+
+        if (error.code === "AI_KEY_NOT_CONFIGURED") {
+          throw error;
+        }
+
         Logger.log("🔄 Retry " + (i + 1) + "/" + maxRetries + ": " + errorStr);
 
         // Nếu là rate limit (429), đợi ngắn hơn vì _callAPI đã retry nội bộ
@@ -239,6 +659,175 @@ const GeminiService = {
     }
 
     throw lastError;
+  },
+
+  validateUserApiKey: function (userContext, apiKey) {
+    try {
+      const user = this.resolveAuthenticatedUser(userContext);
+      const keyToTest = this._normalizeApiKey(apiKey || this.getApiKey(user));
+
+      if (!keyToTest) {
+        return {
+          success: false,
+          code: "AI_KEY_NOT_CONFIGURED",
+          message: "Bạn chưa cấu hình Gemini API key cá nhân.",
+        };
+      }
+
+      if (!this._isValidApiKeyFormat(keyToTest)) {
+        return {
+          success: false,
+          code: "AI_KEY_FORMAT_INVALID",
+          message: "Định dạng API key không hợp lệ.",
+        };
+      }
+
+      const modelPath = "models/" + AI_CONFIG.GEMINI_MODEL_DEFAULT;
+      const url = this.API_ENDPOINT + modelPath + ":generateContent?key=" + keyToTest;
+      const payload = {
+        contents: [{ parts: [{ text: "Respond exactly: VALID" }] }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 16,
+        },
+      };
+
+      const response = UrlFetchApp.fetch(url, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true,
+      });
+
+      const code = response.getResponseCode();
+      if (code !== 200) {
+        let message = response.getContentText();
+        try {
+          const errorJson = JSON.parse(message);
+          message = errorJson.error?.message || message;
+        } catch (e) {}
+
+        return {
+          success: false,
+          code: "AI_KEY_INVALID",
+          message: "Gemini từ chối API key: " + message,
+          httpCode: code,
+        };
+      }
+
+      return {
+        success: true,
+        message: "API key hợp lệ",
+        userId: user.userId,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        code: "AI_KEY_VALIDATE_ERROR",
+        message: error.toString(),
+      };
+    }
+  },
+
+  getUserApiKeyStatus: function (userContext) {
+    try {
+      const user = this.resolveAuthenticatedUser(userContext);
+      const record = this._findUserKeyRecord(user.userId);
+
+      if (!record) {
+        return {
+          success: true,
+          hasKey: false,
+          isValid: false,
+          status: "NOT_CONFIGURED",
+          message: "Chưa cấu hình Gemini API key",
+        };
+      }
+
+      return {
+        success: true,
+        hasKey: !!record.values[4],
+        isValid: record.values[5] === true || record.values[5] === "TRUE",
+        status: record.values[6] || "UNKNOWN",
+        keyAlias: record.values[2] || "",
+        lastValidatedAt: record.values[7] || "",
+        lastUsedAt: record.values[8] || "",
+        lastError: record.values[9] || "",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        hasKey: false,
+        isValid: false,
+        status: "ERROR",
+        message: error.toString(),
+      };
+    }
+  },
+
+  deleteUserApiKey: function (userContext) {
+    try {
+      const user = this.resolveAuthenticatedUser(userContext);
+      const record = this._findUserKeyRecord(user.userId);
+      if (!record) {
+        return {
+          success: true,
+          message: "Không có API key để xóa",
+        };
+      }
+
+      const sheet = getSheet("AI_User_Keys");
+      if (!sheet) {
+        throw new Error("AI_User_Keys sheet not found");
+      }
+
+      sheet.getRange(record.rowIndex, 3).setValue("");
+      sheet.getRange(record.rowIndex, 4).setValue("");
+      sheet.getRange(record.rowIndex, 5).setValue("");
+      sheet.getRange(record.rowIndex, 6).setValue(false);
+      sheet.getRange(record.rowIndex, 7).setValue("DELETED");
+      sheet.getRange(record.rowIndex, 8).setValue("");
+      sheet.getRange(record.rowIndex, 9).setValue("");
+      sheet.getRange(record.rowIndex, 10).setValue("");
+      sheet.getRange(record.rowIndex, 12).setValue(new Date());
+
+      logActivity({
+        level: "INFO",
+        category: "AI",
+        userId: user.userId,
+        action: "DELETE_GEMINI_API_KEY",
+        details: "Removed personal Gemini API key",
+      });
+
+      return {
+        success: true,
+        message: "Đã xóa Gemini API key cá nhân",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.toString(),
+      };
+    }
+  },
+
+  requireUserApiKey: function (userContext) {
+    const user = this.resolveAuthenticatedUser(userContext);
+    const apiKey = this.getApiKey(user);
+
+    if (!apiKey) {
+      const error = new Error(
+        "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng vào Profile/Settings để thêm key.",
+      );
+      error.code = "AI_KEY_NOT_CONFIGURED";
+      throw error;
+    }
+
+    return {
+      userId: user.userId,
+      email: user.email,
+      apiKey: apiKey,
+    };
   },
 
   /**
@@ -366,26 +955,24 @@ const GeminiService = {
 
 /**
  * [ADMIN] Setup Gemini API Key
- * Chạy hàm này trong Script Editor với API key của bạn
+ * Deprecated: hệ thống hiện dùng API key theo từng user.
  */
 function ADMIN_setupGeminiApiKey() {
-  // ⚠️ API Key mới (đã thay thế)
-  const YOUR_API_KEY = "AIzaSyDmIrja-q3C8p1Eus4nQ_B0e0J0g9iw3LA";
-
-  const result = GeminiService.setupApiKey(YOUR_API_KEY);
-  if (result) {
-    Logger.log("✅ API Key đã được lưu!");
-    Logger.log("🔄 Đang test kết nối...");
-    const testResult = GeminiService.testConnection();
-    Logger.log(JSON.stringify(testResult, null, 2));
-  }
+  Logger.log(
+    "ADMIN_setupGeminiApiKey is deprecated. Use upsertUserGeminiApiKey(userId, apiKey) instead.",
+  );
+  return {
+    success: false,
+    message:
+      "Deprecated: hệ thống dùng key cá nhân theo user. Vui lòng cấu hình trong Profile/Settings.",
+  };
 }
 
 /**
  * [ADMIN] Test Gemini API Connection
  */
 function ADMIN_testGeminiConnection() {
-  const result = GeminiService.testConnection();
+  const result = GeminiService.testConnection({});
   Logger.log(JSON.stringify(result, null, 2));
   return result;
 }
@@ -400,6 +987,53 @@ function ADMIN_testReadGoogleDoc() {
   const result = GeminiService.readGoogleDoc(TEST_DOC_ID);
   Logger.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+function getUserGeminiKeyStatus(userId) {
+  return GeminiService.getUserApiKeyStatus({ userId: userId });
+}
+
+function validateUserGeminiApiKey(userId, apiKey) {
+  return GeminiService.validateUserApiKey({ userId: userId }, apiKey);
+}
+
+function upsertUserGeminiApiKey(userId, apiKey) {
+  try {
+    const success = GeminiService.setupApiKey(apiKey, { userId: userId });
+    if (!success) {
+      const validated = GeminiService.validateUserApiKey(
+        { userId: userId },
+        apiKey,
+      );
+
+      const detailedMessage =
+        GeminiService._lastSetupApiKeyError ||
+        validated?.message ||
+        "Không thể lưu API key. Vui lòng thử lại.";
+
+      return {
+        success: false,
+        code: validated?.code || "AI_KEY_SAVE_FAILED",
+        message: detailedMessage,
+      };
+    }
+
+    const status = GeminiService.getUserApiKeyStatus({ userId: userId });
+    return {
+      success: true,
+      message: "Đã lưu API key cá nhân thành công",
+      status: status,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString(),
+    };
+  }
+}
+
+function deleteUserGeminiApiKey(userId) {
+  return GeminiService.deleteUserApiKey({ userId: userId });
 }
 
 /**

@@ -430,7 +430,7 @@ const ContentGenerator = {
    * @param {string} docContent - Nội dung Google Doc
    * @returns {Object} Analysis result
    */
-  analyzeDocument: function (docContent) {
+  analyzeDocument: function (docContent, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.DOCUMENT_ANALYSIS.replace(
       "{docContent}",
       docContent,
@@ -440,7 +440,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.3, // Thấp để có kết quả nhất quán
       maxTokens: 2048,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "document_analysis",
+    }, userContext);
 
     return result;
   },
@@ -451,7 +453,7 @@ const ContentGenerator = {
    * @param {Object} analysis - Kết quả từ analyzeDocument
    * @returns {Object} Mindmap data
    */
-  generateMindmap: function (docContent, analysis) {
+  generateMindmap: function (docContent, analysis, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.MINDMAP_GENERATION.replace(
       "{docContent}",
       docContent,
@@ -461,7 +463,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.5,
       maxTokens: 3000,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "mindmap",
+    }, userContext);
   },
 
   /**
@@ -470,7 +474,7 @@ const ContentGenerator = {
    * @param {Object} analysis
    * @returns {Object} Infographic data
    */
-  generateInfographic: function (docContent, analysis) {
+  generateInfographic: function (docContent, analysis, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.INFOGRAPHIC_GENERATION.replace(
       "{docContent}",
       docContent,
@@ -480,7 +484,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.5,
       maxTokens: 2500,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "infographic",
+    }, userContext);
   },
 
   /**
@@ -490,7 +496,13 @@ const ContentGenerator = {
    * @param {number} cardCount - Số lượng flashcards (default 15)
    * @returns {Object} Flashcards data
    */
-  generateFlashcards: function (docContent, analysis, cardCount = 15) {
+  generateFlashcards: function (
+    docContent,
+    analysis,
+    cardCount = 15,
+    userContext,
+    requestMeta,
+  ) {
     const prompt = PROMPT_TEMPLATES.FLASHCARD_GENERATION.replace(
       "{docContent}",
       docContent,
@@ -502,7 +514,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.6,
       maxTokens: 4000,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "flashcards",
+    }, userContext);
   },
 
   /**
@@ -512,7 +526,7 @@ const ContentGenerator = {
    * @param {Object} options - { questionCount, difficulty, focusConcepts }
    * @returns {Object} Questions data
    */
-  generateQuestions: function (docContent, analysis, options = {}) {
+  generateQuestions: function (docContent, analysis, options = {}, userContext, requestMeta) {
     const questionCount = options.questionCount || 20;
     const difficulty = options.difficulty || "mixed";
     const focusConcepts = options.focusConcepts || [];
@@ -534,7 +548,9 @@ const ContentGenerator = {
       temperature: 0.7,
       maxTokens: 8000,
       model: AI_CONFIG.GEMINI_MODEL_ADVANCED, // Dùng model mạnh hơn
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "questions",
+    }, userContext);
   },
 
   /**
@@ -543,7 +559,7 @@ const ContentGenerator = {
    * @param {string} variantType - rephrased|scenario|inverse|application
    * @returns {Object} Variant question
    */
-  generateQuestionVariant: function (originalQuestion, variantType) {
+  generateQuestionVariant: function (originalQuestion, variantType, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.QUESTION_VARIANT.replace(
       "{originalQuestion}",
       JSON.stringify(originalQuestion),
@@ -553,7 +569,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.7,
       maxTokens: 1500,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "question_variant",
+    }, userContext);
   },
 
   /**
@@ -562,7 +580,7 @@ const ContentGenerator = {
    * @param {Object} analysis
    * @returns {Object} Lesson summary data
    */
-  generateLessonSummary: function (docContent, analysis) {
+  generateLessonSummary: function (docContent, analysis, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.LESSON_SUMMARY.replace(
       "{docContent}",
       docContent,
@@ -572,7 +590,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.5,
       maxTokens: 5000,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "lesson_summary",
+    }, userContext);
   },
 
   /**
@@ -582,7 +602,13 @@ const ContentGenerator = {
    * @param {Object} options - { pairCount, difficulty }
    * @returns {Object} Matching pairs data
    */
-  generateMatchingPairs: function (docContent, analysis, options = {}) {
+  generateMatchingPairs: function (
+    docContent,
+    analysis,
+    options = {},
+    userContext,
+    requestMeta,
+  ) {
     const pairCount = options.pairCount || 6;
     const difficulty = options.difficulty || "medium";
 
@@ -598,7 +624,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.6,
       maxTokens: 3000,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "matching",
+    }, userContext);
   },
 
   /**
@@ -607,7 +635,7 @@ const ContentGenerator = {
    * @param {Object} analysis
    * @returns {Object} Mini quiz data with 5 questions
    */
-  generateMiniQuiz: function (docContent, analysis) {
+  generateMiniQuiz: function (docContent, analysis, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.MINI_QUIZ_GENERATION.replace(
       "{docContent}",
       docContent,
@@ -617,7 +645,9 @@ const ContentGenerator = {
       expectJson: true,
       temperature: 0.6,
       maxTokens: 3000,
-    });
+      topicId: requestMeta?.topicId || "",
+      contentType: "mini_quiz",
+    }, userContext);
   },
 };
 
@@ -681,7 +711,12 @@ const TopicContentOrchestrator = {
 
       // Step 2: Analyze Document
       Logger.log("🔍 Step 2: Analyzing document...");
-      const analysis = ContentGenerator.analyzeDocument(docContent);
+      const userContext = { userId: userId };
+      const analysis = ContentGenerator.analyzeDocument(
+        docContent,
+        userContext,
+        { topicId: topicId },
+      );
       Logger.log("Analysis complete: " + analysis.mainTopic);
 
       // Step 3: Generate all content types
@@ -704,6 +739,8 @@ const TopicContentOrchestrator = {
           results.mindmap = ContentGenerator.generateMindmap(
             docContent,
             analysis,
+            userContext,
+            { topicId: topicId },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -725,6 +762,8 @@ const TopicContentOrchestrator = {
           results.infographic = ContentGenerator.generateInfographic(
             docContent,
             analysis,
+            userContext,
+            { topicId: topicId },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -747,6 +786,8 @@ const TopicContentOrchestrator = {
             docContent,
             analysis,
             15,
+            userContext,
+            { topicId: topicId },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -768,6 +809,8 @@ const TopicContentOrchestrator = {
           results.lesson_summary = ContentGenerator.generateLessonSummary(
             docContent,
             analysis,
+            userContext,
+            { topicId: topicId },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -790,6 +833,8 @@ const TopicContentOrchestrator = {
             docContent,
             analysis,
             { questionCount: 20 },
+            userContext,
+            { topicId: topicId },
           );
           AIContentCache.save({
             topicId: topicId,
@@ -936,6 +981,8 @@ function TEST_generateContent() {
  */
 function TEST_analyzeDocument() {
   const TEST_DOC_ID = "19UAHFVkxt0K_MrjqlZw0cUGYuULbJG7ak1xYnS0ogMw";
+  const TEST_USER_ID = "USR001";
+  const TEST_TOPIC_ID = "TOP001";
 
   const docResult = GeminiService.readGoogleDoc(TEST_DOC_ID);
   if (!docResult.success) {
@@ -947,7 +994,11 @@ function TEST_analyzeDocument() {
   Logger.log("📝 Word count: " + docResult.wordCount);
   Logger.log("🔍 Analyzing...");
 
-  const analysis = ContentGenerator.analyzeDocument(docResult.content);
+  const analysis = ContentGenerator.analyzeDocument(
+    docResult.content,
+    { userId: TEST_USER_ID },
+    { topicId: TEST_TOPIC_ID },
+  );
   Logger.log("=== ANALYSIS ===");
   Logger.log(JSON.stringify(analysis, null, 2));
 
@@ -973,6 +1024,8 @@ function TEST_generateVariant() {
   const variant = ContentGenerator.generateQuestionVariant(
     originalQuestion,
     "scenario",
+    { userId: "USR001" },
+    { topicId: "TOP001" },
   );
   Logger.log(JSON.stringify(variant, null, 2));
 

@@ -1134,7 +1134,6 @@
           <div class="matching-topic-card-meta">
             <span class="matching-topic-card-category">${topicCategory}</span>
             ${matchingPlayed ? '<span class="matching-topic-card-badge">Đã chơi</span>' : ""}
-            ${!matchingPlayed && isUnlocked ? '<span class="matching-topic-card-badge">Đã mở khóa</span>' : ""}
             ${bestScoreBadge}
           </div>
         </div>
@@ -1622,6 +1621,18 @@
       .withSuccessHandler(function (pairs) {
         matchingState.loadingPairs = false;
 
+        if (isMissingGeminiKeyError(pairs)) {
+          matchingState.pairsError =
+            pairs?.message ||
+            "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.";
+          showGeminiKeyConfigWarning(matchingState.pairsError);
+          board.innerHTML =
+            '<div class="matching-empty"><div class="matching-empty-icon">🔐</div><p class="matching-empty-text">Thiếu Gemini API key cá nhân</p><p class="matching-empty-sub">' +
+            matchingState.pairsError +
+            '</p><button class="matching-btn matching-btn-primary" onclick="matchingBackToTopics()" style="margin-top:1rem;">Quay lại</button></div>';
+          return;
+        }
+
         // Validate response
         if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
           matchingState.pairsError =
@@ -1695,6 +1706,9 @@
       })
       .withFailureHandler(function (err) {
         matchingState.loadingPairs = false;
+        if (isMissingGeminiKeyError(err)) {
+          showGeminiKeyConfigWarning(err?.message || err?.toString());
+        }
         matchingState.pairsError = err.message || "Vui lòng thử lại";
         matchingState.matchingPairs = [];
 
@@ -1704,7 +1718,41 @@
           '</p><button class="matching-btn matching-btn-primary" onclick="matchingRestartGame()" style="margin-top:1rem;">🔄 Thử lại</button></div>';
         console.error("Error loading matching pairs:", err);
       })
-      .getMatchingPairs(topic.topicId, pairLimit);
+      .getMatchingPairs(topic.topicId, pairLimit, {
+        userId: currentUser?.userId || window.currentUser?.userId || "",
+      });
+  }
+
+  function isMissingGeminiKeyError(payload) {
+    const code = String(payload?.code || "").toUpperCase();
+    const message = String(payload?.message || payload?.toString?.() || "").toLowerCase();
+    return (
+      code === "AI_KEY_NOT_CONFIGURED" ||
+      message.includes("chưa cấu hình gemini api key") ||
+      message.includes("chưa gắn gemini api key") ||
+      message.includes("profile/settings")
+    );
+  }
+
+  function showGeminiKeyConfigWarning(message) {
+    showToast(
+      message ||
+        "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
+      "warning",
+    );
+    redirectToProfileAiKeySetup();
+  }
+
+  function redirectToProfileAiKeySetup() {
+    if (typeof window.showPage === "function") {
+      window.showPage("page-profile");
+    }
+
+    setTimeout(function () {
+      if (typeof window.openProfileSection === "function") {
+        window.openProfileSection("ai-key");
+      }
+    }, 220);
   }
 
   // ===== BOARD INIT (2-column matching) =====

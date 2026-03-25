@@ -386,9 +386,18 @@
           showMindmapError(
             "Lỗi server: Không nhận được dữ liệu.\n\n" +
               "Kiểm tra:\n" +
-              "1. API Key đã setup chưa?\n" +
+              "1. Đã gắn Gemini API key cá nhân chưa?\n" +
               "2. Google Doc có quyền truy cập?\n" +
               "3. Xem Apps Script Logs để biết lỗi chi tiết",
+          );
+          return;
+        }
+
+        if (isMissingGeminiKeyError(response)) {
+          handleMissingGeminiKeyWarning(response?.message);
+          showMindmapError(
+            response?.message ||
+              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
           );
           return;
         }
@@ -430,6 +439,9 @@
       .withFailureHandler(function (error) {
         console.error("❌ Mindmap error:", error);
         document.getElementById("mindmap-loading").style.display = "none";
+        if (isMissingGeminiKeyError(error)) {
+          handleMissingGeminiKeyWarning(error?.message || error?.toString());
+        }
         showMindmapError(
           "Lỗi kết nối server:\n" +
             (error?.message || error?.toString() || "Unknown error"),
@@ -439,6 +451,7 @@
         currentLessonData.topicId,
         "mindmap",
         forceRegenerate,
+        { userId: currentUser?.userId || window.currentUser?.userId || "" },
       );
   }
 
@@ -475,9 +488,18 @@
           showFlashcardsError(
             "Lỗi server: Không nhận được dữ liệu.\n\n" +
               "Kiểm tra:\n" +
-              "1. API Key đã setup chưa?\n" +
+              "1. Đã gắn Gemini API key cá nhân chưa?\n" +
               "2. Google Doc có quyền truy cập?\n" +
               "3. Xem Apps Script Logs để biết lỗi chi tiết",
+          );
+          return;
+        }
+
+        if (isMissingGeminiKeyError(response)) {
+          handleMissingGeminiKeyWarning(response?.message);
+          showFlashcardsError(
+            response?.message ||
+              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
           );
           return;
         }
@@ -535,12 +557,16 @@
       .withFailureHandler(function (error) {
         console.error("❌ Flashcards error:", error);
         document.getElementById("flashcards-loading").style.display = "none";
+        if (isMissingGeminiKeyError(error)) {
+          handleMissingGeminiKeyWarning(error?.message || error?.toString());
+        }
         showFlashcardsError(error?.message || "Lỗi kết nối server");
       })
       .getAIContentForWeb(
         currentLessonData.topicId,
         "flashcards",
         forceRegenerate,
+        { userId: currentUser?.userId || window.currentUser?.userId || "" },
       );
   }
 
@@ -2383,6 +2409,15 @@
         console.log("✅ Mini Quiz response:", response);
         if (loadingEl) loadingEl.style.display = "none";
 
+        if (isMissingGeminiKeyError(response)) {
+          handleMissingGeminiKeyWarning(response?.message);
+          showMiniQuizError(
+            response?.message ||
+              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
+          );
+          return;
+        }
+
         if (response && response.success && response.data) {
           let quizData = response.data;
           if (typeof quizData === "string") {
@@ -2411,13 +2446,49 @@
       .withFailureHandler(function (error) {
         console.error("❌ Mini Quiz error:", error);
         if (loadingEl) loadingEl.style.display = "none";
+        if (isMissingGeminiKeyError(error)) {
+          handleMissingGeminiKeyWarning(error?.message || error?.toString());
+        }
         showMiniQuizError(error?.message || "Lỗi kết nối server");
       })
       .getAIContentForWeb(
         currentLessonData.topicId,
         "mini_quiz",
         forceRegenerate || false,
+        { userId: currentUser?.userId || window.currentUser?.userId || "" },
       );
+  }
+
+  function isMissingGeminiKeyError(payload) {
+    const code = String(payload?.code || "").toUpperCase();
+    const message = String(payload?.message || payload?.toString?.() || "").toLowerCase();
+    return (
+      code === "AI_KEY_NOT_CONFIGURED" ||
+      message.includes("chưa cấu hình gemini api key") ||
+      message.includes("chưa gắn gemini api key") ||
+      message.includes("profile/settings")
+    );
+  }
+
+  function handleMissingGeminiKeyWarning(message) {
+    showToast(
+      message ||
+        "Bạn chưa gắn Gemini API key cá nhân. Vào Profile/Settings để cấu hình.",
+      "warning",
+    );
+    redirectToProfileAiKeySetup();
+  }
+
+  function redirectToProfileAiKeySetup() {
+    if (typeof window.showPage === "function") {
+      window.showPage("page-profile");
+    }
+
+    setTimeout(function () {
+      if (typeof window.openProfileSection === "function") {
+        window.openProfileSection("ai-key");
+      }
+    }, 220);
   }
 
   /**

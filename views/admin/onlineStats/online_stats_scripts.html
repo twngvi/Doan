@@ -17,11 +17,13 @@
   let currentFilter = 'all';
   let searchQuery = '';
   let refreshInterval = null;
+  let aiUsageStats = null;
 
   // Initialize page
   function initOnlineStatsPage() {
     setupEventListeners();
     loadOnlineUsers();
+    loadAIUsageStats();
     startAutoRefresh();
     initMeteorEffect();
   }
@@ -46,6 +48,13 @@
         filterAndRenderUsers();
       });
     });
+
+    const aiDays = document.getElementById('aiUsageDays');
+    if (aiDays) {
+      aiDays.addEventListener('change', () => {
+        loadAIUsageStats();
+      });
+    }
   }
 
   // Load online users from server
@@ -77,6 +86,102 @@
     } finally {
       showLoading(false);
     }
+  }
+
+  async function loadAIUsageStats() {
+    try {
+      const daysEl = document.getElementById('aiUsageDays');
+      const days = Number((daysEl && daysEl.value) || 7);
+      const result = await callAppsScript('getAdminAIUsageStats', { days });
+      if (!result || !result.success) {
+        throw new Error((result && result.message) || 'Không tải được AI usage stats');
+      }
+
+      aiUsageStats = result.data || null;
+      renderAIUsageStats();
+    } catch (error) {
+      console.error('Error loading AI usage stats:', error);
+      renderAIUsageError(error?.message || 'Không tải được AI usage stats');
+    }
+  }
+
+  function renderAIUsageStats() {
+    if (!aiUsageStats) return;
+
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+
+    setText('aiTotalRequests', Number(aiUsageStats.totalRequests || 0));
+    setText('aiSuccessRate', `${Number(aiUsageStats.successRate || 0)}%`);
+    setText('aiFailedRequests', Number(aiUsageStats.failedRequests || 0));
+    setText('aiAvgDuration', Number(aiUsageStats.avgDurationMs || 0));
+
+    renderUsageList('aiUsageByUser', aiUsageStats.byUser, (item) => {
+      return `
+        <div class="ai-usage-item">
+          <strong>${escapeHtml(item.userName || item.userId || '(unknown)')}</strong>
+          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
+        </div>
+      `;
+    });
+
+    renderUsageList('aiUsageByTopic', aiUsageStats.byTopic, (item) => {
+      return `
+        <div class="ai-usage-item">
+          <strong>${escapeHtml(item.topicId || '(none)')}</strong>
+          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
+        </div>
+      `;
+    });
+
+    renderUsageList('aiUsageByModel', aiUsageStats.byModel, (item) => {
+      return `
+        <div class="ai-usage-item">
+          <strong>${escapeHtml(item.model || '(unknown)')}</strong>
+          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
+        </div>
+      `;
+    });
+
+    renderUsageList('aiUsageErrors', aiUsageStats.recentErrors, (item) => {
+      return `
+        <div class="ai-error-item">
+          <div><strong>${escapeHtml(item.userName || item.userId || '(unknown)')}</strong>: ${escapeHtml(item.errorMessage || 'Unknown error')}</div>
+          <div class="ai-error-meta">Topic: ${escapeHtml(item.topicId || '(none)')} | Model: ${escapeHtml(item.model || '(unknown)')} | ${formatTimeAgoSafe(item.createdAt)}</div>
+        </div>
+      `;
+    }, '<div class="ai-usage-item">Không có lỗi trong khoảng thời gian đã chọn</div>');
+  }
+
+  function renderAIUsageError(message) {
+    const html = `<div class="ai-usage-item">${escapeHtml(message || 'Không tải được dữ liệu')}</div>`;
+    ['aiUsageByUser', 'aiUsageByTopic', 'aiUsageByModel', 'aiUsageErrors'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    });
+  }
+
+  function renderUsageList(elementId, list, renderItem, emptyHtml) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    if (!Array.isArray(list) || list.length === 0) {
+      el.innerHTML = emptyHtml || '<div class="ai-usage-item">Không có dữ liệu</div>';
+      return;
+    }
+
+    el.innerHTML = list.slice(0, 10).map(renderItem).join('');
+  }
+
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Update statistics
@@ -352,6 +457,10 @@
     loadOnlineUsers();
   }
 
+  function refreshAIUsageStats() {
+    loadAIUsageStats();
+  }
+
   // Start auto refresh
   function startAutoRefresh() {
     // Refresh every 30 seconds
@@ -438,4 +547,6 @@
   window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
   });
+
+  window.refreshAIUsageStats = refreshAIUsageStats;
 </script>

@@ -10,6 +10,8 @@
 const AI_CONFIG = {
   // Gemini API Settings
   GEMINI_API_KEY_PROPERTY: "GEMINI_API_KEY", // Lưu trong Script Properties
+  GEMINI_USER_KEY_PREFIX: "GEMINI_USER_KEY_",
+  GEMINI_KEY_ENCRYPTION_SECRET_PROPERTY: "GEMINI_KEY_ENCRYPTION_SECRET",
   GEMINI_MODEL_DEFAULT: "gemini-2.5-flash-lite",
   GEMINI_MODEL_ADVANCED: "gemini-2.5-flash-lite",
 
@@ -461,6 +463,42 @@ const DB_CONFIG = {
         "processingTime", // milliseconds
         "geminiModel",
         "promptVersion", // Version của prompt template
+        "createdAt",
+      ],
+    },
+
+    AI_USER_KEYS: {
+      name: "AI_User_Keys",
+      idPrefix: "AUK",
+      columns: [
+        "keyId",
+        "userId",
+        "keyAlias",
+        "keyHash",
+        "encryptedKey",
+        "isValid",
+        "status",
+        "lastValidatedAt",
+        "lastUsedAt",
+        "lastError",
+        "createdAt",
+        "updatedAt",
+      ],
+    },
+
+    AI_KEY_USAGE_LOGS: {
+      name: "AI_Key_Usage_Logs",
+      idPrefix: "AKL",
+      columns: [
+        "usageId",
+        "userId",
+        "topicId",
+        "contentType",
+        "model",
+        "status",
+        "httpCode",
+        "errorMessage",
+        "durationMs",
         "createdAt",
       ],
     },

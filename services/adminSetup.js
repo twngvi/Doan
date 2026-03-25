@@ -53,8 +53,8 @@ function ADMIN_setupGeminiApiKey() {
       return;
     }
 
-    // Save to Script Properties
-    const success = GeminiService.setupApiKey(apiKey);
+    // Save to current authenticated user profile
+    const success = GeminiService.setupApiKey(apiKey, {});
 
     if (success) {
       ui.alert(
@@ -67,7 +67,7 @@ function ADMIN_setupGeminiApiKey() {
 
       // Auto test connection
       Logger.log("🔍 Testing API connection...");
-      const testResult = GeminiService.testConnection();
+      const testResult = GeminiService.testConnection({});
       Logger.log("Test result: " + JSON.stringify(testResult));
 
       if (testResult.success) {
@@ -87,7 +87,7 @@ function ADMIN_setupGeminiApiKey() {
  * [TEST] Test Gemini API Connection
  */
 function TEST_geminiConnection() {
-  const result = GeminiService.testConnection();
+  const result = GeminiService.testConnection({});
   Logger.log("=== GEMINI API TEST ===");
   Logger.log(JSON.stringify(result, null, 2));
 
@@ -166,17 +166,15 @@ function TEST_documentAccess() {
  * [ADMIN] View Current API Key (masked)
  */
 function ADMIN_viewApiKeyStatus() {
-  const apiKey = GeminiService.getApiKey();
+  const status = GeminiService.getUserApiKeyStatus({});
   const ui = SpreadsheetApp.getUi();
 
-  if (apiKey) {
-    const masked =
-      apiKey.substring(0, 8) + "..." + apiKey.substring(apiKey.length - 4);
+  if (status && status.success && status.hasKey) {
     ui.alert(
       "🔑 API Key Status",
-      "API Key đã được thiết lập!\n\n" +
+      "API Key cá nhân đã được thiết lập!\n\n" +
         "Key (masked): " +
-        masked +
+        (status.keyAlias || "(đã lưu)") +
         "\n\n" +
         "Để test kết nối, chọn menu: Admin Tools > Test API Connection",
       ui.ButtonSet.OK

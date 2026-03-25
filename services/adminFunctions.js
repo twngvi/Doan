@@ -281,6 +281,207 @@ function getAdminDashboardStats() {
 }
 
 /**
+ * Lấy thống kê AI usage cho admin theo user/topic/model
+ * @param {object=} options - { days: number }
+ * @returns {object}
+ */
+function getAdminAIUsageStats(options) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin",
+      };
+    }
+
+    const safeOptions = options || {};
+    const days = Math.max(1, Math.min(90, parseInt(safeOptions.days, 10) || 7));
+    const fromTime = Date.now() - days * 24 * 60 * 60 * 1000;
+
+    const usageSheet = getSheet("AI_Key_Usage_Logs");
+    if (!usageSheet || usageSheet.getLastRow() <= 1) {
+      return {
+        success: true,
+        data: {
+          days: days,
+          totalRequests: 0,
+          successRequests: 0,
+          failedRequests: 0,
+          successRate: 0,
+          avgDurationMs: 0,
+          byUser: [],
+          byTopic: [],
+          byModel: [],
+          recentErrors: [],
+        },
+      };
+    }
+
+    const allRows = usageSheet.getDataRange().getValues();
+    const headers = allRows[0];
+
+    const idx = {
+      userId: headers.indexOf("userId"),
+      topicId: headers.indexOf("topicId"),
+      model: headers.indexOf("model"),
+      status: headers.indexOf("status"),
+      errorMessage: headers.indexOf("errorMessage"),
+      durationMs: headers.indexOf("durationMs"),
+      createdAt: headers.indexOf("createdAt"),
+    };
+
+    const usersSheet = getSheet("Users");
+    const userNameMap = {};
+    if (usersSheet && usersSheet.getLastRow() > 1) {
+      const usersData = usersSheet.getDataRange().getValues();
+      const userHeaders = usersData[0];
+      const userIdCol = userHeaders.indexOf("userId");
+      const displayNameCol = userHeaders.indexOf("displayName");
+      const emailCol = userHeaders.indexOf("email");
+      for (let i = 1; i < usersData.length; i++) {
+        const uid = String(usersData[i][userIdCol] || "").trim();
+        if (!uid) continue;
+        userNameMap[uid] =
+          String(usersData[i][displayNameCol] || "").trim() ||
+          String(usersData[i][emailCol] || "").trim() ||
+          uid;
+      }
+    }
+
+    let totalRequests = 0;
+    let successRequests = 0;
+    let failedRequests = 0;
+    let durationTotal = 0;
+    let durationCount = 0;
+
+    const byUser = {};
+    const byTopic = {};
+    const byModel = {};
+    const recentErrors = [];
+
+    for (let i = 1; i < allRows.length; i++) {
+      const row = allRows[i];
+      const createdAt = parseAdminSheetDate(row[idx.createdAt]);
+      if (!createdAt || createdAt.getTime() < fromTime) continue;
+
+      const userId = String(row[idx.userId] || "UNKNOWN").trim() || "UNKNOWN";
+      const topicId = String(row[idx.topicId] || "(none)").trim() || "(none)";
+      const model = String(row[idx.model] || "(unknown)").trim() || "(unknown)";
+      const status = String(row[idx.status] || "UNKNOWN").trim().toUpperCase();
+      const errorMessage = String(row[idx.errorMessage] || "").trim();
+      const durationMs = Number(row[idx.durationMs] || 0);
+
+      totalRequests++;
+      if (status === "SUCCESS") {
+        successRequests++;
+      } else {
+        failedRequests++;
+      }
+
+      if (durationMs > 0) {
+        durationTotal += durationMs;
+        durationCount++;
+      }
+
+      if (!byUser[userId]) {
+        byUser[userId] = { userId: userId, userName: userNameMap[userId] || userId, total: 0, success: 0, failed: 0 };
+      }
+      byUser[userId].total++;
+      if (status === "SUCCESS") byUser[userId].success++;
+      else byUser[userId].failed++;
+
+      if (!byTopic[topicId]) {
+        byTopic[topicId] = { topicId: topicId, total: 0, success: 0, failed: 0 };
+      }
+      byTopic[topicId].total++;
+      if (status === "SUCCESS") byTopic[topicId].success++;
+      else byTopic[topicId].failed++;
+
+      if (!byModel[model]) {
+        byModel[model] = { model: model, total: 0, success: 0, failed: 0 };
+      }
+      byModel[model].total++;
+      if (status === "SUCCESS") byModel[model].success++;
+      else byModel[model].failed++;
+
+      if (status !== "SUCCESS" && errorMessage) {
+        recentErrors.push({
+          userId: userId,
+          userName: userNameMap[userId] || userId,
+          topicId: topicId,
+          model: model,
+          errorMessage: errorMessage,
+          createdAt: createdAt.toISOString(),
+        });
+      }
+    }
+
+    const sortByTotalDesc = function (a, b) {
+      return b.total - a.total;
+    };
+
+    const byUserList = Object.keys(byUser)
+      .map(function (key) {
+        const item = byUser[key];
+        item.successRate = item.total > 0 ? Math.round((item.success / item.total) * 10000) / 100 : 0;
+        return item;
+      })
+      .sort(sortByTotalDesc)
+      .slice(0, 20);
+
+    const byTopicList = Object.keys(byTopic)
+      .map(function (key) {
+        const item = byTopic[key];
+        item.successRate = item.total > 0 ? Math.round((item.success / item.total) * 10000) / 100 : 0;
+        return item;
+      })
+      .sort(sortByTotalDesc)
+      .slice(0, 20);
+
+    const byModelList = Object.keys(byModel)
+      .map(function (key) {
+        const item = byModel[key];
+        item.successRate = item.total > 0 ? Math.round((item.success / item.total) * 10000) / 100 : 0;
+        return item;
+      })
+      .sort(sortByTotalDesc)
+      .slice(0, 20);
+
+    recentErrors.sort(function (a, b) {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    const successRate =
+      totalRequests > 0
+        ? Math.round((successRequests / totalRequests) * 10000) / 100
+        : 0;
+
+    return {
+      success: true,
+      data: {
+        days: days,
+        totalRequests: totalRequests,
+        successRequests: successRequests,
+        failedRequests: failedRequests,
+        successRate: successRate,
+        avgDurationMs:
+          durationCount > 0
+            ? Math.round((durationTotal / durationCount) * 100) / 100
+            : 0,
+        byUser: byUserList,
+        byTopic: byTopicList,
+        byModel: byModelList,
+        recentErrors: recentErrors.slice(0, 20),
+      },
+    };
+  } catch (error) {
+    Logger.log("Error getting AI usage stats: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * Lấy dữ liệu trạng thái hoạt động users cho Admin Online Stats
  * Quy ước:
  * - active: hoạt động trong 1 phút

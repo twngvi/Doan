@@ -154,13 +154,13 @@ function getTopicContentByDocId(docId) {
  * Google Apps Script có vấn đề serialize nested objects qua google.script.run
  * Function này đảm bảo response được trả về đúng cách
  */
-function getAIContentForWeb(topicId, contentType, forceRegenerate) {
+function getAIContentForWeb(topicId, contentType, forceRegenerate, userContext) {
   Logger.log("🌐 getAIContentForWeb CALLED");
   Logger.log("Args: " + topicId + ", " + contentType + ", " + forceRegenerate);
 
   try {
     // Gọi function chính
-    const result = getAIContent(topicId, contentType, forceRegenerate);
+    const result = getAIContent(topicId, contentType, forceRegenerate, userContext);
 
     Logger.log("📤 Web wrapper - result.success: " + result.success);
     Logger.log("📤 Web wrapper - data type: " + typeof result.data);
@@ -199,7 +199,7 @@ function getAIContentForWeb(topicId, contentType, forceRegenerate) {
  * @param {boolean} forceRegenerate - Force regenerate even if cached
  * @returns {object} - {success, data, message, fromCache}
  */
-function getAIContent(topicId, contentType, forceRegenerate) {
+function getAIContent(topicId, contentType, forceRegenerate, userContext) {
   Logger.log("🚀 getAIContent CALLED");
   Logger.log(
     "Args: topicId=" +
@@ -244,7 +244,22 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       };
     }
 
-    // 1. Check cache first (if not forcing regenerate)
+    // 1. Bắt buộc có API key cá nhân trước khi dùng mọi AI feature
+    let resolvedUser;
+    try {
+      const required = GeminiService.requireUserApiKey(userContext);
+      resolvedUser = { userId: required.userId, email: required.email };
+    } catch (keyError) {
+      return {
+        success: false,
+        code: keyError.code || "AI_KEY_REQUIRED",
+        message:
+          keyError.message ||
+          "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
+      };
+    }
+
+    // 2. Check cache first (if not forcing regenerate)
     Logger.log("🔍 Checking cache...");
     if (!forceRegenerate) {
       try {
@@ -287,7 +302,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       }
     }
 
-    // 2. Get topic info to find Google Doc ID
+    // 3. Get topic info to find Google Doc ID
     Logger.log("🔍 Getting topic info...");
     const topicInfo = getTopicInfo(topicId);
     Logger.log("📋 Topic info: " + JSON.stringify(topicInfo));
@@ -302,7 +317,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
 
     Logger.log("📄 Found Doc ID: " + topicInfo.contentDocId);
 
-    // 3. Read Google Doc content
+    // 4. Read Google Doc content
     const docResult = GeminiService.readGoogleDoc(topicInfo.contentDocId);
     if (!docResult.success) {
       return {
@@ -313,9 +328,13 @@ function getAIContent(topicId, contentType, forceRegenerate) {
 
     Logger.log("📝 Doc content loaded: " + docResult.wordCount + " words");
 
-    // 3.5: Phải tạo Analysis trước (QUAN TRỌNG!)
+    // 4.5: Phải tạo Analysis trước (QUAN TRỌNG!)
     Logger.log("🔍 Analyzing document first...");
-    const analysis = ContentGenerator.analyzeDocument(docResult.content);
+    const analysis = ContentGenerator.analyzeDocument(
+      docResult.content,
+      resolvedUser,
+      { topicId: topicId },
+    );
 
     if (!analysis || analysis.error) {
       return {
@@ -330,7 +349,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       "✅ Document analyzed: " + (analysis.mainTopic || "Unknown topic"),
     );
 
-    // 4. Generate content using AI (với đầy đủ tham số)
+    // 5. Generate content using AI (với đầy đủ tham số)
     let generatedContent;
 
     switch (contentType) {
@@ -338,24 +357,33 @@ function getAIContent(topicId, contentType, forceRegenerate) {
         generatedContent = ContentGenerator.generateMindmap(
           docResult.content,
           analysis,
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "flashcards":
         generatedContent = ContentGenerator.generateFlashcards(
           docResult.content,
           analysis,
+          15,
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "lesson_summary":
         generatedContent = ContentGenerator.generateLessonSummary(
           docResult.content,
           analysis,
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "infographic":
         generatedContent = ContentGenerator.generateInfographic(
           docResult.content,
           analysis,
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "questions":
@@ -364,12 +392,16 @@ function getAIContent(topicId, contentType, forceRegenerate) {
           docResult.content,
           analysis,
           { questionCount: 20 },
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "mini_quiz":
         generatedContent = ContentGenerator.generateMiniQuiz(
           docResult.content,
           analysis,
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       case "matching":
@@ -377,6 +409,8 @@ function getAIContent(topicId, contentType, forceRegenerate) {
           docResult.content,
           analysis,
           { pairCount: 10, difficulty: "mixed" },
+          resolvedUser,
+          { topicId: topicId },
         );
         break;
       default:
@@ -394,7 +428,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
 
     Logger.log("✅ AI content generated successfully");
 
-    // 5. Save to cache
+    // 6. Save to cache
     try {
       AIContentCache.save({
         topicId: topicId,
@@ -411,7 +445,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
       // Continue anyway - content was generated successfully
     }
 
-    // 6. Log generation
+    // 7. Log generation
     try {
       logAIGeneration(topicId, contentType, true);
     } catch (logError) {
@@ -470,7 +504,7 @@ function getAIContent(topicId, contentType, forceRegenerate) {
  * @param {number} pairLimit - Số cặp cần lấy (4/6/8)
  * @returns {Array} Mảng pairs: [{question, answer, hint, difficulty}]
  */
-function getMatchingPairs(topicId, pairLimit) {
+function getMatchingPairs(topicId, pairLimit, userContext) {
   Logger.log("🎮 getMatchingPairs CALLED");
   Logger.log("Args: topicId=" + topicId + ", pairLimit=" + pairLimit);
 
@@ -483,7 +517,19 @@ function getMatchingPairs(topicId, pairLimit) {
       throw new Error("Thiếu topicId");
     }
 
-    // 1. Check cache first
+    // 1. Bắt buộc key cá nhân cho mọi AI feature
+    var resolvedUser = null;
+    try {
+      var required = GeminiService.requireUserApiKey(userContext);
+      resolvedUser = { userId: required.userId, email: required.email };
+    } catch (keyError) {
+      throw new Error(
+        keyError.message ||
+          "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
+      );
+    }
+
+    // 2. Check cache first
     Logger.log("🔍 Checking matching cache...");
     var cachedPairs = null;
     try {
@@ -502,7 +548,7 @@ function getMatchingPairs(topicId, pairLimit) {
       Logger.log("⚠️ Cache read error: " + cacheErr.toString());
     }
 
-    // 2. Nếu không có cache -> generate bằng AI
+    // 3. Nếu không có cache -> generate bằng AI
     if (!cachedPairs || cachedPairs.length === 0) {
       Logger.log("🤖 No cache, generating matching pairs with AI...");
 
@@ -522,7 +568,11 @@ function getMatchingPairs(topicId, pairLimit) {
 
       // Analyze document
       Logger.log("🔍 Analyzing document for matching...");
-      var analysis = ContentGenerator.analyzeDocument(docResult.content);
+      var analysis = ContentGenerator.analyzeDocument(
+        docResult.content,
+        resolvedUser,
+        { topicId: topicId },
+      );
       if (!analysis || analysis.error) {
         throw new Error(
           "Lỗi phân tích tài liệu: " + (analysis ? analysis.error : "Unknown"),
@@ -537,6 +587,8 @@ function getMatchingPairs(topicId, pairLimit) {
         docResult.content,
         analysis,
         { pairCount: requestCount, difficulty: "mixed" },
+        resolvedUser,
+        { topicId: topicId },
       );
 
       if (!generated || !generated.pairs || !Array.isArray(generated.pairs)) {
@@ -718,7 +770,7 @@ function logAIGeneration(topicId, contentType, success, errorMessage) {
  * @param {string} topicId
  * @returns {object}
  */
-function generateAllAIContent(topicId) {
+function generateAllAIContent(topicId, userContext) {
   Logger.log("=== GENERATE ALL AI CONTENT ===");
   Logger.log("Topic ID: " + topicId);
 
@@ -727,7 +779,7 @@ function generateAllAIContent(topicId) {
 
   for (const type of contentTypes) {
     Logger.log("Generating: " + type);
-    results[type] = getAIContent(topicId, type, true);
+    results[type] = getAIContent(topicId, type, true, userContext);
 
     // Small delay between API calls to avoid rate limiting
     if (type !== contentTypes[contentTypes.length - 1]) {

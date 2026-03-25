@@ -1155,7 +1155,6 @@
           <div class="mcq-item-meta">
             <span class="mcq-item-category">${topicCategory}</span>
             ${hasPlayed ? '<span class="mcq-item-badge played">Đã chơi</span>' : ""}
-            ${!hasPlayed && isUnlocked ? '<span class="mcq-item-badge">Đã mở khóa</span>' : ""}
             ${bestScoreBadge}
           </div>
         </div>
@@ -1862,6 +1861,15 @@
       .withSuccessHandler(function (result) {
         quizState.loading = false;
 
+        if (isMissingGeminiKeyError(result)) {
+          showGeminiKeyConfigWarning(result?.message);
+          showError(
+            result?.message ||
+              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
+          );
+          return;
+        }
+
         // Parse questions from AI response
         var questions = null;
         if (result && result.data) {
@@ -1917,9 +1925,18 @@
       .withFailureHandler(function (error) {
         quizState.loading = false;
         console.error("Error loading questions for resume:", error);
+        if (isMissingGeminiKeyError(error)) {
+          showGeminiKeyConfigWarning(error?.message || error?.toString());
+          showError(
+            "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
+          );
+          return;
+        }
         showGameModeModal();
       })
-      .getAIContentForWeb(quizState.topicId, "questions", false);
+      .getAIContentForWeb(quizState.topicId, "questions", false, {
+        userId: currentUser?.userId || window.currentUser?.userId || "",
+      });
   }
 
   /**
@@ -2389,9 +2406,14 @@
       })
       .withFailureHandler(function (error) {
         clearInterval(loadingInterval);
+        if (isMissingGeminiKeyError(error)) {
+          showGeminiKeyConfigWarning(error?.message || error?.toString());
+        }
         handleLoadError(error);
       })
-      .getAIContentForWeb(quizState.topicId, "questions", forceRegenerate);
+      .getAIContentForWeb(quizState.topicId, "questions", forceRegenerate, {
+        userId: currentUser?.userId || window.currentUser?.userId || "",
+      });
   }
 
   /**
@@ -2402,6 +2424,9 @@
     quizState.loading = false;
 
     if (!response || response.success === false) {
+      if (isMissingGeminiKeyError(response)) {
+        showGeminiKeyConfigWarning(response?.message);
+      }
       quizState.error =
         response?.message || response?.error || "Không thể tải câu hỏi";
       showError(quizState.error);
@@ -2498,8 +2523,43 @@
   function handleLoadError(error) {
     console.error("❌ Load error:", error);
     quizState.loading = false;
+    if (isMissingGeminiKeyError(error)) {
+      showGeminiKeyConfigWarning(error?.message || error?.toString());
+    }
     quizState.error = "Lỗi kết nối: " + (error.message || error);
     showError(quizState.error);
+  }
+
+  function isMissingGeminiKeyError(payload) {
+    const code = String(payload?.code || "").toUpperCase();
+    const message = String(payload?.message || payload?.toString?.() || "").toLowerCase();
+    return (
+      code === "AI_KEY_NOT_CONFIGURED" ||
+      message.includes("chưa cấu hình gemini api key") ||
+      message.includes("chưa gắn gemini api key") ||
+      message.includes("profile/settings")
+    );
+  }
+
+  function showGeminiKeyConfigWarning(message) {
+    showToast(
+      message ||
+        "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
+      "warning",
+    );
+    redirectToProfileAiKeySetup();
+  }
+
+  function redirectToProfileAiKeySetup() {
+    if (typeof window.showPage === "function") {
+      window.showPage("page-profile");
+    }
+
+    setTimeout(function () {
+      if (typeof window.openProfileSection === "function") {
+        window.openProfileSection("ai-key");
+      }
+    }, 220);
   }
 
   /**
