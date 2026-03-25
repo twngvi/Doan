@@ -208,16 +208,76 @@
         document.body.style.overflow = "";
       },
 
-      handleResize: function () {
-        if (window.innerWidth > 768) {
-          this.closeMobile();
-        }
-      },
+       handleResize: function () {
+         if (window.innerWidth > 768) {
+           this.closeMobile();
+         }
+       },
 
-      // Thêm hàm lấy ID trang hiện tại an toàn hơn
-      getCurrentPageId: function () {
-        // Tìm page đang không ẩn
-        const pages = document.querySelectorAll(".page-content");
+       getStoredRole: function (storage) {
+         if (!storage) return "";
+         try {
+           const raw = storage.getItem("currentUser");
+           if (!raw) return "";
+           const parsed = JSON.parse(raw);
+           return (parsed.role || "").toString().toUpperCase();
+         } catch (err) {
+           return "";
+         }
+       },
+
+       resolveCurrentUserRole: function () {
+         if (window.currentUser?.role) {
+           return window.currentUser.role.toString().toUpperCase();
+         }
+
+         const localRole = this.getStoredRole(
+           typeof localStorage !== "undefined" ? localStorage : null,
+         );
+         if (localRole) return localRole;
+
+         return this.getStoredRole(
+           typeof sessionStorage !== "undefined" ? sessionStorage : null,
+         );
+       },
+
+       isAdminRoleActive: function () {
+         return this.resolveCurrentUserRole() === "ADMIN";
+       },
+
+       applyRoleSidebarState: function (isAdminActive) {
+         if (this.sidebar) {
+           if (isAdminActive) {
+             if (!this.sidebar.dataset.prevDisplay) {
+               this.sidebar.dataset.prevDisplay =
+                 this.sidebar.style.display || "";
+             }
+             this.sidebar.style.display = "none";
+             this.sidebar.setAttribute("aria-hidden", "true");
+           } else {
+             const prevDisplay = this.sidebar.dataset.prevDisplay || "";
+             this.sidebar.style.display = prevDisplay;
+             delete this.sidebar.dataset.prevDisplay;
+             this.sidebar.removeAttribute("aria-hidden");
+           }
+         }
+
+         const toggleables = [
+           this.toggleBtn,
+           this.overlay,
+           document.getElementById("mobileMenuToggleGlobal"),
+         ];
+
+         toggleables.forEach((el) => {
+           if (!el) return;
+           el.style.display = isAdminActive ? "none" : "";
+         });
+       },
+
+       // Thêm hàm lấy ID trang hiện tại an toàn hơn
+       getCurrentPageId: function () {
+         // Tìm page đang không ẩn
+         const pages = document.querySelectorAll(".page-content");
         for (let page of pages) {
           if (page.style.display !== "none") return page.id;
         }
@@ -228,40 +288,51 @@
         return "page-landing"; // Mặc định
       },
 
-      // Hàm xử lý hiển thị quan trọng nhất
-      checkVisibility: function (pageId) {
-        try {
-          console.log("Checking visibility for:", pageId);
+       // Hàm xử lý hiển thị quan trọng nhất
+       checkVisibility: function (pageId) {
+         try {
+           console.log("Checking visibility for:", pageId);
 
-          // Handle admin sidebar and layout specifically
-          if (pageId === "page-admin") {
-            document.body.classList.add("has-admin-sidebar");
-            document.body.classList.remove("has-sidebar");
-            document.body.classList.add("hide-sidebar");
-            console.log("Showing admin sidebar");
-            return;
-          } else {
-            // Remove admin sidebar for all other pages
-            document.body.classList.remove("has-admin-sidebar");
-            
-            // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
-            if (PUBLIC_PAGES.includes(pageId)) {
-              document.body.classList.remove("has-sidebar");
-              document.body.classList.add("hide-sidebar");
-              console.log("Hiding sidebar for public page");
-            } else {
-              // Ngược lại -> Hiện Sidebar
-              document.body.classList.add("has-sidebar");
-              document.body.classList.remove("hide-sidebar");
-              this.updateActiveNav(pageId);
-              console.log("Showing sidebar for authenticated page");
-            }
-          }
-        } catch (e) {
-          console.warn("⚠️ Error in checkVisibility (Ignored):", e);
-          // Không làm gì để trang vẫn hiển thị được
-        }
-      },
+           const isAdminActive = this.isAdminRoleActive();
+           const isAdminPage = pageId === "page-admin";
+
+           this.applyRoleSidebarState(isAdminActive);
+
+           if (isAdminActive) {
+             document.body.classList.add("has-admin-sidebar");
+             document.body.classList.remove("has-sidebar");
+             document.body.classList.add("hide-sidebar");
+             console.log("Showing admin sidebar (role-based)");
+             return;
+           }
+
+           if (isAdminPage) {
+             document.body.classList.add("has-admin-sidebar");
+             document.body.classList.remove("has-sidebar");
+             document.body.classList.add("hide-sidebar");
+             console.log("Showing admin sidebar for admin page");
+             return;
+           }
+
+           document.body.classList.remove("has-admin-sidebar");
+
+           // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
+           if (PUBLIC_PAGES.includes(pageId)) {
+             document.body.classList.remove("has-sidebar");
+             document.body.classList.add("hide-sidebar");
+             console.log("Hiding sidebar for public page");
+           } else {
+             // Ngược lại -> Hiện Sidebar
+             document.body.classList.add("has-sidebar");
+             document.body.classList.remove("hide-sidebar");
+             this.updateActiveNav(pageId);
+             console.log("Showing sidebar for authenticated page");
+           }
+         } catch (e) {
+           console.warn("⚠️ Error in checkVisibility (Ignored):", e);
+           // Không làm gì để trang vẫn hiển thị được
+         }
+       },
 
       getCurrentPage: function () {
         return this.getCurrentPageId();
@@ -382,15 +453,19 @@
     };
 
     // Add mobile menu toggle button dynamically
-    function addMobileMenuToggle() {
-      const existingBtn = document.getElementById("mobileMenuToggleGlobal");
-      if (
-        !existingBtn &&
-        !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId())
-      ) {
-        const btn = document.createElement("button");
-        btn.id = "mobileMenuToggleGlobal";
-        btn.className = "mobile-menu-toggle";
+      function addMobileMenuToggle() {
+        const existingBtn = document.getElementById("mobileMenuToggleGlobal");
+        if (
+          !existingBtn &&
+          !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId()) &&
+          !(
+            window.GlobalSidebar?.isAdminRoleActive &&
+            window.GlobalSidebar.isAdminRoleActive()
+          )
+        ) {
+          const btn = document.createElement("button");
+          btn.id = "mobileMenuToggleGlobal";
+          btn.className = "mobile-menu-toggle";
         btn.innerHTML = "☰";
         btn.addEventListener("click", () => GlobalSidebar.openMobile());
         document.body.appendChild(btn);
