@@ -276,7 +276,6 @@ function handleGoogleCallback(authCode) {
           <h2>Chào mừng trở lại! 🎉</h2>
           <p class="welcome-text">
             Xin chào <strong>${appUser.displayName}</strong>!<br>
-            Tài khoản và dữ liệu học tập đã sẵn sàng.
           </p>
           
           <a href="${redirectUrl}" target="_top" class="btn-dashboard" id="redirectBtn">
