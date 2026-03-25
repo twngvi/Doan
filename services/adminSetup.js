@@ -12,100 +12,13 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
   ui.createMenu("🛠️ Admin Tools")
-    .addItem("🔑 Setup API Key", "ADMIN_setupGeminiApiKey")
-    .addSeparator()
-    .addItem("✅ Test API Connection", "TEST_geminiConnection")
     .addItem("📄 Test Document Access", "TEST_documentAccess")
-    .addItem("🔍 View API Key Status", "ADMIN_viewApiKeyStatus")
     .addSeparator()
     .addItem("📊 View All Topics", "ADMIN_viewTopics")
     .addItem("🗑️ Clear Cache", "ADMIN_clearCache")
     .addToUi();
 
   Logger.log("✅ Admin menu created");
-}
-
-/**
- * [ADMIN] Setup Gemini API Key
- * Chạy 1 lần duy nhất để lưu API Key vào Script Properties
- *
- * Cách dùng:
- * 1. Mở Apps Script Editor
- * 2. Chọn function: ADMIN_setupGeminiApiKey
- * 3. Click Run
- * 4. Nhập API Key khi được hỏi
- */
-function ADMIN_setupGeminiApiKey() {
-  const ui = SpreadsheetApp.getUi();
-
-  const response = ui.prompt(
-    "🔑 Setup Gemini API Key",
-    "Nhập Gemini API Key của bạn:\n\n" +
-      "(Lấy tại: https://makersuite.google.com/app/apikey)",
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const apiKey = response.getResponseText().trim();
-
-    if (!apiKey || apiKey.length < 20) {
-      ui.alert("❌ API Key không hợp lệ. Vui lòng thử lại.");
-      return;
-    }
-
-    // Save to current authenticated user profile
-    const success = GeminiService.setupApiKey(apiKey, {});
-
-    if (success) {
-      ui.alert(
-        "✅ Thành công!",
-        "Gemini API Key đã được lưu.\n\n" +
-          "Bạn có thể test kết nối bằng cách chạy:\n" +
-          "TEST_geminiConnection()",
-        ui.ButtonSet.OK
-      );
-
-      // Auto test connection
-      Logger.log("🔍 Testing API connection...");
-      const testResult = GeminiService.testConnection({});
-      Logger.log("Test result: " + JSON.stringify(testResult));
-
-      if (testResult.success) {
-        ui.alert(
-          "🎉 Hoàn tất!",
-          "API Key đã được lưu và test thành công!\n\n" + testResult.message,
-          ui.ButtonSet.OK
-        );
-      }
-    } else {
-      ui.alert("❌ Lỗi khi lưu API Key. Vui lòng kiểm tra lại.");
-    }
-  }
-}
-
-/**
- * [TEST] Test Gemini API Connection
- */
-function TEST_geminiConnection() {
-  const result = GeminiService.testConnection({});
-  Logger.log("=== GEMINI API TEST ===");
-  Logger.log(JSON.stringify(result, null, 2));
-
-  if (result.success) {
-    SpreadsheetApp.getUi().alert(
-      "✅ Kết nối thành công!",
-      result.message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } else {
-    SpreadsheetApp.getUi().alert(
-      "❌ Kết nối thất bại",
-      result.message + "\n\nVui lòng chạy: ADMIN_setupGeminiApiKey()",
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  }
-
-  return result;
 }
 
 /**
@@ -159,33 +72,6 @@ function TEST_documentAccess() {
       Logger.log("❌ Document access error: " + error.toString());
       return { success: false, error: error.toString() };
     }
-  }
-}
-
-/**
- * [ADMIN] View Current API Key (masked)
- */
-function ADMIN_viewApiKeyStatus() {
-  const status = GeminiService.getUserApiKeyStatus({});
-  const ui = SpreadsheetApp.getUi();
-
-  if (status && status.success && status.hasKey) {
-    ui.alert(
-      "🔑 API Key Status",
-      "API Key cá nhân đã được thiết lập!\n\n" +
-        "Key (masked): " +
-        (status.keyAlias || "(đã lưu)") +
-        "\n\n" +
-        "Để test kết nối, chọn menu: Admin Tools > Test API Connection",
-      ui.ButtonSet.OK
-    );
-  } else {
-    ui.alert(
-      "⚠️ Chưa có API Key",
-      "API Key chưa được thiết lập.\n\n" +
-        "Vui lòng chọn menu: Admin Tools > Setup API Key",
-      ui.ButtonSet.OK
-    );
   }
 }
 

@@ -763,10 +763,11 @@
     const oldText = saveBtn?.innerHTML || "";
     if (saveBtn) {
       saveBtn.disabled = true;
-      saveBtn.innerHTML = "<span class=\"btn-text\">Đang lưu...</span>";
+      saveBtn.innerHTML = '<span class="btn-text">Đang lưu...</span>';
     }
 
     setGeminiStatus("Đang kiểm tra và lưu key...", "info");
+
     google.script.run
       .withSuccessHandler(function (response) {
         if (saveBtn) {
@@ -780,11 +781,10 @@
           showToast("Đã lưu Gemini API key cá nhân", "success");
           loadGeminiKeyStatus();
         } else {
-          setGeminiStatus(
-            response?.message || "Không thể lưu API key. Vui lòng thử lại.",
-            "error",
-          );
-          showToast(response?.message || "Không thể lưu API key", "error");
+          const msg = response?.message || "Không thể lưu API key";
+          console.error("Gemini save failed:", response);
+          setGeminiStatus(msg, "error");
+          showToast(msg, "error");
         }
       })
       .withFailureHandler(function (error) {
@@ -792,11 +792,18 @@
           saveBtn.disabled = false;
           saveBtn.innerHTML = oldText;
         }
-        const message = error?.message || "Unknown error";
-        setGeminiStatus("Lỗi lưu API key: " + message, "error");
-        showToast("Lỗi lưu API key", "error");
+        const msg = error?.message || String(error) || "Unknown error";
+        console.error("Gemini save exception:", error);
+        setGeminiStatus("Lỗi lưu API key: " + msg, "error");
+        showToast("Lỗi lưu API key: " + msg, "error");
       })
-      .upsertUserGeminiApiKey(profileData.userId, apiKey);
+      .upsertUserGeminiApiKey(
+        {
+          userId: profileData.userId,
+          email: profileData.email
+        },
+        apiKey
+      );
   }
 
   function handleGeminiKeyDelete() {

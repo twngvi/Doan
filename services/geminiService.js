@@ -750,8 +750,8 @@ const GeminiService = {
         isValid: record.values[5] === true || record.values[5] === "TRUE",
         status: record.values[6] || "UNKNOWN",
         keyAlias: record.values[2] || "",
-        lastValidatedAt: record.values[7] || "",
-        lastUsedAt: record.values[8] || "",
+        lastValidatedAt: record.values[7] instanceof Date ? record.values[7].toISOString() : (record.values[7] || ""),
+        lastUsedAt: record.values[8] instanceof Date ? record.values[8].toISOString() : (record.values[8] || ""),
         lastError: record.values[9] || "",
       };
     } catch (error) {
@@ -953,29 +953,7 @@ const GeminiService = {
 
 // ========== ADMIN FUNCTIONS ==========
 
-/**
- * [ADMIN] Setup Gemini API Key
- * Deprecated: hệ thống hiện dùng API key theo từng user.
- */
-function ADMIN_setupGeminiApiKey() {
-  Logger.log(
-    "ADMIN_setupGeminiApiKey is deprecated. Use upsertUserGeminiApiKey(userId, apiKey) instead.",
-  );
-  return {
-    success: false,
-    message:
-      "Deprecated: hệ thống dùng key cá nhân theo user. Vui lòng cấu hình trong Profile/Settings.",
-  };
-}
 
-/**
- * [ADMIN] Test Gemini API Connection
- */
-function ADMIN_testGeminiConnection() {
-  const result = GeminiService.testConnection({});
-  Logger.log(JSON.stringify(result, null, 2));
-  return result;
-}
 
 /**
  * [ADMIN] Test đọc Google Doc
