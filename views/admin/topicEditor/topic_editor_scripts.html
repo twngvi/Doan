@@ -1182,31 +1182,24 @@ async function goBackToAdmin() {
             confirmText: 'Thoát',
             cancelText: 'Ở lại'
           })
-        : false;
+        : confirm('Bạn có nội dung chưa lưu. Bạn có chắc muốn thoát?');
     if (!shouldLeave) {
       return;
     }
   }
-  
-  // Navigate back - this will be handled by the main app
-  if (typeof showAdminSidebar === 'function') {
-    showAdminSidebar();
+
+  // Navigate back to Content Management page
+  if (typeof showAdminPage === 'function') {
+    showAdminPage('page-content-management');
+    // Update active nav item
+    const navItem = document.querySelector('.admin-sidebar .nav-item[data-page="page-content-management"]');
+    if (navItem && typeof setActiveNavItem === 'function') {
+      setActiveNavItem(navItem);
+    }
   } else {
-    history.back();
+    // Fallback: try to use hash navigation
+    window.location.hash = 'page-content-management';
   }
-}
-
-// ========================================
-// ADMIN NAVIGATION
-// ========================================
-
-function showAdminSidebar() {
-  // Hide editor and show admin sidebar
-  google.script.run
-    .withSuccessHandler(function(html) {
-      document.body.innerHTML = html;
-    })
-    .getAdminSidebarHtml();
 }
 
 // ========================================

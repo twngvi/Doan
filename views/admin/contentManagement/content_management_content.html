@@ -1,0 +1,261 @@
+<!-- Content Management - Quản lý Nội dung Topic -->
+<div class="content-management-container">
+  <!-- Header -->
+  <div class="content-management-header">
+    <h2>
+      <span class="material-symbols-sharp">library_books</span>
+      Quản lý Nội dung Topic
+    </h2>
+    <button class="cm-btn cm-btn-primary" onclick="goToCreateTopic()">
+      <span class="material-symbols-sharp">add</span>
+      Tạo Topic mới
+    </button>
+  </div>
+
+  <!-- Toolbar: Search & Filters -->
+  <div class="cm-toolbar">
+    <div class="cm-search-box">
+      <span class="material-symbols-sharp search-icon">search</span>
+      <input
+        type="text"
+        id="cm-search-input"
+        placeholder="Tìm kiếm topic theo tên hoặc ID..."
+        onkeyup="handleSearchTopics()"
+      >
+    </div>
+
+    <select id="cm-category-filter" class="cm-filter-select" onchange="handleFilterChange()">
+      <option value="">Tất cả danh mục</option>
+      <!-- Categories sẽ được load động -->
+    </select>
+
+    <select id="cm-status-filter" class="cm-filter-select" onchange="handleFilterChange()">
+      <option value="">Tất cả trạng thái</option>
+      <option value="active">Đang hoạt động</option>
+      <option value="locked">Đã khóa</option>
+    </select>
+
+    <button class="cm-btn cm-btn-secondary" onclick="refreshTopicsList()">
+      <span class="material-symbols-sharp">refresh</span>
+      Làm mới
+    </button>
+  </div>
+
+  <!-- Topics Table -->
+  <div class="cm-table-wrapper">
+    <table class="cm-table">
+      <thead>
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>Topic</th>
+          <th>Danh mục</th>
+          <th>Thời gian</th>
+          <th>Trạng thái</th>
+          <th>Cập nhật</th>
+          <th style="width: 140px;">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody id="cm-topics-tbody">
+        <!-- Topics sẽ được render ở đây -->
+      </tbody>
+    </table>
+
+    <!-- Loading State -->
+    <div id="cm-loading-state" class="cm-loading" style="display: none;">
+      <div class="spinner"></div>
+      <p>Đang tải danh sách topics...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="cm-empty-state" class="cm-empty-state" style="display: none;">
+      <span class="material-symbols-sharp">inbox</span>
+      <h3>Chưa có topic nào</h3>
+      <p>Hãy tạo topic đầu tiên để bắt đầu!</p>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="cm-pagination" id="cm-pagination" style="display: none;">
+    <div class="cm-pagination-info">
+      Hiển thị <span id="cm-showing-start">1</span> - <span id="cm-showing-end">10</span>
+      trong tổng số <span id="cm-total-count">0</span> topics
+    </div>
+    <div class="cm-pagination-controls" id="cm-pagination-controls">
+      <!-- Pagination buttons sẽ được render ở đây -->
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="cm-delete-modal" class="cm-modal" style="display: none;">
+  <div class="cm-modal-overlay" onclick="closeDeleteModal()"></div>
+  <div class="cm-modal-content">
+    <div class="cm-modal-header">
+      <span class="material-symbols-sharp warning-icon">warning</span>
+      <h3>Xác nhận xóa Topic</h3>
+    </div>
+    <div class="cm-modal-body">
+      <p>Bạn có chắc chắn muốn xóa topic:</p>
+      <p class="topic-name-confirm" id="delete-topic-name"></p>
+      <p class="warning-text">Hành động này không thể hoàn tác!</p>
+    </div>
+    <div class="cm-modal-footer">
+      <button class="cm-btn cm-btn-secondary" onclick="closeDeleteModal()">Hủy</button>
+      <button class="cm-btn cm-btn-danger" onclick="confirmDeleteTopic()">
+        <span class="material-symbols-sharp">delete</span>
+        Xóa Topic
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Topic Preview Modal -->
+<div id="cm-preview-modal" class="cm-modal" style="display: none;">
+  <div class="cm-modal-overlay" onclick="closePreviewModal()"></div>
+  <div class="cm-modal-content cm-modal-large">
+    <div class="cm-modal-header">
+      <h3 id="preview-topic-title">Xem trước Topic</h3>
+      <button class="cm-modal-close" onclick="closePreviewModal()">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    </div>
+    <div class="cm-modal-body" id="preview-topic-content">
+      <!-- Nội dung topic sẽ được load ở đây -->
+    </div>
+  </div>
+</div>
+
+<style>
+/* Modal Styles */
+.cm-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cm-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.cm-modal-content {
+  position: relative;
+  background: var(--card-bg, #ffffff);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: modalSlideIn 0.2s ease;
+}
+
+.cm-modal-large {
+  max-width: 800px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cm-modal-large .cm-modal-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cm-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.cm-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+  flex: 1;
+}
+
+.cm-modal-header .warning-icon {
+  font-size: 28px;
+  color: #f59e0b;
+}
+
+.cm-modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: var(--secondary-bg, #f1f5f9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #64748b);
+  transition: all 0.2s ease;
+}
+
+.cm-modal-close:hover {
+  background: var(--secondary-hover, #e2e8f0);
+  color: var(--text-primary, #1a1a2e);
+}
+
+.cm-modal-body {
+  color: var(--text-secondary, #64748b);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.cm-modal-body .topic-name-confirm {
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+  padding: 12px;
+  background: var(--secondary-bg, #f1f5f9);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+
+.cm-modal-body .warning-text {
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.cm-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.cm-btn-danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.cm-btn-danger:hover {
+  background: #b91c1c;
+}
+</style>

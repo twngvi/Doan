@@ -1,0 +1,411 @@
+<script>
+// ===== Content Management Scripts =====
+
+// State variables
+let allTopics = [];
+let filteredTopics = [];
+let currentPage = 1;
+const itemsPerPage = 10;
+let topicToDelete = null;
+
+// ===== Initialize =====
+function initContentManagement() {
+  console.log('[ContentManagement] Initializing...');
+  loadCategories();
+  loadTopicsList();
+}
+
+// ===== Load Categories for Filter =====
+function loadCategories() {
+  google.script.run
+    .withSuccessHandler(function(categories) {
+      const select = document.getElementById('cm-category-filter');
+      if (select && categories) {
+        // Giữ option đầu tiên
+        select.innerHTML = '<option value="">Tất cả danh mục</option>';
+        categories.forEach(function(cat) {
+          const option = document.createElement('option');
+          option.value = cat;
+          option.textContent = cat;
+          select.appendChild(option);
+        });
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.error('[ContentManagement] Failed to load categories:', error);
+    })
+    .getTopicCategories();
+}
+
+// ===== Load Topics List =====
+function loadTopicsList() {
+  showLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(topics) {
+      allTopics = topics || [];
+      filteredTopics = [...allTopics];
+      currentPage = 1;
+      renderTopicsTable();
+      showLoading(false);
+      console.log('[ContentManagement] Loaded', allTopics.length, 'topics');
+    })
+    .withFailureHandler(function(error) {
+      console.error('[ContentManagement] Failed to load topics:', error);
+      showLoading(false);
+      showEmptyState(true);
+    })
+    .getAllTopicsForAdmin();
+}
+
+// ===== Render Topics Table =====
+function renderTopicsTable() {
+  const tbody = document.getElementById('cm-topics-tbody');
+  if (!tbody) return;
+
+  if (filteredTopics.length === 0) {
+    tbody.innerHTML = '';
+    showEmptyState(true);
+    document.getElementById('cm-pagination').style.display = 'none';
+    return;
+  }
+
+  showEmptyState(false);
+
+  // Tính toán pagination
+  const totalPages = Math.ceil(filteredTopics.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, filteredTopics.length);
+  const pageTopics = filteredTopics.slice(startIndex, endIndex);
+
+  // Render rows
+  tbody.innerHTML = pageTopics.map(function(topic, index) {
+    const rowNum = startIndex + index + 1;
+    const categoryClass = getCategoryClass(topic.category);
+    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
+    const statusClass = isLocked ? 'locked' : 'active';
+    const statusText = isLocked ? 'Đã khóa' : 'Hoạt động';
+    const updatedAt = formatDate(topic.updatedAt);
+
+    return `
+      <tr data-topic-id="${topic.topicId}">
+        <td>${rowNum}</td>
+        <td>
+          <div class="topic-info">
+            <div class="topic-icon">
+              ${topic.iconUrl
+                ? `<img src="${topic.iconUrl}" alt="${topic.title}">`
+                : '<span class="material-symbols-sharp">article</span>'
+              }
+            </div>
+            <div class="topic-details">
+              <h4>${escapeHtml(topic.title)}</h4>
+              <p title="${escapeHtml(topic.description || '')}">
+                ${escapeHtml(topic.description || 'Chưa có mô tả')}
+              </p>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
+        </td>
+        <td>${topic.estimatedTime || '-'}</td>
+        <td>
+          <span class="status-badge ${statusClass}">${statusText}</span>
+        </td>
+        <td>${updatedAt}</td>
+        <td>
+          <div class="action-buttons">
+            <button class="action-btn view" title="Xem trước" onclick="viewTopic('${topic.topicId}')">
+              <span class="material-symbols-sharp">visibility</span>
+            </button>
+            <button class="action-btn edit" title="Chỉnh sửa" onclick="editTopic('${topic.topicId}')">
+              <span class="material-symbols-sharp">edit</span>
+            </button>
+            <button class="action-btn delete" title="Xóa" onclick="deleteTopic('${topic.topicId}', '${escapeHtml(topic.title)}')">
+              <span class="material-symbols-sharp">delete</span>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Render pagination
+  renderPagination(totalPages, startIndex + 1, endIndex, filteredTopics.length);
+}
+
+// ===== Pagination =====
+function renderPagination(totalPages, start, end, total) {
+  const pagination = document.getElementById('cm-pagination');
+  const controls = document.getElementById('cm-pagination-controls');
+
+  if (total <= itemsPerPage) {
+    pagination.style.display = 'none';
+    return;
+  }
+
+  pagination.style.display = 'flex';
+  document.getElementById('cm-showing-start').textContent = start;
+  document.getElementById('cm-showing-end').textContent = end;
+  document.getElementById('cm-total-count').textContent = total;
+
+  let html = '';
+
+  // Previous button
+  html += `
+    <button class="cm-page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">
+      <span class="material-symbols-sharp">chevron_left</span>
+    </button>
+  `;
+
+  // Page numbers
+  const maxVisiblePages = 5;
+  let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+  if (endPage - startPage < maxVisiblePages - 1) {
+    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+  }
+
+  if (startPage > 1) {
+    html += `<button class="cm-page-btn" onclick="goToPage(1)">1</button>`;
+    if (startPage > 2) {
+      html += `<span style="padding: 0 8px;">...</span>`;
+    }
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    html += `
+      <button class="cm-page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">
+        ${i}
+      </button>
+    `;
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) {
+      html += `<span style="padding: 0 8px;">...</span>`;
+    }
+    html += `<button class="cm-page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+  }
+
+  // Next button
+  html += `
+    <button class="cm-page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">
+      <span class="material-symbols-sharp">chevron_right</span>
+    </button>
+  `;
+
+  controls.innerHTML = html;
+}
+
+function goToPage(page) {
+  currentPage = page;
+  renderTopicsTable();
+  // Scroll to top of table
+  document.querySelector('.cm-table-wrapper').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ===== Search & Filter =====
+function handleSearchTopics() {
+  const searchTerm = document.getElementById('cm-search-input').value.toLowerCase().trim();
+  applyFilters(searchTerm);
+}
+
+function handleFilterChange() {
+  const searchTerm = document.getElementById('cm-search-input').value.toLowerCase().trim();
+  applyFilters(searchTerm);
+}
+
+function applyFilters(searchTerm) {
+  const categoryFilter = document.getElementById('cm-category-filter').value;
+  const statusFilter = document.getElementById('cm-status-filter').value;
+
+  filteredTopics = allTopics.filter(function(topic) {
+    // Search filter
+    const matchesSearch = !searchTerm ||
+      (topic.title && topic.title.toLowerCase().includes(searchTerm)) ||
+      (topic.topicId && topic.topicId.toLowerCase().includes(searchTerm)) ||
+      (topic.description && topic.description.toLowerCase().includes(searchTerm));
+
+    // Category filter
+    const matchesCategory = !categoryFilter || topic.category === categoryFilter;
+
+    // Status filter
+    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
+    const matchesStatus = !statusFilter ||
+      (statusFilter === 'active' && !isLocked) ||
+      (statusFilter === 'locked' && isLocked);
+
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
+  currentPage = 1;
+  renderTopicsTable();
+}
+
+// ===== Topic Actions =====
+
+// Xem topic
+function viewTopic(topicId) {
+  const topic = allTopics.find(function(t) { return t.topicId === topicId; });
+  if (!topic) return;
+
+  document.getElementById('preview-topic-title').textContent = topic.title;
+  document.getElementById('preview-topic-content').innerHTML = `
+    <div class="cm-loading">
+      <div class="spinner"></div>
+      <p>Đang tải nội dung...</p>
+    </div>
+  `;
+  document.getElementById('cm-preview-modal').style.display = 'flex';
+
+  // TODO: Load nội dung topic từ Google Doc
+  // google.script.run
+  //   .withSuccessHandler(function(content) { ... })
+  //   .getTopicContent(topicId);
+
+  // Tạm thời hiển thị thông tin cơ bản
+  setTimeout(function() {
+    document.getElementById('preview-topic-content').innerHTML = `
+      <div style="padding: 20px;">
+        <p><strong>Topic ID:</strong> ${topicId}</p>
+        <p><strong>Tiêu đề:</strong> ${escapeHtml(topic.title)}</p>
+        <p><strong>Mô tả:</strong> ${escapeHtml(topic.description || 'Chưa có')}</p>
+        <p><strong>Danh mục:</strong> ${escapeHtml(topic.category || 'Chưa phân loại')}</p>
+        <p><strong>Thời gian học:</strong> ${topic.estimatedTime || 'Chưa xác định'}</p>
+        <p><strong>Google Doc:</strong> ${topic.contentDocUrl ? `<a href="${topic.contentDocUrl}" target="_blank">Mở trong tab mới</a>` : 'Chưa có'}</p>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
+        <p style="color: #64748b; font-style: italic;">Chức năng xem chi tiết nội dung sẽ được phát triển sau.</p>
+      </div>
+    `;
+  }, 500);
+}
+
+function closePreviewModal() {
+  document.getElementById('cm-preview-modal').style.display = 'none';
+}
+
+// Chỉnh sửa topic
+function editTopic(topicId) {
+  // TODO: Chuyển đến trang Topic Editor với mode edit
+  // Có thể dùng hash hoặc localStorage để truyền topicId
+  console.log('[ContentManagement] Edit topic:', topicId);
+
+  // Tạm thời: lưu topicId và chuyển trang
+  localStorage.setItem('editTopicId', topicId);
+  showAdminPage('page-topic-editor');
+
+  // Thông báo
+  if (typeof showNotification === 'function') {
+    showNotification('Chức năng chỉnh sửa đang được phát triển', 'info');
+  }
+}
+
+// Xóa topic
+function deleteTopic(topicId, topicTitle) {
+  topicToDelete = topicId;
+  document.getElementById('delete-topic-name').textContent = topicTitle;
+  document.getElementById('cm-delete-modal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  document.getElementById('cm-delete-modal').style.display = 'none';
+  topicToDelete = null;
+}
+
+function confirmDeleteTopic() {
+  if (!topicToDelete) return;
+
+  const deleteBtn = document.querySelector('.cm-btn-danger');
+  deleteBtn.disabled = true;
+  deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
+
+  // TODO: Gọi API xóa topic
+  // google.script.run
+  //   .withSuccessHandler(function() { ... })
+  //   .withFailureHandler(function(error) { ... })
+  //   .deleteTopic(topicToDelete);
+
+  // Tạm thời: giả lập xóa
+  setTimeout(function() {
+    closeDeleteModal();
+    deleteBtn.disabled = false;
+    deleteBtn.innerHTML = '<span class="material-symbols-sharp">delete</span> Xóa Topic';
+
+    // Thông báo
+    if (typeof showNotification === 'function') {
+      showNotification('Chức năng xóa đang được phát triển', 'info');
+    } else {
+      alert('Chức năng xóa đang được phát triển');
+    }
+  }, 1000);
+}
+
+// ===== Navigate to Create Topic =====
+function goToCreateTopic() {
+  localStorage.removeItem('editTopicId'); // Đảm bảo không ở mode edit
+  showAdminPage('page-topic-editor');
+}
+
+// ===== Refresh =====
+function refreshTopicsList() {
+  document.getElementById('cm-search-input').value = '';
+  document.getElementById('cm-category-filter').value = '';
+  document.getElementById('cm-status-filter').value = '';
+  loadTopicsList();
+}
+
+// ===== Helper Functions =====
+function showLoading(show) {
+  const loadingEl = document.getElementById('cm-loading-state');
+  const tbody = document.getElementById('cm-topics-tbody');
+
+  if (show) {
+    loadingEl.style.display = 'flex';
+    tbody.innerHTML = '';
+  } else {
+    loadingEl.style.display = 'none';
+  }
+}
+
+function showEmptyState(show) {
+  const emptyEl = document.getElementById('cm-empty-state');
+  emptyEl.style.display = show ? 'flex' : 'none';
+}
+
+function getCategoryClass(category) {
+  if (!category) return '';
+  const lowerCat = category.toLowerCase();
+  if (lowerCat.includes('javascript')) return 'javascript';
+  if (lowerCat.includes('python')) return 'python';
+  if (lowerCat.includes('html') || lowerCat.includes('css')) return 'html-css';
+  return '';
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ===== Auto-init when page shown =====
+// Hàm này sẽ được gọi bởi sidebar khi chuyển trang
+window.initcontentmanagement = initContentManagement;
+</script>

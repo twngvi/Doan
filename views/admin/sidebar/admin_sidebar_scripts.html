@@ -301,8 +301,7 @@
       { id: 'page-admin-dashboard', name: 'Tổng quan', icon: 'dashboard', keywords: ['dashboard', 'tong quan', 'home'] },
       { id: 'page-online-stats', name: 'Đang online', icon: 'group', keywords: ['online', 'dang online', 'user', 'nguoi dung'] },
       { id: 'page-user-management', name: 'Quản lý Users', icon: 'manage_accounts', keywords: ['user', 'quan ly', 'nguoi dung', 'account'] },
-      { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson'] },
-      { id: 'page-topic-editor', name: 'Tạo Topic mới', icon: 'add_circle', keywords: ['topic', 'tao moi', 'them', 'create', 'editor'] },
+      { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson', 'topic', 'tao moi', 'them', 'create'] },
       { id: 'page-quiz-management', name: 'Quản lý Quiz', icon: 'quiz', keywords: ['quiz', 'cau hoi', 'trac nghiem'] },
       { id: 'page-reports', name: 'Báo cáo', icon: 'analytics', keywords: ['report', 'bao cao', 'thong ke', 'analytics'] },
       { id: 'page-settings', name: 'Cài đặt', icon: 'settings', keywords: ['setting', 'cai dat', 'config'] },
@@ -525,5 +524,54 @@
         }
       });
     }
+  }
+
+  // ========================================
+  // CONTENT MANAGEMENT DYNAMIC LOADER
+  // ========================================
+
+  let contentManagementLoaded = false;
+
+  function initcontentmanagement() {
+    if (contentManagementLoaded) {
+      // Already loaded, just refresh if needed
+      if (typeof initContentManagement === 'function') {
+        initContentManagement();
+      }
+      return;
+    }
+
+    loadContentManagementContent();
+  }
+
+  function loadContentManagementContent() {
+    const container = document.getElementById('content-management-container');
+    if (!container) return;
+
+    // Check if google.script.run is available
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        contentManagementLoaded = true;
+
+        // Execute scripts that were inserted via innerHTML
+        executeScriptsInContainer(container);
+
+        // Initialize content management after content is loaded
+        setTimeout(function() {
+          if (typeof initContentManagement === 'function') {
+            initContentManagement();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý Nội dung: ' + error.message + '</div>';
+      })
+      .getContentManagementFullHtml();
   }
 </script>

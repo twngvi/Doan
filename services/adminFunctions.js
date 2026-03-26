@@ -853,40 +853,57 @@ function updateUserStatus(userId, isActive) {
 // ========================================
 
 /**
- * Lấy danh sách Topics cho Admin
+ * Lấy danh sách Topics cho Admin (Content Management)
+ * Trả về mảng topics trực tiếp để sử dụng trong giao diện quản lý
  */
 function getAllTopicsForAdmin() {
   try {
     const sheet = getSheet("Topics");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Topics" };
+      return [];
     }
-    
+
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) {
-      return { success: true, data: [] };
+      return [];
     }
-    
+
     const headers = data[0];
     const topics = [];
-    
+
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
+      const topicId = row[headers.indexOf("topicId")];
+
+      // Skip empty rows
+      if (!topicId) continue;
+
       topics.push({
-        topicId: row[headers.indexOf("topicId")],
-        name: row[headers.indexOf("title")],
-        description: row[headers.indexOf("description")],
-        category: row[headers.indexOf("category")],
-        orderIndex: row[headers.indexOf("order")] || i,
-        contentDocId: row[headers.indexOf("contentDocId")],
-        lessonsCount: 0 // TODO: Count lessons
+        topicId: topicId,
+        title: row[headers.indexOf("title")] || '',
+        description: row[headers.indexOf("description")] || '',
+        category: row[headers.indexOf("category")] || '',
+        order: row[headers.indexOf("order")] || i,
+        iconUrl: row[headers.indexOf("iconUrl")] || '',
+        estimatedTime: row[headers.indexOf("estimatedTime")] || '',
+        prerequisiteTopics: row[headers.indexOf("prerequisiteTopics")] || '',
+        isLocked: row[headers.indexOf("isLocked")] === true || row[headers.indexOf("isLocked")] === 'TRUE',
+        unlockCondition: row[headers.indexOf("unlockCondition")] || '',
+        createdBy: row[headers.indexOf("createdBy")] || '',
+        createdAt: row[headers.indexOf("createdAt")] || '',
+        updatedAt: row[headers.indexOf("updatedAt")] || '',
+        contentDocId: row[headers.indexOf("contentDocId")] || '',
+        contentDocUrl: row[headers.indexOf("contentDocUrl")] || ''
       });
     }
-    
-    return { success: true, data: topics };
+
+    // Sort by order
+    topics.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    return topics;
   } catch (error) {
-    Logger.log("Error getting topics: " + error.toString());
-    return { success: false, message: error.toString() };
+    Logger.log("Error getting topics for admin: " + error.toString());
+    return [];
   }
 }
 
@@ -1074,6 +1091,22 @@ function getTopicEditorFullHtml() {
   } catch (error) {
     Logger.log("Error getting topic editor full HTML: " + error.toString());
     return "<p style='color:#d93025;padding:20px;'>Lỗi tải Topic Editor: " + error.toString() + "</p>";
+  }
+}
+
+/**
+ * Lấy HTML đầy đủ của Content Management (styles + content + scripts)
+ */
+function getContentManagementFullHtml() {
+  try {
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_content').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_scripts').getContent();
+
+    return styles + content + scripts;
+  } catch (error) {
+    Logger.log("Error getting content management full HTML: " + error.toString());
+    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý Nội dung: " + error.toString() + "</p>";
   }
 }
 
@@ -1830,31 +1863,29 @@ function saveTopicToMasterDB(topicData) {
 
 /**
  * Lấy danh sách categories từ Topics hiện có
+ * Trả về mảng categories trực tiếp
  */
 function getTopicCategories() {
   try {
     const sheet = getSheet("Topics");
-    if (!sheet) return { success: false, categories: [] };
-    
+    if (!sheet) return [];
+
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const categoryIndex = headers.indexOf("category");
-    
-    if (categoryIndex === -1) return { success: false, categories: [] };
-    
+
+    if (categoryIndex === -1) return [];
+
     const categories = new Set();
     for (let i = 1; i < data.length; i++) {
       if (data[i][categoryIndex]) {
         categories.add(data[i][categoryIndex]);
       }
     }
-    
-    return {
-      success: true,
-      categories: Array.from(categories).sort()
-    };
+
+    return Array.from(categories).sort();
   } catch (error) {
     Logger.log("Error getting categories: " + error.toString());
-    return { success: false, categories: [] };
+    return [];
   }
 }
