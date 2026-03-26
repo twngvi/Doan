@@ -455,17 +455,135 @@ function deleteImage(btn) {
 
 function previewContent() {
   const title = document.getElementById('topicTitle').value || 'Chưa có tiêu đề';
-  const content = document.getElementById('contentEditor').innerHTML;
-  
+  let content = document.getElementById('contentEditor').innerHTML;
+
+  // Render block markers thành HTML đẹp
+  content = renderBlockMarkers(content);
+
   const previewHtml = `
     <div class="lesson-content-wrapper">
       <h1 style="color: #1a73e8; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">${escapeHtml(title)}</h1>
       ${content}
     </div>
   `;
-  
+
   document.getElementById('previewBody').innerHTML = previewHtml;
   document.getElementById('previewModal').classList.add('active');
+}
+
+/**
+ * Render block markers thành HTML đẹp cho preview
+ */
+function renderBlockMarkers(html) {
+  let result = html;
+
+  // Icons cho các loại callout
+  const calloutIcons = {
+    'NOTE': '📌',
+    'TIP': '💡',
+    'WARNING': '⚠️',
+    'HIGHLIGHT': '✨',
+    'EXAMPLE': '📖',
+    'CHECKPOINT': '✅',
+    'TASK': '📋',
+    'QA': '❓',
+    'RESOURCES': '📚'
+  };
+
+  const calloutTitles = {
+    'NOTE': 'Ghi chú',
+    'TIP': 'Mẹo',
+    'WARNING': 'Cảnh báo',
+    'HIGHLIGHT': 'Lưu ý',
+    'EXAMPLE': 'Ví dụ',
+    'CHECKPOINT': 'Kiểm tra',
+    'TASK': 'Nhiệm vụ',
+    'QA': 'Hỏi & Đáp',
+    'RESOURCES': 'Tài nguyên'
+  };
+
+  // Xử lý các callout blocks: [[TYPE]]...[[/TYPE]]
+  const calloutTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES'];
+  calloutTypes.forEach(function(type) {
+    const regex = new RegExp('\\[\\[' + type + '\\]\\]([\\s\\S]*?)\\[\\[\\/' + type + '\\]\\]', 'gi');
+    result = result.replace(regex, function(match, content) {
+      const cleanContent = content.replace(/<\/?p[^>]*>/gi, '').replace(/<br\s*\/?>/gi, '\n').trim();
+      const icon = calloutIcons[type] || '📝';
+      const title = calloutTitles[type] || type;
+      return '<div class="preview-callout preview-callout-' + type.toLowerCase() + '">' +
+        '<span style="font-size: 20px; flex-shrink: 0;">' + icon + '</span>' +
+        '<div><strong>' + title + ':</strong> ' + cleanContent + '</div>' +
+      '</div>';
+    });
+  });
+
+  // Xử lý CODE blocks: [[CODE:LANG]]...[[/CODE]]
+  result = result.replace(/\[\[CODE:([A-Z]+)\]\]([\s\S]*?)\[\[\/CODE\]\]/gi, function(match, lang, code) {
+    // Clean code content
+    let cleanCode = code
+      .replace(/<\/?p[^>]*>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?pre[^>]*>/gi, '')
+      .replace(/<\/?code[^>]*>/gi, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .trim();
+
+    return '<div class="preview-code-block">' +
+      '<div class="preview-code-header"><span class="preview-code-lang">' + lang + '</span></div>' +
+      '<pre class="preview-code-content">' + escapeHtml(cleanCode) + '</pre>' +
+    '</div>';
+  });
+
+  // Xử lý TERMINAL blocks
+  result = result.replace(/\[\[TERMINAL\]\]([\s\S]*?)\[\[\/TERMINAL\]\]/gi, function(match, content) {
+    let cleanContent = content
+      .replace(/<\/?p[^>]*>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .trim();
+    return '<div class="preview-terminal"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
+  });
+
+  // Xử lý GRID blocks
+  result = result.replace(/\[\[GRID\]\]([\s\S]*?)\[\[\/GRID\]\]/gi, function(match, content) {
+    // Split by bullet points or newlines
+    let items = content
+      .replace(/<\/?p[^>]*>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/[•\n]+/)
+      .filter(function(item) { return item.trim(); });
+
+    let gridHtml = '<div class="preview-grid">';
+    items.forEach(function(item) {
+      gridHtml += '<div class="preview-grid-item">' + item.trim() + '</div>';
+    });
+    gridHtml += '</div>';
+    return gridHtml;
+  });
+
+  // Xử lý FIGURE blocks: [[FIGURE:caption]]...[[/FIGURE]]
+  result = result.replace(/\[\[FIGURE:([^\]]*)\]\]([\s\S]*?)\[\[\/FIGURE\]\]/gi, function(match, caption, content) {
+    return '<div class="preview-figure">' +
+      '<div>' + content + '</div>' +
+      '<div class="preview-figure-caption">' + caption + '</div>' +
+    '</div>';
+  });
+
+  // Xử lý COLOR blocks: [[COLOR:COLOR]]...[[/COLOR]]
+  const colors = ['ORANGE', 'RED', 'BLUE', 'GREEN', 'PURPLE', 'CYAN'];
+  colors.forEach(function(color) {
+    const regex = new RegExp('\\[\\[COLOR:' + color + '\\]\\]([\\s\\S]*?)\\[\\[\\/COLOR\\]\\]', 'gi');
+    result = result.replace(regex, function(match, content) {
+      const cleanContent = content.replace(/<\/?p[^>]*>/gi, '').trim();
+      return '<span class="preview-color-' + color.toLowerCase() + '">' + cleanContent + '</span>';
+    });
+  });
+
+  // Xóa các paragraph tags chứa chỉ markers (đã được xử lý)
+  result = result.replace(/<p[^>]*>\s*<\/p>/gi, '');
+
+  return result;
 }
 
 function closePreviewModal() {
