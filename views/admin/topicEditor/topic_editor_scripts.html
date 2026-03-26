@@ -177,30 +177,86 @@ function insertBlockMarker(type) {
   const menu = document.getElementById('blockMarkersMenu');
   menu.classList.remove('active');
 
-  const markers = {
-    'NOTE': { open: '[[NOTE]]', close: '[[/NOTE]]', placeholder: 'Ghi chú của bạn ở đây...' },
-    'TIP': { open: '[[TIP]]', close: '[[/TIP]]', placeholder: 'Mẹo hữu ích ở đây...' },
-    'WARNING': { open: '[[WARNING]]', close: '[[/WARNING]]', placeholder: 'Cảnh báo quan trọng ở đây...' },
-    'HIGHLIGHT': { open: '[[HIGHLIGHT]]', close: '[[/HIGHLIGHT]]', placeholder: 'Nội dung cần nhấn mạnh...' },
-    'EXAMPLE': { open: '[[EXAMPLE]]', close: '[[/EXAMPLE]]', placeholder: 'Ví dụ minh họa ở đây...' },
-    'CHECKPOINT': { open: '[[CHECKPOINT]]', close: '[[/CHECKPOINT]]', placeholder: 'Câu hỏi kiểm tra hiểu bài...' },
-    'TASK': { open: '[[TASK]]', close: '[[/TASK]]', placeholder: 'Mô tả nhiệm vụ cần thực hiện...' },
-    'QA': { open: '[[QA]]', close: '[[/QA]]', placeholder: 'Câu hỏi: ...\nTrả lời: ...' },
-    'TERMINAL': { open: '[[TERMINAL]]', close: '[[/TERMINAL]]', placeholder: '>>> print("Hello World")\nHello World' },
-    'GRID': { open: '[[GRID]]', close: '[[/GRID]]', placeholder: '• Item 1\n• Item 2\n• Item 3' },
-    'RESOURCES': { open: '[[RESOURCES]]', close: '[[/RESOURCES]]', placeholder: '• Link tài liệu 1\n• Link tài liệu 2' },
+  const blockConfig = {
+    'NOTE': { icon: '📌', label: 'Ghi chú', placeholder: 'Ghi chú của bạn ở đây...' },
+    'TIP': { icon: '💡', label: 'Mẹo', placeholder: 'Mẹo hữu ích ở đây...' },
+    'WARNING': { icon: '⚠️', label: 'Cảnh báo', placeholder: 'Cảnh báo quan trọng ở đây...' },
+    'HIGHLIGHT': { icon: '✨', label: 'Lưu ý', placeholder: 'Nội dung cần nhấn mạnh...' },
+    'EXAMPLE': { icon: '📖', label: 'Ví dụ', placeholder: 'Ví dụ minh họa ở đây...' },
+    'CHECKPOINT': { icon: '✅', label: 'Kiểm tra', placeholder: 'Câu hỏi kiểm tra hiểu bài...' },
+    'TASK': { icon: '📋', label: 'Nhiệm vụ', placeholder: 'Mô tả nhiệm vụ cần thực hiện...' },
+    'QA': { icon: '❓', label: 'Hỏi & Đáp', placeholder: 'Câu hỏi: ...\nTrả lời: ...' },
+    'RESOURCES': { icon: '📚', label: 'Tài nguyên', placeholder: '• Link tài liệu 1\n• Link tài liệu 2' },
   };
 
-  const marker = markers[type];
-  if (!marker) return;
+  // Handle special block types
+  if (type === 'TERMINAL') {
+    insertTerminalBlock();
+    return;
+  }
+  if (type === 'GRID') {
+    insertGridBlock();
+    return;
+  }
+
+  const config = blockConfig[type];
+  if (!config) return;
 
   const selection = window.getSelection();
-  const selectedText = selection.toString().trim() || marker.placeholder;
+  const selectedText = selection.toString().trim() || config.placeholder;
 
-  const html = `<p>${marker.open}</p><p>${selectedText}</p><p>${marker.close}</p><p><br></p>`;
+  const html = `
+    <div class="visual-block visual-block-${type.toLowerCase()}" data-block-type="${type}" contenteditable="false">
+      <span class="visual-block-icon">${config.icon}</span>
+      <div class="visual-block-content" contenteditable="true"><span class="visual-block-label">${config.label}:</span> ${selectedText}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
 
   document.execCommand('insertHTML', false, html);
   document.getElementById('contentEditor').focus();
+}
+
+function insertTerminalBlock() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || '>>> print("Hello World")\nHello World';
+
+  const html = `
+    <div class="visual-terminal-block" data-block-type="TERMINAL" contenteditable="false">
+      <div class="visual-terminal-label">🖥️ Terminal Output</div>
+      <div class="visual-terminal-content" contenteditable="true">${selectedText}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+function insertGridBlock() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || '• Item 1\n• Item 2\n• Item 3';
+
+  const html = `
+    <div class="visual-grid-block" data-block-type="GRID" contenteditable="false">
+      <div class="visual-grid-label">📊 Grid Cards</div>
+      <div class="visual-grid-content" contenteditable="true">${selectedText}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+function deleteVisualBlock(btn) {
+  const block = btn.closest('[data-block-type]');
+  if (block) {
+    block.remove();
+  }
 }
 
 function insertColorMarker(color) {
@@ -210,7 +266,7 @@ function insertColorMarker(color) {
   const selection = window.getSelection();
   const selectedText = selection.toString().trim() || 'Nội dung có màu ở đây...';
 
-  const html = `<p>[[COLOR:${color}]]</p><p>${selectedText}</p><p>[[/COLOR]]</p><p><br></p>`;
+  const html = `<span class="visual-color-block visual-color-${color.toLowerCase()}" data-color-type="${color}">${selectedText}</span>&nbsp;`;
 
   document.execCommand('insertHTML', false, html);
   document.getElementById('contentEditor').focus();
@@ -244,10 +300,19 @@ function insertCodeMarker() {
   closeCodeMarkerModal();
   restoreSelection();
 
-  // Escape HTML for display but keep the text content
+  // Escape HTML for display
   const escapedCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  const html = `<p>[[CODE:${language}]]</p><pre>${escapedCode}</pre><p>[[/CODE]]</p><p><br></p>`;
+  const html = `
+    <div class="visual-code-block" data-block-type="CODE" data-language="${language}" contenteditable="false">
+      <div class="visual-code-header">
+        <span class="visual-code-lang">${language}</span>
+      </div>
+      <pre class="visual-code-content" contenteditable="true">${escapedCode}</pre>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
 
   document.execCommand('insertHTML', false, html);
   document.getElementById('contentEditor').focus();
@@ -280,7 +345,14 @@ function insertFigureMarker() {
   closeFigureModal();
   restoreSelection();
 
-  const html = `<p>[[FIGURE:${caption}]]</p><p>(Chèn hình ảnh ở đây)</p><p>[[/FIGURE]]</p><p><br></p>`;
+  const html = `
+    <div class="visual-figure-block" data-block-type="FIGURE" data-caption="${escapeHtml(caption)}" contenteditable="false">
+      <div class="visual-figure-content" contenteditable="true">(Chèn hình ảnh ở đây)</div>
+      <div class="visual-figure-caption">📷 ${caption}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
 
   document.execCommand('insertHTML', false, html);
   document.getElementById('contentEditor').focus();
@@ -457,7 +529,10 @@ function previewContent() {
   const title = document.getElementById('topicTitle').value || 'Chưa có tiêu đề';
   let content = document.getElementById('contentEditor').innerHTML;
 
-  // Render block markers thành HTML đẹp
+  // Cleanup visual blocks for preview (remove delete buttons, contenteditable)
+  content = cleanupVisualBlocksForPreview(content);
+
+  // Render old-style block markers thành HTML đẹp (backward compatibility)
   content = renderBlockMarkers(content);
 
   const previewHtml = `
@@ -472,115 +547,198 @@ function previewContent() {
 }
 
 /**
+ * Cleanup visual blocks for preview (remove delete buttons, contenteditable)
+ */
+function cleanupVisualBlocksForPreview(html) {
+  // Create a temporary container
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  // Remove all delete buttons
+  temp.querySelectorAll('.visual-block-delete').forEach(function(btn) {
+    btn.remove();
+  });
+
+  // Remove contenteditable attributes
+  temp.querySelectorAll('[contenteditable]').forEach(function(el) {
+    el.removeAttribute('contenteditable');
+  });
+
+  return temp.innerHTML;
+}
+
+/**
  * Render block markers thành HTML đẹp cho preview
+ * Xử lý nested blocks bằng cách render từ trong ra ngoài (innermost first)
  */
 function renderBlockMarkers(html) {
   let result = html;
 
-  // Icons cho các loại callout
-  const calloutIcons = {
-    'NOTE': '📌',
-    'TIP': '💡',
-    'WARNING': '⚠️',
-    'HIGHLIGHT': '✨',
-    'EXAMPLE': '📖',
-    'CHECKPOINT': '✅',
-    'TASK': '📋',
-    'QA': '❓',
-    'RESOURCES': '📚'
+  // Icons và titles cho các loại callout
+  const calloutConfig = {
+    'NOTE': { icon: '📌', title: 'Ghi chú' },
+    'TIP': { icon: '💡', title: 'Mẹo' },
+    'WARNING': { icon: '⚠️', title: 'Cảnh báo' },
+    'HIGHLIGHT': { icon: '✨', title: 'Lưu ý' },
+    'EXAMPLE': { icon: '📖', title: 'Ví dụ' },
+    'CHECKPOINT': { icon: '✅', title: 'Kiểm tra' },
+    'TASK': { icon: '📋', title: 'Nhiệm vụ' },
+    'QA': { icon: '❓', title: 'Hỏi & Đáp' },
+    'RESOURCES': { icon: '📚', title: 'Tài nguyên' }
   };
 
-  const calloutTitles = {
-    'NOTE': 'Ghi chú',
-    'TIP': 'Mẹo',
-    'WARNING': 'Cảnh báo',
-    'HIGHLIGHT': 'Lưu ý',
-    'EXAMPLE': 'Ví dụ',
-    'CHECKPOINT': 'Kiểm tra',
-    'TASK': 'Nhiệm vụ',
-    'QA': 'Hỏi & Đáp',
-    'RESOURCES': 'Tài nguyên'
-  };
+  const allBlockTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES', 'CODE', 'TERMINAL', 'GRID', 'FIGURE', 'COLOR'];
 
-  // Xử lý các callout blocks: [[TYPE]]...[[/TYPE]]
-  const calloutTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES'];
-  calloutTypes.forEach(function(type) {
-    const regex = new RegExp('\\[\\[' + type + '\\]\\]([\\s\\S]*?)\\[\\[\\/' + type + '\\]\\]', 'gi');
-    result = result.replace(regex, function(match, content) {
-      const cleanContent = content.replace(/<\/?p[^>]*>/gi, '').replace(/<br\s*\/?>/gi, '\n').trim();
-      const icon = calloutIcons[type] || '📝';
-      const title = calloutTitles[type] || type;
-      return '<div class="preview-callout preview-callout-' + type.toLowerCase() + '">' +
-        '<span style="font-size: 20px; flex-shrink: 0;">' + icon + '</span>' +
-        '<div><strong>' + title + ':</strong> ' + cleanContent + '</div>' +
+  // Hàm tìm innermost block (block không chứa block khác bên trong)
+  function findInnermostBlock(text) {
+    let bestMatch = null;
+    let bestIndex = -1;
+
+    // Tìm tất cả các opening tags (match cả uppercase và lowercase)
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+
+    // Tìm tất cả các cặp opening-closing và chọn cặp innermost
+    let match;
+    while ((match = openingRegex.exec(text)) !== null) {
+      const openTag = match[0];
+      const openIndex = match.index;
+      const tagType = match[1].split(':')[0].toUpperCase(); // Lấy type (CODE, FIGURE, COLOR, etc.)
+
+      // Tìm closing tag tương ứng (case insensitive)
+      const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+      closeRegex.lastIndex = openIndex + openTag.length;
+
+      const closeMatch = closeRegex.exec(text);
+      if (closeMatch) {
+        const closeIndex = closeMatch.index;
+        const content = text.substring(openIndex + openTag.length, closeIndex);
+
+        // Kiểm tra xem content có chứa opening tag khác không
+        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+
+        if (!hasNestedBlock) {
+          // Đây là innermost block
+          if (bestMatch === null || openIndex < bestIndex) {
+            bestMatch = {
+              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+              openTag: openTag,
+              closeTag: closeMatch[0],
+              tagInfo: match[1],
+              tagType: tagType,
+              content: content,
+              startIndex: openIndex,
+              endIndex: closeIndex + closeMatch[0].length
+            };
+            bestIndex = openIndex;
+          }
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  // Hàm render một block thành HTML
+  function renderSingleBlock(blockInfo) {
+    const { tagType, tagInfo, content } = blockInfo;
+
+    // Xử lý callout blocks - giữ nguyên content (có thể chứa nested blocks đã render)
+    if (calloutConfig[tagType]) {
+      const config = calloutConfig[tagType];
+      // Chỉ strip <p> tags wrapper, giữ nguyên nội dung bên trong (bao gồm nested blocks đã render)
+      const cleanContent = content
+        .replace(/^(\s*<\/?p[^>]*>\s*)+/gi, '')  // Strip leading <p> tags
+        .replace(/(\s*<\/?p[^>]*>\s*)+$/gi, '') // Strip trailing <p> tags
+        .trim();
+      return '<div class="preview-callout preview-callout-' + tagType.toLowerCase() + '">' +
+        '<span style="font-size: 20px; flex-shrink: 0;">' + config.icon + '</span>' +
+        '<div><strong>' + config.title + ':</strong> ' + cleanContent + '</div>' +
       '</div>';
-    });
-  });
+    }
 
-  // Xử lý CODE blocks: [[CODE:LANG]]...[[/CODE]]
-  result = result.replace(/\[\[CODE:([A-Z]+)\]\]([\s\S]*?)\[\[\/CODE\]\]/gi, function(match, lang, code) {
-    // Clean code content
-    let cleanCode = code
-      .replace(/<\/?p[^>]*>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/?pre[^>]*>/gi, '')
-      .replace(/<\/?code[^>]*>/gi, '')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&')
-      .trim();
+    // Xử lý CODE blocks
+    if (tagType === 'CODE') {
+      const lang = tagInfo.split(':')[1] || 'TEXT';
+      let cleanCode = content
+        .replace(/<\/?p[^>]*>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?pre[^>]*>/gi, '')
+        .replace(/<\/?code[^>]*>/gi, '')
+        .replace(/<\/?div[^>]*>/gi, '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/^\n+|\n+$/g, '')
+        .trim();
 
-    return '<div class="preview-code-block">' +
-      '<div class="preview-code-header"><span class="preview-code-lang">' + lang + '</span></div>' +
-      '<pre class="preview-code-content">' + escapeHtml(cleanCode) + '</pre>' +
-    '</div>';
-  });
+      return '<div class="preview-code-block">' +
+        '<div class="preview-code-header"><span class="preview-code-lang">' + lang + '</span></div>' +
+        '<pre class="preview-code-content">' + escapeHtml(cleanCode) + '</pre>' +
+      '</div>';
+    }
 
-  // Xử lý TERMINAL blocks
-  result = result.replace(/\[\[TERMINAL\]\]([\s\S]*?)\[\[\/TERMINAL\]\]/gi, function(match, content) {
-    let cleanContent = content
-      .replace(/<\/?p[^>]*>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .trim();
-    return '<div class="preview-terminal"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
-  });
+    // Xử lý TERMINAL blocks
+    if (tagType === 'TERMINAL') {
+      let cleanContent = content
+        .replace(/<\/?p[^>]*>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/^\n+|\n+$/g, '')
+        .trim();
+      return '<div class="preview-terminal"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
+    }
 
-  // Xử lý GRID blocks
-  result = result.replace(/\[\[GRID\]\]([\s\S]*?)\[\[\/GRID\]\]/gi, function(match, content) {
-    // Split by bullet points or newlines
-    let items = content
-      .replace(/<\/?p[^>]*>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split(/[•\n]+/)
-      .filter(function(item) { return item.trim(); });
+    // Xử lý GRID blocks
+    if (tagType === 'GRID') {
+      let items = content
+        .replace(/<\/?p[^>]*>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .split(/[•\n]+/)
+        .filter(function(item) { return item.trim(); });
 
-    let gridHtml = '<div class="preview-grid">';
-    items.forEach(function(item) {
-      gridHtml += '<div class="preview-grid-item">' + item.trim() + '</div>';
-    });
-    gridHtml += '</div>';
-    return gridHtml;
-  });
+      let gridHtml = '<div class="preview-grid">';
+      items.forEach(function(item) {
+        gridHtml += '<div class="preview-grid-item">' + item.trim() + '</div>';
+      });
+      gridHtml += '</div>';
+      return gridHtml;
+    }
 
-  // Xử lý FIGURE blocks: [[FIGURE:caption]]...[[/FIGURE]]
-  result = result.replace(/\[\[FIGURE:([^\]]*)\]\]([\s\S]*?)\[\[\/FIGURE\]\]/gi, function(match, caption, content) {
-    return '<div class="preview-figure">' +
-      '<div>' + content + '</div>' +
-      '<div class="preview-figure-caption">' + caption + '</div>' +
-    '</div>';
-  });
+    // Xử lý FIGURE blocks
+    if (tagType === 'FIGURE') {
+      const caption = tagInfo.split(':').slice(1).join(':') || '';
+      return '<div class="preview-figure">' +
+        '<div>' + content + '</div>' +
+        '<div class="preview-figure-caption">' + caption + '</div>' +
+      '</div>';
+    }
 
-  // Xử lý COLOR blocks: [[COLOR:COLOR]]...[[/COLOR]]
-  const colors = ['ORANGE', 'RED', 'BLUE', 'GREEN', 'PURPLE', 'CYAN'];
-  colors.forEach(function(color) {
-    const regex = new RegExp('\\[\\[COLOR:' + color + '\\]\\]([\\s\\S]*?)\\[\\[\\/COLOR\\]\\]', 'gi');
-    result = result.replace(regex, function(match, content) {
+    // Xử lý COLOR blocks
+    if (tagType === 'COLOR') {
+      const color = tagInfo.split(':')[1] || 'BLUE';
       const cleanContent = content.replace(/<\/?p[^>]*>/gi, '').trim();
       return '<span class="preview-color-' + color.toLowerCase() + '">' + cleanContent + '</span>';
-    });
-  });
+    }
 
-  // Xóa các paragraph tags chứa chỉ markers (đã được xử lý)
+    return content;
+  }
+
+  // Lặp lại xử lý từ trong ra ngoài cho đến khi không còn block nào
+  let maxIterations = 100; // Prevent infinite loop
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    const innermostBlock = findInnermostBlock(result);
+    if (!innermostBlock) break;
+
+    const renderedHtml = renderSingleBlock(innermostBlock);
+    result = result.substring(0, innermostBlock.startIndex) +
+             renderedHtml +
+             result.substring(innermostBlock.endIndex);
+    iterations++;
+  }
+
+  // Xóa các paragraph tags rỗng
   result = result.replace(/<p[^>]*>\s*<\/p>/gi, '');
 
   return result;
@@ -594,6 +752,137 @@ function closePreviewModal() {
 // PUBLISH TOPIC
 // ========================================
 
+/**
+ * Convert visual blocks thành text markers để gửi lên Google Doc
+ * Xử lý nested blocks từ trong ra ngoài (innermost first)
+ */
+function convertVisualBlocksToMarkers(html) {
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  // Xử lý từ trong ra ngoài: tìm innermost visual block và convert
+  function findInnermostVisualBlock(container) {
+    // Tìm tất cả visual blocks
+    const allBlocks = container.querySelectorAll('[data-block-type], [data-color-type]');
+
+    for (const block of allBlocks) {
+      // Kiểm tra xem block này có chứa visual block khác bên trong không
+      const nestedBlocks = block.querySelectorAll('[data-block-type], [data-color-type]');
+      // nestedBlocks bao gồm chính nó nếu nó match, nên kiểm tra length > 1 hoặc kiểm tra khác
+      let hasNestedBlock = false;
+      for (const nested of nestedBlocks) {
+        if (nested !== block && block.contains(nested)) {
+          hasNestedBlock = true;
+          break;
+        }
+      }
+
+      if (!hasNestedBlock) {
+        return block;
+      }
+    }
+    return null;
+  }
+
+  // Hàm convert một block thành marker
+  function convertBlockToMarker(block) {
+    const blockType = block.getAttribute('data-block-type');
+    const colorType = block.getAttribute('data-color-type');
+
+    if (colorType) {
+      // Color block
+      const content = block.innerHTML;
+      const marker = document.createTextNode(`[[COLOR:${colorType}]]${content}[[/COLOR]]`);
+      block.replaceWith(marker);
+      return;
+    }
+
+    if (!blockType) return;
+
+    // Callout blocks (NOTE, TIP, WARNING, etc.)
+    if (['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES'].includes(blockType)) {
+      const contentEl = block.querySelector('.visual-block-content');
+      let content = contentEl ? contentEl.innerHTML : '';
+
+      // Remove label span but keep the rest
+      const labelSpan = contentEl ? contentEl.querySelector('.visual-block-label') : null;
+      if (labelSpan) {
+        content = content.replace(labelSpan.outerHTML, '').trim();
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `<p>[[${blockType}]]</p><div>${content}</div><p>[[/${blockType}]]</p>`;
+      block.replaceWith(wrapper);
+      return;
+    }
+
+    // Code block
+    if (blockType === 'CODE') {
+      const language = block.getAttribute('data-language') || 'JAVASCRIPT';
+      const codeEl = block.querySelector('.visual-code-content');
+      let code = codeEl ? codeEl.textContent : '';
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `<p>[[CODE:${language}]]</p><pre>${escapeHtml(code)}</pre><p>[[/CODE]]</p>`;
+      block.replaceWith(wrapper);
+      return;
+    }
+
+    // Terminal block
+    if (blockType === 'TERMINAL') {
+      const contentEl = block.querySelector('.visual-terminal-content');
+      let content = contentEl ? contentEl.innerHTML : '';
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `<p>[[TERMINAL]]</p><div>${content}</div><p>[[/TERMINAL]]</p>`;
+      block.replaceWith(wrapper);
+      return;
+    }
+
+    // Grid block
+    if (blockType === 'GRID') {
+      const contentEl = block.querySelector('.visual-grid-content');
+      let content = contentEl ? contentEl.innerHTML : '';
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `<p>[[GRID]]</p><div>${content}</div><p>[[/GRID]]</p>`;
+      block.replaceWith(wrapper);
+      return;
+    }
+
+    // Figure block
+    if (blockType === 'FIGURE') {
+      const caption = block.getAttribute('data-caption') || '';
+      const contentEl = block.querySelector('.visual-figure-content');
+      let content = contentEl ? contentEl.innerHTML : '';
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `<p>[[FIGURE:${caption}]]</p><div>${content}</div><p>[[/FIGURE]]</p>`;
+      block.replaceWith(wrapper);
+      return;
+    }
+  }
+
+  // Lặp lại convert từ trong ra ngoài
+  let maxIterations = 200;
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    const innermostBlock = findInnermostVisualBlock(temp);
+    if (!innermostBlock) break;
+
+    convertBlockToMarker(innermostBlock);
+    iterations++;
+  }
+
+  // Remove delete buttons that might still exist
+  temp.querySelectorAll('.visual-block-delete').forEach(function(btn) {
+    btn.remove();
+  });
+
+  return temp.innerHTML;
+}
+
 async function publishTopic() {
   // Validate form
   const topicId = document.getElementById('topicId').value.trim();
@@ -601,33 +890,36 @@ async function publishTopic() {
   const category = document.getElementById('topicCategory').value;
   const description = document.getElementById('topicDescription').value.trim();
   const order = document.getElementById('topicOrder').value || 999;
-  const content = document.getElementById('contentEditor').innerHTML.trim();
-  
+  let content = document.getElementById('contentEditor').innerHTML.trim();
+
+  // Convert visual blocks to text markers for Google Doc
+  content = convertVisualBlocksToMarkers(content);
+
   // Validation
   if (!topicId) {
     showToast('Vui lòng nhập Topic ID', 'error');
     document.getElementById('topicId').focus();
     return;
   }
-  
+
   if (!title) {
     showToast('Vui lòng nhập tiêu đề', 'error');
     document.getElementById('topicTitle').focus();
     return;
   }
-  
+
   if (!category) {
     showToast('Vui lòng chọn danh mục', 'error');
     document.getElementById('topicCategory').focus();
     return;
   }
-  
+
   if (!content || content === '<br>' || content === '<p><br></p>') {
     showToast('Vui lòng nhập nội dung bài học', 'error');
     document.getElementById('contentEditor').focus();
     return;
   }
-  
+
   // Confirm publish
   const shouldPublish =
     typeof window.showAppConfirm === 'function'
@@ -644,7 +936,7 @@ async function publishTopic() {
   if (!shouldPublish) {
     return;
   }
-  
+
   showTopicEditorLoading('Đang tạo và publish topic...');
 
   const topicData = {
@@ -952,5 +1244,10 @@ window.insertCodeMarker = insertCodeMarker;
 window.openFigureModal = openFigureModal;
 window.closeFigureModal = closeFigureModal;
 window.insertFigureMarker = insertFigureMarker;
+// Visual block functions
+window.deleteVisualBlock = deleteVisualBlock;
+window.insertTerminalBlock = insertTerminalBlock;
+window.insertGridBlock = insertGridBlock;
+window.convertVisualBlocksToMarkers = convertVisualBlocksToMarkers;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
 </script>

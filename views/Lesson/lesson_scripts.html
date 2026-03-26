@@ -2722,33 +2722,87 @@
   /**
    * Parse and transform content markers from Google Doc
    * Supports: [[COLOR:X]], [[CODE:X]], [[EXAMPLE]], [[NOTE]], [[TIP]], [[WARNING]], [[CHECKPOINT]], [[TASK]], [[QA]]
+   * Xử lý nested blocks bằng cách render từ trong ra ngoài (innermost first)
    */
   function parseContentMarkers(container) {
     console.log("🏷️ Parsing content markers...");
     let html = container.innerHTML;
 
-    // === 1. COLOR SECTIONS [[COLOR:X]] ... [[/COLOR]] or until next H3 ===
-    const colorMap = {
-      ORANGE: "lesson-section-orange",
-      RED: "lesson-section-red",
-      BLUE: "lesson-section-blue",
-      GREEN: "lesson-section-green",
-      PURPLE: "lesson-section-purple",
-      CYAN: "lesson-section-cyan",
-    };
+    // === NESTED BLOCK HANDLING ===
+    // Xử lý từ trong ra ngoài để hỗ trợ nested blocks
 
-    // Simple color marker at start of section
-    for (const [color, className] of Object.entries(colorMap)) {
-      const regex = new RegExp(`\\[\\[COLOR:${color}\\]\\]`, "gi");
-      html = html.replace(regex, `<div class="${className}">`);
+    // Hàm tìm innermost block (block không chứa block khác bên trong)
+    function findInnermostBlock(text) {
+      let bestMatch = null;
+      let bestIndex = -1;
+
+      // Tìm tất cả các opening tags (match cả uppercase và lowercase)
+      const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+
+      let match;
+      while ((match = openingRegex.exec(text)) !== null) {
+        const openTag = match[0];
+        const openIndex = match.index;
+        const tagInfo = match[1];
+        const tagType = tagInfo.split(':')[0].toUpperCase(); // Lấy type (CODE, FIGURE, COLOR, TERMINAL, etc.)
+
+        // Tìm closing tag tương ứng (case insensitive)
+        const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+        closeRegex.lastIndex = openIndex + openTag.length;
+
+        const closeMatch = closeRegex.exec(text);
+        if (closeMatch) {
+          const closeIndex = closeMatch.index;
+          const content = text.substring(openIndex + openTag.length, closeIndex);
+
+          // Kiểm tra xem content có chứa opening tag khác không
+          const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+
+          if (!hasNestedBlock) {
+            // Đây là innermost block
+            if (bestMatch === null || openIndex < bestIndex) {
+              bestMatch = {
+                fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+                openTag: openTag,
+                closeTag: closeMatch[0],
+                tagInfo: tagInfo,
+                tagType: tagType,
+                content: content,
+                startIndex: openIndex,
+                endIndex: closeIndex + closeMatch[0].length
+              };
+              bestIndex = openIndex;
+            }
+          }
+        }
+      }
+
+      return bestMatch;
     }
-    html = html.replace(/\[\[\/COLOR\]\]/gi, "</div>");
 
-    // === 2. CODE BLOCKS [[CODE:PYTHON]] ... [[/CODE]] ===
-    html = html.replace(
-      /\[\[CODE:(\w+)\]\]([\s\S]*?)\[\[\/CODE\]\]/gi,
-      (match, lang, code) => {
-        const cleanCode = code
+    // Hàm render một block thành HTML
+    function renderSingleBlock(blockInfo) {
+      const { tagType, tagInfo, content } = blockInfo;
+
+      // === COLOR SECTIONS ===
+      if (tagType === 'COLOR') {
+        const color = tagInfo.split(':')[1] || 'BLUE';
+        const colorMap = {
+          ORANGE: "lesson-section-orange",
+          RED: "lesson-section-red",
+          BLUE: "lesson-section-blue",
+          GREEN: "lesson-section-green",
+          PURPLE: "lesson-section-purple",
+          CYAN: "lesson-section-cyan",
+        };
+        const className = colorMap[color.toUpperCase()] || "lesson-section-blue";
+        return `<div class="${className}">${content}</div>`;
+      }
+
+      // === CODE BLOCKS ===
+      if (tagType === 'CODE') {
+        const lang = tagInfo.split(':')[1] || 'TEXT';
+        const cleanCode = content
           .trim()
           .replace(/<\/p>/gi, "\n")
           .replace(/<br\s*\/?>/gi, "\n")
@@ -2786,39 +2840,185 @@
           </div>
           <pre><code class="language-${lang.toLowerCase()}">${escapeHtml(cleanCode)}</code></pre>
         </div>`;
-      },
-    );
+      }
 
-    // === 3. EXAMPLE BLOCKS [[EXAMPLE]] ... [[/EXAMPLE]] ===
-    html = html.replace(
-      /\[\[EXAMPLE\]\]([\s\S]*?)\[\[\/EXAMPLE\]\]/gi,
-      (match, content) => {
+      // === EXAMPLE BLOCKS ===
+      if (tagType === 'EXAMPLE') {
         return `<div class="example-block">${content}</div>`;
-      },
-    );
+      }
 
-    // === 4. CALLOUT BLOCKS ===
-    const calloutTypes = [
-      { marker: "NOTE", class: "callout-note" },
-      { marker: "TIP", class: "callout-tip" },
-      { marker: "WARNING", class: "callout-warning" },
-      { marker: "CHECKPOINT", class: "callout-checkpoint" },
-      { marker: "TASK", class: "callout-task" },
-      { marker: "QA", class: "callout-qa" },
-      { marker: "HIGHLIGHT", class: "callout-highlight" },
-    ];
+      // === CALLOUT BLOCKS ===
+      const calloutTypes = {
+        'NOTE': 'callout-note',
+        'TIP': 'callout-tip',
+        'WARNING': 'callout-warning',
+        'CHECKPOINT': 'callout-checkpoint',
+        'TASK': 'callout-task',
+        'QA': 'callout-qa',
+        'HIGHLIGHT': 'callout-highlight'
+      };
+      if (calloutTypes[tagType]) {
+        return `<div class="${calloutTypes[tagType]}">${content}</div>`;
+      }
 
-    for (const type of calloutTypes) {
-      const regex = new RegExp(
-        `\\[\\[${type.marker}\\]\\]([\\s\\S]*?)\\[\\[\\/${type.marker}\\]\\]`,
-        "gi",
-      );
-      html = html.replace(regex, (match, content) => {
-        return `<div class="${type.class}">${content}</div>`;
-      });
+      // === RESOURCES ===
+      if (tagType === 'RESOURCES') {
+        return `<div class="resource-links">${content}</div>`;
+      }
+
+      // === FIGURE ===
+      if (tagType === 'FIGURE') {
+        const caption = tagInfo.split(':').slice(1).join(':') || '';
+        return `<figure>${content}<figcaption>${caption}</figcaption></figure>`;
+      }
+
+      // === GRID ===
+      if (tagType === 'GRID') {
+        return `<div class="grid-cards-section">${content}</div>`;
+      }
+
+      // === TERMINAL ===
+      if (tagType === 'TERMINAL') {
+        const langPart = tagInfo.split(':')[1] || '';
+        const language = (langPart || "shell").toLowerCase();
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+
+        // Highlight từng dòng
+        const lines = cleanContent.split("\n");
+        const highlightedLines = lines
+          .map((line) => {
+            const escaped = escapeHtml(line);
+            if (/^\s*>>>/.test(line)) {
+              return `<span class="terminal-prompt">${escaped.replace(/^(\s*&gt;&gt;&gt;|\s*>>>)/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
+            }
+            if (/^\s*\.\.\./.test(line)) {
+              return `<span class="terminal-prompt">${escaped}</span>`;
+            }
+            if (/^\s*[A-Z]:\\.*>/.test(line) || /^\s*[\$%#]\s/.test(line)) {
+              return `<span class="terminal-prompt">${escaped.replace(/^(\s*[A-Z]:\\[^>]*>|\s*[\$%#])/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
+            }
+            if (/^\s*#/.test(line)) {
+              return `<span class="terminal-comment">${escaped}</span>`;
+            }
+            const highlighted = escaped.replace(
+              /(&quot;[^&]*&quot;|'[^']*'|"[^"]*")|(\b\d+\.?\d*\b)|(\b(?:True|False|None|Error|Exception|Traceback|def|import|from|return|if|else|for|while|not|and|or|try|except|raise|with|lambda|yield|pass|break|continue|print)\b)/g,
+              (m, str, num, kw) => {
+                if (str) return '<span class="terminal-string">' + str + "</span>";
+                if (num) return '<span class="terminal-number">' + num + "</span>";
+                if (kw) return '<span class="terminal-keyword">' + kw + "</span>";
+                return m;
+              },
+            );
+            return `<span class="terminal-output">${highlighted}</span>`;
+          })
+          .join("\n");
+
+        const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
+
+        return `
+        <div class="terminal-block">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+            </div>
+            <span class="terminal-title">${langLabel}</span>
+            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <pre class="terminal-body"><code>${highlightedLines}</code></pre>
+        </div>`;
+      }
+
+      // === CMD ===
+      if (tagType === 'CMD') {
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+
+        const lines = cleanContent.split("\n");
+        const highlightedLines = lines
+          .map((line) => {
+            const escaped = escapeHtml(line);
+            if (/^\s*[\$%]\s/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            if (/^\s*[A-Z]:\s*>/.test(line) || /^\s*[A-Z]:\\.*>/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            if (/^\s*(>>>|python%)/.test(line)) {
+              return `<span class="cmd-prompt">${escaped}</span>`;
+            }
+            if (/^\s*#/.test(line) || /#\s/.test(line)) {
+              return escaped.replace(/(#\s.*)$/, '<span class="cmd-comment">$1</span>');
+            }
+            return escaped;
+          })
+          .join("\n");
+
+        return `<div class="cmd-block"><pre class="cmd-body"><code>${highlightedLines}</code></pre></div>`;
+      }
+
+      // === OUTPUT ===
+      if (tagType === 'OUTPUT') {
+        const cleanContent = content
+          .trim()
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/^\n+|\n+$/g, "");
+        return `<div class="output-block"><pre class="output-body"><code>${escapeHtml(cleanContent)}</code></pre></div>`;
+      }
+
+      // Fallback - return content as-is
+      return content;
     }
 
-    // === 5. MARKDOWN CODE BLOCKS ```python ... ``` ===
+    // Lặp lại xử lý từ trong ra ngoài cho đến khi không còn block nào
+    let maxIterations = 200; // Prevent infinite loop
+    let iterations = 0;
+
+    while (iterations < maxIterations) {
+      const innermostBlock = findInnermostBlock(html);
+      if (!innermostBlock) break;
+
+      const renderedHtml = renderSingleBlock(innermostBlock);
+      html = html.substring(0, innermostBlock.startIndex) +
+             renderedHtml +
+             html.substring(innermostBlock.endIndex);
+      iterations++;
+    }
+
+    // === Handle markdown code blocks ```lang ... ``` ===
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
       const language = lang || "plaintext";
       const cleanCode = code
@@ -2861,186 +3061,8 @@
         </div>`;
     });
 
-    // === 6. RESOURCE LINKS section ===
-    html = html.replace(
-      /\[\[RESOURCES\]\]([\s\S]*?)\[\[\/RESOURCES\]\]/gi,
-      (match, content) => {
-        return `<div class="resource-links">${content}</div>`;
-      },
-    );
-
-    // === 7. FIGURE with caption ===
-    html = html.replace(
-      /\[\[FIGURE:([^\]]*)\]\]([\s\S]*?)\[\[\/FIGURE\]\]/gi,
-      (match, caption, content) => {
-        return `<figure>${content}<figcaption>${caption}</figcaption></figure>`;
-      },
-    );
-
-    // === 8. ⭐ GRID CARDS [[GRID]] ... [[/GRID]] ===
-    // Chỉ list bên trong marker này mới được biến thành grid cards
-    html = html.replace(
-      /\[\[GRID\]\]([\s\S]*?)\[\[\/GRID\]\]/gi,
-      (match, content) => {
-        return `<div class="grid-cards-section">${content}</div>`;
-      },
-    );
-
-    // === 9. 🖥️ TERMINAL / CONSOLE OUTPUT [[TERMINAL]] ... [[/TERMINAL]] ===
-    // Hiển thị output terminal/console dạng nền đen, có syntax highlighting
-    // Hỗ trợ: [[TERMINAL:PYTHON]] hoặc [[TERMINAL]] (mặc định)
-    html = html.replace(
-      /\[\[TERMINAL(?::([\w]*))?\]\]([\s\S]*?)\[\[\/TERMINAL\]\]/gi,
-      (match, lang, content) => {
-        const language = (lang || "shell").toLowerCase();
-        const cleanContent = content
-          .trim()
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/div>/gi, "\n")
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&amp;/g, "&")
-          .replace(/^\n+|\n+$/g, "");
-
-        // Highlight từng dòng: prompt (>>>), output, path (C:\...>), comment (#)
-        const lines = cleanContent.split("\n");
-        const highlightedLines = lines
-          .map((line) => {
-            const escaped = escapeHtml(line);
-            // Python prompt >>>
-            if (/^\s*>>>/.test(line)) {
-              return `<span class="terminal-prompt">${escaped.replace(/^(\s*&gt;&gt;&gt;|\s*>>>)/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
-            }
-            // Python continuation ...
-            if (/^\s*\.\.\./.test(line)) {
-              return `<span class="terminal-prompt">${escaped}</span>`;
-            }
-            // Windows/Linux shell prompt (C:\...> or $ or %)
-            if (/^\s*[A-Z]:\\.*>/.test(line) || /^\s*[\$%#]\s/.test(line)) {
-              return `<span class="terminal-prompt">${escaped.replace(/^(\s*[A-Z]:\\[^>]*>|\s*[\$%#])/, '<span class="terminal-prompt-symbol">$1</span>')}</span>`;
-            }
-            // Comment lines (# ...)
-            if (/^\s*#/.test(line)) {
-              return `<span class="terminal-comment">${escaped}</span>`;
-            }
-            // Single-pass highlighting to avoid regex conflicts between string/number/keyword
-            const highlighted = escaped.replace(
-              /(&quot;[^&]*&quot;|'[^']*'|"[^"]*")|(\b\d+\.?\d*\b)|(\b(?:True|False|None|Error|Exception|Traceback|def|import|from|return|if|else|for|while|not|and|or|try|except|raise|with|lambda|yield|pass|break|continue|print)\b)/g,
-              (m, str, num, kw) => {
-                if (str)
-                  return '<span class="terminal-string">' + str + "</span>";
-                if (num)
-                  return '<span class="terminal-number">' + num + "</span>";
-                if (kw)
-                  return '<span class="terminal-keyword">' + kw + "</span>";
-                return m;
-              },
-            );
-            return `<span class="terminal-output">${highlighted}</span>`;
-          })
-          .join("\n");
-
-        const langLabel =
-          language === "shell"
-            ? "Terminal"
-            : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
-
-        return `
-        <div class="terminal-block">
-          <div class="terminal-header">
-            <div class="terminal-dots">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-            </div>
-            <span class="terminal-title">${langLabel}</span>
-            <button class="btn-copy-code" onclick="copyCodeToClipboard(this)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              Copy
-            </button>
-          </div>
-          <pre class="terminal-body"><code>${highlightedLines}</code></pre>
-        </div>`;
-      },
-    );
-
-    // === 10. 📝 CMD / COMMAND BLOCK [[CMD]] ... [[/CMD]] ===
-    // Nền xám nhạt, font monospace – dùng cho lệnh/command ngắn
-    html = html.replace(
-      /\[\[CMD\]\]([\s\S]*?)\[\[\/CMD\]\]/gi,
-      (match, content) => {
-        const cleanContent = content
-          .trim()
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/div>/gi, "\n")
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&amp;/g, "&")
-          .replace(/^\n+|\n+$/g, "");
-
-        // Highlight: $ prompt, # comment, C:\...> prompt
-        const lines = cleanContent.split("\n");
-        const highlightedLines = lines
-          .map((line) => {
-            const escaped = escapeHtml(line);
-            // Shell prompt $ or %
-            if (/^\s*[\$%]\s/.test(line)) {
-              return `<span class="cmd-prompt">${escaped}</span>`;
-            }
-            // Windows prompt C:\...>
-            if (/^\s*[A-Z]:\s*>/.test(line) || /^\s*[A-Z]:\\.*>/.test(line)) {
-              return `<span class="cmd-prompt">${escaped}</span>`;
-            }
-            // Python prompt
-            if (/^\s*(>>>|python%)/.test(line)) {
-              return `<span class="cmd-prompt">${escaped}</span>`;
-            }
-            // Comment (# ...)
-            if (/^\s*#/.test(line) || /#\s/.test(line)) {
-              return escaped.replace(
-                /(#\s.*)$/,
-                '<span class="cmd-comment">$1</span>',
-              );
-            }
-            return escaped;
-          })
-          .join("\n");
-
-        return `<div class="cmd-block"><pre class="cmd-body"><code>${highlightedLines}</code></pre></div>`;
-      },
-    );
-
-    // === 11. 📝 OUTPUT BLOCK [[OUTPUT]] ... [[/OUTPUT]] ===
-    // Nền xám nhạt, chữ monospace – dùng hiển thị kết quả output đơn giản
-    html = html.replace(
-      /\[\[OUTPUT\]\]([\s\S]*?)\[\[\/OUTPUT\]\]/gi,
-      (match, content) => {
-        const cleanContent = content
-          .trim()
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/div>/gi, "\n")
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&amp;/g, "&")
-          .replace(/^\n+|\n+$/g, "");
-        return `<div class="output-block"><pre class="output-body"><code>${escapeHtml(cleanContent)}</code></pre></div>`;
-      },
-    );
-
     container.innerHTML = html;
-    console.log("✅ Markers parsed and transformed");
+    console.log("✅ Markers parsed and transformed (nested blocks supported)");
   }
 
   /**
