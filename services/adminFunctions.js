@@ -1117,14 +1117,15 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
     // Set permissions - anyone with link can view
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
-    // Get direct image URL
+    // Get direct image URL - sử dụng format lh3.googleusercontent.com để embed tốt hơn
     const fileId = file.getId();
-    const imageUrl = "https://drive.google.com/uc?export=view&id=" + fileId;
-    
+    // Format này hoạt động tốt hơn cho embedding trong HTML
+    const imageUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+
     Logger.log("✅ Image uploaded successfully");
     Logger.log("File ID: " + fileId);
     Logger.log("Image URL: " + imageUrl);
-    
+
     return {
       success: true,
       imageUrl: imageUrl,
@@ -1476,18 +1477,55 @@ function convertHtmlToDocContent(html, body) {
               break;
             }
             imageCount++;
-            // Fetch with timeout and error handling
-            const imageResponse = UrlFetchApp.fetch(block.src, {
-              muteHttpExceptions: true,
-              followRedirects: true,
-              validateHttpsCertificates: false
-            });
 
-            if (imageResponse.getResponseCode() === 200) {
-              const imageBlob = imageResponse.getBlob();
+            // Kiểm tra nếu là Google Drive URL - lấy fileId và fetch trực tiếp qua DriveApp
+            let imageBlob = null;
+            const drivePatterns = [
+              /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,  // https://lh3.googleusercontent.com/d/FILE_ID
+              /drive\.google\.com\/uc\?.*id=([a-zA-Z0-9_-]+)/,     // https://drive.google.com/uc?export=view&id=FILE_ID
+              /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,     // https://drive.google.com/file/d/FILE_ID/view
+              /drive\.google\.com\/thumbnail\?.*id=([a-zA-Z0-9_-]+)/ // https://drive.google.com/thumbnail?id=FILE_ID
+            ];
+
+            let driveFileId = null;
+            for (let p = 0; p < drivePatterns.length; p++) {
+              const match = block.src.match(drivePatterns[p]);
+              if (match && match[1]) {
+                driveFileId = match[1];
+                break;
+              }
+            }
+
+            if (driveFileId) {
+              // Fetch trực tiếp từ Google Drive bằng DriveApp
+              Logger.log("Fetching image from Drive: " + driveFileId);
+              try {
+                const driveFile = DriveApp.getFileById(driveFileId);
+                imageBlob = driveFile.getBlob();
+                Logger.log("✅ Got image blob from Drive");
+              } catch (driveErr) {
+                Logger.log("⚠️ DriveApp fetch failed: " + driveErr.toString());
+              }
+            }
+
+            // Nếu không phải Drive URL hoặc DriveApp fail, thử UrlFetchApp
+            if (!imageBlob) {
+              const imageResponse = UrlFetchApp.fetch(block.src, {
+                muteHttpExceptions: true,
+                followRedirects: true,
+                validateHttpsCertificates: false
+              });
+
+              if (imageResponse.getResponseCode() === 200) {
+                imageBlob = imageResponse.getBlob();
+              } else {
+                Logger.log("Image fetch failed: " + block.src + " - Status: " + imageResponse.getResponseCode());
+              }
+            }
+
+            if (imageBlob) {
               body.appendImage(imageBlob);
             } else {
-              Logger.log("Image fetch failed: " + block.src + " - Status: " + imageResponse.getResponseCode());
               body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
             }
           } catch (e) {
