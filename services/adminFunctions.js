@@ -986,6 +986,8 @@ function getPetUserRowByEmail_(email) {
   const petXqpSyncedXpCol = ensureUsersColumn(usersSheet, "petXqpSyncedXp");
   const petLevelCol = ensureUsersColumn(usersSheet, "petLevel");
   const petLevelProgressCol = ensureUsersColumn(usersSheet, "petLevelProgress");
+  const petHatchedCol = ensureUsersColumn(usersSheet, "petHatched");
+  const petHatchedAtCol = ensureUsersColumn(usersSheet, "petHatchedAt");
   const totalXpCol = ensureUsersColumn(usersSheet, "totalXP");
 
   const data = usersSheet.getDataRange().getValues();
@@ -1034,6 +1036,8 @@ function getPetUserRowByEmail_(email) {
       xqpSyncedXp: syncedXp,
       level: Math.max(1, parseInt(data[i][petLevelCol], 10) || 1),
       levelProgress: Math.max(0, Math.min(100, parseInt(data[i][petLevelProgressCol], 10) || 0)),
+      hatched: parsePetBool_(data[i][petHatchedCol]),
+      hatchedAt: String(data[i][petHatchedAtCol] || "").trim(),
       totalXP: totalXP,
     };
 
@@ -1046,6 +1050,8 @@ function getPetUserRowByEmail_(email) {
         petXqpSyncedXpCol: petXqpSyncedXpCol,
         petLevelCol: petLevelCol,
         petLevelProgressCol: petLevelProgressCol,
+        petHatchedCol: petHatchedCol,
+        petHatchedAtCol: petHatchedAtCol,
       },
       state: petState,
     };
@@ -1079,6 +1085,14 @@ function savePetUserStateByRow_(rowData, patch) {
   if (cols.petLevelProgressCol >= 0 && next.levelProgress != null) {
     const progress = Math.max(0, Math.min(100, parseInt(next.levelProgress, 10) || 0));
     sheet.getRange(rowIndex, cols.petLevelProgressCol + 1).setValue(progress);
+  }
+  if (cols.petHatchedCol >= 0 && next.hatched != null) {
+    sheet.getRange(rowIndex, cols.petHatchedCol + 1).setValue(next.hatched ? 1 : 0);
+  }
+  if (cols.petHatchedAtCol >= 0 && next.hatchedAt != null) {
+    sheet
+      .getRange(rowIndex, cols.petHatchedAtCol + 1)
+      .setValue(next.hatchedAt ? String(next.hatchedAt) : "");
   }
 }
 
@@ -1137,6 +1151,15 @@ function buildPetRequirementCounter_(topicProgressMap) {
     quiz: Math.min(3, quiz),
     matching: Math.min(3, matching),
   };
+}
+
+function isPetReadyToHatch_(requirements) {
+  const req = requirements || {};
+  const target = Math.max(1, parseInt(req.target, 10) || 3);
+  const learn = Math.max(0, parseInt(req.learn, 10) || 0);
+  const quiz = Math.max(0, parseInt(req.quiz, 10) || 0);
+  const matching = Math.max(0, parseInt(req.matching, 10) || 0);
+  return learn >= target && quiz >= target && matching >= target;
 }
 
 function getPetAdminOverviewData() {
@@ -1457,6 +1480,7 @@ function buildPetUserSnapshotByEmail_(email) {
     });
   });
 
+  const requirements = buildPetRequirementCounter_(topicProgressMap);
   return {
     success: true,
     data: {
@@ -1464,7 +1488,10 @@ function buildPetUserSnapshotByEmail_(email) {
         coins: petState.xqp,
         levelCurrent: petState.level,
         levelProgress: petState.levelProgress,
-        requirements: buildPetRequirementCounter_(topicProgressMap),
+        requirements: requirements,
+        isHatched: !!petState.hatched,
+        hatchedAt: petState.hatchedAt || "",
+        hatchReady: isPetReadyToHatch_(requirements),
       },
       petName: petState.petName || "Be Ga",
       foods: foodsWithUnlock,
@@ -1509,6 +1536,13 @@ function syncCurrentUserPetState(syncInput) {
       return { success: false, message: "Khong tim thay user" };
     }
 
+    if (!rowData.state.hatched) {
+      return {
+        success: false,
+        message: "Pet chua no. Hoan thanh dieu kien va bam vao trung de kich hoat.",
+      };
+    }
+
     const input = syncInput || {};
     savePetUserStateByRow_(rowData, {
       petName: input.petName != null ? String(input.petName || "") : rowData.state.petName,
@@ -1533,6 +1567,13 @@ function purchasePetFoodForUser(foodId) {
     const snapshot = buildPetUserSnapshotByEmail_(email);
     if (!snapshot.success) {
       return snapshot;
+    }
+
+    if (!snapshot.data.petState || !snapshot.data.petState.isHatched) {
+      return {
+        success: false,
+        message: "Pet chua no. Ban chua the su dung cua hang.",
+      };
     }
 
     const id = String(foodId || "").trim();
@@ -1582,6 +1623,13 @@ function consumePetFoodForUser(foodId) {
     const snapshot = buildPetUserSnapshotByEmail_(email);
     if (!snapshot.success) {
       return snapshot;
+    }
+
+    if (!snapshot.data.petState || !snapshot.data.petState.isHatched) {
+      return {
+        success: false,
+        message: "Pet chua no. Ban chua the cho an.",
+      };
     }
 
     const id = String(foodId || "").trim();
@@ -1639,8 +1687,63 @@ function updateCurrentUserPetName(petName) {
       return { success: false, message: "Khong tim thay user" };
     }
 
+    if (!rowData.state.hatched) {
+      return {
+        success: false,
+        message: "Pet chua no. Khong the doi ten truoc khi no trung.",
+      };
+    }
+
     savePetUserStateByRow_(rowData, { petName: safeName });
     return { success: true, message: "Da cap nhat ten pet" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function hatchCurrentUserPet() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    if (!snapshot.success) {
+      return snapshot;
+    }
+
+    if (snapshot.data.petState && snapshot.data.petState.isHatched) {
+      return {
+        success: true,
+        message: "Pet da no truoc do",
+        data: snapshot.data,
+      };
+    }
+
+    const requirements = snapshot.data.petState && snapshot.data.petState.requirements
+      ? snapshot.data.petState.requirements
+      : { target: 3, learn: 0, quiz: 0, matching: 0 };
+
+    if (!isPetReadyToHatch_(requirements)) {
+      return {
+        success: false,
+        message:
+          "Chua du dieu kien no trung. Can dat du 3/3 bai hoc, 3/3 quiz va 3/3 matching.",
+      };
+    }
+
+    savePetUserStateByRow_(snapshot.rowData, {
+      hatched: true,
+      hatchedAt: new Date().toISOString(),
+    });
+
+    const refreshed = buildPetUserSnapshotByEmail_(email);
+    return {
+      success: true,
+      message: "Trung da no thanh cong!",
+      data: refreshed.data,
+    };
   } catch (error) {
     return { success: false, message: error.toString() };
   }

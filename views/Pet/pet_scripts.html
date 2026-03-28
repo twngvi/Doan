@@ -21,6 +21,10 @@
         matching: 0,
         target: 3,
       },
+      hatch: {
+        isHatched: false,
+        hatchedAt: "",
+      },
     };
     const PET_STATE_STORAGE_KEY = "oq_pet_preview_state";
     const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
@@ -53,6 +57,9 @@
     let petGlobalEscBound = false;
     let eggHoverRafId = 0;
     let eggHoverRatioX = 0;
+    let petIsHatched = false;
+    let petIsHatchReady = false;
+    let petHatchAnimating = false;
     let petModalMode = "food";
     let petFoodState = {
       foods: FALLBACK_FOODS.slice(),
@@ -162,6 +169,10 @@
             quiz: clamp(parsed.requirements?.quiz, 0, 10),
             matching: clamp(parsed.requirements?.matching, 0, 10),
           },
+          hatch: {
+            isHatched: !!parsed.hatch?.isHatched,
+            hatchedAt: String(parsed.hatch?.hatchedAt || ""),
+          },
         };
       } catch (error) {
         console.warn("Pet state parse failed, using defaults:", error);
@@ -189,6 +200,10 @@
             learn: clamp(state?.requirements?.learn, 0, 10),
             quiz: clamp(state?.requirements?.quiz, 0, 10),
             matching: clamp(state?.requirements?.matching, 0, 10),
+          },
+          hatch: {
+            isHatched: !!state?.hatch?.isHatched,
+            hatchedAt: String(state?.hatch?.hatchedAt || ""),
           },
         };
 
@@ -338,6 +353,128 @@
       };
     }
 
+    function setPetActionButtonsEnabled(isEnabled) {
+      const actionButtons = document.querySelectorAll("[data-pet-action]");
+      actionButtons.forEach(function (button) {
+        button.disabled = !isEnabled;
+        button.setAttribute("aria-disabled", isEnabled ? "false" : "true");
+      });
+
+      const nameTag = document.getElementById("petNameTag");
+      if (nameTag) {
+        nameTag.disabled = !isEnabled;
+        nameTag.setAttribute("aria-disabled", isEnabled ? "false" : "true");
+      }
+    }
+
+    function renderPetLockNotice(tracker, isHatched) {
+      const titleEl = document.getElementById("petHatchNoticeTitle");
+      const metaEl = document.getElementById("petHatchNoticeMeta");
+      if (!titleEl || !metaEl) return;
+
+      const safeTracker = tracker || { target: 3, learn: 0, quiz: 0, matching: 0, percent: 0, isReady: false };
+
+      if (isHatched) {
+        titleEl.textContent = "Pet đã nở thành công";
+        metaEl.textContent = "Toàn bộ tính năng Pet đã được mở khóa.";
+        return;
+      }
+
+      if (safeTracker.isReady) {
+        titleEl.textContent = "Đã đủ điều kiện nở trứng";
+        metaEl.textContent = "Bấm vào quả trứng để kích hoạt hiệu ứng nở và mở khóa tính năng Pet.";
+        return;
+      }
+
+      titleEl.textContent = "Trứng đang được ấp";
+      metaEl.textContent =
+        "Tiến độ nở: Học " +
+        safeTracker.learn +
+        "/" +
+        safeTracker.target +
+        ", Quiz " +
+        safeTracker.quiz +
+        "/" +
+        safeTracker.target +
+        ", Matching " +
+        safeTracker.matching +
+        "/" +
+        safeTracker.target +
+        " (" +
+        safeTracker.percent +
+        "%).";
+    }
+
+    function applyPetLockState(state, tracker) {
+      const page = document.getElementById("page-pet");
+      const hero = document.querySelector(".pet-hero-visual");
+      const egg = document.querySelector(".pet-egg");
+
+      const hatchState = state && state.hatch ? state.hatch : { isHatched: false, hatchedAt: "" };
+      const isHatched = !!hatchState.isHatched;
+      petIsHatched = isHatched;
+      petIsHatchReady = !!(tracker && tracker.isReady);
+
+      if (page) {
+        page.classList.toggle("pet-locked", !isHatched);
+      }
+
+      if (hero) {
+        hero.classList.toggle("pet-hatched", isHatched);
+        if (!petHatchAnimating) {
+          hero.classList.remove("pet-hatching");
+        }
+      }
+
+      if (egg) {
+        egg.classList.toggle("hatched", isHatched);
+      }
+
+      setPetActionButtonsEnabled(isHatched);
+      renderPetLockNotice(tracker, isHatched);
+
+      if (!isHatched) {
+        setText("petLevelValue", "🔒 Chưa mở khóa");
+        setText("petLevelPointsText", "Trứng chưa nở");
+        setProgressBar("petLevelProgress", 0);
+        closePetFoodModal();
+        closePetRenameModal();
+      } else {
+        renderLevelStatus(state.level);
+      }
+    }
+
+    function playPetHatchAnimation(onDone) {
+      const hero = document.querySelector(".pet-hero-visual");
+      const egg = document.querySelector(".pet-egg");
+      if (!hero || !egg) {
+        if (typeof onDone === "function") onDone();
+        return;
+      }
+
+      petHatchAnimating = true;
+      hero.classList.add("pet-hatching");
+      hero.classList.remove("pet-hatched");
+      egg.classList.add("hatching");
+      egg.classList.remove("hatched");
+
+      window.setTimeout(function () {
+        egg.classList.remove("hatching");
+        egg.classList.add("hatched");
+        hero.classList.remove("pet-hatching");
+        hero.classList.add("pet-hatched");
+        petHatchAnimating = false;
+
+        if (typeof onDone === "function") {
+          onDone();
+        }
+      }, 1050);
+    }
+
+    function isPetFeatureLocked() {
+      return !petIsHatched;
+    }
+
     function normalizePetName(value, fallback) {
       const safeFallback = String(fallback || DEFAULT_PET_NAME).trim() || DEFAULT_PET_NAME;
       const normalized = String(value || "")
@@ -397,6 +534,11 @@
         matching: clamp(req.matching, 0, 10),
       };
 
+      state.hatch = {
+        isHatched: !!serverState.isHatched,
+        hatchedAt: String(serverState.hatchedAt || state?.hatch?.hatchedAt || ""),
+      };
+
       savePetPreviewState(state);
 
       petFoodState = {
@@ -421,6 +563,10 @@
 
     function syncPetStateToBackend(state, petName) {
       if (typeof google === "undefined" || !google.script || !google.script.run) {
+        return;
+      }
+
+      if (!state?.hatch?.isHatched) {
         return;
       }
 
@@ -673,6 +819,11 @@
     function consumeOwnedFood(foodId) {
       if (!foodId) return;
 
+      if (isPetFeatureLocked()) {
+        notify("Pet chưa nở, chưa thể cho ăn.", "warning");
+        return;
+      }
+
       if (typeof google === "undefined" || !google.script || !google.script.run) {
         notify("Khong the ket noi server de xu ly cho an.", "warning");
         return;
@@ -688,6 +839,7 @@
           applySnapshotToLocal(result.data);
           const state = loadPetPreviewState();
           ensureLevelState(state);
+          applyPetLockState(state, buildHatchTracker(state.requirements));
           setText("petCoinValue", String(Math.round(state.coins)));
           renderLevelStatus(state.level);
           renderPetFoodModal();
@@ -701,6 +853,11 @@
 
     function buyFoodForPet(foodId) {
       if (!foodId) return;
+
+      if (isPetFeatureLocked()) {
+        notify("Pet chưa nở, chưa thể mua đồ.", "warning");
+        return;
+      }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
         notify("Khong the ket noi server de mua thuc an.", "warning");
@@ -717,6 +874,7 @@
           applySnapshotToLocal(result.data);
           const state = loadPetPreviewState();
           ensureLevelState(state);
+          applyPetLockState(state, buildHatchTracker(state.requirements));
           setText("petCoinValue", String(Math.round(state.coins)));
           renderPetFoodModal();
           notify(result.message || "Mua thanh cong", "success");
@@ -746,6 +904,10 @@
     }
 
     function openPetFoodModal(mode) {
+      if (isPetFeatureLocked()) {
+        notify("Pet chưa nở, tính năng này đang bị khóa.", "info");
+        return;
+      }
       setFoodModalOpen(true, mode || "food");
     }
 
@@ -769,6 +931,8 @@
           }
 
           applySnapshotToLocal(result.data);
+          const state = loadPetPreviewState();
+          applyPetLockState(state, buildHatchTracker(state.requirements));
           renderPetFoodModal();
         })
         .withFailureHandler(function (error) {
@@ -856,6 +1020,54 @@
       renderPetFoodModal();
     }
 
+    function requestPetHatch(tracker) {
+      if (petHatchAnimating) {
+        return;
+      }
+
+      if (petIsHatched) {
+        notify("Pet đã nở trước đó rồi.", "info");
+        return;
+      }
+
+      if (!tracker || !tracker.isReady) {
+        notify(
+          "Chưa đủ điều kiện nở trứng. Hãy hoàn thành thêm bài học, quiz và matching.",
+          "info",
+        );
+        return;
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        notify("Không thể kết nối server để nở trứng.", "error");
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || !result.success || !result.data) {
+            notify((result && result.message) || "Nở trứng thất bại.", "error");
+            return;
+          }
+
+          applySnapshotToLocal(result.data);
+          const nextState = loadPetPreviewState();
+          ensureLevelState(nextState);
+          const nextTracker = buildHatchTracker(nextState.requirements);
+
+          playPetHatchAnimation(function () {
+            applyPetLockState(nextState, nextTracker);
+            setText("petCoinValue", String(Math.round(nextState.coins)));
+            renderPetFoodModal();
+            notify(result.message || "Trứng đã nở, Pet đã được mở khóa!", "success");
+          });
+        })
+        .withFailureHandler(function (error) {
+          notify("Lỗi nở trứng: " + error, "error");
+        })
+        .hatchCurrentUserPet();
+    }
+
     function setupEggHoverTilt() {
       const egg = document.querySelector(".pet-egg");
       if (!egg || egg.dataset.tiltBound === "1") {
@@ -899,11 +1111,7 @@
       egg.addEventListener("click", function () {
         const state = loadPetPreviewState();
         const tracker = buildHatchTracker(state.requirements);
-        const hatchMessage = tracker.isReady
-          ? `Trung da du dieu kien no! Hoc ${tracker.learn}/${tracker.target}, Quiz ${tracker.quiz}/${tracker.target}, Matching ${tracker.matching}/${tracker.target}.`
-          : `Trung se no khi dat dieu kien: hoc xong ${tracker.target} topic, hoan thanh ${tracker.target} quiz va ${tracker.target} matching. Hien tai: Hoc ${tracker.learn}/${tracker.target}, Quiz ${tracker.quiz}/${tracker.target}, Matching ${tracker.matching}/${tracker.target} (${tracker.percent}%).`;
-
-        notify(hatchMessage, tracker.isReady ? "success" : "info");
+        requestPetHatch(tracker);
       });
     }
 
@@ -931,6 +1139,11 @@
     }
 
     function openPetRenameModal() {
+      if (isPetFeatureLocked()) {
+        notify("Pet chưa nở, chưa thể đổi tên.", "info");
+        return;
+      }
+
       const input = document.getElementById("petRenameInput");
       const current = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
 
@@ -953,6 +1166,11 @@
     }
 
     function submitPetRename() {
+      if (isPetFeatureLocked()) {
+        notify("Pet chưa nở, chưa thể đổi tên.", "info");
+        return;
+      }
+
       const input = document.getElementById("petRenameInput");
       const rawName = String(input?.value || "")
         .trim()
@@ -1064,7 +1282,6 @@
       renderPetName(localPetName);
       setText("petXpValue", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
-      renderLevelStatus(state.level);
       setText("petHungerValue", `${Math.round(state.status.hunger)}%`);
       setText("petMoodValue", `${Math.round(state.status.mood)}%`);
       setText("petCleanValue", `${Math.round(state.status.clean)}%`);
@@ -1076,7 +1293,12 @@
         quiz: tracker.quiz,
         matching: tracker.matching,
       };
+      state.hatch = {
+        isHatched: !!state?.hatch?.isHatched,
+        hatchedAt: String(state?.hatch?.hatchedAt || ""),
+      };
       savePetPreviewState(state);
+      applyPetLockState(state, tracker);
 
       if (typeof google !== "undefined" && google.script && google.script.run) {
         google.script.run
@@ -1116,13 +1338,20 @@
               matching: clamp(req.matching, 0, 10),
             };
 
+            mergedState.hatch = {
+              isHatched: !!server.isHatched,
+              hatchedAt: String(server.hatchedAt || mergedState?.hatch?.hatchedAt || ""),
+            };
+
+            const mergedTracker = buildHatchTracker(mergedState.requirements);
+
             const serverPetName = normalizePetName(result.data.petName, "");
             const finalPetName = serverPetName || localPetName;
 
             savePetPreviewState(mergedState);
             renderPetName(finalPetName);
             setText("petCoinValue", String(Math.round(mergedState.coins)));
-            renderLevelStatus(mergedState.level);
+            applyPetLockState(mergedState, mergedTracker);
 
             applySnapshotToLocal(
               Object.assign({}, result.data, {
@@ -1131,6 +1360,8 @@
                   levelCurrent: mergedState.level.current,
                   levelProgress: mergedState.level.progress,
                   requirements: mergedState.requirements,
+                  isHatched: mergedState.hatch.isHatched,
+                  hatchedAt: mergedState.hatch.hatchedAt,
                 },
                 petName: finalPetName,
               }),
