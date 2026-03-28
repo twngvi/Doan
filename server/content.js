@@ -3693,6 +3693,21 @@ function clearAllLearningData(userContext) {
     }
 
     const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+
+    const dailyQuestIds = {
+      daily_checkin: true,
+      daily_learn: true,
+      daily_quiz: true,
+      daily_matching: true,
+      daily_perfect: true,
+      daily_all_bonus: true,
+    };
+
     const deleted = {
       activityLog: 0,
       topicProgress: 0,
@@ -3704,6 +3719,138 @@ function clearAllLearningData(userContext) {
       masteredQuestions: 0,
       xpLog: 0,
     };
+
+    function normalizeDateString(value) {
+      if (value instanceof Date) {
+        return Utilities.formatDate(value, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+      }
+
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+
+      if (raw.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.substring(0, 10);
+      }
+
+      const parsed = new Date(raw);
+      if (!isNaN(parsed.getTime())) {
+        return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+      }
+
+      return raw;
+    }
+
+    function buildHeaderIndex(headers) {
+      const indexMap = {};
+      (headers || []).forEach(function (header, i) {
+        indexMap[String(header || "").trim()] = i;
+      });
+      return indexMap;
+    }
+
+    function snapshotRowsForRestore(sheetName, predicateFn) {
+      const sheet = userSpreadsheet.getSheetByName(sheetName);
+      if (!sheet) {
+        return { sheetName: sheetName, headers: [], rows: [] };
+      }
+
+      const data = sheet.getDataRange().getValues();
+      if (!data || data.length <= 1) {
+        return { sheetName: sheetName, headers: data && data[0] ? data[0] : [], rows: [] };
+      }
+
+      const headers = data[0] || [];
+      const headerIndex = buildHeaderIndex(headers);
+      const rows = [];
+
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (predicateFn(row, headerIndex, headers)) {
+          rows.push(row.slice());
+        }
+      }
+
+      return {
+        sheetName: sheetName,
+        headers: headers,
+        rows: rows,
+      };
+    }
+
+    function restoreRows(snapshot) {
+      if (!snapshot || !snapshot.rows || snapshot.rows.length === 0) {
+        return 0;
+      }
+
+      let sheet = userSpreadsheet.getSheetByName(snapshot.sheetName);
+      if (!sheet) {
+        sheet = userSpreadsheet.insertSheet(snapshot.sheetName);
+      }
+
+      const headers = snapshot.headers || [];
+      const width = headers.length > 0 ? headers.length : snapshot.rows[0].length;
+
+      if (sheet.getLastRow() === 0 && headers.length > 0) {
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      }
+
+      const normalizedRows = snapshot.rows.map(function (row) {
+        const normalized = new Array(width).fill("");
+        for (let i = 0; i < width; i++) {
+          normalized[i] = row[i] !== undefined ? row[i] : "";
+        }
+        return normalized;
+      });
+
+      const startRow = Math.max(sheet.getLastRow(), 1) + 1;
+      sheet
+        .getRange(startRow, 1, normalizedRows.length, width)
+        .setValues(normalizedRows);
+
+      return normalizedRows.length;
+    }
+
+    // Preserve today's daily-quest evidence so reset does not affect current-day quest state.
+    const preservedActivityLog = snapshotRowsForRestore(
+      "Activity_Log",
+      function (row, indexMap) {
+        const typeCol =
+          indexMap.type >= 0 || indexMap.type === 0 ? indexMap.type : -1;
+        const tsCol =
+          indexMap.timestamp >= 0 || indexMap.timestamp === 0
+            ? indexMap.timestamp
+            : -1;
+
+        if (typeCol < 0 || tsCol < 0) return false;
+
+        const type = String(row[typeCol] || "").trim();
+        if (type !== "Learning" && type !== "MCQ" && type !== "Matching") {
+          return false;
+        }
+
+        return normalizeDateString(row[tsCol]) === today;
+      },
+    );
+
+    const preservedXpLog = snapshotRowsForRestore(
+      "XP_Log",
+      function (row, indexMap) {
+        const dateCol =
+          indexMap.date >= 0 || indexMap.date === 0 ? indexMap.date : 0;
+        const questIdCol =
+          indexMap.questId >= 0 || indexMap.questId === 0 ? indexMap.questId : 2;
+        const sourceCol =
+          indexMap.source >= 0 || indexMap.source === 0 ? indexMap.source : 5;
+
+        if (normalizeDateString(row[dateCol]) !== today) {
+          return false;
+        }
+
+        const questId = String(row[questIdCol] || "").trim();
+        const source = String(row[sourceCol] || "").trim().toLowerCase();
+        return !!dailyQuestIds[questId] || source === "daily_quest" || source === "bonus";
+      },
+    );
 
     function clearSheetDataKeepHeader(sheetName) {
       const sheet = userSpreadsheet.getSheetByName(sheetName);
@@ -3730,6 +3877,16 @@ function clearAllLearningData(userContext) {
     deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
     deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
 
+    const restoredActivityRows = restoreRows(preservedActivityLog);
+    const restoredQuestXpRows = restoreRows(preservedXpLog);
+
+    if (restoredActivityRows > 0) {
+      deleted.activityLog = Math.max(0, deleted.activityLog - restoredActivityRows);
+    }
+    if (restoredQuestXpRows > 0) {
+      deleted.xpLog = Math.max(0, deleted.xpLog - restoredQuestXpRows);
+    }
+
     // Clear user-scoped stats cache so lock/unlock state is recomputed immediately.
     try {
       const userCache = CacheService.getUserCache();
@@ -3749,12 +3906,20 @@ function clearAllLearningData(userContext) {
         userEmail +
         ": deleted " +
         totalDeleted +
-        " rows",
+        " rows" +
+        ", preserved today quest rows act=" +
+        restoredActivityRows +
+        ", xp=" +
+        restoredQuestXpRows,
     );
 
     return {
       success: true,
       deleted: deleted,
+      preserved: {
+        todayQuestActivities: restoredActivityRows,
+        todayQuestClaims: restoredQuestXpRows,
+      },
       totalDeleted: totalDeleted,
       message:
         totalDeleted > 0
