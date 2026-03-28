@@ -45,6 +45,8 @@
   let flashcardsData = [];
   let fullFlashcardsData = []; // Immutable source for replaying full deck
   let currentFlashcardIndex = 0;
+  const MINI_QUIZ_REQUIRED_QUESTIONS = 10;
+  const MINI_QUIZ_MAX_ATTEMPTS_PER_DAY = 3;
 
   // ⭐ Progress Saving State
   let progressSaved = {
@@ -1833,7 +1835,7 @@
    * - Bài học (Lesson read): 25%
    * - Mindmap (viewed checkbox): 25%
    * - Flashcard (all cards viewed): 25%
-   * - Mini Quiz (completed all 5 questions): 25%
+  * - Mini Quiz (completed all 10 questions): 25%
    */
   function updateOverallProgress() {
     // Lesson progress (25%)
@@ -1994,39 +1996,73 @@
   };
 
   /**
-   * Handler: Mini Quiz completed (all 5 questions answered)
+   * Handler: Mini Quiz completed (all 10 questions answered)
    */
   function onMiniQuizCompleted() {
+    if (
+      !Array.isArray(miniQuizData) ||
+      miniQuizData.length < MINI_QUIZ_REQUIRED_QUESTIONS ||
+      miniQuizAnswered < MINI_QUIZ_REQUIRED_QUESTIONS
+    ) {
+      return;
+    }
+
     const resultEl = document.getElementById("mini-quiz-result");
     const correctCount = document.querySelectorAll(
       "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
     ).length;
-    const totalCount = 10;
-    
+    const totalCount = MINI_QUIZ_REQUIRED_QUESTIONS;
+    const passedQuiz = correctCount >= totalCount;
+
+    if (!tabCompletion.lessonQuiz) {
+      var optimisticUsed = Number(window.currentMiniQuizAttempts || 0) + 1;
+      var maxAttempts = Number(
+        window.currentMiniQuizMaxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY,
+      );
+      window.currentMiniQuizAttempts = Math.min(optimisticUsed, maxAttempts);
+      window.currentMiniQuizMaxAttempts = maxAttempts;
+    }
+
     // Ghi nhận lượt chơi vào hệ thống
     google.script.run
       .withSuccessHandler(function(res) {
          console.log("Đã ghi nhận lượt chơi MiniQuiz", res);
+         if (res && typeof res.attempts !== "undefined") {
+           window.currentMiniQuizAttempts = Number(res.attempts) || 0;
+         }
+         if (res && typeof res.maxAttempts !== "undefined") {
+           window.currentMiniQuizMaxAttempts =
+             Number(res.maxAttempts) || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY;
+         }
          // Nếu hết lượt, khoá lại 
          if (res && res.success === false && !tabCompletion.lessonQuiz) {
            showToast("Bạn đã hết lượt làm quiz hôm nay cho chủ đề này.", "error");
          }
+
+         if (!passedQuiz && !tabCompletion.lessonQuiz) {
+           renderMiniQuizFailureResult(correctCount, totalCount);
+         }
+      })
+      .withFailureHandler(function(err) {
+        console.warn("Không thể ghi nhận lượt MiniQuiz:", err);
+        if (!tabCompletion.lessonQuiz) {
+          var maxAttempts = Number(
+            window.currentMiniQuizMaxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY,
+          );
+          var usedAttempts = Number(window.currentMiniQuizAttempts || 0);
+          window.currentMiniQuizAttempts = Math.max(0, usedAttempts - 1);
+          window.currentMiniQuizMaxAttempts = maxAttempts;
+
+          if (!passedQuiz) {
+            renderMiniQuizFailureResult(correctCount, totalCount);
+          }
+        }
       })
       .recordMiniQuizAttempt(currentLessonData?.topicId);
 
     // Kkông đạt 10/10 -> Thất bại
-    if (correctCount < totalCount && !tabCompletion.lessonQuiz) {
-      if (resultEl) {
-        resultEl.style.display = "block";
-        resultEl.innerHTML = `
-          <div class="mq-result-card" style="background:#fff5f5; border: 1px solid #fc8181;">
-            <div class="mq-result-icon">⚠️</div>
-            <div class="mq-result-title" style="color:#c53030;">Chưa Đạt Yêu Cầu</div>
-            <div class="mq-result-score" style="color:#e53e3e;">Bạn trả lời đúng ${correctCount}/${totalCount} câu</div>
-            <div class="mq-result-msg" style="color:#742a2a;">Bạn phải đúng toàn bộ 10/10 mới được tính tiến độ 25%. Mở lại quiz để thử lại (bạn sẽ bị trừ 1 lượt chơi).</div>
-          </div>
-        `;
-      }
+    if (!passedQuiz && !tabCompletion.lessonQuiz) {
+      renderMiniQuizFailureResult(correctCount, totalCount);
       return; // Stop here, progress not saved
     }
 
@@ -2074,6 +2110,66 @@
           completed: true,
         });
     }
+  }
+
+  function getMiniQuizRemainingAttempts() {
+    var maxAttempts = Number(
+      window.currentMiniQuizMaxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY,
+    );
+    var usedAttempts = Number(window.currentMiniQuizAttempts || 0);
+    return Math.max(0, maxAttempts - usedAttempts);
+  }
+
+  function buildMiniQuizAttemptSummary() {
+    var maxAttempts = Number(
+      window.currentMiniQuizMaxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY,
+    );
+    var usedAttempts = Number(window.currentMiniQuizAttempts || 0);
+    var remainingAttempts = Math.max(0, maxAttempts - usedAttempts);
+    return (
+      "Lượt hôm nay: " +
+      usedAttempts +
+      "/" +
+      maxAttempts +
+      " | Còn lại " +
+      remainingAttempts +
+      " lượt."
+    );
+  }
+
+  function renderMiniQuizFailureResult(correctCount, totalCount) {
+    var resultEl = document.getElementById("mini-quiz-result");
+    if (!resultEl) return;
+
+    var remainingAttempts = getMiniQuizRemainingAttempts();
+    var canRetry = remainingAttempts > 0;
+
+    resultEl.style.display = "block";
+    resultEl.innerHTML = `
+      <div class="mq-result-card mq-result-card-fail">
+        <div class="mq-result-icon">⚠️</div>
+        <div class="mq-result-title mq-result-title-fail">Chưa Đạt Yêu Cầu</div>
+        <div class="mq-result-score mq-result-score-fail">Bạn trả lời đúng ${correctCount}/${totalCount} câu</div>
+        <div class="mq-result-msg mq-result-msg-fail">Bạn cần đúng toàn bộ ${totalCount}/${totalCount} để hoàn thành bài học.</div>
+        <div class="mq-attempts-note">${buildMiniQuizAttemptSummary()}</div>
+        <div class="mq-result-actions">
+          <button class="mq-retry-btn" onclick="retryMiniQuizAttempt()" ${canRetry ? "" : "disabled"}>
+            ${canRetry ? "Chơi lại Mini Quiz" : "Đã hết lượt hôm nay"}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function retryMiniQuizAttempt() {
+    if (!currentLessonData?.topicId || tabCompletion.lessonQuiz) return;
+
+    if (getMiniQuizRemainingAttempts() <= 0) {
+      showToast("Bạn đã hết lượt làm quiz hôm nay cho chủ đề này.", "error");
+      return;
+    }
+
+    loadMiniQuiz(true);
   }
 
   /**
@@ -2216,7 +2312,7 @@
   // 🧠 MINI QUIZ DROPDOWN SYSTEM
   // ========================================
 
-  let miniQuizData = null; // Stores the 5 questions from AI
+  let miniQuizData = null; // Stores 10 questions from AI
   let miniQuizAnswered = 0; // How many questions have been answered
   let miniQuizLoaded = false;
 
@@ -2351,7 +2447,7 @@
   }
 
   /**
-   * Load Mini Quiz from AI (5 key questions from lesson content)
+   * Load Mini Quiz from AI
    */
   function loadMiniQuiz(forceRegenerate) {
     if (!currentLessonData?.topicId) return;
@@ -2381,7 +2477,8 @@
 
         // Lưu giới hạn hiện tại vào toàn cục để render HTML cập nhật
         window.currentMiniQuizAttempts = limitRes.attempts || 0;
-        window.currentMiniQuizMaxAttempts = limitRes.maxAttempts || 3;
+        window.currentMiniQuizMaxAttempts =
+          limitRes.maxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY;
 
         // Cho qua nếu user đã done bài này. Ngược lại xét lượt chơi
         if (!limitRes.canPlay && !tabCompletion.lessonQuiz) {
@@ -2429,10 +2526,27 @@
             }
           }
 
-          miniQuizData = quizData.questions || quizData;
-          if (!Array.isArray(miniQuizData) || miniQuizData.length === 0) {
+          const rawQuestions = Array.isArray(quizData?.questions)
+            ? quizData.questions
+            : quizData;
+          miniQuizData = normalizeMiniQuizQuestions(
+            rawQuestions,
+            MINI_QUIZ_REQUIRED_QUESTIONS,
+          );
+
+          if (
+            !Array.isArray(miniQuizData) ||
+            miniQuizData.length < MINI_QUIZ_REQUIRED_QUESTIONS
+          ) {
             showMiniQuizError("Không có câu hỏi nào được tạo");
             return;
+          }
+
+          if (Array.isArray(rawQuestions) && rawQuestions.length < MINI_QUIZ_REQUIRED_QUESTIONS) {
+            showToast(
+              "Mini Quiz được tự động bổ sung đủ 10 câu để đảm bảo trải nghiệm.",
+              "warning",
+            );
           }
 
           miniQuizLoaded = true;
@@ -2457,6 +2571,150 @@
         forceRegenerate || false,
         { userId: currentUser?.userId || window.currentUser?.userId || "" },
       );
+  }
+
+  function normalizeMiniQuizQuestions(rawQuestions, requiredCount) {
+    if (!Array.isArray(rawQuestions)) return [];
+
+    var cleanedQuestions = [];
+
+    rawQuestions.forEach(function (rawQuestion, index) {
+      if (!rawQuestion) return;
+
+      var questionText = String(
+        rawQuestion.question || rawQuestion.title || rawQuestion.prompt || "",
+      ).trim();
+      if (!questionText) return;
+
+      var sourceOptions = Array.isArray(rawQuestion.options)
+        ? rawQuestion.options
+        : Array.isArray(rawQuestion.choices)
+          ? rawQuestion.choices
+          : [];
+
+      var normalizedOptions = sourceOptions
+        .map(function (option) {
+          if (typeof option === "string") return option.trim();
+          if (option && typeof option.text !== "undefined") {
+            return String(option.text).trim();
+          }
+          return String(option || "").trim();
+        })
+        .filter(function (text) {
+          return !!text;
+        });
+
+      if (normalizedOptions.length < 2) return;
+
+      cleanedQuestions.push({
+        question:
+          questionText.replace(/^câu\s*\d+[:.)\-]\s*/i, "") ||
+          "Câu hỏi " + (index + 1),
+        options: normalizedOptions,
+        correctAnswer: resolveMiniQuizCorrectAnswerIndex(
+          rawQuestion,
+          normalizedOptions,
+          sourceOptions,
+        ),
+        explanation: String(rawQuestion.explanation || rawQuestion.reason || ""),
+      });
+    });
+
+    if (cleanedQuestions.length === 0) {
+      return [];
+    }
+
+    if (cleanedQuestions.length >= requiredCount) {
+      return cleanedQuestions.slice(0, requiredCount);
+    }
+
+    var seedQuestions = cleanedQuestions.slice();
+    var fillIndex = 0;
+
+    while (cleanedQuestions.length < requiredCount) {
+      var sourceQuestion = seedQuestions[fillIndex % seedQuestions.length];
+      cleanedQuestions.push({
+        question:
+          sourceQuestion.question +
+          " (Ôn tập " +
+          (cleanedQuestions.length + 1) +
+          "/" +
+          requiredCount +
+          ")",
+        options: sourceQuestion.options.slice(),
+        correctAnswer: sourceQuestion.correctAnswer,
+        explanation: sourceQuestion.explanation,
+      });
+      fillIndex++;
+    }
+
+    return cleanedQuestions;
+  }
+
+  function resolveMiniQuizCorrectAnswerIndex(rawQuestion, options, sourceOptions) {
+    if (Array.isArray(sourceOptions)) {
+      for (var i = 0; i < sourceOptions.length; i++) {
+        var opt = sourceOptions[i];
+        if (!opt || typeof opt !== "object") continue;
+        if (
+          opt.correct === true ||
+          opt.isCorrect === true ||
+          String(opt.correct).toLowerCase() === "true" ||
+          String(opt.isCorrect).toLowerCase() === "true"
+        ) {
+          return i;
+        }
+      }
+    }
+
+    var candidates = [
+      rawQuestion.correctAnswer,
+      rawQuestion.answer,
+      rawQuestion.correct,
+      rawQuestion.correctOption,
+      rawQuestion.correct_option,
+    ];
+
+    for (var j = 0; j < candidates.length; j++) {
+      var resolved = parseMiniQuizAnswerCandidate(candidates[j], options);
+      if (resolved !== null) return resolved;
+    }
+
+    return 0;
+  }
+
+  function parseMiniQuizAnswerCandidate(candidate, options) {
+    if (typeof candidate === "number" && isFinite(candidate)) {
+      if (candidate >= 0 && candidate < options.length) return candidate;
+      if (candidate >= 1 && candidate <= options.length) return candidate - 1;
+    }
+
+    if (typeof candidate !== "string") return null;
+
+    var normalized = candidate.trim();
+    if (!normalized) return null;
+
+    var optionIndexMatch = normalized.match(/^(\d+)$/);
+    if (optionIndexMatch) {
+      var numericValue = parseInt(optionIndexMatch[1], 10);
+      if (numericValue >= 0 && numericValue < options.length) return numericValue;
+      if (numericValue >= 1 && numericValue <= options.length) return numericValue - 1;
+    }
+
+    var letterMatch = normalized.match(/^([A-D])[\).:\-\s]*/i);
+    if (letterMatch) {
+      var letterIdx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+      if (letterIdx >= 0 && letterIdx < options.length) return letterIdx;
+    }
+
+    var lowerCandidate = normalized.toLowerCase();
+    for (var i = 0; i < options.length; i++) {
+      if (String(options[i]).trim().toLowerCase() === lowerCandidate) {
+        return i;
+      }
+    }
+
+    return null;
   }
 
   function isMissingGeminiKeyError(payload) {
@@ -2510,8 +2768,15 @@
     
     // Default remaining text
     let remainingText = "";
-    if (!tabCompletion.lessonQuiz) {
-       remainingText = `(Hôm nay còn ${3 - (window.currentMiniQuizAttempts || 0)}/3 lượt chơi)`;
+     if (!tabCompletion.lessonQuiz) {
+       const maxAttempts = Number(
+        window.currentMiniQuizMaxAttempts || MINI_QUIZ_MAX_ATTEMPTS_PER_DAY,
+       );
+       const remainingAttempts = Math.max(
+        0,
+        maxAttempts - Number(window.currentMiniQuizAttempts || 0),
+       );
+       remainingText = `(Hôm nay còn ${remainingAttempts}/${maxAttempts} lượt chơi)`;
     } else {
        remainingText = `(Bạn đã thi vượt qua bài này)`;
     }
@@ -2521,17 +2786,17 @@
         <div class="mq-header-icon">🧠</div>
         <div>
           <div class="mq-header-title">Mini Quiz - Kiểm tra kiến thức</div>
-          <div class="mq-header-subtitle">Trả lời ĐÚNG TOÀN BỘ 10/10 câu để hoàn thành bài học. ${remainingText}</div>
+          <div class="mq-header-subtitle">Trả lời ĐÚNG TOÀN BỘ ${MINI_QUIZ_REQUIRED_QUESTIONS}/${MINI_QUIZ_REQUIRED_QUESTIONS} câu để hoàn thành bài học. ${remainingText}</div>
         </div>
       </div>
       <div class="mq-progress-bar">
         <div class="mq-progress-fill" id="mq-progress-fill" style="width: 0%"></div>
       </div>
-      <div class="mq-progress-text" id="mq-progress-text">0/10 câu đã trả lời</div>
+      <div class="mq-progress-text" id="mq-progress-text">0/${MINI_QUIZ_REQUIRED_QUESTIONS} câu đã trả lời</div>
     `;
 
     questions.forEach(function (q, idx) {
-      if (idx >= 10) return; // Only show 10 questions
+      if (idx >= MINI_QUIZ_REQUIRED_QUESTIONS) return;
 
       var qEl = document.createElement("div");
       qEl.className = "mq-question";
@@ -2563,7 +2828,9 @@
       qEl.innerHTML =
         '<div class="mq-question-number">Câu ' +
         (idx + 1) +
-        "/10</div>" +
+        "/" +
+        MINI_QUIZ_REQUIRED_QUESTIONS +
+        "</div>" +
         '<p class="mq-question-text">' +
         (q.question || "") +
         "</p>" +
@@ -2633,13 +2900,17 @@
     miniQuizAnswered++;
     var progressFill = document.getElementById("mq-progress-fill");
     var progressText = document.getElementById("mq-progress-text");
-    var pct = Math.round((miniQuizAnswered / 10) * 100);
+    var pct = Math.round((miniQuizAnswered / MINI_QUIZ_REQUIRED_QUESTIONS) * 100);
     if (progressFill) progressFill.style.width = pct + "%";
     if (progressText)
-      progressText.textContent = miniQuizAnswered + "/10 câu đã trả lời";
+      progressText.textContent =
+        miniQuizAnswered +
+        "/" +
+        MINI_QUIZ_REQUIRED_QUESTIONS +
+        " câu đã trả lời";
 
     // Check if all 10 answered
-    if (miniQuizAnswered >= 10) {
+    if (miniQuizAnswered >= MINI_QUIZ_REQUIRED_QUESTIONS) {
       setTimeout(function () {
         onMiniQuizCompleted();
       }, 500);
@@ -2673,6 +2944,7 @@
   window.toggleMiniQuizDropdown = toggleMiniQuizDropdown;
   window.selectMiniQuizOption = selectMiniQuizOption;
   window.loadMiniQuiz = loadMiniQuiz;
+  window.retryMiniQuizAttempt = retryMiniQuizAttempt;
   window.clearLocalProgress = clearLocalProgress;
   window.clearAllLessonLocalProgress = clearAllLessonLocalProgress;
 
