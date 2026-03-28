@@ -238,6 +238,54 @@ function saveUserTheme(userId, themeName) {
 }
 
 /**
+ * Save pet name for user
+ * @param {string} userId - ID của user
+ * @param {string} petName - Tên thú cưng mới
+ * @returns {{success: boolean, message: string, petName?: string}} - Result object
+ */
+function saveUserPetName(userId, petName) {
+  try {
+    Logger.log("=== SAVE PET NAME ===");
+    Logger.log("User ID: " + userId);
+
+    if (!userId) {
+      return { success: false, message: "User ID is required" };
+    }
+
+    var cleanName = String(petName || "gà con").trim().slice(0, 30) || "gà con";
+
+    var usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Lỗi hệ thống" };
+    }
+
+    var data = usersSheet.getDataRange().getValues();
+    var headers = data[0];
+
+    var petNameColIndex = headers.indexOf("petName");
+    if (petNameColIndex === -1) {
+      var lastCol = headers.length + 1;
+      usersSheet.getRange(1, lastCol).setValue("petName");
+      petNameColIndex = lastCol - 1;
+      Logger.log("Created 'petName' column at index: " + petNameColIndex);
+    }
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === userId) {
+        usersSheet.getRange(i + 1, petNameColIndex + 1).setValue(cleanName);
+        Logger.log("Pet name saved: " + cleanName);
+        return { success: true, message: "Đã lưu tên thú cưng!", petName: cleanName };
+      }
+    }
+
+    return { success: false, message: "Không tìm thấy người dùng" };
+  } catch (error) {
+    Logger.log("Error in savePetName: " + error.toString());
+    return { success: false, message: "Lỗi: " + error.toString() };
+  }
+}
+
+/**
  * Lưu URL Avatar mới cho user
  * @param {string} userId - ID của user
  * @param {string} avatarUrl - URL của avatar được chọn
