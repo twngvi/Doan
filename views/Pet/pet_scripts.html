@@ -5,6 +5,10 @@
     const DEFAULT_STATE = {
       xp: 0,
       coins: 120,
+      level: {
+        current: 1,
+        progress: 0,
+      },
       status: {
         energy: 78,
         hunger: 65,
@@ -23,7 +27,7 @@
     const PET_XP_COIN_DAILY_SYNC_KEY = "oq_pet_xp_coin_daily_sync";
     const DEFAULT_PET_NAME = "Bé Gà";
 
-    let hatchModalEscBound = false;
+    let petGlobalEscBound = false;
     let eggHoverRafId = 0;
     let eggHoverRatioX = 0;
 
@@ -54,6 +58,14 @@
         return {
           xp: clamp(parsed.xp, 0, 999999),
           coins: clamp(parsed.coins, 0, 999999),
+          level: {
+            current: Math.max(1, Math.floor(clamp(parsed.level?.current, 1, 9999))),
+            progress: clamp(
+              parsed.level?.progress != null ? parsed.level.progress : parsed.status?.energy,
+              0,
+              100,
+            ),
+          },
           status: {
             energy: clamp(parsed.status?.energy, 0, 100),
             hunger: clamp(parsed.status?.hunger, 0, 100),
@@ -78,6 +90,10 @@
         const safeState = {
           xp: clamp(state?.xp, 0, 999999),
           coins: clamp(state?.coins, 0, 999999),
+          level: {
+            current: Math.max(1, Math.floor(clamp(state?.level?.current, 1, 9999))),
+            progress: clamp(state?.level?.progress, 0, 100),
+          },
           status: {
             energy: clamp(state?.status?.energy, 0, 100),
             hunger: clamp(state?.status?.hunger, 0, 100),
@@ -96,6 +112,50 @@
       } catch (error) {
         console.warn("Pet state save failed:", error);
       }
+    }
+
+    function ensureLevelState(state) {
+      if (!state.level || typeof state.level !== "object") {
+        state.level = {
+          current: 1,
+          progress: clamp(state?.status?.energy, 0, 100),
+        };
+      }
+
+      state.level.current = Math.max(1, Math.floor(clamp(state.level.current, 1, 9999)));
+      state.level.progress = clamp(state.level.progress, 0, 100);
+    }
+
+    function renderLevelStatus(levelState) {
+      const current = Math.max(1, Math.floor(clamp(levelState?.current, 1, 9999)));
+      const progress = Math.round(clamp(levelState?.progress, 0, 100));
+
+      setText("petLevelValue", `Level ${current}`);
+      setText("petLevelPointsText", `${progress} / 100`);
+      setProgressBar("petLevelProgress", progress);
+    }
+
+    function gainPetLevelProgress(state, amount) {
+      ensureLevelState(state);
+
+      let progress = clamp(state.level.progress, 0, 100) + Math.max(0, Number(amount) || 0);
+      let levelUpCount = 0;
+
+      while (progress >= 100) {
+        progress -= 100;
+        state.level.current += 1;
+        levelUpCount += 1;
+      }
+
+      state.level.progress = clamp(progress, 0, 100);
+      renderLevelStatus(state.level);
+      savePetPreviewState(state);
+
+      return {
+        levelUpCount,
+        currentLevel: state.level.current,
+        currentProgress: Math.round(state.level.progress),
+      };
     }
 
     function getTodayVNKey() {
@@ -180,6 +240,25 @@
       saveDailySyncInfo({ date: today, lastXP: currentXP });
       savePetPreviewState(state);
       return deltaXP;
+    }
+
+    function buildHatchTracker(requirements) {
+      const target = Math.max(1, Number(requirements?.target) || 3);
+      const learn = clamp(requirements?.learn, 0, target);
+      const quiz = clamp(requirements?.quiz, 0, target);
+      const matching = clamp(requirements?.matching, 0, target);
+      const total = learn + quiz + matching;
+      const max = target * 3;
+      const percent = Math.round((total / max) * 100);
+
+      return {
+        target,
+        learn,
+        quiz,
+        matching,
+        percent,
+        isReady: learn >= target && quiz >= target && matching >= target,
+      };
     }
 
     function normalizePetName(value, fallback) {
@@ -293,6 +372,16 @@
         stopEggHoverAnimation();
         egg.style.setProperty("--pet-egg-tilt", "0deg");
       });
+
+      egg.addEventListener("click", function () {
+        const state = loadPetPreviewState();
+        const tracker = buildHatchTracker(state.requirements);
+        const hatchMessage = tracker.isReady
+          ? `Trung da du dieu kien no! Hoc ${tracker.learn}/${tracker.target}, Quiz ${tracker.quiz}/${tracker.target}, Matching ${tracker.matching}/${tracker.target}.`
+          : `Trung se no khi dat dieu kien: hoc xong ${tracker.target} topic, hoan thanh ${tracker.target} quiz va ${tracker.target} matching. Hien tai: Hoc ${tracker.learn}/${tracker.target}, Quiz ${tracker.quiz}/${tracker.target}, Matching ${tracker.matching}/${tracker.target} (${tracker.percent}%).`;
+
+        notify(hatchMessage, tracker.isReady ? "success" : "info");
+      });
     }
 
     function setRenameHint(message, isError) {
@@ -304,12 +393,10 @@
     }
 
     function refreshBodyModalLock() {
-      const hatchOpen =
-        document.getElementById("petHatchModal")?.getAttribute("aria-hidden") === "false";
       const renameOpen =
         document.getElementById("petRenameModal")?.getAttribute("aria-hidden") === "false";
 
-      document.body.classList.toggle("pet-modal-open", hatchOpen || renameOpen);
+      document.body.classList.toggle("pet-modal-open", renameOpen);
     }
 
     function setRenameModalOpen(isOpen) {
@@ -415,77 +502,18 @@
       });
     }
 
-    function calcOverallPercent(requirements) {
-      const target = Math.max(1, Number(requirements.target) || 1);
-      const total =
-        clamp(requirements.learn, 0, target) +
-        clamp(requirements.quiz, 0, target) +
-        clamp(requirements.matching, 0, target);
-      const maxTotal = target * 3;
-      return Math.round((total / maxTotal) * 100);
-    }
+    function setupGlobalEscHandler() {
+      if (petGlobalEscBound) return;
+      petGlobalEscBound = true;
 
-    function resolveStageLabel(percent) {
-      if (percent >= 100) return "Sẵn sàng nở";
-      if (percent >= 70) return "Trứng phát triển";
-      if (percent >= 35) return "Đang ấp";
-      return "Giai đoạn Trứng";
-    }
+      document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
 
-    function setHatchModalOpen(isOpen) {
-      const modal = document.getElementById("petHatchModal");
-      if (!modal) return;
-
-      modal.classList.toggle("open", !!isOpen);
-      modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
-      refreshBodyModalLock();
-    }
-
-    function setupHatchModal() {
-      const modal = document.getElementById("petHatchModal");
-      const openBtn = document.getElementById("petHatchToggleBtn");
-      const closeBtn = document.getElementById("petHatchModalClose");
-
-      if (!modal || !openBtn || !closeBtn) return;
-
-      if (modal.dataset.modalBound === "1") {
-        return;
-      }
-      modal.dataset.modalBound = "1";
-
-      openBtn.addEventListener("click", function () {
-        const isHidden = modal.getAttribute("aria-hidden") !== "false";
-        setHatchModalOpen(isHidden);
-      });
-
-      closeBtn.addEventListener("click", function () {
-        setHatchModalOpen(false);
-      });
-
-      modal.addEventListener("click", function (event) {
-        if (event.target === modal) {
-          setHatchModalOpen(false);
+        const renameModal = document.getElementById("petRenameModal");
+        if (renameModal && renameModal.getAttribute("aria-hidden") === "false") {
+          closePetRenameModal();
         }
       });
-
-      if (!hatchModalEscBound) {
-        hatchModalEscBound = true;
-        document.addEventListener("keydown", function (event) {
-          if (event.key !== "Escape") return;
-
-          const renameModal = document.getElementById("petRenameModal");
-          if (renameModal && renameModal.getAttribute("aria-hidden") === "false") {
-            closePetRenameModal();
-            return;
-          }
-
-          const activeModal = document.getElementById("petHatchModal");
-          if (!activeModal) return;
-          if (activeModal.getAttribute("aria-hidden") === "false") {
-            setHatchModalOpen(false);
-          }
-        });
-      }
     }
 
     function initPetPage() {
@@ -498,42 +526,30 @@
       const petName = loadPetName(DEFAULT_PET_NAME);
 
       syncDailyCoinsFromXP(state, totalXPFromUser);
+      ensureLevelState(state);
 
-      const target = Math.max(1, Number(state.requirements.target) || 3);
-      const learn = clamp(state.requirements.learn, 0, target);
-      const quiz = clamp(state.requirements.quiz, 0, target);
-      const matching = clamp(state.requirements.matching, 0, target);
-      const overallPercent = calcOverallPercent({
-        target: target,
-        learn: learn,
-        quiz: quiz,
-        matching: matching,
-      });
-      const stageLabel = resolveStageLabel(overallPercent);
+      const tracker = buildHatchTracker(state.requirements);
 
       setText("petUserName", name);
       renderPetName(petName);
       setText("petXpValue", String(Math.round(state.xp)));
-      setText("petXpValueModal", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
-      setText("petEnergyValue", `${Math.round(state.status.energy)}%`);
+      renderLevelStatus(state.level);
       setText("petHungerValue", `${Math.round(state.status.hunger)}%`);
       setText("petMoodValue", `${Math.round(state.status.mood)}%`);
       setText("petCleanValue", `${Math.round(state.status.clean)}%`);
-      setText("petLearnText", `${learn} / ${target}`);
-      setText("petQuizText", `${quiz} / ${target}`);
-      setText("petMatchText", `${matching} / ${target}`);
-      setText("petHatchProgressText", `${overallPercent}% điều kiện nở trứng`);
-      setText("petStageBadge", stageLabel);
-      setText("petStageBadgeModal", stageLabel);
 
-      setProgressBar("petHatchProgress", overallPercent);
-      setProgressBar("petLearnProgress", (learn / target) * 100);
-      setProgressBar("petQuizProgress", (quiz / target) * 100);
-      setProgressBar("petMatchProgress", (matching / target) * 100);
+      // Keep hatch counter data in state for future hatch feature rollout.
+      state.requirements = {
+        target: tracker.target,
+        learn: tracker.learn,
+        quiz: tracker.quiz,
+        matching: tracker.matching,
+      };
+      savePetPreviewState(state);
+
       setupPetNameEditor();
       setupEggHoverTilt();
-      setHatchModalOpen(false);
     }
 
     function setupPetActions() {
@@ -549,7 +565,21 @@
           const action = button.getAttribute("data-pet-action");
 
           if (action === "feed") {
-            notify("Tính năng cho ăn sẽ được bật khi backend Pet hoàn thiện.", "info");
+            const state = loadPetPreviewState();
+            ensureLevelState(state);
+
+            const gainResult = gainPetLevelProgress(state, 12);
+            if (gainResult.levelUpCount > 0) {
+              notify(
+                `Pet da len level ${gainResult.currentLevel}! Tien do hien tai ${gainResult.currentProgress}/100.`,
+                "success",
+              );
+            } else {
+              notify(
+                `Da cho an. Tien do level: ${gainResult.currentProgress}/100.`,
+                "success",
+              );
+            }
             return;
           }
 
@@ -568,15 +598,15 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
-        setupHatchModal();
         setupPetRenameModal();
+        setupGlobalEscHandler();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
-        setupHatchModal();
         setupPetRenameModal();
+        setupGlobalEscHandler();
         initPetPage();
       }, 80);
     }
