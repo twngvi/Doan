@@ -259,11 +259,17 @@
   // ===== STATE =====
   let matchingMeteorInterval = null;
   let matchingTimerInterval = null;
-  const MATCHING_DIFFICULTY_MAP = {
-    easy: 4,
-    medium: 6,
-    hard: 8,
-  };
+  const MATCHING_DEFAULT_CARD_COUNT = 6;
+  const MATCHING_SETTINGS_PERSIST_KEY = "oq_matching_settings_v1";
+
+  function getDefaultMatchingSettings() {
+    return {
+      interactionMode: "click", // click | drag
+      showConnectionLines: true,
+      cardCount: MATCHING_DEFAULT_CARD_COUNT,
+    };
+  }
+
   let matchingState = {
     // Topic selector state
     topics: [],
@@ -273,9 +279,12 @@
     searchKeyword: "",
     loadingTopics: false,
     topicError: null,
-    // Difficulty state
-    selectedDifficulty: null, // 'easy' | 'medium' | 'hard'
-    pairLimit: 6, // default medium
+    // Game mode state
+    selectedModeKey: null, // click-6card | drag-6card
+    pairLimit: Math.max(1, Math.floor(MATCHING_DEFAULT_CARD_COUNT / 2)),
+    interactionMode: "click", // click | drag
+    showConnectionLines: true,
+    settings: getDefaultMatchingSettings(),
     // Data loader state
     matchingPairs: [], // Normalized pairs for current game
     loadingPairs: false, // Loading indicator
@@ -304,6 +313,10 @@
     wrongCount: 0,
     correctCount: 0,
     pairAttemptDetails: [],
+    dragSlots: [],
+    dragCardPlacement: {},
+    dragHoverSlotId: null,
+    draggingRightPairId: null,
     gameCompleted: false,
     isCheckingMatch: false,
     // Result modal
@@ -315,11 +328,85 @@
     currentContentDocId: "",
   };
 
+  function loadMatchingGameSettings() {
+    var defaults = getDefaultMatchingSettings();
+    try {
+      var raw = localStorage.getItem(MATCHING_SETTINGS_PERSIST_KEY);
+      if (!raw) {
+        matchingState.settings = defaults;
+        matchingState.interactionMode = defaults.interactionMode;
+        matchingState.showConnectionLines = defaults.showConnectionLines;
+        return;
+      }
+
+      var parsed = JSON.parse(raw);
+      var merged = Object.assign({}, defaults, parsed || {});
+      if (merged.interactionMode !== "click" && merged.interactionMode !== "drag") {
+        merged.interactionMode = "click";
+      }
+      merged.showConnectionLines = merged.showConnectionLines !== false;
+      merged.cardCount = MATCHING_DEFAULT_CARD_COUNT;
+
+      matchingState.settings = merged;
+      matchingState.interactionMode = merged.interactionMode;
+      matchingState.showConnectionLines = merged.showConnectionLines;
+    } catch (error) {
+      console.warn("⚠️ Failed to load matching settings:", error);
+      matchingState.settings = defaults;
+      matchingState.interactionMode = defaults.interactionMode;
+      matchingState.showConnectionLines = defaults.showConnectionLines;
+    }
+  }
+
+  function saveMatchingGameSettings() {
+    try {
+      var payload = {
+        interactionMode:
+          matchingState.settings && matchingState.settings.interactionMode === "drag"
+            ? "drag"
+            : "click",
+        showConnectionLines:
+          matchingState.settings && matchingState.settings.showConnectionLines !== false,
+        cardCount: MATCHING_DEFAULT_CARD_COUNT,
+      };
+      localStorage.setItem(MATCHING_SETTINGS_PERSIST_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("⚠️ Failed to save matching settings:", error);
+    }
+  }
+
+  function applyMatchingSettings(partialSettings) {
+    var next = Object.assign({}, matchingState.settings || getDefaultMatchingSettings(), partialSettings || {});
+    if (next.interactionMode !== "click" && next.interactionMode !== "drag") {
+      next.interactionMode = "click";
+    }
+    next.showConnectionLines = next.showConnectionLines !== false;
+    next.cardCount = MATCHING_DEFAULT_CARD_COUNT;
+
+    matchingState.settings = next;
+    matchingState.interactionMode = next.interactionMode;
+    matchingState.showConnectionLines = next.showConnectionLines;
+    saveMatchingGameSettings();
+  }
+
   // ===== PAGE INIT =====
   window.initMatchingPage = function () {
     matchingLastInitAt = Date.now();
     console.log("🎮 Initializing Matching Page...");
     console.log("📋 currentPageParams:", window.currentPageParams);
+
+    loadMatchingGameSettings();
+
+    if (!window.__matchingConnectionResizeHandlerBound) {
+      window.__matchingConnectionResizeHandlerBound = true;
+      window.addEventListener("resize", function () {
+        if (matchingState.interactionMode !== "click") return;
+        if (matchingState.showConnectionLines === false) return;
+        var wrapper = document.getElementById("matchingGameWrapper");
+        if (!wrapper || !wrapper.classList.contains("active")) return;
+        requestAnimationFrame(drawMatchingConnectionLines);
+      });
+    }
 
     startMatchingHeaderMeteors();
     setupMatchingHeaderMouseEffect();
@@ -1221,13 +1308,50 @@
       estimateEl.textContent =
         "Ước tính: " + (topic.estimatedTime || "Không giới hạn");
 
+    renderMatchingTopicSettings();
     showMatchingTopicDetail();
     loadMatchingTopicHistory(topic.topicId);
   }
 
+  function renderMatchingTopicSettings() {
+    var modeClickBtn = document.getElementById("matchingSettingModeClick");
+    var modeDragBtn = document.getElementById("matchingSettingModeDrag");
+    var lineOnBtn = document.getElementById("matchingSettingLinesOn");
+    var lineOffBtn = document.getElementById("matchingSettingLinesOff");
+
+    if (!modeClickBtn || !modeDragBtn || !lineOnBtn || !lineOffBtn) return;
+
+    var mode =
+      matchingState.settings && matchingState.settings.interactionMode === "drag"
+        ? "drag"
+        : "click";
+    var showLines =
+      !matchingState.settings ||
+      matchingState.settings.showConnectionLines !== false;
+
+    modeClickBtn.classList.toggle("active", mode === "click");
+    modeDragBtn.classList.toggle("active", mode === "drag");
+    lineOnBtn.classList.toggle("active", showLines);
+    lineOffBtn.classList.toggle("active", !showLines);
+  }
+
+  window.setMatchingInteractionMode = function (mode) {
+    applyMatchingSettings({
+      interactionMode: mode === "drag" ? "drag" : "click",
+    });
+    renderMatchingTopicSettings();
+  };
+
+  window.setMatchingConnectionLines = function (enabled) {
+    applyMatchingSettings({
+      showConnectionLines: enabled !== false,
+    });
+    renderMatchingTopicSettings();
+  };
+
   window.startMatchingFromTopicHub = function () {
     if (!matchingState.selectedTopic) return;
-    showMatchingDifficultyModal();
+    startMatchingGameFromTopic(matchingState.selectedTopic);
   };
 
   function loadMatchingTopicHistory(topicId) {
@@ -1260,6 +1384,22 @@
       .getMatchingHistoryByTopic(topicId, 50);
   }
 
+  function formatMatchingModeLabel(rawModeKey) {
+    var normalized = String(rawModeKey || "").toLowerCase();
+    if (normalized === "click-6card") return "Bấm chọn · 6 thẻ";
+    if (normalized === "drag-6card") return "Kéo thả · 6 thẻ";
+    if (normalized === "click") return "Bấm chọn";
+    if (normalized === "drag") return "Kéo thả";
+    return "Chế độ không xác định";
+  }
+
+  function getMatchingModeToken(rawModeKey) {
+    var normalized = String(rawModeKey || "").toLowerCase();
+    if (normalized.indexOf("drag") !== -1) return "drag";
+    if (normalized.indexOf("click") !== -1) return "click";
+    return "click";
+  }
+
   function renderMatchingTopicHistory(history) {
     var emptyEl = document.getElementById("matchingTopicHistoryEmpty");
     var listEl = document.getElementById("matchingTopicHistoryList");
@@ -1288,11 +1428,12 @@
       var playedAt = item.playedAt
         ? new Date(item.playedAt).toLocaleString("vi-VN")
         : "-";
+      var modeLabel = formatMatchingModeLabel(item.difficulty);
       row.innerHTML = `
         <div class="matching-topic-history-item-main">
           <div class="matching-topic-history-attempt">Lần ${history.length - index}</div>
           <div class="matching-topic-history-meta">
-            ${item.score || 0} điểm - ${item.accuracy || 0}% - ${item.difficulty || "medium"} - ${playedAt}
+            ${item.score || 0} điểm - ${item.accuracy || 0}% - ${modeLabel} - ${playedAt}
           </div>
         </div>
         <button class="matching-btn matching-btn-back" onclick="openMatchingHistoryDetail('${safeResultId}', this)">Chi tiết</button>
@@ -1304,6 +1445,7 @@
 
   function renderMatchingHistoryDetailHtml(detail) {
     var d = detail || {};
+    var modeLabel = formatMatchingModeLabel(d.difficulty);
     var pairItems = Array.isArray(d.pairDetails)
       ? d.pairDetails
           .map(function (p, idx) {
@@ -1333,8 +1475,8 @@
       "<div><strong>Độ chính xác:</strong> " +
       (d.accuracy || 0) +
       "%</div>" +
-      "<div><strong>Độ khó:</strong> " +
-      (d.difficulty || "medium") +
+      "<div><strong>Chế độ:</strong> " +
+      modeLabel +
       "</div>" +
       "<div><strong>Tổng cặp:</strong> " +
       (d.totalPairs || 0) +
@@ -1460,36 +1602,6 @@
     if (modal) modal.classList.remove("active");
   };
 
-  // ===== DIFFICULTY MODAL =====
-  function showMatchingDifficultyModal() {
-    const overlay = document.getElementById("matchingDifficultyOverlay");
-    const topicName = document.getElementById("matchingDifficultyTopicName");
-
-    if (topicName) {
-      topicName.textContent = matchingState.currentTopicName;
-    }
-
-    if (overlay) overlay.classList.add("active");
-  }
-
-  window.closeMatchingDifficultyModal = function () {
-    const overlay = document.getElementById("matchingDifficultyOverlay");
-    if (overlay) overlay.classList.remove("active");
-  };
-
-  window.selectMatchingDifficulty = function (difficulty) {
-    console.log("📊 Selected difficulty:", difficulty);
-
-    matchingState.selectedDifficulty = difficulty;
-    matchingState.pairLimit = MATCHING_DIFFICULTY_MAP[difficulty] || 6;
-
-    // Close modal
-    closeMatchingDifficultyModal();
-
-    // Start game
-    startMatchingGameFromTopic(matchingState.selectedTopic);
-  };
-
   // ===== NO CONTENT MODAL =====
   function showMatchingNoContentModal(topicTitle) {
     // Tạo modal nếu chưa có
@@ -1582,6 +1694,10 @@
     matchingState.selectedRightId = null;
     matchingState.matchedPairIds = [];
     matchingState.wrongAttemptPair = null;
+    matchingState.dragSlots = [];
+    matchingState.dragCardPlacement = {};
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
     matchingState.totalPairs = 0;
     matchingState.moves = 0;
     matchingState.score = 0;
@@ -1600,6 +1716,28 @@
     matchingState.loadingPairs = true;
     matchingState.pairsError = null;
 
+    var activeMode =
+      matchingState.settings && matchingState.settings.interactionMode === "drag"
+        ? "drag"
+        : "click";
+    var showLines =
+      !matchingState.settings ||
+      matchingState.settings.showConnectionLines !== false;
+    matchingState.interactionMode = activeMode;
+    matchingState.showConnectionLines = showLines;
+    matchingState.selectedModeKey =
+      activeMode === "drag" ? "drag-6card" : "click-6card";
+    matchingState.pairLimit = Math.max(1, Math.floor(MATCHING_DEFAULT_CARD_COUNT / 2));
+
+    var gameSubtitleEl = document.querySelector(
+      "#matchingGameWrapper .matching-game-subtitle",
+    );
+    if (gameSubtitleEl) {
+      gameSubtitleEl.textContent =
+        "Ghép nhanh 6 thẻ - " +
+        (matchingState.interactionMode === "drag" ? "Kéo thả" : "Bấm chọn");
+    }
+
     updateMatchingUI();
 
     // Load pairs from server with pairLimit
@@ -1607,12 +1745,14 @@
     board.innerHTML =
       '<div class="matching-loading"><div class="matching-loading-spinner"></div><p>Đang tạo câu hỏi matching...</p></div>';
 
-    const pairLimit = matchingState.pairLimit || 6;
+    const pairLimit = matchingState.pairLimit || 3;
     console.log(
       "🎮 Starting matching game:",
       topic.title,
-      "| Difficulty:",
-      matchingState.selectedDifficulty,
+      "| Mode:",
+      matchingState.interactionMode,
+      "| Cards:",
+      MATCHING_DEFAULT_CARD_COUNT,
       "| Pairs:",
       pairLimit,
     );
@@ -1755,7 +1895,7 @@
     }, 220);
   }
 
-  // ===== BOARD INIT (2-column matching) =====
+  // ===== BOARD INIT =====
   function initMatchingBoard(pairs) {
     if (!pairs || pairs.length === 0) {
       document.getElementById("matchingBoard").innerHTML =
@@ -1780,6 +1920,16 @@
     matchingState.selectedRightId = null;
     matchingState.matchedPairIds = [];
     matchingState.wrongAttemptPair = null;
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
+    matchingState.dragCardPlacement = {};
+    matchingState.dragSlots = matchingState.leftItems.map(function (item) {
+      return {
+        slotPairId: item.pairId,
+        rightPairId: null,
+        status: null,
+      };
+    });
 
     renderMatchingBoard();
     updateMatchingUI();
@@ -1789,6 +1939,17 @@
   function renderMatchingBoard() {
     var board = document.getElementById("matchingBoard");
     if (!board) return;
+
+    if (matchingState.interactionMode === "drag") {
+      renderMatchingBoardDrag(board);
+      return;
+    }
+
+    renderMatchingBoardClick(board);
+  }
+
+  function renderMatchingBoardClick(board) {
+    board.classList.remove("matching-board-drag");
 
     var leftHtml = matchingState.leftItems
       .map(function (item) {
@@ -1807,6 +1968,8 @@
         return (
           '<button class="' +
           cls +
+          '" id="matching-left-item-' +
+          item.pairId +
           '" data-pair-id="' +
           item.pairId +
           '"' +
@@ -1839,6 +2002,8 @@
         return (
           '<button class="' +
           cls +
+          '" id="matching-right-item-' +
+          item.pairId +
           '" data-pair-id="' +
           item.pairId +
           '"' +
@@ -1862,11 +2027,315 @@
       '<div class="matching-column matching-column-right">' +
       '<div class="matching-column-header">Định nghĩa</div>' +
       rightHtml +
+      "</div>" +
+      '<svg class="matching-connection-layer" aria-hidden="true"></svg>';
+
+    if (matchingState.showConnectionLines !== false) {
+      requestAnimationFrame(drawMatchingConnectionLines);
+    }
+  }
+
+  function renderMatchingBoardDrag(board) {
+    board.classList.add("matching-board-drag");
+
+    var slots = Array.isArray(matchingState.dragSlots) ? matchingState.dragSlots : [];
+
+    var slotsHtml = slots
+      .map(function (slot) {
+        var leftPairId = slot.slotPairId;
+        var leftItem = null;
+        for (var i = 0; i < matchingState.leftItems.length; i++) {
+          if (matchingState.leftItems[i].pairId === leftPairId) {
+            leftItem = matchingState.leftItems[i];
+            break;
+          }
+        }
+
+        var rightItem = null;
+        if (slot.rightPairId !== null && slot.rightPairId !== undefined) {
+          for (var j = 0; j < matchingState.rightItems.length; j++) {
+            if (matchingState.rightItems[j].pairId === slot.rightPairId) {
+              rightItem = matchingState.rightItems[j];
+              break;
+            }
+          }
+        }
+
+        var slotCls = "matching-drop-slot";
+        if (slot.status === "correct") slotCls += " correct";
+        else if (slot.status === "wrong") slotCls += " wrong";
+        else if (matchingState.dragHoverSlotId === leftPairId) slotCls += " drag-over";
+
+        var slotContent =
+          rightItem && rightItem.content
+            ? '<div class="matching-drop-slot-card">' +
+              rightItem.content +
+              "</div>"
+            : '<div class="matching-drop-slot-placeholder">Kéo thẻ vào ô này</div>';
+
+        return (
+          '<div class="' +
+          slotCls +
+          '" data-slot-pair-id="' +
+          leftPairId +
+          '" ondragover="matchingHandleDragOver(event,' +
+          leftPairId +
+          ')" ondragleave="matchingHandleDragLeave(event,' +
+          leftPairId +
+          ')" ondrop="matchingHandleDrop(event,' +
+          leftPairId +
+          ')">' +
+          '<div class="matching-drop-slot-label">' +
+          ((leftItem && leftItem.content) || "Thuật ngữ") +
+          "</div>" +
+          slotContent +
+          "</div>"
+        );
+      })
+      .join("");
+
+    var rightCardsHtml = matchingState.rightItems
+      .map(function (item) {
+        var isMatched = matchingState.matchedPairIds.indexOf(item.pairId) !== -1;
+        var placedAtSlot = matchingState.dragCardPlacement[item.pairId];
+        var isPlaced = placedAtSlot !== undefined && placedAtSlot !== null;
+
+        var cls = "matching-item matching-item-right";
+        if (isMatched) cls += " matched";
+        else if (isPlaced) cls += " placed";
+
+        var dragAttrs =
+          !isMatched
+            ? ' draggable="true" ondragstart="matchingHandleDragCardStart(event,' +
+              item.pairId +
+              ')" ondragend="matchingHandleDragCardEnd(event,' +
+              item.pairId +
+              ')"'
+            : "";
+
+        return (
+          '<button class="' +
+          cls +
+          '" data-pair-id="' +
+          item.pairId +
+          '"' +
+          dragAttrs +
+          (isMatched ? " disabled" : "") +
+          ">" +
+          '<span class="matching-item-text">' +
+          item.content +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+
+    board.innerHTML =
+      '<div class="matching-dropzone-column">' +
+      '<div class="matching-dropzone-header">Ô ghép thuật ngữ</div>' +
+      slotsHtml +
+      "</div>" +
+      '<div class="matching-column matching-column-right">' +
+      '<div class="matching-column-header">Thẻ định nghĩa (kéo vào ô tương ứng)</div>' +
+      rightCardsHtml +
       "</div>";
   }
 
+  function drawMatchingConnectionLines() {
+    if (matchingState.interactionMode !== "click") return;
+    if (matchingState.showConnectionLines === false) return;
+
+    var board = document.getElementById("matchingBoard");
+    if (!board) return;
+    var layer = board.querySelector(".matching-connection-layer");
+    if (!layer) return;
+
+    var boardRect = board.getBoundingClientRect();
+    if (!boardRect || boardRect.width <= 0 || boardRect.height <= 0) return;
+
+    var paths = [];
+
+    var matchedIds = Array.isArray(matchingState.matchedPairIds)
+      ? matchingState.matchedPairIds
+      : [];
+    matchedIds.forEach(function (pairId) {
+      var lineMarkup = buildConnectionPathMarkup(pairId, pairId, "matched", boardRect);
+      if (lineMarkup) paths.push(lineMarkup);
+    });
+
+    if (
+      matchingState.selectedLeftId !== null &&
+      matchingState.selectedRightId !== null &&
+      !matchingState.gameCompleted
+    ) {
+      var previewMarkup = buildConnectionPathMarkup(
+        matchingState.selectedLeftId,
+        matchingState.selectedRightId,
+        "preview",
+        boardRect,
+      );
+      if (previewMarkup) paths.push(previewMarkup);
+    }
+
+    layer.innerHTML = paths.join("");
+  }
+
+  function buildConnectionPathMarkup(leftPairId, rightPairId, type, boardRect) {
+    var leftEl = document.getElementById("matching-left-item-" + leftPairId);
+    var rightEl = document.getElementById("matching-right-item-" + rightPairId);
+    if (!leftEl || !rightEl) return "";
+
+    var leftRect = leftEl.getBoundingClientRect();
+    var rightRect = rightEl.getBoundingClientRect();
+
+    var startX = leftRect.right - boardRect.left;
+    var startY = leftRect.top + leftRect.height / 2 - boardRect.top;
+    var endX = rightRect.left - boardRect.left;
+    var endY = rightRect.top + rightRect.height / 2 - boardRect.top;
+
+    var curveOffset = Math.max(32, Math.min(120, (endX - startX) * 0.35));
+    var d =
+      "M " +
+      startX.toFixed(2) +
+      " " +
+      startY.toFixed(2) +
+      " C " +
+      (startX + curveOffset).toFixed(2) +
+      " " +
+      startY.toFixed(2) +
+      ", " +
+      (endX - curveOffset).toFixed(2) +
+      " " +
+      endY.toFixed(2) +
+      ", " +
+      endX.toFixed(2) +
+      " " +
+      endY.toFixed(2);
+
+    var cls = "matching-connection-line";
+    if (type === "matched") cls += " matched";
+    else if (type === "preview") cls += " preview";
+
+    return '<path class="' + cls + '" d="' + d + '"></path>';
+  }
+
+  function getDragSlotByPairId(slotPairId) {
+    var slots = Array.isArray(matchingState.dragSlots) ? matchingState.dragSlots : [];
+    for (var i = 0; i < slots.length; i++) {
+      if (slots[i].slotPairId === slotPairId) return slots[i];
+    }
+    return null;
+  }
+
+  window.matchingHandleDragCardStart = function (event, rightPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) return;
+
+    matchingState.draggingRightPairId = rightPairId;
+    if (event && event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(rightPairId));
+    }
+  };
+
+  window.matchingHandleDragCardEnd = function () {
+    if (matchingState.interactionMode !== "drag") return;
+
+    if (matchingState.dragHoverSlotId !== null) {
+      matchingState.dragHoverSlotId = null;
+      renderMatchingBoard();
+    }
+    matchingState.draggingRightPairId = null;
+  };
+
+  window.matchingHandleDragOver = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (event) event.preventDefault();
+
+    if (matchingState.dragHoverSlotId !== slotPairId) {
+      matchingState.dragHoverSlotId = slotPairId;
+      renderMatchingBoard();
+    }
+  };
+
+  window.matchingHandleDragLeave = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+
+    if (matchingState.dragHoverSlotId === slotPairId) {
+      matchingState.dragHoverSlotId = null;
+      renderMatchingBoard();
+    }
+  };
+
+  window.matchingHandleDrop = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+
+    if (event) event.preventDefault();
+
+    var rawPairId = null;
+    if (event && event.dataTransfer) {
+      rawPairId = event.dataTransfer.getData("text/plain");
+    }
+    if (!rawPairId && matchingState.draggingRightPairId !== null) {
+      rawPairId = String(matchingState.draggingRightPairId);
+    }
+
+    var rightPairId = Number(rawPairId);
+    if (!isFinite(rightPairId)) {
+      matchingState.dragHoverSlotId = null;
+      matchingState.draggingRightPairId = null;
+      renderMatchingBoard();
+      return;
+    }
+
+    if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) {
+      matchingState.dragHoverSlotId = null;
+      matchingState.draggingRightPairId = null;
+      renderMatchingBoard();
+      return;
+    }
+
+    var slot = getDragSlotByPairId(slotPairId);
+    if (!slot || slot.status === "correct") {
+      matchingState.dragHoverSlotId = null;
+      matchingState.draggingRightPairId = null;
+      renderMatchingBoard();
+      return;
+    }
+
+    var previousSlotId = matchingState.dragCardPlacement[rightPairId];
+    if (previousSlotId !== undefined && previousSlotId !== null) {
+      var previousSlot = getDragSlotByPairId(previousSlotId);
+      if (previousSlot && previousSlot.slotPairId !== slotPairId) {
+        previousSlot.rightPairId = null;
+        previousSlot.status = null;
+      }
+    }
+
+    if (
+      slot.rightPairId !== null &&
+      slot.rightPairId !== undefined &&
+      slot.rightPairId !== rightPairId
+    ) {
+      delete matchingState.dragCardPlacement[slot.rightPairId];
+    }
+
+    slot.rightPairId = rightPairId;
+    slot.status = null;
+    matchingState.dragCardPlacement[rightPairId] = slotPairId;
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
+
+    checkDragMatch(slotPairId, rightPairId);
+  };
+
   // ===== ITEM SELECTION =====
   window.selectMatchingItem = function (side, pairId) {
+    if (matchingState.interactionMode !== "click") return;
+
     // Block all input while checking or game over
     if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
 
@@ -1952,7 +2421,55 @@
     }
   }
 
+  function checkDragMatch(slotPairId, rightPairId) {
+    matchingState.isCheckingMatch = true;
+    matchingState.attemptCount++;
+    matchingState.moves++;
+
+    var pairData = Array.isArray(matchingState.matchingPairs)
+      ? matchingState.matchingPairs
+      : [];
+    var leftPair = pairData[slotPairId] || null;
+    var rightPair = pairData[rightPairId] || null;
+    var isCorrectPair = slotPairId === rightPairId;
+
+    matchingState.pairAttemptDetails.push({
+      order: matchingState.attemptCount,
+      leftText: leftPair && leftPair.question ? leftPair.question : "",
+      userMatchedRight: rightPair && rightPair.answer ? rightPair.answer : "",
+      correctRight: leftPair && leftPair.answer ? leftPair.answer : "",
+      isCorrect: isCorrectPair,
+    });
+
+    var slot = getDragSlotByPairId(slotPairId);
+    if (!slot) {
+      matchingState.isCheckingMatch = false;
+      return;
+    }
+
+    if (isCorrectPair) {
+      slot.status = "correct";
+      markMatched(slotPairId);
+      return;
+    }
+
+    matchingState.wrongCount++;
+    matchingState.wrongAttemptPair = { leftId: slotPairId, rightId: rightPairId };
+    slot.status = "wrong";
+
+    renderMatchingBoard();
+    updateMatchingUI();
+
+    setTimeout(function () {
+      resetWrongDragSelection(slotPairId, rightPairId);
+    }, 800);
+  }
+
   function markMatched(pairId) {
+    if (matchingState.matchedPairIds.indexOf(pairId) !== -1) {
+      matchingState.isCheckingMatch = false;
+      return;
+    }
     matchingState.matchedPairIds.push(pairId);
     matchingState.correctCount++;
     matchingState.score += 10;
@@ -1978,6 +2495,30 @@
     matchingState.selectedLeftId = null;
     matchingState.selectedRightId = null;
     matchingState.isCheckingMatch = false;
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
+
+    renderMatchingBoard();
+    updateMatchingUI();
+  }
+
+  function resetWrongDragSelection(slotPairId, rightPairId) {
+    var slot = getDragSlotByPairId(slotPairId);
+    if (slot) {
+      slot.status = null;
+      if (slot.rightPairId === rightPairId) {
+        slot.rightPairId = null;
+      }
+    }
+
+    if (matchingState.dragCardPlacement[rightPairId] === slotPairId) {
+      delete matchingState.dragCardPlacement[rightPairId];
+    }
+
+    matchingState.wrongAttemptPair = null;
+    matchingState.isCheckingMatch = false;
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
 
     renderMatchingBoard();
     updateMatchingUI();
@@ -2004,7 +2545,7 @@
     var resultPayload = {
       topicId: topicId,
       topicTitle: topicTitle,
-      difficulty: matchingState.selectedDifficulty || "medium",
+      difficulty: matchingState.selectedModeKey || "click-6card",
       totalPairs: matchingState.totalPairs,
       correctPairs: matchingState.correctCount,
       wrongAttempts: matchingState.wrongCount,
@@ -2315,7 +2856,7 @@
 
     matchingState.resultData = {
       topicName: matchingState.currentTopicName || "Unknown",
-      difficulty: matchingState.selectedDifficulty || "medium",
+      difficulty: matchingState.selectedModeKey || "click-6card",
       score: matchingState.score,
       time: matchingState.elapsedTime,
       totalPairs: matchingState.totalPairs,
@@ -2360,10 +2901,13 @@
       matchingState.resultData.topicName;
 
     var diffEl = document.getElementById("matchingResultDifficulty");
-    var diffLabels = { easy: "Easy", medium: "Medium", hard: "Hard" };
-    diffEl.textContent =
-      diffLabels[matchingState.resultData.difficulty] || "Medium";
-    diffEl.setAttribute("data-diff", matchingState.resultData.difficulty);
+    diffEl.textContent = formatMatchingModeLabel(
+      matchingState.resultData.difficulty,
+    );
+    diffEl.setAttribute(
+      "data-diff",
+      getMatchingModeToken(matchingState.resultData.difficulty),
+    );
 
     // Stats
     document.getElementById("matchingResultScore").textContent =
@@ -2410,9 +2954,6 @@
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
-    document
-      .getElementById("matchingDifficultyOverlay")
-      .classList.remove("active");
     document.getElementById("matchingGameWrapper").classList.remove("active");
     var resultView = document.getElementById("matchingResultView");
     if (resultView) resultView.style.display = "none";
@@ -2433,9 +2974,6 @@
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
-    document
-      .getElementById("matchingDifficultyOverlay")
-      .classList.remove("active");
     document.getElementById("matchingGameWrapper").classList.remove("active");
     var resultView = document.getElementById("matchingResultView");
     if (resultView) resultView.style.display = "none";
@@ -2453,7 +2991,7 @@
     if (searchInput) searchInput.value = "";
     matchingState.searchKeyword = "";
     matchingState.selectedTopic = null;
-    matchingState.selectedDifficulty = null;
+    matchingState.selectedModeKey = null;
 
     // Re-render full list
     if (matchingAllTopicsForSearch) {
@@ -2469,7 +3007,7 @@
     matchingState.showResultModal = false;
     matchingState.resultData = null;
 
-    // Restart with same topic & difficulty
+    // Restart with same topic and mode
     if (matchingState.selectedTopic) {
       startMatchingGameFromTopic(matchingState.selectedTopic);
     }
