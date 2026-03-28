@@ -317,6 +317,8 @@
     dragCardPlacement: {},
     dragHoverSlotId: null,
     draggingRightPairId: null,
+    selectedDragCardId: null,
+    wrongResetTimeoutId: null,
     gameCompleted: false,
     isCheckingMatch: false,
     // Result modal
@@ -400,10 +402,13 @@
     if (!window.__matchingConnectionResizeHandlerBound) {
       window.__matchingConnectionResizeHandlerBound = true;
       window.addEventListener("resize", function () {
-        if (matchingState.interactionMode !== "click") return;
-        if (matchingState.showConnectionLines === false) return;
         var wrapper = document.getElementById("matchingGameWrapper");
         if (!wrapper || !wrapper.classList.contains("active")) return;
+
+        renderMatchingInteractionHint();
+
+        if (matchingState.interactionMode !== "click") return;
+        if (matchingState.showConnectionLines === false) return;
         requestAnimationFrame(drawMatchingConnectionLines);
       });
     }
@@ -1313,6 +1318,29 @@
     loadMatchingTopicHistory(topic.topicId);
   }
 
+  window.openMatchingSettingsModal = function () {
+    var modal = document.getElementById("matchingSettingsModal");
+    if (!modal) return;
+
+    if (!modal.__matchingCloseOnBackdropBound) {
+      modal.__matchingCloseOnBackdropBound = true;
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+          closeMatchingSettingsModal();
+        }
+      });
+    }
+
+    renderMatchingTopicSettings();
+    modal.classList.add("active");
+  };
+
+  window.closeMatchingSettingsModal = function () {
+    var modal = document.getElementById("matchingSettingsModal");
+    if (!modal) return;
+    modal.classList.remove("active");
+  };
+
   function renderMatchingTopicSettings() {
     var modeClickBtn = document.getElementById("matchingSettingModeClick");
     var modeDragBtn = document.getElementById("matchingSettingModeDrag");
@@ -1351,6 +1379,7 @@
 
   window.startMatchingFromTopicHub = function () {
     if (!matchingState.selectedTopic) return;
+    closeMatchingSettingsModal();
     startMatchingGameFromTopic(matchingState.selectedTopic);
   };
 
@@ -1698,6 +1727,8 @@
     matchingState.dragCardPlacement = {};
     matchingState.dragHoverSlotId = null;
     matchingState.draggingRightPairId = null;
+    matchingState.selectedDragCardId = null;
+    clearMatchingDragWrongResetTimeout();
     matchingState.totalPairs = 0;
     matchingState.moves = 0;
     matchingState.score = 0;
@@ -1737,6 +1768,8 @@
         "Ghép nhanh 6 thẻ - " +
         (matchingState.interactionMode === "drag" ? "Kéo thả" : "Bấm chọn");
     }
+
+    renderMatchingInteractionHint();
 
     updateMatchingUI();
 
@@ -1923,6 +1956,7 @@
     matchingState.dragHoverSlotId = null;
     matchingState.draggingRightPairId = null;
     matchingState.dragCardPlacement = {};
+    matchingState.selectedDragCardId = null;
     matchingState.dragSlots = matchingState.leftItems.map(function (item) {
       return {
         slotPairId: item.pairId,
@@ -1939,6 +1973,8 @@
   function renderMatchingBoard() {
     var board = document.getElementById("matchingBoard");
     if (!board) return;
+
+    renderMatchingInteractionHint();
 
     if (matchingState.interactionMode === "drag") {
       renderMatchingBoardDrag(board);
@@ -2064,12 +2100,18 @@
         var slotCls = "matching-drop-slot";
         if (slot.status === "correct") slotCls += " correct";
         else if (slot.status === "wrong") slotCls += " wrong";
-        else if (matchingState.dragHoverSlotId === leftPairId) slotCls += " drag-over";
 
         var slotContent =
           rightItem && rightItem.content
-            ? '<div class="matching-drop-slot-card">' +
+            ? '<div class="matching-drop-slot-card-wrap">' +
+              '<div class="matching-drop-slot-card">' +
               rightItem.content +
+              "</div>" +
+              (slot.status !== "correct"
+                ? '<button type="button" class="matching-drop-slot-clear" title="Xóa thẻ trong ô" onclick="matchingClearDragSlot(event,' +
+                  leftPairId +
+                  ')">×</button>'
+                : "") +
               "</div>"
             : '<div class="matching-drop-slot-placeholder">Kéo thẻ vào ô này</div>';
 
@@ -2083,6 +2125,8 @@
           ')" ondragleave="matchingHandleDragLeave(event,' +
           leftPairId +
           ')" ondrop="matchingHandleDrop(event,' +
+          leftPairId +
+          ')" onclick="matchingHandleSlotClick(' +
           leftPairId +
           ')">' +
           '<div class="matching-drop-slot-label">' +
@@ -2102,6 +2146,7 @@
 
         var cls = "matching-item matching-item-right";
         if (isMatched) cls += " matched";
+        else if (matchingState.selectedDragCardId === item.pairId) cls += " drag-selected";
         else if (isPlaced) cls += " placed";
 
         var dragAttrs =
@@ -2121,6 +2166,9 @@
           '"' +
           dragAttrs +
           (isMatched ? " disabled" : "") +
+          ' onclick="matchingSelectDragCard(' +
+          item.pairId +
+          ')"' +
           ">" +
           '<span class="matching-item-text">' +
           item.content +
@@ -2227,84 +2275,114 @@
     return null;
   }
 
-  window.matchingHandleDragCardStart = function (event, rightPairId) {
-    if (matchingState.interactionMode !== "drag") return;
-    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+  function clearMatchingDragWrongResetTimeout() {
+    if (matchingState.wrongResetTimeoutId) {
+      clearTimeout(matchingState.wrongResetTimeoutId);
+      matchingState.wrongResetTimeoutId = null;
+    }
+  }
+
+  function scheduleMatchingDragWrongReset(slotPairId, rightPairId) {
+    clearMatchingDragWrongResetTimeout();
+    matchingState.wrongResetTimeoutId = setTimeout(function () {
+      matchingState.wrongResetTimeoutId = null;
+      resetWrongDragSelection(slotPairId, rightPairId);
+    }, 800);
+  }
+
+  function isLikelyTouchDevice() {
+    return (
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches) ||
+      window.innerWidth <= 900
+    );
+  }
+
+  function renderMatchingInteractionHint() {
+    var hintEl = document.getElementById("matchingInteractionHint");
+    if (!hintEl) return;
+
+    var gameWrapper = document.getElementById("matchingGameWrapper");
+    var isGameActive = !!gameWrapper && gameWrapper.classList.contains("active");
+    if (!isGameActive) {
+      hintEl.style.display = "none";
+      hintEl.textContent = "";
+      return;
+    }
+
+    if (matchingState.interactionMode !== "drag") {
+      hintEl.style.display = "none";
+      hintEl.textContent = "";
+      return;
+    }
+
+    if (isLikelyTouchDevice()) {
+      hintEl.textContent =
+        "Mẹo mobile: chạm chọn 1 thẻ định nghĩa bên phải, rồi chạm vào ô thuật ngữ tương ứng để ghép.";
+    } else {
+      hintEl.textContent =
+        "Mẹo desktop: kéo thẻ định nghĩa vào ô tương ứng, hoặc bấm chọn thẻ rồi bấm ô để ghép nhanh hơn.";
+    }
+    hintEl.style.display = "block";
+  }
+
+  function showMatchingWrongDropFeedback() {
+    var board = document.getElementById("matchingBoard");
+    if (board) {
+      board.classList.remove("drag-wrong-feedback");
+      void board.offsetWidth;
+      board.classList.add("drag-wrong-feedback");
+      setTimeout(function () {
+        board.classList.remove("drag-wrong-feedback");
+      }, 320);
+    }
+
+    if (typeof showToast === "function") {
+      showToast("Ghép chưa đúng, thử lại nhé!", "warning");
+      return;
+    }
+
+    var fallbackToast = document.createElement("div");
+    fallbackToast.className = "matching-fallback-toast";
+    fallbackToast.textContent = "Ghép chưa đúng, thử lại nhé!";
+    fallbackToast.style.cssText =
+      "position:fixed;bottom:1rem;right:1rem;z-index:9999;" +
+      "padding:0.7rem 0.95rem;border-radius:10px;" +
+      "background:rgba(17,24,39,0.92);color:#fff;font-size:0.85rem;" +
+      "box-shadow:0 10px 26px rgba(0,0,0,0.28);opacity:0;transform:translateY(6px);" +
+      "transition:all .2s ease";
+
+    document.body.appendChild(fallbackToast);
+    requestAnimationFrame(function () {
+      fallbackToast.style.opacity = "1";
+      fallbackToast.style.transform = "translateY(0)";
+    });
+
+    setTimeout(function () {
+      fallbackToast.style.opacity = "0";
+      fallbackToast.style.transform = "translateY(6px)";
+      setTimeout(function () {
+        if (fallbackToast && fallbackToast.parentNode) {
+          fallbackToast.parentNode.removeChild(fallbackToast);
+        }
+      }, 220);
+    }, 1400);
+  }
+
+  function clearMatchingDragOverState() {
+    var slots = document.querySelectorAll("#matchingBoard .matching-drop-slot.drag-over");
+    slots.forEach(function (slotEl) {
+      slotEl.classList.remove("drag-over");
+    });
+  }
+
+  function placeDragCardIntoSlot(slotPairId, rightPairId) {
+    if (!isFinite(rightPairId)) return;
+
     if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) return;
 
-    matchingState.draggingRightPairId = rightPairId;
-    if (event && event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", String(rightPairId));
-    }
-  };
-
-  window.matchingHandleDragCardEnd = function () {
-    if (matchingState.interactionMode !== "drag") return;
-
-    if (matchingState.dragHoverSlotId !== null) {
-      matchingState.dragHoverSlotId = null;
-      renderMatchingBoard();
-    }
-    matchingState.draggingRightPairId = null;
-  };
-
-  window.matchingHandleDragOver = function (event, slotPairId) {
-    if (matchingState.interactionMode !== "drag") return;
-    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
-    if (event) event.preventDefault();
-
-    if (matchingState.dragHoverSlotId !== slotPairId) {
-      matchingState.dragHoverSlotId = slotPairId;
-      renderMatchingBoard();
-    }
-  };
-
-  window.matchingHandleDragLeave = function (event, slotPairId) {
-    if (matchingState.interactionMode !== "drag") return;
-
-    if (matchingState.dragHoverSlotId === slotPairId) {
-      matchingState.dragHoverSlotId = null;
-      renderMatchingBoard();
-    }
-  };
-
-  window.matchingHandleDrop = function (event, slotPairId) {
-    if (matchingState.interactionMode !== "drag") return;
-    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
-
-    if (event) event.preventDefault();
-
-    var rawPairId = null;
-    if (event && event.dataTransfer) {
-      rawPairId = event.dataTransfer.getData("text/plain");
-    }
-    if (!rawPairId && matchingState.draggingRightPairId !== null) {
-      rawPairId = String(matchingState.draggingRightPairId);
-    }
-
-    var rightPairId = Number(rawPairId);
-    if (!isFinite(rightPairId)) {
-      matchingState.dragHoverSlotId = null;
-      matchingState.draggingRightPairId = null;
-      renderMatchingBoard();
-      return;
-    }
-
-    if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) {
-      matchingState.dragHoverSlotId = null;
-      matchingState.draggingRightPairId = null;
-      renderMatchingBoard();
-      return;
-    }
-
     var slot = getDragSlotByPairId(slotPairId);
-    if (!slot || slot.status === "correct") {
-      matchingState.dragHoverSlotId = null;
-      matchingState.draggingRightPairId = null;
-      renderMatchingBoard();
-      return;
-    }
+    if (!slot || slot.status === "correct") return;
 
     var previousSlotId = matchingState.dragCardPlacement[rightPairId];
     if (previousSlotId !== undefined && previousSlotId !== null) {
@@ -2328,8 +2406,133 @@
     matchingState.dragCardPlacement[rightPairId] = slotPairId;
     matchingState.dragHoverSlotId = null;
     matchingState.draggingRightPairId = null;
+    matchingState.selectedDragCardId = rightPairId;
 
     checkDragMatch(slotPairId, rightPairId);
+  }
+
+  window.matchingClearDragSlot = function (event, slotPairId) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (matchingState.interactionMode !== "drag") return;
+
+    var slot = getDragSlotByPairId(slotPairId);
+    if (!slot || slot.status === "correct") return;
+
+    var rightPairId = slot.rightPairId;
+    if (rightPairId === null || rightPairId === undefined) return;
+
+    clearMatchingDragWrongResetTimeout();
+
+    slot.rightPairId = null;
+    slot.status = null;
+    if (matchingState.dragCardPlacement[rightPairId] === slotPairId) {
+      delete matchingState.dragCardPlacement[rightPairId];
+    }
+
+    matchingState.wrongAttemptPair = null;
+    matchingState.isCheckingMatch = false;
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
+    matchingState.selectedDragCardId = rightPairId;
+
+    renderMatchingBoard();
+    updateMatchingUI();
+  };
+
+  window.matchingSelectDragCard = function (rightPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) return;
+
+    matchingState.selectedDragCardId =
+      matchingState.selectedDragCardId === rightPairId ? null : rightPairId;
+    renderMatchingBoard();
+  };
+
+  window.matchingHandleSlotClick = function (slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (matchingState.selectedDragCardId === null) return;
+
+    clearMatchingDragOverState();
+    placeDragCardIntoSlot(slotPairId, matchingState.selectedDragCardId);
+  };
+
+  window.matchingHandleDragCardStart = function (event, rightPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (matchingState.matchedPairIds.indexOf(rightPairId) !== -1) return;
+
+    matchingState.draggingRightPairId = rightPairId;
+    matchingState.selectedDragCardId = rightPairId;
+    if (event && event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(rightPairId));
+    }
+  };
+
+  window.matchingHandleDragCardEnd = function () {
+    if (matchingState.interactionMode !== "drag") return;
+
+    clearMatchingDragOverState();
+    matchingState.dragHoverSlotId = null;
+    matchingState.draggingRightPairId = null;
+  };
+
+  window.matchingHandleDragOver = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+    if (event) event.preventDefault();
+
+    if (matchingState.dragHoverSlotId !== slotPairId) {
+      clearMatchingDragOverState();
+      if (event && event.currentTarget) {
+        event.currentTarget.classList.add("drag-over");
+      }
+      matchingState.dragHoverSlotId = slotPairId;
+    }
+  };
+
+  window.matchingHandleDragLeave = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+
+    if (matchingState.dragHoverSlotId === slotPairId) {
+      if (event && event.currentTarget) {
+        event.currentTarget.classList.remove("drag-over");
+      }
+      matchingState.dragHoverSlotId = null;
+    }
+  };
+
+  window.matchingHandleDrop = function (event, slotPairId) {
+    if (matchingState.interactionMode !== "drag") return;
+    if (matchingState.isCheckingMatch || matchingState.gameCompleted) return;
+
+    if (event) event.preventDefault();
+
+    var rawPairId = null;
+    if (event && event.dataTransfer) {
+      rawPairId = event.dataTransfer.getData("text/plain");
+    }
+    if (!rawPairId && matchingState.draggingRightPairId !== null) {
+      rawPairId = String(matchingState.draggingRightPairId);
+    }
+
+    var rightPairId = Number(rawPairId);
+    if (!isFinite(rightPairId)) {
+      clearMatchingDragOverState();
+      matchingState.dragHoverSlotId = null;
+      matchingState.draggingRightPairId = null;
+      return;
+    }
+
+    clearMatchingDragOverState();
+    matchingState.dragHoverSlotId = null;
+    placeDragCardIntoSlot(slotPairId, rightPairId);
   };
 
   // ===== ITEM SELECTION =====
@@ -2459,10 +2662,9 @@
 
     renderMatchingBoard();
     updateMatchingUI();
+    showMatchingWrongDropFeedback();
 
-    setTimeout(function () {
-      resetWrongDragSelection(slotPairId, rightPairId);
-    }, 800);
+    scheduleMatchingDragWrongReset(slotPairId, rightPairId);
   }
 
   function markMatched(pairId) {
@@ -2477,6 +2679,8 @@
     // Reset selection
     matchingState.selectedLeftId = null;
     matchingState.selectedRightId = null;
+    matchingState.selectedDragCardId = null;
+    clearMatchingDragWrongResetTimeout();
     matchingState.isCheckingMatch = false;
 
     renderMatchingBoard();
@@ -2491,18 +2695,22 @@
   }
 
   function resetWrongSelection() {
+    clearMatchingDragWrongResetTimeout();
     matchingState.wrongAttemptPair = null;
     matchingState.selectedLeftId = null;
     matchingState.selectedRightId = null;
     matchingState.isCheckingMatch = false;
     matchingState.dragHoverSlotId = null;
     matchingState.draggingRightPairId = null;
+    matchingState.selectedDragCardId = null;
 
     renderMatchingBoard();
     updateMatchingUI();
   }
 
   function resetWrongDragSelection(slotPairId, rightPairId) {
+    clearMatchingDragWrongResetTimeout();
+
     var slot = getDragSlotByPairId(slotPairId);
     if (slot) {
       slot.status = null;
@@ -2519,12 +2727,14 @@
     matchingState.isCheckingMatch = false;
     matchingState.dragHoverSlotId = null;
     matchingState.draggingRightPairId = null;
+    matchingState.selectedDragCardId = null;
 
     renderMatchingBoard();
     updateMatchingUI();
   }
 
   function finishGame() {
+    clearMatchingDragWrongResetTimeout();
     matchingState.gameCompleted = true;
     stopMatchingTimer();
     showMatchingComplete();
@@ -2951,6 +3161,7 @@
 
   // ===== NAVIGATION =====
   window.matchingBackToTopicHub = function () {
+    clearMatchingDragWrongResetTimeout();
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
@@ -2971,6 +3182,7 @@
   };
 
   window.matchingBackToTopics = function () {
+    clearMatchingDragWrongResetTimeout();
     stopMatchingTimer();
     setMatchingPreplayMode(true);
 
@@ -2992,6 +3204,7 @@
     matchingState.searchKeyword = "";
     matchingState.selectedTopic = null;
     matchingState.selectedModeKey = null;
+    closeMatchingSettingsModal();
 
     // Re-render full list
     if (matchingAllTopicsForSearch) {
@@ -3000,6 +3213,7 @@
   };
 
   window.matchingRestartGame = function () {
+    clearMatchingDragWrongResetTimeout();
     var resultView = document.getElementById("matchingResultView");
     if (resultView) resultView.style.display = "none";
 
