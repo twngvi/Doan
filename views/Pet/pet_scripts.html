@@ -500,11 +500,11 @@
       const sectionTitle = document.getElementById("petFoodSectionTitle");
       const sectionDesc = document.getElementById("petFoodSectionDesc");
       const listEl = document.getElementById("petFoodActiveList");
-      const foodTabOwned = document.getElementById("petFoodTabOwned");
-      const foodTabShop = document.getElementById("petFoodTabShop");
-      const accTabOwned = document.getElementById("petAccessoryTabOwned");
-      const accTabShop = document.getElementById("petAccessoryTabShop");
-      if (!modePill || !sectionTitle || !sectionDesc || !listEl || !foodTabOwned || !foodTabShop || !accTabOwned || !accTabShop) {
+      const modeFoodBtn = document.getElementById("petModeFoodBtn");
+      const modeAccessoryBtn = document.getElementById("petModeAccessoryBtn");
+      const tabOwned = document.getElementById("petTabOwned");
+      const tabShop = document.getElementById("petTabShop");
+      if (!modePill || !sectionTitle || !sectionDesc || !listEl || !modeFoodBtn || !modeAccessoryBtn || !tabOwned || !tabShop) {
         return;
       }
 
@@ -516,17 +516,20 @@
       const isFoodMode = petModalMode === "food";
       modePill.textContent = isFoodMode ? "Quản lý thức ăn" : "Quản lý phụ kiện";
 
-      foodTabOwned.style.display = isFoodMode ? "inline-flex" : "none";
-      foodTabShop.style.display = isFoodMode ? "inline-flex" : "none";
-      accTabOwned.style.display = isFoodMode ? "none" : "inline-flex";
-      accTabShop.style.display = isFoodMode ? "none" : "inline-flex";
+      modeFoodBtn.classList.toggle("active", isFoodMode);
+      modeFoodBtn.setAttribute("aria-selected", isFoodMode ? "true" : "false");
+      modeAccessoryBtn.classList.toggle("active", !isFoodMode);
+      modeAccessoryBtn.setAttribute("aria-selected", !isFoodMode ? "true" : "false");
 
-      [foodTabOwned, foodTabShop, accTabOwned, accTabShop].forEach(function (tabBtn) {
+      [tabOwned, tabShop].forEach(function (tabBtn) {
         const tabValue = tabBtn.getAttribute("data-pet-tab") || "owned";
-        const active = tabValue === petModalTab && tabBtn.style.display !== "none";
+        const active = tabValue === petModalTab;
         tabBtn.classList.toggle("active", active);
         tabBtn.setAttribute("aria-selected", active ? "true" : "false");
       });
+
+      tabOwned.textContent = isFoodMode ? "Kho thức ăn" : "Phụ kiện đã sở hữu";
+      tabShop.textContent = isFoodMode ? "Cửa hàng thức ăn" : "Cửa hàng phụ kiện";
 
       if (isFoodMode) {
         if (petModalTab === "owned") {
@@ -794,6 +797,12 @@
         if (tabBtn) {
           petModalTab = tabBtn.getAttribute("data-pet-tab") === "shop" ? "shop" : "owned";
           renderPetFoodModal();
+          return;
+        }
+
+        const modeBtn = event.target.closest("[data-pet-mode]");
+        if (modeBtn) {
+          setPetModalMode(modeBtn.getAttribute("data-pet-mode"));
           return;
         }
 
