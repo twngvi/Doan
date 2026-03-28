@@ -590,9 +590,21 @@
       profile: "Profile",
     };
 
+    const MCQ_UNLOCKED_TOPICS_PERSIST_KEY = "oq_mcq_unlocked_topics_v1";
+    const MATCHING_UNLOCKED_TOPICS_PERSIST_KEY =
+      "oq_matching_unlocked_topics_v1";
+    const QUIZ_STATS_PERSIST_KEY = "oq_quiz_stats_cache_v1";
+    const MATCHING_STATS_PERSIST_KEY = "oq_matching_stats_cache_v1";
+
+    let topicBaseList = [];
     let topicEntries = [];
     let currentResults = [];
     let activeIndex = -1;
+    let userTopicProgress = {};
+    let quizStatsByTopic = {};
+    let matchingStatsByTopic = {};
+    let mcqUnlockedTopicsMap = {};
+    let matchingUnlockedTopicsMap = {};
 
     function normalizeText(value) {
       return String(value || "")
@@ -608,6 +620,420 @@
         topic.contentDocId &&
         String(topic.contentDocId).trim().length > 10
       );
+    }
+
+    function parseObjectMap(rawValue) {
+      if (!rawValue) return {};
+
+      try {
+        const parsed = JSON.parse(rawValue);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function readPersistedMap(key) {
+      try {
+        return parseObjectMap(localStorage.getItem(key));
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function readPersistedStatsMap(key) {
+      const parsed = readPersistedMap(key);
+      if (parsed && parsed.stats && typeof parsed.stats === "object") {
+        return parsed.stats;
+      }
+      return {};
+    }
+
+    function persistUnlockedMap(key, unlockedMap) {
+      try {
+        localStorage.setItem(
+          key,
+          JSON.stringify(
+            unlockedMap && typeof unlockedMap === "object" ? unlockedMap : {},
+          ),
+        );
+      } catch (e) {}
+    }
+
+    function isTruthyProgressValue(value) {
+      return (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "TRUE" ||
+        value === "true"
+      );
+    }
+
+    function isTopicCompleted(progress) {
+      if (!progress || typeof progress !== "object") return false;
+
+      if (isTruthyProgressValue(progress.completed)) return true;
+
+      const progressNumber = Number(progress.progress);
+      if (Number.isFinite(progressNumber) && progressNumber >= 100) {
+        return true;
+      }
+
+      const hasDetailedSteps =
+        Object.prototype.hasOwnProperty.call(progress, "lessonCompleted") ||
+        Object.prototype.hasOwnProperty.call(progress, "mindmapViewed") ||
+        Object.prototype.hasOwnProperty.call(progress, "flashcardsCompleted") ||
+        Object.prototype.hasOwnProperty.call(progress, "miniQuizCompleted");
+
+      if (!hasDetailedSteps) return false;
+
+      return (
+        isTruthyProgressValue(progress.lessonCompleted) &&
+        isTruthyProgressValue(progress.mindmapViewed) &&
+        isTruthyProgressValue(progress.flashcardsCompleted) &&
+        isTruthyProgressValue(progress.miniQuizCompleted)
+      );
+    }
+
+    function getQuizBestPercent(stats) {
+      if (!stats || typeof stats !== "object") return 0;
+
+      const byPercent = Number(stats.bestPercent);
+      if (Number.isFinite(byPercent) && byPercent >= 0) {
+        return Math.max(0, Math.min(100, Math.round(byPercent)));
+      }
+
+      const byScore = Number(stats.bestScore);
+      const byTotal = Number(stats.bestTotal);
+      if (Number.isFinite(byScore) && Number.isFinite(byTotal) && byTotal > 0) {
+        return Math.max(0, Math.min(100, Math.round((byScore / byTotal) * 100)));
+      }
+
+      return 0;
+    }
+
+    function getMatchingBestPercent(stats) {
+      if (!stats || typeof stats !== "object") return 0;
+
+      const byAccuracy = Number(stats.bestAccuracy);
+      if (Number.isFinite(byAccuracy) && byAccuracy >= 0) {
+        return Math.max(0, Math.min(100, Math.round(byAccuracy)));
+      }
+
+      const byPercent = Number(stats.bestPercent);
+      if (Number.isFinite(byPercent) && byPercent >= 0) {
+        return Math.max(0, Math.min(100, Math.round(byPercent)));
+      }
+
+      const byScore = Number(stats.bestScore);
+      const byTotalPairs = Number(stats.bestTotalPairs);
+      if (
+        Number.isFinite(byScore) &&
+        Number.isFinite(byTotalPairs) &&
+        byTotalPairs > 0
+      ) {
+        return Math.max(
+          0,
+          Math.min(100, Math.round((byScore / byTotalPairs) * 100)),
+        );
+      }
+
+      return 0;
+    }
+
+    function normalizeTopicList(topics) {
+      const normalized = (topics || []).filter(
+        (topic) => topic && String(topic.topicId || "").trim(),
+      );
+
+      normalized.sort(
+        (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0),
+      );
+      return normalized;
+    }
+
+    function getTopicIndex(topicId) {
+      return topicBaseList.findIndex(
+        (topic) => String(topic.topicId) === String(topicId),
+      );
+    }
+
+    function syncSearchCachesFromWindow() {
+      try {
+        const globalProgress =
+          window.globalTopicsCache && window.globalTopicsCache.progress;
+        if (globalProgress && typeof globalProgress === "object") {
+          userTopicProgress = Object.assign({}, userTopicProgress, globalProgress);
+        }
+
+        const quizWindowStats =
+          window.quizStatsCache && window.quizStatsCache.stats;
+        if (quizWindowStats && typeof quizWindowStats === "object") {
+          quizStatsByTopic = Object.assign({}, quizStatsByTopic, quizWindowStats);
+        }
+
+        const matchingWindowStats =
+          window.matchingStatsCache && window.matchingStatsCache.stats;
+        if (matchingWindowStats && typeof matchingWindowStats === "object") {
+          matchingStatsByTopic = Object.assign(
+            {},
+            matchingStatsByTopic,
+            matchingWindowStats,
+          );
+        }
+
+        const persistedQuizStats = readPersistedStatsMap(QUIZ_STATS_PERSIST_KEY);
+        if (Object.keys(persistedQuizStats).length > 0) {
+          quizStatsByTopic = Object.assign({}, quizStatsByTopic, persistedQuizStats);
+        }
+
+        const persistedMatchingStats = readPersistedStatsMap(
+          MATCHING_STATS_PERSIST_KEY,
+        );
+        if (Object.keys(persistedMatchingStats).length > 0) {
+          matchingStatsByTopic = Object.assign(
+            {},
+            matchingStatsByTopic,
+            persistedMatchingStats,
+          );
+        }
+
+        const mcqUnlockedFromWindow =
+          window.mcqUnlockedTopicsCache &&
+          typeof window.mcqUnlockedTopicsCache === "object"
+            ? window.mcqUnlockedTopicsCache
+            : null;
+        const mcqUnlockedPersisted = readPersistedMap(
+          MCQ_UNLOCKED_TOPICS_PERSIST_KEY,
+        );
+        mcqUnlockedTopicsMap = Object.assign(
+          {},
+          mcqUnlockedPersisted,
+          mcqUnlockedFromWindow || {},
+        );
+
+        const matchingUnlockedFromWindow =
+          window.matchingUnlockedTopicsCache &&
+          typeof window.matchingUnlockedTopicsCache === "object"
+            ? window.matchingUnlockedTopicsCache
+            : null;
+        const matchingUnlockedPersisted = readPersistedMap(
+          MATCHING_UNLOCKED_TOPICS_PERSIST_KEY,
+        );
+        matchingUnlockedTopicsMap = Object.assign(
+          {},
+          matchingUnlockedPersisted,
+          matchingUnlockedFromWindow || {},
+        );
+      } catch (e) {
+        console.warn("Sidebar search: sync cache warning", e);
+      }
+    }
+
+    function rerunSearchIfInputHasValue() {
+      const inputEl = document.getElementById("sidebarSearchInput");
+      if (inputEl && inputEl.value && inputEl.value.trim()) {
+        runSearch(inputEl.value);
+      }
+    }
+
+    function setTopicsForSearch(topics) {
+      topicBaseList = normalizeTopicList(topics);
+      topicEntries = buildTopicEntries(topicBaseList);
+      rerunSearchIfInputHasValue();
+    }
+
+    function markTopicUnlockedForMode(topicId, mode) {
+      const id = String(topicId || "").trim();
+      if (!id) return;
+
+      if (mode === "quiz") {
+        if (mcqUnlockedTopicsMap[id] === true) return;
+        mcqUnlockedTopicsMap[id] = true;
+        window.mcqUnlockedTopicsCache = Object.assign({}, mcqUnlockedTopicsMap);
+        persistUnlockedMap(MCQ_UNLOCKED_TOPICS_PERSIST_KEY, mcqUnlockedTopicsMap);
+        return;
+      }
+
+      if (mode === "matching") {
+        if (matchingUnlockedTopicsMap[id] === true) return;
+        matchingUnlockedTopicsMap[id] = true;
+        window.matchingUnlockedTopicsCache = Object.assign(
+          {},
+          matchingUnlockedTopicsMap,
+        );
+        persistUnlockedMap(
+          MATCHING_UNLOCKED_TOPICS_PERSIST_KEY,
+          matchingUnlockedTopicsMap,
+        );
+      }
+    }
+
+    function isLessonTopicUnlocked(topicId) {
+      const index = getTopicIndex(topicId);
+      if (index < 0) return false;
+      if (index === 0) return true;
+
+      const prevTopic = topicBaseList[index - 1];
+      if (!prevTopic || !prevTopic.topicId) return false;
+
+      const prevProgress = userTopicProgress[prevTopic.topicId] || {};
+      return isTopicCompleted(prevProgress);
+    }
+
+    function isQuizTopicUnlocked(topicId) {
+      const index = getTopicIndex(topicId);
+      if (index < 0) return false;
+      if (index === 0) return true;
+
+      const normalizedTopicId = String(topicId || "").trim();
+      if (mcqUnlockedTopicsMap[normalizedTopicId] === true) {
+        return true;
+      }
+
+      const prevTopic = topicBaseList[index - 1];
+      if (!prevTopic || !prevTopic.topicId) return false;
+
+      const prevStats = quizStatsByTopic[prevTopic.topicId] || null;
+      const unlockedNow = prevStats && getQuizBestPercent(prevStats) >= 80;
+
+      if (unlockedNow) {
+        markTopicUnlockedForMode(normalizedTopicId, "quiz");
+      }
+
+      return !!unlockedNow;
+    }
+
+    function isMatchingTopicUnlocked(topicId) {
+      const index = getTopicIndex(topicId);
+      if (index < 0) return false;
+      if (index === 0) return true;
+
+      const normalizedTopicId = String(topicId || "").trim();
+      if (matchingUnlockedTopicsMap[normalizedTopicId] === true) {
+        return true;
+      }
+
+      const prevTopic = topicBaseList[index - 1];
+      if (!prevTopic || !prevTopic.topicId) return false;
+
+      const prevStats = matchingStatsByTopic[prevTopic.topicId] || null;
+      const unlockedNow = prevStats && getMatchingBestPercent(prevStats) >= 80;
+
+      if (unlockedNow) {
+        markTopicUnlockedForMode(normalizedTopicId, "matching");
+      }
+
+      return !!unlockedNow;
+    }
+
+    function getPrerequisiteTopicInfo(topicId) {
+      const index = getTopicIndex(topicId);
+      if (index <= 0) {
+        return {
+          hasPrerequisite: false,
+          topicId: "",
+          title: "",
+        };
+      }
+
+      const prevTopic = topicBaseList[index - 1] || null;
+      if (!prevTopic || !prevTopic.topicId) {
+        return {
+          hasPrerequisite: false,
+          topicId: "",
+          title: "",
+        };
+      }
+
+      return {
+        hasPrerequisite: true,
+        topicId: String(prevTopic.topicId),
+        title: String(prevTopic.title || prevTopic.topicId),
+      };
+    }
+
+    function resolveTopicLockState(topic, mode) {
+      const topicId = topic && topic.topicId ? String(topic.topicId).trim() : "";
+      if (!topicId) {
+        return {
+          isLocked: true,
+          reason: "Không thể xác định chủ đề",
+        };
+      }
+
+      if (!hasContentDoc(topic)) {
+        return {
+          isLocked: true,
+          reason: "Chủ đề chưa có nội dung",
+        };
+      }
+
+      if (mode === "lesson") {
+        const isUnlocked = isLessonTopicUnlocked(topicId);
+        const prerequisite = getPrerequisiteTopicInfo(topicId);
+
+        let reason = "";
+        if (!isUnlocked) {
+          if (prerequisite.hasPrerequisite) {
+            reason =
+              `Chưa mở khóa Bài học - cần hoàn thành chủ đề trước: "${prerequisite.title}"`;
+          } else {
+            reason = "Chưa mở khóa Bài học";
+          }
+        }
+
+        return {
+          isLocked: !isUnlocked,
+          reason: reason,
+        };
+      }
+
+      if (mode === "quiz") {
+        const isUnlocked = isQuizTopicUnlocked(topicId);
+        const prerequisite = getPrerequisiteTopicInfo(topicId);
+
+        let reason = "";
+        if (!isUnlocked) {
+          if (prerequisite.hasPrerequisite) {
+            reason =
+              `Chưa mở khóa Quiz - cần đạt >=80% ở chủ đề trước: "${prerequisite.title}"`;
+          } else {
+            reason = "Chưa mở khóa Quiz";
+          }
+        }
+
+        return {
+          isLocked: !isUnlocked,
+          reason: reason,
+        };
+      }
+
+      if (mode === "matching") {
+        const isUnlocked = isMatchingTopicUnlocked(topicId);
+        const prerequisite = getPrerequisiteTopicInfo(topicId);
+
+        let reason = "";
+        if (!isUnlocked) {
+          if (prerequisite.hasPrerequisite) {
+            reason =
+              `Chưa mở khóa Matching - cần đạt >=80% ở chủ đề trước: "${prerequisite.title}"`;
+          } else {
+            reason = "Chưa mở khóa Matching";
+          }
+        }
+
+        return {
+          isLocked: !isUnlocked,
+          reason: reason,
+        };
+      }
+
+      return {
+        isLocked: false,
+        reason: "",
+      };
     }
 
     function getTopicModeDescriptors(topic) {
@@ -649,6 +1075,7 @@
       (topics || []).forEach((topic) => {
         const descriptors = getTopicModeDescriptors(topic);
         descriptors.forEach((descriptor) => {
+          const lockState = resolveTopicLockState(topic, descriptor.mode);
           entries.push({
             id: `topic-${topic.topicId}-${descriptor.mode}`,
             group: "topics",
@@ -656,7 +1083,9 @@
             subtitle: `${descriptor.subtitlePrefix} - ${topic.category || "Chung"}`,
             tag: descriptor.tag,
             tagClass: descriptor.tagClass,
-            keywords: `${descriptor.keywords} ${topic.topicId || ""} ${topic.category || ""}`,
+            keywords: `${descriptor.keywords} ${topic.topicId || ""} ${topic.category || ""} ${lockState.isLocked ? "khoa lock" : ""}`,
+            isLocked: lockState.isLocked,
+            lockReason: lockState.reason,
             action: {
               type: "topic",
               pageId: descriptor.pageId,
@@ -671,13 +1100,15 @@
     }
 
     function fetchTopicsForSearch() {
+      syncSearchCachesFromWindow();
+
       const globalCache = window.globalTopicsCache;
       if (
         globalCache &&
         Array.isArray(globalCache.data) &&
         globalCache.data.length
       ) {
-        topicEntries = buildTopicEntries(globalCache.data);
+        setTopicsForSearch(globalCache.data);
         return;
       }
 
@@ -698,17 +1129,91 @@
             topics = response;
           }
 
-          topicEntries = buildTopicEntries(topics);
-          const inputEl = document.getElementById("sidebarSearchInput");
-          if (inputEl && inputEl.value && inputEl.value.trim()) {
-            runSearch(inputEl.value);
-          }
+          setTopicsForSearch(topics);
         })
         .withFailureHandler(function (error) {
           console.warn("Sidebar search: load topics failed", error);
           topicEntries = [];
+          topicBaseList = [];
         })
         .getAllTopics();
+    }
+
+    function fetchLockDataForSearch() {
+      syncSearchCachesFromWindow();
+
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.success && response.progress) {
+            userTopicProgress = Object.assign({}, response.progress);
+            if (window.globalTopicsCache) {
+              window.globalTopicsCache.progress = response.progress;
+            }
+
+            topicEntries = buildTopicEntries(topicBaseList);
+            rerunSearchIfInputHasValue();
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.warn("Sidebar search: load topic progress failed", error);
+        })
+        .getUserTopicProgress();
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.success && response.stats) {
+            quizStatsByTopic = Object.assign({}, response.stats);
+
+            if (!window.quizStatsCache) {
+              window.quizStatsCache = {
+                stats: {},
+                lastLoadTime: 0,
+                cacheDuration: 5 * 60 * 1000,
+              };
+            }
+            window.quizStatsCache.stats = Object.assign({}, response.stats);
+            window.quizStatsCache.lastLoadTime = Date.now();
+
+            topicEntries = buildTopicEntries(topicBaseList);
+            rerunSearchIfInputHasValue();
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.warn("Sidebar search: load quiz stats failed", error);
+        })
+        .getQuizStatsPerTopic();
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.success && response.stats) {
+            matchingStatsByTopic = Object.assign({}, response.stats);
+
+            if (!window.matchingStatsCache) {
+              window.matchingStatsCache = {
+                stats: {},
+                lastLoadTime: 0,
+                cacheDuration: 5 * 60 * 1000,
+              };
+            }
+            window.matchingStatsCache.stats = Object.assign({}, response.stats);
+            window.matchingStatsCache.lastLoadTime = Date.now();
+
+            topicEntries = buildTopicEntries(topicBaseList);
+            rerunSearchIfInputHasValue();
+          }
+        })
+        .withFailureHandler(function (error) {
+          console.warn("Sidebar search: load matching stats failed", error);
+        })
+        .getMatchingStatsPerTopic();
     }
 
     function buildSearchEntries() {
@@ -766,13 +1271,26 @@
           `<div class="sidebar-search-group"><div class="sidebar-search-group-label">${groupLabels[groupKey]}</div>`,
         );
         items.forEach((item, index) => {
+          const resultIndex = indexMap(results, item.id);
+          const isLocked = item.isLocked === true;
+          const subtitleText = isLocked
+            ? `${item.subtitle || ""} - ${item.lockReason || "Đang khóa"}`
+            : item.subtitle || "";
+
           html.push(`
-            <button class="sidebar-search-result-item" data-result-index="${indexMap(results, item.id)}">
+            <button class="sidebar-search-result-item${isLocked ? " is-locked" : ""}" data-result-index="${resultIndex}"${isLocked ? ' disabled aria-disabled="true"' : ""}>
               <div class="sidebar-search-result-main">
                 <div class="sidebar-search-result-title">${escapeHtml(item.title)}</div>
-                <div class="sidebar-search-result-subtitle">${escapeHtml(item.subtitle || "")}</div>
+                <div class="sidebar-search-result-subtitle">${escapeHtml(subtitleText)}</div>
               </div>
-              <span class="sidebar-search-result-tag ${item.tagClass}">${item.tag}</span>
+              <div class="sidebar-search-result-side">
+                <span class="sidebar-search-result-tag ${item.tagClass}">${item.tag}</span>
+                ${
+                  isLocked
+                    ? '<span class="sidebar-search-result-lock material-symbols-sharp" aria-hidden="true">lock</span>'
+                    : ""
+                }
+              </div>
             </button>
           `);
         });
@@ -835,14 +1353,36 @@
       renderResults(currentResults);
     }
 
+    function notifyLockedResult(result) {
+      const lockMessage =
+        (result && result.lockReason) ||
+        "Chủ đề này đang bị khóa. Vui lòng hoàn thành điều kiện mở khóa.";
+
+      if (typeof window.showToast === "function") {
+        window.showToast(lockMessage, "warning");
+        return;
+      }
+
+      if (typeof window.showNotification === "function") {
+        window.showNotification(lockMessage, "warning");
+      }
+    }
+
     function navigateWithResult(result) {
-      if (!result || !result.action || typeof showPage !== "function") return;
+      if (!result || !result.action || typeof showPage !== "function") {
+        return false;
+      }
+
+      if (result.isLocked) {
+        notifyLockedResult(result);
+        return false;
+      }
 
       const action = result.action;
       if (action.type === "page") {
         window.currentPageParams = null;
         showPage(action.pageId);
-        return;
+        return true;
       }
 
       if (action.type === "topic") {
@@ -863,7 +1403,7 @@
         } else {
           showPage(action.pageId, params);
         }
-        return;
+        return true;
       }
 
       if (action.type === "profile") {
@@ -873,7 +1413,10 @@
             window.triggerProfileSearchAction(action.actionKey);
           }
         }, 180);
+        return true;
       }
+
+      return false;
     }
 
     function escapeHtml(text) {
@@ -896,6 +1439,7 @@
       }
 
       fetchTopicsForSearch();
+      fetchLockDataForSearch();
 
       input.addEventListener("input", function (e) {
         runSearch(e.target.value || "");
@@ -922,9 +1466,11 @@
           e.preventDefault();
           const selected =
             activeIndex >= 0 ? currentResults[activeIndex] : currentResults[0];
-          navigateWithResult(selected);
-          input.value = "";
-          clearResults();
+          const didNavigate = navigateWithResult(selected);
+          if (didNavigate) {
+            input.value = "";
+            clearResults();
+          }
         } else if (e.key === "Escape") {
           clearResults();
           input.blur();
@@ -938,9 +1484,16 @@
         const index = Number(item.getAttribute("data-result-index"));
         if (Number.isNaN(index) || !currentResults[index]) return;
 
-        navigateWithResult(currentResults[index]);
-        input.value = "";
-        clearResults();
+        if (item.classList.contains("is-locked") || item.disabled) {
+          notifyLockedResult(currentResults[index]);
+          return;
+        }
+
+        const didNavigate = navigateWithResult(currentResults[index]);
+        if (didNavigate) {
+          input.value = "";
+          clearResults();
+        }
       });
 
       document.addEventListener("click", function (e) {
@@ -951,6 +1504,14 @@
 
       window.addEventListener("topics-cache-updated", function () {
         fetchTopicsForSearch();
+        fetchLockDataForSearch();
+      });
+
+      window.addEventListener("dashboard-needs-refresh", function () {
+        syncSearchCachesFromWindow();
+        fetchLockDataForSearch();
+        topicEntries = buildTopicEntries(topicBaseList);
+        rerunSearchIfInputHasValue();
       });
     }
 
