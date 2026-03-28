@@ -47,6 +47,79 @@
     }
   }
 
+  function clearClientLearningCachesAfterReset() {
+    try {
+      // Remove all known persisted caches related to progress/unlocks.
+      const exactKeysToRemove = [
+        "recentActivities",
+        "streakData",
+        "topicsCache",
+        "progressCache",
+        "dashboardCache",
+        "oq_topics_cache_v1",
+        "oq_mcq_unlocked_topics_v1",
+        "oq_matching_unlocked_topics_v1",
+        "oq_quiz_stats_cache_v1",
+        "oq_matching_stats_cache_v1",
+      ];
+
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+
+        if (
+          key.indexOf("lesson_progress_") === 0 ||
+          exactKeysToRemove.indexOf(key) >= 0
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
+
+      // Reset in-memory caches used across pages.
+      window.mcqUnlockedTopicsCache = {};
+      window.matchingUnlockedTopicsCache = {};
+
+      if (window.quizStatsCache) {
+        window.quizStatsCache.stats = {};
+        window.quizStatsCache.lastLoadTime = 0;
+      }
+
+      if (window.matchingStatsCache) {
+        window.matchingStatsCache.stats = {};
+        window.matchingStatsCache.lastLoadTime = 0;
+      }
+
+      if (window.globalTopicsCache) {
+        window.globalTopicsCache.data = null;
+        window.globalTopicsCache.progress = null;
+        window.globalTopicsCache.lastLoadTime = 0;
+      }
+
+      if (window.DashboardCache) {
+        window.DashboardCache.data = null;
+        window.DashboardCache.lastFetch = null;
+      }
+
+      if (typeof window.invalidateTopicsLocalCache === "function") {
+        window.invalidateTopicsLocalCache();
+      }
+
+      // Force dashboard to initialize fresh after reset.
+      if (typeof window !== "undefined") {
+        window.dashboardInitialized = false;
+        window.dashboardInitRetryCount = 0;
+        window.dashboardHasLoadedOnce = false;
+      }
+
+      console.log("🧹 Cleared learning caches:", keysToRemove.length);
+    } catch (e) {
+      console.warn("⚠️ Cache cleanup warning:", e);
+    }
+  }
+
   async function handleClearAllLearningData(event) {
     const btn =
       (event && event.currentTarget) ||
@@ -86,35 +159,7 @@
         }
 
         if (res && res.success) {
-          try {
-            localStorage.removeItem("recentActivities");
-            localStorage.removeItem("streakData");
-            localStorage.removeItem("oq_mcq_unlocked_topics_v1");
-            localStorage.removeItem("oq_matching_unlocked_topics_v1");
-            localStorage.removeItem("oq_quiz_stats_cache_v1");
-            localStorage.removeItem("oq_matching_stats_cache_v1");
-
-            window.mcqUnlockedTopicsCache = {};
-            window.matchingUnlockedTopicsCache = {};
-
-            if (window.quizStatsCache) {
-              window.quizStatsCache.stats = {};
-              window.quizStatsCache.lastLoadTime = 0;
-            }
-
-            if (window.matchingStatsCache) {
-              window.matchingStatsCache.stats = {};
-              window.matchingStatsCache.lastLoadTime = 0;
-            }
-
-            if (window.globalTopicsCache) {
-              window.globalTopicsCache.data = null;
-              window.globalTopicsCache.progress = null;
-              window.globalTopicsCache.lastLoadTime = 0;
-            }
-          } catch (e) {
-            console.warn("Cache cleanup warning:", e);
-          }
+          clearClientLearningCachesAfterReset();
 
           window.dispatchEvent(new Event("dashboard-needs-refresh"));
           showToast(
@@ -1157,54 +1202,14 @@
         console.log("✅ Reset response:", response);
 
         if (response.success) {
-          showToast("✅ Đã xóa toàn bộ dữ liệu học tập!", "success");
+          showToast(
+            "✅ Đã reset tiến trình. Bắt đầu lại từ Topic 1, các topic sau đã khóa.",
+            "success",
+          );
           closeResetDataConfirmation();
 
-          // ⭐ IMPORTANT: Clear ALL client-side caches
-          // This prevents blank screen issues caused by stale cache data
-          try {
-            // Clear localStorage progress keys
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (
-                key &&
-                (key.indexOf("lesson_progress_") === 0 ||
-                  key === "streakData" ||
-                  key === "topicsCache" ||
-                  key === "progressCache" ||
-                  key === "dashboardCache")
-              ) {
-                keysToRemove.push(key);
-              }
-            }
-            keysToRemove.forEach((key) => localStorage.removeItem(key));
-            console.log(
-              "🧹 Cleared",
-              keysToRemove.length,
-              "cached items from localStorage",
-            );
-
-            // Clear global window caches and state
-            if (window.DashboardCache) {
-              window.DashboardCache.data = null;
-              window.DashboardCache.lastFetch = null;
-            }
-            if (window.invalidateTopicsLocalCache) {
-              window.invalidateTopicsLocalCache();
-            }
-
-            // ⭐ Reset dashboard state to force fresh load
-            if (typeof window !== "undefined") {
-              window.dashboardInitialized = false;
-              window.dashboardInitRetryCount = 0;
-              window.dashboardHasLoadedOnce = false;
-            }
-
-            console.log("🧹 Cleared all caches and reset dashboard state");
-          } catch (e) {
-            console.warn("⚠️ Warning during cache clearing:", e);
-          }
+          // Clear all cached progress/unlock data so only Topic 1 remains available.
+          clearClientLearningCachesAfterReset();
 
           // ⭐ Navigate to Dashboard instead of reload
           // This gives fresh initialization without stale cache data

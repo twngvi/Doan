@@ -3730,6 +3730,15 @@ function clearAllLearningData(userContext) {
     deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
     deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
 
+    // Clear user-scoped stats cache so lock/unlock state is recomputed immediately.
+    try {
+      const userCache = CacheService.getUserCache();
+      userCache.remove("QUIZ_STATS_" + userEmail);
+      userCache.remove("MATCHING_STATS_" + userEmail);
+    } catch (cacheError) {
+      Logger.log("⚠️ Failed to clear learning stats cache: " + cacheError.toString());
+    }
+
     const totalDeleted = Object.keys(deleted).reduce(
       (sum, key) => sum + deleted[key],
       0,
