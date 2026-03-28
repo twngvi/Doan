@@ -19,6 +19,8 @@
       },
     };
 
+    let hatchModalEscBound = false;
+
     function clamp(value, min, max) {
       const number = Number(value);
       if (!Number.isFinite(number)) return min;
@@ -93,7 +95,58 @@
       return "Giai đoạn Trứng";
     }
 
+    function setHatchModalOpen(isOpen) {
+      const modal = document.getElementById("petHatchModal");
+      if (!modal) return;
+
+      modal.classList.toggle("open", !!isOpen);
+      modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      document.body.classList.toggle("pet-modal-open", !!isOpen);
+    }
+
+    function setupHatchModal() {
+      const modal = document.getElementById("petHatchModal");
+      const openBtn = document.getElementById("petHatchToggleBtn");
+      const closeBtn = document.getElementById("petHatchModalClose");
+
+      if (!modal || !openBtn || !closeBtn) return;
+
+      if (modal.dataset.modalBound === "1") {
+        return;
+      }
+      modal.dataset.modalBound = "1";
+
+      openBtn.addEventListener("click", function () {
+        const isHidden = modal.getAttribute("aria-hidden") !== "false";
+        setHatchModalOpen(isHidden);
+      });
+
+      closeBtn.addEventListener("click", function () {
+        setHatchModalOpen(false);
+      });
+
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+          setHatchModalOpen(false);
+        }
+      });
+
+      if (!hatchModalEscBound) {
+        hatchModalEscBound = true;
+        document.addEventListener("keydown", function (event) {
+          if (event.key !== "Escape") return;
+          const activeModal = document.getElementById("petHatchModal");
+          if (!activeModal) return;
+          if (activeModal.getAttribute("aria-hidden") === "false") {
+            setHatchModalOpen(false);
+          }
+        });
+      }
+    }
+
     function initPetPage() {
+      document.body.classList.remove("pet-modal-open");
+
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
@@ -108,9 +161,11 @@
         quiz: quiz,
         matching: matching,
       });
+      const stageLabel = resolveStageLabel(overallPercent);
 
       setText("petUserName", name);
       setText("petXpValue", String(Math.round(state.xp)));
+      setText("petXpValueModal", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
       setText("petEnergyValue", `${Math.round(state.status.energy)}%`);
       setText("petHungerValue", `${Math.round(state.status.hunger)}%`);
@@ -120,17 +175,25 @@
       setText("petQuizText", `${quiz} / ${target}`);
       setText("petMatchText", `${matching} / ${target}`);
       setText("petHatchProgressText", `${overallPercent}% điều kiện nở trứng`);
-      setText("petStageBadge", resolveStageLabel(overallPercent));
+      setText("petStageBadge", stageLabel);
+      setText("petStageBadgeModal", stageLabel);
 
       setProgressBar("petHatchProgress", overallPercent);
       setProgressBar("petLearnProgress", (learn / target) * 100);
       setProgressBar("petQuizProgress", (quiz / target) * 100);
       setProgressBar("petMatchProgress", (matching / target) * 100);
+      setHatchModalOpen(false);
     }
 
     function setupPetActions() {
       const actions = document.querySelectorAll("[data-pet-action]");
+
       actions.forEach((button) => {
+        if (button.dataset.petActionBound === "1") {
+          return;
+        }
+        button.dataset.petActionBound = "1";
+
         button.addEventListener("click", function () {
           const action = button.getAttribute("data-pet-action");
 
@@ -154,11 +217,13 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
+        setupHatchModal();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
+        setupHatchModal();
         initPetPage();
       }, 80);
     }
