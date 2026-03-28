@@ -265,6 +265,7 @@ function processGoogleUserLogin(googleProfile) {
   let existingUser = null;
   const headers = data[0] || [];
   const themeColIndex = headers.indexOf("theme");
+  const petNameColIndex = headers.indexOf("petName");
   // Cột progressSheetId nằm ở index 24 (theo schemas.js)
   const PROGRESS_SHEET_COL_INDEX = 24;
 
@@ -348,6 +349,10 @@ function processGoogleUserLogin(googleProfile) {
         themeColIndex >= 0 && existingUser[themeColIndex]
           ? String(existingUser[themeColIndex])
           : "default",
+      petName:
+        petNameColIndex >= 0 && existingUser[petNameColIndex]
+          ? String(existingUser[petNameColIndex])
+          : "",
       status: "success",
     };
   } else {

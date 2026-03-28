@@ -2,6 +2,8 @@
   (function () {
     "use strict";
 
+    const DEFAULT_PET_NAME = "gà con";
+
     const DEFAULT_STATE = {
       xp: 0,
       coins: 120,
@@ -33,6 +35,89 @@
       } else {
         console.log("Pet notice:", message);
       }
+    }
+
+    function loadPetName() {
+      const user = window.currentUser || {};
+      if (user.petName) return user.petName;
+      try {
+        const stored = localStorage.getItem("oq_pet_name");
+        if (stored) return stored;
+      } catch (e) {
+        // ignore
+      }
+      return DEFAULT_PET_NAME;
+    }
+
+    function savePetNameLocally(name) {
+      try {
+        localStorage.setItem("oq_pet_name", name);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function setupPetNameEdit() {
+      const display = document.getElementById("petNameDisplay");
+      const editForm = document.getElementById("petNameEditForm");
+      const input = document.getElementById("petNameInput");
+      const saveBtn = document.getElementById("petNameSaveBtn");
+      const cancelBtn = document.getElementById("petNameCancelBtn");
+
+      if (!display || !editForm || !input || !saveBtn || !cancelBtn) return;
+      if (display.dataset.nameBound === "1") return;
+      display.dataset.nameBound = "1";
+
+      function openEdit() {
+        input.value = display.textContent || DEFAULT_PET_NAME;
+        editForm.style.display = "flex";
+        display.style.display = "none";
+        input.focus();
+      }
+
+      function closeEdit() {
+        editForm.style.display = "none";
+        display.style.display = "";
+      }
+
+      function applyName(newName) {
+        const trimmed = (newName || "").trim() || DEFAULT_PET_NAME;
+        display.textContent = trimmed;
+        savePetNameLocally(trimmed);
+        const user = window.currentUser || {};
+        if (user.userId && typeof google !== "undefined" && google.script) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res && res.success) {
+                if (window.currentUser) window.currentUser.petName = trimmed;
+                notify("Đã lưu tên thú cưng!", "success");
+              } else {
+                notify("Lưu tên thất bại, vui lòng thử lại.", "error");
+              }
+            })
+            .withFailureHandler(function () {
+              notify("Lỗi kết nối, tên đã được lưu cục bộ.", "warning");
+            })
+            .savePetName(user.userId, trimmed);
+        }
+        closeEdit();
+      }
+
+      display.addEventListener("click", openEdit);
+      display.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openEdit();
+        }
+      });
+      saveBtn.addEventListener("click", function () {
+        applyName(input.value);
+      });
+      cancelBtn.addEventListener("click", closeEdit);
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") applyName(input.value);
+        if (e.key === "Escape") closeEdit();
+      });
     }
 
     function loadPetPreviewState() {
@@ -150,6 +235,7 @@
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
+      const petName = loadPetName();
 
       const target = Math.max(1, Number(state.requirements.target) || 3);
       const learn = clamp(state.requirements.learn, 0, target);
@@ -164,6 +250,7 @@
       const stageLabel = resolveStageLabel(overallPercent);
 
       setText("petUserName", name);
+      setText("petNameDisplay", petName);
       setText("petXpValue", String(Math.round(state.xp)));
       setText("petXpValueModal", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
@@ -218,12 +305,14 @@
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
         setupHatchModal();
+        setupPetNameEdit();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
         setupHatchModal();
+        setupPetNameEdit();
         initPetPage();
       }, 80);
     }
