@@ -3398,14 +3398,26 @@
 
   const MCQ_BACK_TO_TOP_SHOW_OFFSET = 220;
   let mcqBackToTopScrollHandler = null;
+  let mcqBackToTopScrollSource = null;
 
-  function getMcqScrollTop() {
-    return (
-      window.pageYOffset ||
-      document.documentElement.scrollTop ||
-      document.body.scrollTop ||
-      0
-    );
+  function resolveMcqScrollSource() {
+    const pageMcq = document.getElementById("page-mcq");
+    return pageMcq || window;
+  }
+
+  function getMcqScrollTop(source) {
+    const scrollSource = source || mcqBackToTopScrollSource || window;
+
+    if (scrollSource === window) {
+      return (
+        window.pageYOffset ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0
+      );
+    }
+
+    return Number(scrollSource.scrollTop) || 0;
   }
 
   function toggleMcqBackToTopButton() {
@@ -3417,12 +3429,25 @@
   }
 
   function scrollMcqToTop() {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const scrollSource = mcqBackToTopScrollSource || resolveMcqScrollSource();
+
+    if (scrollSource === window) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (typeof scrollSource.scrollTo === "function") {
+      scrollSource.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      scrollSource.scrollTop = 0;
+    }
   }
 
   function setupMcqBackToTopButton() {
     const button = document.getElementById("mcq-back-to-top");
     if (!button) return;
+
+    const nextScrollSource = resolveMcqScrollSource();
 
     if (button.dataset.bound !== "true") {
       button.addEventListener("click", scrollMcqToTop);
@@ -3431,7 +3456,23 @@
 
     if (!mcqBackToTopScrollHandler) {
       mcqBackToTopScrollHandler = toggleMcqBackToTopButton;
-      window.addEventListener("scroll", mcqBackToTopScrollHandler, { passive: true });
+    }
+
+    if (
+      mcqBackToTopScrollSource &&
+      mcqBackToTopScrollSource !== nextScrollSource
+    ) {
+      mcqBackToTopScrollSource.removeEventListener(
+        "scroll",
+        mcqBackToTopScrollHandler,
+      );
+    }
+
+    if (mcqBackToTopScrollSource !== nextScrollSource) {
+      nextScrollSource.addEventListener("scroll", mcqBackToTopScrollHandler, {
+        passive: true,
+      });
+      mcqBackToTopScrollSource = nextScrollSource;
     }
 
     toggleMcqBackToTopButton();
