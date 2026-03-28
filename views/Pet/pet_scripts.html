@@ -59,28 +59,25 @@
 
     function setupPetNameEdit() {
       const display = document.getElementById("petNameDisplay");
-      const editBtn = document.getElementById("petNameEditBtn");
       const editForm = document.getElementById("petNameEditForm");
       const input = document.getElementById("petNameInput");
       const saveBtn = document.getElementById("petNameSaveBtn");
       const cancelBtn = document.getElementById("petNameCancelBtn");
 
-      if (!display || !editBtn || !editForm || !input || !saveBtn || !cancelBtn) return;
-      if (editBtn.dataset.nameBound === "1") return;
-      editBtn.dataset.nameBound = "1";
+      if (!display || !editForm || !input || !saveBtn || !cancelBtn) return;
+      if (display.dataset.nameBound === "1") return;
+      display.dataset.nameBound = "1";
 
       function openEdit() {
         input.value = display.textContent || DEFAULT_PET_NAME;
         editForm.style.display = "flex";
         display.style.display = "none";
-        editBtn.style.display = "none";
         input.focus();
       }
 
       function closeEdit() {
         editForm.style.display = "none";
         display.style.display = "";
-        editBtn.style.display = "";
       }
 
       function applyName(newName) {
@@ -106,7 +103,13 @@
         closeEdit();
       }
 
-      editBtn.addEventListener("click", openEdit);
+      display.addEventListener("click", openEdit);
+      display.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openEdit();
+        }
+      });
       saveBtn.addEventListener("click", function () {
         applyName(input.value);
       });
