@@ -190,6 +190,45 @@ function getAIContentForWeb(topicId, contentType, forceRegenerate, userContext) 
   }
 }
 
+function getMiniQuizQuestionValidationKey(questionText) {
+  return String(questionText || "")
+    .toLowerCase()
+    .replace(/^câu\s*\d+[:.)\-]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractMiniQuizQuestions(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (typeof payload === "object" && Array.isArray(payload.questions)) {
+    return payload.questions;
+  }
+  return [];
+}
+
+function isMiniQuizContentSufficient(payload, requiredCount) {
+  var required = Number(requiredCount) || 10;
+  var questions = extractMiniQuizQuestions(payload);
+  if (!Array.isArray(questions) || questions.length < required) {
+    return false;
+  }
+
+  var uniqueQuestionMap = {};
+  var uniqueCount = 0;
+
+  for (var i = 0; i < questions.length; i++) {
+    var item = questions[i] || {};
+    var key = getMiniQuizQuestionValidationKey(item.question || item.title || item.prompt || "");
+    if (!key || uniqueQuestionMap[key]) continue;
+
+    uniqueQuestionMap[key] = true;
+    uniqueCount++;
+  }
+
+  return uniqueCount >= required;
+}
+
 /**
  * Get AI-generated content for a topic
  * Checks cache first, generates new if not found or expired
@@ -267,6 +306,14 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         Logger.log("📦 Cache result: " + (cached ? "FOUND" : "NOT FOUND"));
 
         if (cached && cached.content) {
+          if (
+            contentType === "mini_quiz" &&
+            !isMiniQuizContentSufficient(cached.content, 10)
+          ) {
+            Logger.log(
+              "⚠️ mini_quiz cache has duplicated/insufficient questions, regenerating...",
+            );
+          } else {
           Logger.log("✅ Returning from cache");
           Logger.log("📦 Cache content type: " + typeof cached.content);
 
@@ -295,6 +342,7 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
               message:
                 "Lỗi khi serialize dữ liệu: " + stringifyError.toString(),
             };
+          }
           }
         }
       } catch (cacheError) {

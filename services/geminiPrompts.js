@@ -412,6 +412,10 @@ Trả về CHÍNH XÁC format JSON sau:
 
 YÊU CẦU QUAN TRỌNG:
 - Tạo CHÍNH XÁC 10 câu hỏi (không nhiều hơn, không ít hơn)
+- 10 câu hỏi phải KHÁC NHAU, không lặp lại nội dung
+- Không được đổi số thứ tự hoặc thêm hậu tố để lặp lại cùng một câu hỏi
+- Không tạo câu kiểu "Ôn tập" hoặc biến thể gần như giống hệt câu trước
+- Mỗi câu nên kiểm tra một ý trọng tâm khác nhau trong tài liệu
 - Mỗi câu có 4 đáp án (options là mảng 4 chuỗi)
 - "correctAnswer" là index từ 0-3 (0 = đáp án đầu tiên đúng)
 - Câu hỏi phải tập trung vào KIẾN THỨC TRỌNG ĐIỂM, nội dung cốt lõi nhất
@@ -630,10 +634,10 @@ const ContentGenerator = {
   },
 
   /**
-   * Tạo Mini Quiz - 5 câu hỏi trọng điểm
+   * Tạo Mini Quiz - 10 câu hỏi trọng điểm
    * @param {string} docContent
    * @param {Object} analysis
-   * @returns {Object} Mini quiz data with 5 questions
+   * @returns {Object} Mini quiz data with 10 questions
    */
   generateMiniQuiz: function (docContent, analysis, userContext, requestMeta) {
     const prompt = PROMPT_TEMPLATES.MINI_QUIZ_GENERATION.replace(
