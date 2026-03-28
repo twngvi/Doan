@@ -40,6 +40,7 @@ function loginWithEmail(credentials) {
     const totalXPIndex = headers.indexOf("totalXP");
     const progressSheetIdIndex = headers.indexOf("progressSheetId");
     const themeIndex = headers.indexOf("theme");
+    const petNameIndex = headers.indexOf("petName");
     const verifiedIndex = headers.indexOf("emailVerified");
     const isActiveIndex = headers.indexOf("isActive");
     const lastLoginIndex = headers.indexOf("lastLogin");
@@ -143,6 +144,10 @@ function loginWithEmail(credentials) {
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
                 : "default",
+            petName:
+              petNameIndex >= 0 && data[i][petNameIndex]
+                ? String(data[i][petNameIndex])
+                : "",
           },
         };
       }
