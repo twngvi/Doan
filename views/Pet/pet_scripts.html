@@ -18,6 +18,8 @@
         target: 3,
       },
     };
+    const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
+    const DEFAULT_PET_NAME = "Be Ga";
 
     let hatchModalEscBound = false;
 
@@ -67,6 +69,26 @@
       }
     }
 
+    function loadPetName() {
+      try {
+        const raw = localStorage.getItem(PET_NAME_STORAGE_KEY);
+        if (!raw || typeof raw !== "string") return DEFAULT_PET_NAME;
+        const clean = raw.trim();
+        return clean || DEFAULT_PET_NAME;
+      } catch (error) {
+        console.warn("Pet name parse failed, using default:", error);
+        return DEFAULT_PET_NAME;
+      }
+    }
+
+    function savePetName(name) {
+      try {
+        localStorage.setItem(PET_NAME_STORAGE_KEY, String(name || DEFAULT_PET_NAME));
+      } catch (error) {
+        console.warn("Pet name save failed:", error);
+      }
+    }
+
     function setText(id, value) {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
@@ -76,6 +98,35 @@
       const el = document.getElementById(id);
       if (!el) return;
       el.style.width = `${clamp(percent, 0, 100)}%`;
+    }
+
+    function setupPetNameEditor() {
+      const nameTag = document.getElementById("petNameTag");
+      if (!nameTag || nameTag.dataset.nameBound === "1") {
+        return;
+      }
+      nameTag.dataset.nameBound = "1";
+
+      nameTag.addEventListener("click", function () {
+        const current = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
+        const input = window.prompt("Nhap ten moi cho Pet:", current);
+        if (input === null) return;
+
+        const nextName = String(input).trim();
+        if (!nextName) {
+          notify("Ten Pet khong duoc de trong.", "warning");
+          return;
+        }
+
+        if (nextName.length > 24) {
+          notify("Ten Pet toi da 24 ky tu.", "warning");
+          return;
+        }
+
+        setText("petDisplayName", nextName);
+        savePetName(nextName);
+        notify("Da doi ten Pet thanh cong.", "success");
+      });
     }
 
     function calcOverallPercent(requirements) {
@@ -150,6 +201,7 @@
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
+      const petName = loadPetName();
 
       const target = Math.max(1, Number(state.requirements.target) || 3);
       const learn = clamp(state.requirements.learn, 0, target);
@@ -164,6 +216,7 @@
       const stageLabel = resolveStageLabel(overallPercent);
 
       setText("petUserName", name);
+      setText("petDisplayName", petName);
       setText("petXpValue", String(Math.round(state.xp)));
       setText("petXpValueModal", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
@@ -217,12 +270,14 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
+        setupPetNameEditor();
         setupHatchModal();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
+        setupPetNameEditor();
         setupHatchModal();
         initPetPage();
       }, 80);
