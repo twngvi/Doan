@@ -19,7 +19,7 @@
       },
     };
     const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
-    const DEFAULT_PET_NAME = "Be Ga";
+    const DEFAULT_PET_NAME = "Bé Gà";
 
     let hatchModalEscBound = false;
 
@@ -69,24 +69,46 @@
       }
     }
 
-    function loadPetName() {
+    function normalizePetName(value, fallback) {
+      const safeFallback = String(fallback || DEFAULT_PET_NAME).trim() || DEFAULT_PET_NAME;
+      const normalized = String(value || "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+      return normalized || safeFallback;
+    }
+
+    function loadPetName(fallbackName) {
       try {
         const raw = localStorage.getItem(PET_NAME_STORAGE_KEY);
-        if (!raw || typeof raw !== "string") return DEFAULT_PET_NAME;
-        const clean = raw.trim();
-        return clean || DEFAULT_PET_NAME;
+        if (!raw || typeof raw !== "string") {
+          return normalizePetName("", fallbackName || DEFAULT_PET_NAME);
+        }
+
+        return normalizePetName(raw, fallbackName || DEFAULT_PET_NAME);
       } catch (error) {
         console.warn("Pet name parse failed, using default:", error);
-        return DEFAULT_PET_NAME;
+        return normalizePetName("", fallbackName || DEFAULT_PET_NAME);
       }
     }
 
     function savePetName(name) {
       try {
-        localStorage.setItem(PET_NAME_STORAGE_KEY, String(name || DEFAULT_PET_NAME));
+        localStorage.setItem(PET_NAME_STORAGE_KEY, normalizePetName(name, DEFAULT_PET_NAME));
       } catch (error) {
         console.warn("Pet name save failed:", error);
       }
+    }
+
+    function renderPetName(name) {
+      const safeName = normalizePetName(name, DEFAULT_PET_NAME);
+      setText("petDisplayName", safeName);
+
+      const nameTag = document.getElementById("petNameTag");
+      if (!nameTag) return;
+
+      nameTag.setAttribute("aria-label", `Tên pet: ${safeName}. Bấm để đổi tên pet`);
+      nameTag.setAttribute("title", "Bấm để đổi tên pet");
     }
 
     function setText(id, value) {
@@ -102,30 +124,42 @@
 
     function setupPetNameEditor() {
       const nameTag = document.getElementById("petNameTag");
-      if (!nameTag || nameTag.dataset.nameBound === "1") {
+      if (!nameTag) {
+        return;
+      }
+
+      const currentName = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
+      renderPetName(currentName);
+
+      if (nameTag.dataset.nameBound === "1") {
         return;
       }
       nameTag.dataset.nameBound = "1";
 
       nameTag.addEventListener("click", function () {
         const current = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
-        const input = window.prompt("Nhap ten moi cho Pet:", current);
+        const input = window.prompt("Nhập tên mới cho pet:", current);
         if (input === null) return;
 
-        const nextName = String(input).trim();
-        if (!nextName) {
-          notify("Ten Pet khong duoc de trong.", "warning");
+        const rawName = String(input || "")
+          .trim()
+          .replace(/\s+/g, " ");
+
+        if (!rawName) {
+          notify("Tên pet không được để trống.", "warning");
           return;
         }
 
-        if (nextName.length > 24) {
-          notify("Ten Pet toi da 24 ky tu.", "warning");
+        if (rawName.length > 24) {
+          notify("Tên pet tối đa 24 ký tự.", "warning");
           return;
         }
 
-        setText("petDisplayName", nextName);
+        const nextName = normalizePetName(rawName, DEFAULT_PET_NAME);
+
+        renderPetName(nextName);
         savePetName(nextName);
-        notify("Da doi ten Pet thanh cong.", "success");
+        notify("Đã đổi tên pet thành công.", "success");
       });
     }
 
@@ -201,7 +235,7 @@
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
-      const petName = loadPetName();
+      const petName = loadPetName(DEFAULT_PET_NAME);
 
       const target = Math.max(1, Number(state.requirements.target) || 3);
       const learn = clamp(state.requirements.learn, 0, target);
@@ -216,7 +250,7 @@
       const stageLabel = resolveStageLabel(overallPercent);
 
       setText("petUserName", name);
-      setText("petDisplayName", petName);
+      renderPetName(petName);
       setText("petXpValue", String(Math.round(state.xp)));
       setText("petXpValueModal", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
@@ -235,6 +269,7 @@
       setProgressBar("petLearnProgress", (learn / target) * 100);
       setProgressBar("petQuizProgress", (quiz / target) * 100);
       setProgressBar("petMatchProgress", (matching / target) * 100);
+      setupPetNameEditor();
       setHatchModalOpen(false);
     }
 
@@ -270,14 +305,12 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
-        setupPetNameEditor();
         setupHatchModal();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
-        setupPetNameEditor();
         setupHatchModal();
         initPetPage();
       }, 80);
