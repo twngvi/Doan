@@ -254,6 +254,133 @@
         <p>Trang quản lý quiz đang được phát triển</p>
       </div>
     </div>
+
+    <div id="page-admin-pet" class="admin-page" style="display: none;">
+      <div class="admin-pet-page">
+        <div class="admin-pet-header">
+          <div>
+            <h2>Pet Management</h2>
+            <p>Quản lý danh sách pet người dùng, thức ăn và phụ kiện.</p>
+          </div>
+          <button class="refresh-btn" onclick="refreshAdminPetPage()">
+            <span>Làm mới</span>
+          </button>
+        </div>
+
+        <section class="admin-pet-grid">
+          <article class="admin-pet-card">
+            <h3>Người dùng và tên Pet</h3>
+            <div class="admin-pet-users-wrap">
+              <table class="admin-pet-table" id="adminPetUsersTable">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Email</th>
+                    <th>Tên Pet</th>
+                    <th>Level</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="4">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="admin-pet-card">
+            <h3>Quản lý thức ăn</h3>
+            <form id="adminPetFoodForm" class="admin-pet-food-form">
+              <div class="admin-pet-form-row">
+                <label>Tên thức ăn</label>
+                <input id="adminFoodName" type="text" placeholder="Ví dụ: Táo đỏ" required />
+              </div>
+              <div class="admin-pet-form-row">
+                <label>Icon thức ăn</label>
+                <input id="adminFoodIcon" type="text" placeholder="🍎" required />
+              </div>
+              <div class="admin-pet-form-row two-cols">
+                <div>
+                  <label>Giá mua (XQP)</label>
+                  <input id="adminFoodPrice" type="number" min="0" value="40" required />
+                </div>
+                <div>
+                  <label>XP tăng level khi ăn</label>
+                  <input id="adminFoodXpGain" type="number" min="1" value="10" required />
+                </div>
+              </div>
+              <div class="admin-pet-form-row two-cols">
+                <div>
+                  <label>Điều kiện unlock</label>
+                  <select id="adminFoodUnlockType">
+                    <option value="none">Không yêu cầu</option>
+                    <option value="lesson_topic">Lesson Topic</option>
+                    <option value="quiz_topic">Quiz Topic</option>
+                    <option value="matching_topic">Matching Topic</option>
+                    <option value="pet_level">Pet Level</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Giá trị unlock</label>
+                  <input id="adminFoodUnlockValue" type="text" placeholder="VD: topic_03 hoặc level_5" />
+                </div>
+              </div>
+              <div class="admin-pet-form-row">
+                <label class="admin-pet-check">
+                  <input id="adminFoodStarter" type="checkbox" />
+                  <span>Mặc định có trong kho user mới</span>
+                </label>
+              </div>
+              <button class="refresh-btn" type="submit">
+                <span>Thêm thức ăn</span>
+              </button>
+            </form>
+
+            <div class="admin-food-list" id="adminFoodList"></div>
+          </article>
+        </section>
+
+        <section class="admin-pet-card">
+          <h3>Quản lý phụ kiện</h3>
+          <form id="adminPetAccessoryForm" class="admin-pet-food-form">
+            <div class="admin-pet-form-row">
+              <label>Tên phụ kiện</label>
+              <input id="adminAccessoryName" type="text" placeholder="Ví dụ: Nơ hồng" required />
+            </div>
+            <div class="admin-pet-form-row">
+              <label>Icon phụ kiện</label>
+              <input id="adminAccessoryIcon" type="text" placeholder="🎀" required />
+            </div>
+            <div class="admin-pet-form-row two-cols">
+              <div>
+                <label>Giá mua (XQP)</label>
+                <input id="adminAccessoryPrice" type="number" min="0" value="120" required />
+              </div>
+              <div>
+                <label>Điều kiện unlock</label>
+                <select id="adminAccessoryUnlockType">
+                  <option value="none">Không yêu cầu</option>
+                  <option value="lesson_topic">Lesson Topic</option>
+                  <option value="quiz_topic">Quiz Topic</option>
+                  <option value="matching_topic">Matching Topic</option>
+                  <option value="pet_level">Pet Level</option>
+                </select>
+              </div>
+            </div>
+            <div class="admin-pet-form-row">
+              <label>Giá trị unlock</label>
+              <input id="adminAccessoryUnlockValue" type="text" placeholder="VD: topic_03 hoặc 5" />
+            </div>
+            <button class="refresh-btn" type="submit">
+              <span>Thêm phụ kiện</span>
+            </button>
+          </form>
+
+          <div class="admin-food-list" id="adminAccessoryList"></div>
+        </section>
+      </div>
+    </div>
     
     <div id="page-reports" class="admin-page" style="display: none;">
       <div class="admin-page-placeholder">
@@ -345,7 +472,164 @@
     color: var(--theme-text-secondary);
     margin: 0;
   }
-  
+
+  .admin-pet-page {
+    min-height: 100vh;
+    padding: 1.2rem;
+    background: var(--theme-dashboard-bg);
+    color: var(--theme-text);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .admin-pet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .admin-pet-header h2 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+
+  .admin-pet-header p {
+    margin: 0.35rem 0 0;
+    color: var(--theme-text-secondary);
+  }
+
+  .admin-pet-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .admin-pet-card {
+    border-radius: 16px;
+    background: var(--theme-card);
+    border: 1px solid var(--theme-card-border);
+    padding: 1rem;
+    box-shadow: 0 8px 20px var(--theme-shadow);
+  }
+
+  .admin-pet-card h3 {
+    margin: 0 0 0.8rem;
+  }
+
+  .admin-pet-users-wrap {
+    overflow: auto;
+  }
+
+  .admin-pet-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 560px;
+  }
+
+  .admin-pet-table th,
+  .admin-pet-table td {
+    padding: 0.6rem;
+    border-bottom: 1px solid var(--theme-border-light);
+    text-align: left;
+    font-size: 0.88rem;
+  }
+
+  .admin-pet-table th {
+    color: var(--theme-text-secondary);
+    font-weight: 700;
+  }
+
+  .admin-pet-food-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+  }
+
+  .admin-pet-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .admin-pet-form-row.two-cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .admin-pet-form-row input,
+  .admin-pet-form-row select {
+    border-radius: 10px;
+    border: 1px solid var(--theme-border-light);
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    padding: 0.55rem 0.65rem;
+    font-size: 0.88rem;
+  }
+
+  .admin-pet-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--theme-text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .admin-food-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .admin-food-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    border: 1px solid var(--theme-border-light);
+    border-radius: 12px;
+    background: var(--theme-surface);
+    padding: 0.55rem 0.65rem;
+  }
+
+  .admin-food-item-left {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .admin-food-icon {
+    font-size: 1.25rem;
+  }
+
+  .admin-food-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+
+  .admin-food-meta strong {
+    font-size: 0.9rem;
+  }
+
+  .admin-food-meta span {
+    font-size: 0.78rem;
+    color: var(--theme-text-secondary);
+  }
+
+  .admin-food-delete {
+    border: 0;
+    border-radius: 9px;
+    padding: 0.42rem 0.62rem;
+    background: rgba(220, 38, 38, 0.15);
+    color: #dc2626;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
   @media (max-width: 768px) {
     .admin-main-content {
       margin-left: 0;
@@ -462,5 +746,285 @@
         window.location.href = baseUrl;
       }
     }
+  }
+</script>
+
+<script>
+  let adminPetDataCache = {
+    users: [],
+    foods: [],
+    accessories: [],
+  };
+
+  function initadminpet() {
+    refreshAdminPetPage();
+    setupAdminPetFoodForm();
+    setupAdminPetAccessoryForm();
+  }
+
+  function refreshAdminPetPage() {
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      renderAdminPetUsers([]);
+      renderAdminFoodList([]);
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result || !result.success || !result.data) {
+          if (typeof showToast === 'function') {
+            showToast((result && result.message) || 'Không tải được dữ liệu Pet Admin', 'error');
+          }
+          return;
+        }
+
+        adminPetDataCache.users = Array.isArray(result.data.users) ? result.data.users : [];
+        adminPetDataCache.foods = Array.isArray(result.data.foods) ? result.data.foods : [];
+        adminPetDataCache.accessories = Array.isArray(result.data.accessories) ? result.data.accessories : [];
+
+        renderAdminPetUsers(adminPetDataCache.users);
+        renderAdminFoodList(adminPetDataCache.foods);
+        renderAdminAccessoryList(adminPetDataCache.accessories);
+      })
+      .withFailureHandler(function(error) {
+        if (typeof showToast === 'function') {
+          showToast('Lỗi tải Pet Admin: ' + error, 'error');
+        }
+      })
+      .getPetAdminOverviewData();
+  }
+
+  function renderAdminPetUsers(users) {
+    const table = document.getElementById('adminPetUsersTable');
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+
+    if (!users || users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4">Chưa có dữ liệu người dùng.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map(function(user) {
+      return '<tr>' +
+        '<td>' + escapeAdminPetHtml(user.name || '-') + '</td>' +
+        '<td>' + escapeAdminPetHtml(user.email || '-') + '</td>' +
+        '<td>' + escapeAdminPetHtml(user.petName || 'Be Ga') + '</td>' +
+        '<td>Lv.' + Number(user.level || 1) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderAdminFoodList(foods) {
+    const container = document.getElementById('adminFoodList');
+    if (!container) return;
+
+    if (!foods || foods.length === 0) {
+      container.innerHTML = '<div class="admin-food-item">Chưa có thức ăn nào.</div>';
+      return;
+    }
+
+    container.innerHTML = foods.map(function(food) {
+      const unlockInfo = food.unlockType && food.unlockType !== 'none'
+        ? (food.unlockType + ': ' + (food.unlockValue || '-'))
+        : 'Không yêu cầu unlock';
+
+      return '<div class="admin-food-item">' +
+        '<div class="admin-food-item-left">' +
+          '<span class="admin-food-icon">' + escapeAdminPetHtml(food.icon || '🍽️') + '</span>' +
+          '<div class="admin-food-meta">' +
+            '<strong>' + escapeAdminPetHtml(food.name || 'Food') + '</strong>' +
+            '<span>' + Number(food.priceXqp || 0) + ' XQP | +' + Number(food.xpGain || 0) + ' XP level</span>' +
+            '<span>' + escapeAdminPetHtml(unlockInfo) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="admin-food-delete" type="button" onclick="deleteAdminPetFood(\'' + String(food.id || '') + '\')">Xóa</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function setupAdminPetFoodForm() {
+    const form = document.getElementById('adminPetFoodForm');
+    if (!form || form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const payload = {
+        name: (document.getElementById('adminFoodName') || {}).value || '',
+        icon: (document.getElementById('adminFoodIcon') || {}).value || '',
+        priceXqp: (document.getElementById('adminFoodPrice') || {}).value || 0,
+        xpGain: (document.getElementById('adminFoodXpGain') || {}).value || 1,
+        unlockType: (document.getElementById('adminFoodUnlockType') || {}).value || 'none',
+        unlockValue: (document.getElementById('adminFoodUnlockValue') || {}).value || '',
+        starter: !!((document.getElementById('adminFoodStarter') || {}).checked),
+      };
+
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            if (typeof showToast === 'function') {
+              showToast((result && result.message) || 'Không thể thêm thức ăn', 'error');
+            }
+            return;
+          }
+
+          form.reset();
+          if (typeof showToast === 'function') {
+            showToast('Đã thêm thức ăn mới', 'success');
+          }
+          refreshAdminPetPage();
+        })
+        .withFailureHandler(function(error) {
+          if (typeof showToast === 'function') {
+            showToast('Lỗi thêm thức ăn: ' + error, 'error');
+          }
+        })
+        .addPetFoodAdmin(payload);
+    });
+  }
+
+  function renderAdminAccessoryList(accessories) {
+    const container = document.getElementById('adminAccessoryList');
+    if (!container) return;
+
+    if (!accessories || accessories.length === 0) {
+      container.innerHTML = '<div class="admin-food-item">Chưa có phụ kiện nào.</div>';
+      return;
+    }
+
+    container.innerHTML = accessories.map(function(acc) {
+      const unlockInfo = acc.unlockType && acc.unlockType !== 'none'
+        ? (acc.unlockType + ': ' + (acc.unlockValue || '-'))
+        : 'Không yêu cầu unlock';
+
+      return '<div class="admin-food-item">' +
+        '<div class="admin-food-item-left">' +
+          '<span class="admin-food-icon">' + escapeAdminPetHtml(acc.icon || '🎒') + '</span>' +
+          '<div class="admin-food-meta">' +
+            '<strong>' + escapeAdminPetHtml(acc.name || 'Accessory') + '</strong>' +
+            '<span>' + Number(acc.priceXqp || 0) + ' XQP</span>' +
+            '<span>' + escapeAdminPetHtml(unlockInfo) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="admin-food-delete" type="button" onclick="deleteAdminPetAccessory(\'' + String(acc.id || '') + '\')">Xóa</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function setupAdminPetAccessoryForm() {
+    const form = document.getElementById('adminPetAccessoryForm');
+    if (!form || form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const payload = {
+        name: (document.getElementById('adminAccessoryName') || {}).value || '',
+        icon: (document.getElementById('adminAccessoryIcon') || {}).value || '',
+        priceXqp: (document.getElementById('adminAccessoryPrice') || {}).value || 0,
+        unlockType: (document.getElementById('adminAccessoryUnlockType') || {}).value || 'none',
+        unlockValue: (document.getElementById('adminAccessoryUnlockValue') || {}).value || '',
+      };
+
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            if (typeof showToast === 'function') {
+              showToast((result && result.message) || 'Không thể thêm phụ kiện', 'error');
+            }
+            return;
+          }
+
+          form.reset();
+          if (typeof showToast === 'function') {
+            showToast('Đã thêm phụ kiện mới', 'success');
+          }
+          refreshAdminPetPage();
+        })
+        .withFailureHandler(function(error) {
+          if (typeof showToast === 'function') {
+            showToast('Lỗi thêm phụ kiện: ' + error, 'error');
+          }
+        })
+        .addPetAccessoryAdmin(payload);
+    });
+  }
+
+  function deleteAdminPetFood(foodId) {
+    if (!foodId) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result || !result.success) {
+          if (typeof showToast === 'function') {
+            showToast((result && result.message) || 'Không thể xóa thức ăn', 'error');
+          }
+          return;
+        }
+
+        if (typeof showToast === 'function') {
+          showToast('Đã xóa thức ăn', 'success');
+        }
+        refreshAdminPetPage();
+      })
+      .withFailureHandler(function(error) {
+        if (typeof showToast === 'function') {
+          showToast('Lỗi xóa thức ăn: ' + error, 'error');
+        }
+      })
+      .deletePetFoodAdmin(foodId);
+  }
+
+  function deleteAdminPetAccessory(accessoryId) {
+    if (!accessoryId) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (!result || !result.success) {
+          if (typeof showToast === 'function') {
+            showToast((result && result.message) || 'Không thể xóa phụ kiện', 'error');
+          }
+          return;
+        }
+
+        if (typeof showToast === 'function') {
+          showToast('Đã xóa phụ kiện', 'success');
+        }
+        refreshAdminPetPage();
+      })
+      .withFailureHandler(function(error) {
+        if (typeof showToast === 'function') {
+          showToast('Lỗi xóa phụ kiện: ' + error, 'error');
+        }
+      })
+      .deletePetAccessoryAdmin(accessoryId);
+  }
+
+  function escapeAdminPetHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 </script>

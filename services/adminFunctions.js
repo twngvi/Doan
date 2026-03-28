@@ -816,6 +816,797 @@ function getAllUsersForAdmin() {
   }
 }
 
+// ========================================
+// PET ECONOMY MANAGEMENT
+// ========================================
+
+const PET_FOOD_CATALOG_KEY = "PET_FOOD_CATALOG_V1";
+const PET_ACCESSORY_CATALOG_KEY = "PET_ACCESSORY_CATALOG_V1";
+const PET_OWNED_FOOD_IDS_KEY = "PET_OWNED_FOOD_IDS_V1";
+const PET_OWNED_ACCESSORY_IDS_KEY = "PET_OWNED_ACCESSORY_IDS_V1";
+
+function getDefaultPetFoodCatalog_() {
+  return [
+    {
+      id: "food_corn",
+      name: "Bap ngot",
+      icon: "🌽",
+      priceXqp: 40,
+      xpGain: 12,
+      unlockType: "lesson_topic",
+      unlockValue: "topic_01",
+      starter: true,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "food_carrot",
+      name: "Ca rot gion",
+      icon: "🥕",
+      priceXqp: 55,
+      xpGain: 10,
+      unlockType: "quiz_topic",
+      unlockValue: "topic_02",
+      starter: false,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function getDefaultPetAccessoryCatalog_() {
+  return [
+    {
+      id: "acc_ribbon",
+      name: "No mua xuan",
+      icon: "🎀",
+      priceXqp: 120,
+      unlockType: "pet_level",
+      unlockValue: "3",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "acc_hat",
+      name: "Mu nong trai",
+      icon: "👒",
+      priceXqp: 160,
+      unlockType: "matching_topic",
+      unlockValue: "topic_03",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function loadPetFoodCatalog_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(PET_FOOD_CATALOG_KEY);
+  if (!raw) {
+    const defaults = getDefaultPetFoodCatalog_();
+    props.setProperty(PET_FOOD_CATALOG_KEY, JSON.stringify(defaults));
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      throw new Error("Invalid pet catalog format");
+    }
+    return parsed;
+  } catch (error) {
+    const defaults = getDefaultPetFoodCatalog_();
+    props.setProperty(PET_FOOD_CATALOG_KEY, JSON.stringify(defaults));
+    return defaults;
+  }
+}
+
+function savePetFoodCatalog_(catalog) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(PET_FOOD_CATALOG_KEY, JSON.stringify(catalog || []));
+}
+
+function loadPetAccessoryCatalog_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(PET_ACCESSORY_CATALOG_KEY);
+  if (!raw) {
+    const defaults = getDefaultPetAccessoryCatalog_();
+    props.setProperty(PET_ACCESSORY_CATALOG_KEY, JSON.stringify(defaults));
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      throw new Error("Invalid pet accessory catalog format");
+    }
+    return parsed;
+  } catch (error) {
+    const defaults = getDefaultPetAccessoryCatalog_();
+    props.setProperty(PET_ACCESSORY_CATALOG_KEY, JSON.stringify(defaults));
+    return defaults;
+  }
+}
+
+function savePetAccessoryCatalog_(catalog) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(PET_ACCESSORY_CATALOG_KEY, JSON.stringify(catalog || []));
+}
+
+function getUserOwnedFoodIds_() {
+  const props = PropertiesService.getUserProperties();
+  const raw = props.getProperty(PET_OWNED_FOOD_IDS_KEY);
+
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveUserOwnedFoodIds_(ids) {
+  const props = PropertiesService.getUserProperties();
+  props.setProperty(PET_OWNED_FOOD_IDS_KEY, JSON.stringify(ids || []));
+}
+
+function getUserOwnedAccessoryIds_() {
+  const props = PropertiesService.getUserProperties();
+  const raw = props.getProperty(PET_OWNED_ACCESSORY_IDS_KEY);
+
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveUserOwnedAccessoryIds_(ids) {
+  const props = PropertiesService.getUserProperties();
+  props.setProperty(PET_OWNED_ACCESSORY_IDS_KEY, JSON.stringify(ids || []));
+}
+
+function parsePetBool_(value) {
+  if (value === true) return true;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1";
+  }
+  return Number(value) === 1;
+}
+
+function getPetUserRowByEmail_(email) {
+  const usersSheet = getSheet("Users");
+  if (!usersSheet || usersSheet.getLastRow() <= 1) {
+    return null;
+  }
+
+  const emailCol = ensureUsersColumn(usersSheet, "email");
+  const petNameCol = ensureUsersColumn(usersSheet, "petName");
+  const petXqpCol = ensureUsersColumn(usersSheet, "petXqp");
+  const petLevelCol = ensureUsersColumn(usersSheet, "petLevel");
+  const petLevelProgressCol = ensureUsersColumn(usersSheet, "petLevelProgress");
+  const totalXpCol = ensureUsersColumn(usersSheet, "totalXP");
+
+  const data = usersSheet.getDataRange().getValues();
+  const targetEmail = String(email || "").trim().toLowerCase();
+
+  for (let i = 1; i < data.length; i++) {
+    const rowEmail = String(data[i][emailCol] || "").trim().toLowerCase();
+    if (rowEmail !== targetEmail) continue;
+
+    const rowIndex = i + 1;
+    const petState = {
+      petName: String(data[i][petNameCol] || "").trim() || "Be Ga",
+      xqp: Math.max(0, parseInt(data[i][petXqpCol], 10) || 120),
+      level: Math.max(1, parseInt(data[i][petLevelCol], 10) || 1),
+      levelProgress: Math.max(0, Math.min(100, parseInt(data[i][petLevelProgressCol], 10) || 0)),
+      totalXP: Math.max(0, parseInt(data[i][totalXpCol], 10) || 0),
+    };
+
+    return {
+      usersSheet: usersSheet,
+      rowIndex: rowIndex,
+      columns: {
+        petNameCol: petNameCol,
+        petXqpCol: petXqpCol,
+        petLevelCol: petLevelCol,
+        petLevelProgressCol: petLevelProgressCol,
+      },
+      state: petState,
+    };
+  }
+
+  return null;
+}
+
+function savePetUserStateByRow_(rowData, patch) {
+  if (!rowData || !rowData.usersSheet || !rowData.rowIndex) return;
+
+  const sheet = rowData.usersSheet;
+  const rowIndex = rowData.rowIndex;
+  const cols = rowData.columns || {};
+  const next = patch || {};
+
+  if (cols.petNameCol >= 0 && next.petName != null) {
+    sheet.getRange(rowIndex, cols.petNameCol + 1).setValue(String(next.petName || "Be Ga").trim() || "Be Ga");
+  }
+  if (cols.petXqpCol >= 0 && next.xqp != null) {
+    sheet.getRange(rowIndex, cols.petXqpCol + 1).setValue(Math.max(0, parseInt(next.xqp, 10) || 0));
+  }
+  if (cols.petLevelCol >= 0 && next.level != null) {
+    sheet.getRange(rowIndex, cols.petLevelCol + 1).setValue(Math.max(1, parseInt(next.level, 10) || 1));
+  }
+  if (cols.petLevelProgressCol >= 0 && next.levelProgress != null) {
+    const progress = Math.max(0, Math.min(100, parseInt(next.levelProgress, 10) || 0));
+    sheet.getRange(rowIndex, cols.petLevelProgressCol + 1).setValue(progress);
+  }
+}
+
+function getUserTopicProgressMap_(email) {
+  const progressSheetId = getUserProgressSheetIdByEmail(email);
+  if (!progressSheetId) {
+    return {};
+  }
+
+  const ss = SpreadsheetApp.openById(progressSheetId);
+  const sheet = ss.getSheetByName("Topic_Progress");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return {};
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0] || [];
+  const topicIdCol = headers.indexOf("topicId");
+  const lessonCol = headers.indexOf("lessonCompleted");
+  const quizCol = headers.indexOf("quizDone");
+  const matchingCol = headers.indexOf("matchingDone");
+
+  if (topicIdCol < 0) return {};
+
+  const map = {};
+  for (let i = 1; i < data.length; i++) {
+    const topicId = String(data[i][topicIdCol] || "").trim();
+    if (!topicId) continue;
+
+    map[topicId] = {
+      lessonDone: lessonCol >= 0 ? parsePetBool_(data[i][lessonCol]) : false,
+      quizDone: quizCol >= 0 ? parsePetBool_(data[i][quizCol]) : false,
+      matchingDone: matchingCol >= 0 ? parsePetBool_(data[i][matchingCol]) : false,
+    };
+  }
+
+  return map;
+}
+
+function buildPetRequirementCounter_(topicProgressMap) {
+  const topicIds = Object.keys(topicProgressMap || {});
+  let learn = 0;
+  let quiz = 0;
+  let matching = 0;
+
+  for (let i = 0; i < topicIds.length; i++) {
+    const progress = topicProgressMap[topicIds[i]] || {};
+    if (progress.lessonDone) learn++;
+    if (progress.quizDone) quiz++;
+    if (progress.matchingDone) matching++;
+  }
+
+  return {
+    target: 3,
+    learn: Math.min(3, learn),
+    quiz: Math.min(3, quiz),
+    matching: Math.min(3, matching),
+  };
+}
+
+function getPetAdminOverviewData() {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Khong the xac thuc quyen admin",
+      };
+    }
+
+    const usersResult = getAllUsersForAdmin();
+    if (!usersResult || !usersResult.success) {
+      return {
+        success: false,
+        message: (usersResult && usersResult.message) || "Khong the lay danh sach users",
+      };
+    }
+
+    const usersSheet = getSheet("Users");
+    let petNameByUserId = {};
+    let petLevelByUserId = {};
+
+    if (usersSheet && usersSheet.getLastRow() > 1) {
+      const data = usersSheet.getDataRange().getValues();
+      const headers = data[0] || [];
+      const userIdCol = headers.indexOf("userId");
+      const petNameCol = headers.indexOf("petName");
+      const petLevelCol = headers.indexOf("petLevel");
+
+      if (userIdCol >= 0 && petNameCol >= 0) {
+        for (let i = 1; i < data.length; i++) {
+          const uid = String(data[i][userIdCol] || "").trim();
+          if (!uid) continue;
+          const petName = String(data[i][petNameCol] || "").trim();
+          petNameByUserId[uid] = petName || "Be Ga";
+          if (petLevelCol >= 0) {
+            petLevelByUserId[uid] = Math.max(1, parseInt(data[i][petLevelCol], 10) || 1);
+          }
+        }
+      }
+    }
+
+    const users = (usersResult.data || []).map(function (user) {
+      const userId = String(user.userId || "").trim();
+      return {
+        userId: user.userId,
+        name: user.displayName || user.username || user.email || "Nguoi choi",
+        email: user.email || "",
+        level: petLevelByUserId[userId] || user.level || 1,
+        petName: petNameByUserId[userId] || "Be Ga",
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        users: users,
+        foods: loadPetFoodCatalog_(),
+        accessories: loadPetAccessoryCatalog_(),
+      },
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function addPetFoodAdmin(foodInput) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Khong the xac thuc quyen admin",
+      };
+    }
+
+    const input = foodInput || {};
+    const name = String(input.name || "").trim();
+    const icon = String(input.icon || "").trim();
+    const unlockType = String(input.unlockType || "none").trim();
+    const unlockValue = String(input.unlockValue || "").trim();
+    const priceXqp = Math.max(0, parseInt(input.priceXqp, 10) || 0);
+    const xpGain = Math.max(1, parseInt(input.xpGain, 10) || 1);
+
+    if (!name) {
+      return { success: false, message: "Ten thuc an khong duoc de trong" };
+    }
+    if (!icon) {
+      return { success: false, message: "Vui long chon icon thuc an" };
+    }
+
+    const catalog = loadPetFoodCatalog_();
+    const food = {
+      id: "food_" + new Date().getTime(),
+      name: name,
+      icon: icon,
+      priceXqp: priceXqp,
+      xpGain: xpGain,
+      unlockType: unlockType,
+      unlockValue: unlockValue,
+      starter: !!input.starter,
+      createdAt: new Date().toISOString(),
+    };
+
+    catalog.push(food);
+    savePetFoodCatalog_(catalog);
+
+    return {
+      success: true,
+      message: "Da them thuc an moi",
+      data: food,
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function deletePetFoodAdmin(foodId) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Khong the xac thuc quyen admin",
+      };
+    }
+
+    const targetId = String(foodId || "").trim();
+    if (!targetId) {
+      return { success: false, message: "Food ID khong hop le" };
+    }
+
+    const catalog = loadPetFoodCatalog_();
+    const nextCatalog = catalog.filter(function (item) {
+      return String(item.id || "") !== targetId;
+    });
+
+    if (nextCatalog.length === catalog.length) {
+      return { success: false, message: "Khong tim thay thuc an de xoa" };
+    }
+
+    savePetFoodCatalog_(nextCatalog);
+    return { success: true, message: "Da xoa thuc an" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function addPetAccessoryAdmin(accessoryInput) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Khong the xac thuc quyen admin",
+      };
+    }
+
+    const input = accessoryInput || {};
+    const name = String(input.name || "").trim();
+    const icon = String(input.icon || "").trim();
+    const unlockType = String(input.unlockType || "none").trim();
+    const unlockValue = String(input.unlockValue || "").trim();
+    const priceXqp = Math.max(0, parseInt(input.priceXqp, 10) || 0);
+
+    if (!name) {
+      return { success: false, message: "Ten phu kien khong duoc de trong" };
+    }
+    if (!icon) {
+      return { success: false, message: "Vui long chon icon phu kien" };
+    }
+
+    const catalog = loadPetAccessoryCatalog_();
+    const accessory = {
+      id: "acc_" + new Date().getTime(),
+      name: name,
+      icon: icon,
+      priceXqp: priceXqp,
+      unlockType: unlockType,
+      unlockValue: unlockValue,
+      createdAt: new Date().toISOString(),
+    };
+
+    catalog.push(accessory);
+    savePetAccessoryCatalog_(catalog);
+
+    return {
+      success: true,
+      message: "Da them phu kien moi",
+      data: accessory,
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function deletePetAccessoryAdmin(accessoryId) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Khong the xac thuc quyen admin",
+      };
+    }
+
+    const targetId = String(accessoryId || "").trim();
+    if (!targetId) {
+      return { success: false, message: "Accessory ID khong hop le" };
+    }
+
+    const catalog = loadPetAccessoryCatalog_();
+    const nextCatalog = catalog.filter(function (item) {
+      return String(item.id || "") !== targetId;
+    });
+
+    if (nextCatalog.length === catalog.length) {
+      return { success: false, message: "Khong tim thay phu kien de xoa" };
+    }
+
+    savePetAccessoryCatalog_(nextCatalog);
+    return { success: true, message: "Da xoa phu kien" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function resolvePetUnlockStatus_(item, topicProgressMap, petState) {
+  const unlockType = String(item && item.unlockType || "none").trim();
+  const unlockValue = String(item && item.unlockValue || "").trim();
+
+  if (!unlockType || unlockType === "none") {
+    return { unlocked: true, reason: "" };
+  }
+
+  if (unlockType === "pet_level") {
+    const requiredLevel = Math.max(1, parseInt(unlockValue, 10) || 1);
+    const currentLevel = Math.max(1, parseInt(petState && petState.level, 10) || 1);
+    return {
+      unlocked: currentLevel >= requiredLevel,
+      reason: "Can level " + requiredLevel,
+    };
+  }
+
+  const topic = topicProgressMap[unlockValue] || {};
+  if (unlockType === "lesson_topic") {
+    return {
+      unlocked: !!topic.lessonDone,
+      reason: "Can hoan thanh bai hoc " + unlockValue,
+    };
+  }
+  if (unlockType === "quiz_topic") {
+    return {
+      unlocked: !!topic.quizDone,
+      reason: "Can hoan thanh quiz " + unlockValue,
+    };
+  }
+  if (unlockType === "matching_topic") {
+    return {
+      unlocked: !!topic.matchingDone,
+      reason: "Can hoan thanh matching " + unlockValue,
+    };
+  }
+
+  return { unlocked: true, reason: "" };
+}
+
+function buildPetUserSnapshotByEmail_(email) {
+  const rowData = getPetUserRowByEmail_(email);
+  if (!rowData) {
+    return {
+      success: false,
+      message: "Khong tim thay user",
+    };
+  }
+
+  const petState = rowData.state || {};
+  const foods = loadPetFoodCatalog_();
+  const accessories = loadPetAccessoryCatalog_();
+  const topicProgressMap = getUserTopicProgressMap_(email);
+
+  let ownedFoodIds = getUserOwnedFoodIds_().filter(function (id) {
+    return foods.some(function (f) { return String(f.id) === String(id); });
+  });
+  if (ownedFoodIds.length === 0) {
+    ownedFoodIds = foods
+      .filter(function (food) { return !!food.starter; })
+      .map(function (food) { return String(food.id); });
+    saveUserOwnedFoodIds_(ownedFoodIds);
+  }
+
+  let ownedAccessoryIds = getUserOwnedAccessoryIds_().filter(function (id) {
+    return accessories.some(function (a) { return String(a.id) === String(id); });
+  });
+  if (ownedAccessoryIds.length === 0 && accessories.length > 0) {
+    const first = String(accessories[0].id || "").trim();
+    if (first) {
+      ownedAccessoryIds = [first];
+      saveUserOwnedAccessoryIds_(ownedAccessoryIds);
+    }
+  }
+
+  const foodsWithUnlock = foods.map(function (food) {
+    const unlock = resolvePetUnlockStatus_(food, topicProgressMap, petState);
+    return Object.assign({}, food, {
+      unlocked: unlock.unlocked,
+      unlockReason: unlock.reason,
+    });
+  });
+
+  const accessoriesWithUnlock = accessories.map(function (acc) {
+    const unlock = resolvePetUnlockStatus_(acc, topicProgressMap, petState);
+    return Object.assign({}, acc, {
+      unlocked: unlock.unlocked,
+      unlockReason: unlock.reason,
+    });
+  });
+
+  return {
+    success: true,
+    data: {
+      petState: {
+        coins: petState.xqp,
+        levelCurrent: petState.level,
+        levelProgress: petState.levelProgress,
+        requirements: buildPetRequirementCounter_(topicProgressMap),
+      },
+      petName: petState.petName || "Be Ga",
+      foods: foodsWithUnlock,
+      accessories: accessoriesWithUnlock,
+      ownedFoodIds: ownedFoodIds,
+      ownedAccessoryIds: ownedAccessoryIds,
+    },
+    rowData: rowData,
+  };
+}
+
+function getPetFoodCatalogForUser() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    if (!snapshot.success) {
+      return snapshot;
+    }
+
+    return {
+      success: true,
+      data: snapshot.data,
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function syncCurrentUserPetState(syncInput) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const rowData = getPetUserRowByEmail_(email);
+    if (!rowData) {
+      return { success: false, message: "Khong tim thay user" };
+    }
+
+    const input = syncInput || {};
+    savePetUserStateByRow_(rowData, {
+      petName: input.petName != null ? String(input.petName || "") : rowData.state.petName,
+      xqp: input.coins != null ? Math.max(0, parseInt(input.coins, 10) || 0) : rowData.state.xqp,
+      level: input.levelCurrent != null ? Math.max(1, parseInt(input.levelCurrent, 10) || 1) : rowData.state.level,
+      levelProgress: input.levelProgress != null ? Math.max(0, Math.min(100, parseInt(input.levelProgress, 10) || 0)) : rowData.state.levelProgress,
+    });
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    return { success: true, data: snapshot.data, message: "Da dong bo trang thai pet" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function purchasePetFoodForUser(foodId) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    if (!snapshot.success) {
+      return snapshot;
+    }
+
+    const id = String(foodId || "").trim();
+    const food = (snapshot.data.foods || []).find(function (item) {
+      return String(item.id || "") === id;
+    });
+    if (!food) {
+      return { success: false, message: "Khong tim thay thuc an" };
+    }
+    if (!food.unlocked) {
+      return { success: false, message: food.unlockReason || "Chua du dieu kien mo khoa" };
+    }
+
+    const currentCoins = Math.max(0, parseInt(snapshot.rowData.state.xqp, 10) || 0);
+    const price = Math.max(0, parseInt(food.priceXqp, 10) || 0);
+    if (currentCoins < price) {
+      return { success: false, message: "Khong du XQP de mua" };
+    }
+
+    const owned = snapshot.data.ownedFoodIds || [];
+    if (!owned.some(function (ownedId) { return String(ownedId) === id; })) {
+      owned.push(id);
+      saveUserOwnedFoodIds_(owned);
+    }
+
+    const nextCoins = currentCoins - price;
+    savePetUserStateByRow_(snapshot.rowData, { xqp: nextCoins });
+
+    const refreshed = buildPetUserSnapshotByEmail_(email);
+    return {
+      success: true,
+      message: "Mua thuc an thanh cong",
+      data: refreshed.data,
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function consumePetFoodForUser(foodId) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    if (!snapshot.success) {
+      return snapshot;
+    }
+
+    const id = String(foodId || "").trim();
+    const food = (snapshot.data.foods || []).find(function (item) {
+      return String(item.id || "") === id;
+    });
+    if (!food) {
+      return { success: false, message: "Khong tim thay thuc an" };
+    }
+
+    const owned = snapshot.data.ownedFoodIds || [];
+    if (!owned.some(function (ownedId) { return String(ownedId) === id; })) {
+      return { success: false, message: "Ban chua so huu thuc an nay" };
+    }
+
+    const xpGain = Math.max(1, parseInt(food.xpGain, 10) || 1);
+    let nextLevel = Math.max(1, parseInt(snapshot.rowData.state.level, 10) || 1);
+    let nextProgress = Math.max(0, parseInt(snapshot.rowData.state.levelProgress, 10) || 0) + xpGain;
+
+    while (nextProgress >= 100) {
+      nextProgress -= 100;
+      nextLevel += 1;
+    }
+
+    savePetUserStateByRow_(snapshot.rowData, {
+      level: nextLevel,
+      levelProgress: nextProgress,
+    });
+
+    const refreshed = buildPetUserSnapshotByEmail_(email);
+    return {
+      success: true,
+      message: "+" + xpGain + " level points",
+      data: refreshed.data,
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+function updateCurrentUserPetName(petName) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const safeName = String(petName || "").trim();
+    if (!safeName) {
+      return { success: false, message: "Ten pet khong hop le" };
+    }
+
+    const rowData = getPetUserRowByEmail_(email);
+    if (!rowData) {
+      return { success: false, message: "Khong tim thay user" };
+    }
+
+    savePetUserStateByRow_(rowData, { petName: safeName });
+    return { success: true, message: "Da cap nhat ten pet" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
 /**
  * Cập nhật trạng thái user (khóa/mở khóa)
  */

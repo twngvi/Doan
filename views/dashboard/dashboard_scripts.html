@@ -122,6 +122,19 @@
           lastXP: xpAfter,
         }),
       );
+
+      if (typeof google !== "undefined" && google.script && google.script.run) {
+        const level = baseState.level || {};
+        google.script.run
+          .withFailureHandler(function (error) {
+            console.warn("Pet backend sync from dashboard failed:", error);
+          })
+          .syncCurrentUserPetState({
+            coins: Math.max(0, parseInt(baseState.coins, 10) || 0),
+            levelCurrent: Math.max(1, parseInt(level.current, 10) || 1),
+            levelProgress: Math.max(0, Math.min(100, parseInt(level.progress, 10) || 0)),
+          });
+      }
     } catch (error) {
       console.warn("Pet economy sync from XP failed:", error);
     }

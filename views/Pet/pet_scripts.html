@@ -25,11 +25,41 @@
     const PET_STATE_STORAGE_KEY = "oq_pet_preview_state";
     const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
     const PET_XP_COIN_DAILY_SYNC_KEY = "oq_pet_xp_coin_daily_sync";
+    const PET_FOOD_USER_CACHE_KEY = "oq_pet_food_user_cache";
     const DEFAULT_PET_NAME = "Bé Gà";
+    const FALLBACK_FOODS = [
+      {
+        id: "food_corn",
+        name: "Bap ngot",
+        icon: "🌽",
+        priceXqp: 40,
+        xpGain: 12,
+        unlockType: "lesson_topic",
+        unlockValue: "topic_01",
+        starter: true,
+      },
+      {
+        id: "food_carrot",
+        name: "Ca rot gion",
+        icon: "🥕",
+        priceXqp: 55,
+        xpGain: 10,
+        unlockType: "quiz_topic",
+        unlockValue: "topic_02",
+        starter: false,
+      },
+    ];
 
     let petGlobalEscBound = false;
     let eggHoverRafId = 0;
     let eggHoverRatioX = 0;
+    let petFoodState = {
+      foods: FALLBACK_FOODS.slice(),
+      accessories: [],
+      ownedFoodIds: FALLBACK_FOODS.filter((f) => f.starter).map((f) => f.id),
+      ownedAccessoryIds: [],
+      loaded: false,
+    };
 
     function clamp(value, min, max) {
       const number = Number(value);
@@ -42,6 +72,59 @@
         window.showToast(message, type || "info");
       } else {
         console.log("Pet notice:", message);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function getUnlockLabel(item) {
+      const type = String(item?.unlockType || "none");
+      const value = String(item?.unlockValue || "").trim();
+      if (type === "none") return "Khong yeu cau unlock";
+      if (!value) return type;
+      return `${type}: ${value}`;
+    }
+
+    function loadCachedPetFoodState() {
+      try {
+        const raw = localStorage.getItem(PET_FOOD_USER_CACHE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return;
+
+        const foods = Array.isArray(parsed.foods) ? parsed.foods : FALLBACK_FOODS.slice();
+        const accessories = Array.isArray(parsed.accessories) ? parsed.accessories : [];
+        const ownedFoodIds = Array.isArray(parsed.ownedFoodIds)
+          ? parsed.ownedFoodIds.map(String)
+          : foods.filter((f) => f && f.starter).map((f) => String(f.id));
+        const ownedAccessoryIds = Array.isArray(parsed.ownedAccessoryIds)
+          ? parsed.ownedAccessoryIds.map(String)
+          : [];
+
+        petFoodState = {
+          foods,
+          accessories,
+          ownedFoodIds,
+          ownedAccessoryIds,
+          loaded: !!parsed.loaded,
+        };
+      } catch (error) {
+        console.warn("Pet food cache parse failed:", error);
+      }
+    }
+
+    function saveCachedPetFoodState() {
+      try {
+        localStorage.setItem(PET_FOOD_USER_CACHE_KEY, JSON.stringify(petFoodState));
+      } catch (error) {
+        console.warn("Pet food cache save failed:", error);
       }
     }
 
@@ -286,10 +369,77 @@
 
     function savePetName(name) {
       try {
-        localStorage.setItem(PET_NAME_STORAGE_KEY, normalizePetName(name, DEFAULT_PET_NAME));
+        const safeName = normalizePetName(name, DEFAULT_PET_NAME);
+        localStorage.setItem(PET_NAME_STORAGE_KEY, safeName);
+
+        if (typeof google !== "undefined" && google.script && google.script.run) {
+          google.script.run
+            .withFailureHandler(function (error) {
+              console.warn("Sync pet name to backend failed:", error);
+            })
+            .updateCurrentUserPetName(safeName);
+        }
       } catch (error) {
         console.warn("Pet name save failed:", error);
       }
+    }
+
+    function applySnapshotToLocal(snapshotData) {
+      if (!snapshotData || typeof snapshotData !== "object") return;
+
+      const state = loadPetPreviewState();
+      ensureLevelState(state);
+
+      const serverState = snapshotData.petState || {};
+      state.coins = clamp(serverState.coins, 0, 999999);
+      state.level.current = Math.max(1, parseInt(serverState.levelCurrent, 10) || 1);
+      state.level.progress = clamp(serverState.levelProgress, 0, 100);
+
+      const req = serverState.requirements || {};
+      state.requirements = {
+        target: clamp(req.target != null ? req.target : 3, 1, 10),
+        learn: clamp(req.learn, 0, 10),
+        quiz: clamp(req.quiz, 0, 10),
+        matching: clamp(req.matching, 0, 10),
+      };
+
+      savePetPreviewState(state);
+
+      petFoodState = {
+        foods: Array.isArray(snapshotData.foods) ? snapshotData.foods : petFoodState.foods,
+        accessories: Array.isArray(snapshotData.accessories) ? snapshotData.accessories : [],
+        ownedFoodIds: Array.isArray(snapshotData.ownedFoodIds)
+          ? snapshotData.ownedFoodIds.map(String)
+          : petFoodState.ownedFoodIds,
+        ownedAccessoryIds: Array.isArray(snapshotData.ownedAccessoryIds)
+          ? snapshotData.ownedAccessoryIds.map(String)
+          : petFoodState.ownedAccessoryIds,
+        loaded: true,
+      };
+      saveCachedPetFoodState();
+
+      const serverPetName = normalizePetName(snapshotData.petName, "");
+      if (serverPetName) {
+        localStorage.setItem(PET_NAME_STORAGE_KEY, serverPetName);
+        renderPetName(serverPetName);
+      }
+    }
+
+    function syncPetStateToBackend(state, petName) {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        return;
+      }
+
+      google.script.run
+        .withFailureHandler(function (error) {
+          console.warn("Sync pet state failed:", error);
+        })
+        .syncCurrentUserPetState({
+          petName: normalizePetName(petName, DEFAULT_PET_NAME),
+          coins: clamp(state?.coins, 0, 999999),
+          levelCurrent: Math.max(1, parseInt(state?.level?.current, 10) || 1),
+          levelProgress: clamp(state?.level?.progress, 0, 100),
+        });
     }
 
     function renderPetName(name) {
@@ -331,6 +481,278 @@
       nameTag.addEventListener("click", function () {
         openPetRenameModal();
       });
+    }
+
+    function renderPetFoodModal() {
+      const ownedEl = document.getElementById("petFoodOwnedList");
+      const shopEl = document.getElementById("petFoodShopList");
+      const accOwnedEl = document.getElementById("petAccessoryOwnedList");
+      const accShopEl = document.getElementById("petAccessoryShopList");
+      if (!ownedEl || !shopEl || !accOwnedEl || !accShopEl) return;
+
+      const foods = Array.isArray(petFoodState.foods) ? petFoodState.foods : [];
+      const accessories = Array.isArray(petFoodState.accessories) ? petFoodState.accessories : [];
+      const ownedSet = new Set((petFoodState.ownedFoodIds || []).map(String));
+      const ownedAccessorySet = new Set((petFoodState.ownedAccessoryIds || []).map(String));
+
+      const ownedFoods = foods.filter((food) => ownedSet.has(String(food.id)));
+      const shopFoods = foods;
+      const ownedAccessories = accessories.filter((acc) => ownedAccessorySet.has(String(acc.id)));
+      const shopAccessories = accessories;
+
+      if (ownedFoods.length === 0) {
+        ownedEl.innerHTML = '<div class="pet-food-empty">Bạn chưa có thức ăn nào trong kho.</div>';
+      } else {
+        ownedEl.innerHTML = ownedFoods
+          .map(function (food) {
+            return (
+              '<button class="pet-food-icon-card" type="button" data-pet-eat-food-id="' +
+              escapeHtml(food.id) +
+              '">' +
+              '<span>' +
+              escapeHtml(food.icon || "🍽️") +
+              '</span>' +
+              '<span class="pet-food-info">' +
+              escapeHtml(food.name || "Food") +
+              ' | +' +
+              Number(food.xpGain || 0) +
+              ' XP level</span>' +
+              '</button>'
+            );
+          })
+          .join("");
+      }
+
+      if (shopFoods.length === 0) {
+        shopEl.innerHTML = '<div class="pet-food-empty">Chưa có thức ăn trong cửa hàng.</div>';
+      } else {
+        shopEl.innerHTML = shopFoods
+          .map(function (food) {
+            const isUnlocked = food.unlocked !== false;
+            const canBuy = isUnlocked;
+            const unlockLabel = getUnlockLabel(food);
+            return (
+              '<div class="pet-food-icon-card ' +
+              (isUnlocked ? "" : "disabled") +
+              '" role="button" tabindex="0" aria-label="' +
+              escapeHtml(food.name || "Food") +
+              '">' +
+              '<span>' +
+              escapeHtml(food.icon || "🍽️") +
+              '</span>' +
+              '<span class="pet-food-info">' +
+              escapeHtml(food.name || "Food") +
+              ' | +' +
+              Number(food.xpGain || 0) +
+              ' XP | ' +
+              Number(food.priceXqp || 0) +
+              ' XQP<br>' +
+              escapeHtml(food.unlockReason || unlockLabel) +
+              '</span>' +
+              '<button class="pet-food-buy-btn" type="button" data-pet-buy-food-id="' +
+              escapeHtml(food.id) +
+              '" ' +
+              (canBuy ? "" : "disabled") +
+              '>Mua</button>' +
+              '</div>'
+            );
+          })
+          .join("");
+      }
+
+      if (ownedAccessories.length === 0) {
+        accOwnedEl.innerHTML = '<div class="pet-food-empty">Bạn chưa sở hữu phụ kiện nào.</div>';
+      } else {
+        accOwnedEl.innerHTML = ownedAccessories
+          .map(function (acc) {
+            return (
+              '<div class="pet-food-icon-card" role="img" aria-label="' +
+              escapeHtml(acc.name || "Accessory") +
+              '">' +
+              '<span>' +
+              escapeHtml(acc.icon || "🎒") +
+              '</span>' +
+              '<span class="pet-food-info">' +
+              escapeHtml(acc.name || "Accessory") +
+              ' | Da so huu</span>' +
+              '</div>'
+            );
+          })
+          .join("");
+      }
+
+      if (shopAccessories.length === 0) {
+        accShopEl.innerHTML = '<div class="pet-food-empty">Chưa có phụ kiện trong cửa hàng.</div>';
+      } else {
+        accShopEl.innerHTML = shopAccessories
+          .map(function (acc) {
+            const isOwned = ownedAccessorySet.has(String(acc.id));
+            const isUnlocked = acc.unlocked !== false;
+            const unlockLabel = getUnlockLabel(acc);
+            return (
+              '<div class="pet-food-icon-card ' +
+              (isUnlocked ? "" : "disabled") +
+              '" role="img" aria-label="' +
+              escapeHtml(acc.name || "Accessory") +
+              '">' +
+              '<span>' +
+              escapeHtml(acc.icon || "🎒") +
+              '</span>' +
+              '<span class="pet-food-info">' +
+              escapeHtml(acc.name || "Accessory") +
+              ' | ' +
+              Number(acc.priceXqp || 0) +
+              ' XQP<br>' +
+              escapeHtml(acc.unlockReason || unlockLabel) +
+              '</span>' +
+              '<button class="pet-food-buy-btn" type="button" disabled>' +
+              (isOwned ? "Đã có" : isUnlocked ? "Sắp mở" : "Khoá") +
+              '</button>' +
+              '</div>'
+            );
+          })
+          .join("");
+      }
+    }
+
+    function consumeOwnedFood(foodId) {
+      if (!foodId) return;
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        notify("Khong the ket noi server de xu ly cho an.", "warning");
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || !result.success || !result.data) {
+            notify((result && result.message) || "Khong the cho pet an.", "error");
+            return;
+          }
+
+          applySnapshotToLocal(result.data);
+          const state = loadPetPreviewState();
+          ensureLevelState(state);
+          setText("petCoinValue", String(Math.round(state.coins)));
+          renderLevelStatus(state.level);
+          renderPetFoodModal();
+          notify(result.message || "Pet da an xong", "success");
+        })
+        .withFailureHandler(function (error) {
+          notify("Loi cho an: " + error, "error");
+        })
+        .consumePetFoodForUser(String(foodId));
+    }
+
+    function buyFoodForPet(foodId) {
+      if (!foodId) return;
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        notify("Khong the ket noi server de mua thuc an.", "warning");
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || !result.success || !result.data) {
+            notify((result && result.message) || "Mua that bai", "error");
+            return;
+          }
+
+          applySnapshotToLocal(result.data);
+          const state = loadPetPreviewState();
+          ensureLevelState(state);
+          setText("petCoinValue", String(Math.round(state.coins)));
+          renderPetFoodModal();
+          notify(result.message || "Mua thanh cong", "success");
+        })
+        .withFailureHandler(function (error) {
+          notify("Loi mua thuc an: " + error, "error");
+        })
+        .purchasePetFoodForUser(String(foodId));
+    }
+
+    function setFoodModalOpen(isOpen) {
+      const modal = document.getElementById("petFoodModal");
+      if (!modal) return;
+
+      modal.classList.toggle("open", !!isOpen);
+      modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      refreshBodyModalLock();
+
+      if (isOpen) {
+        renderPetFoodModal();
+      }
+    }
+
+    function openPetFoodModal() {
+      setFoodModalOpen(true);
+    }
+
+    function closePetFoodModal() {
+      setFoodModalOpen(false);
+    }
+
+    function fetchPetFoodDataForUser() {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        petFoodState.loaded = true;
+        saveCachedPetFoodState();
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || !result.success || !result.data) {
+            petFoodState.loaded = true;
+            saveCachedPetFoodState();
+            return;
+          }
+
+          applySnapshotToLocal(result.data);
+          renderPetFoodModal();
+        })
+        .withFailureHandler(function (error) {
+          console.warn("Failed to load pet foods:", error);
+          petFoodState.loaded = true;
+          saveCachedPetFoodState();
+        })
+        .getPetFoodCatalogForUser();
+    }
+
+    function setupPetFoodModal() {
+      loadCachedPetFoodState();
+
+      const modal = document.getElementById("petFoodModal");
+      const closeBtn = document.getElementById("petFoodModalClose");
+      if (!modal || !closeBtn || modal.dataset.modalBound === "1") {
+        fetchPetFoodDataForUser();
+        return;
+      }
+
+      modal.dataset.modalBound = "1";
+
+      closeBtn.addEventListener("click", closePetFoodModal);
+
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+          closePetFoodModal();
+          return;
+        }
+
+        const eatBtn = event.target.closest("[data-pet-eat-food-id]");
+        if (eatBtn) {
+          consumeOwnedFood(eatBtn.getAttribute("data-pet-eat-food-id"));
+          return;
+        }
+
+        const buyBtn = event.target.closest("[data-pet-buy-food-id]");
+        if (buyBtn && !buyBtn.disabled) {
+          buyFoodForPet(buyBtn.getAttribute("data-pet-buy-food-id"));
+        }
+      });
+
+      fetchPetFoodDataForUser();
+      renderPetFoodModal();
     }
 
     function setupEggHoverTilt() {
@@ -395,8 +817,10 @@
     function refreshBodyModalLock() {
       const renameOpen =
         document.getElementById("petRenameModal")?.getAttribute("aria-hidden") === "false";
+      const foodOpen =
+        document.getElementById("petFoodModal")?.getAttribute("aria-hidden") === "false";
 
-      document.body.classList.toggle("pet-modal-open", renameOpen);
+      document.body.classList.toggle("pet-modal-open", renameOpen || foodOpen);
     }
 
     function setRenameModalOpen(isOpen) {
@@ -451,6 +875,7 @@
       const nextName = normalizePetName(rawName, DEFAULT_PET_NAME);
       renderPetName(nextName);
       savePetName(nextName);
+      syncPetStateToBackend(loadPetPreviewState(), nextName);
       closePetRenameModal();
       notify("Đã đổi tên pet thành công.", "success");
     }
@@ -509,6 +934,12 @@
       document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") return;
 
+        const foodModal = document.getElementById("petFoodModal");
+        if (foodModal && foodModal.getAttribute("aria-hidden") === "false") {
+          closePetFoodModal();
+          return;
+        }
+
         const renameModal = document.getElementById("petRenameModal");
         if (renameModal && renameModal.getAttribute("aria-hidden") === "false") {
           closePetRenameModal();
@@ -523,7 +954,7 @@
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
       const totalXPFromUser = clamp(user.totalXP, 0, 999999);
-      const petName = loadPetName(DEFAULT_PET_NAME);
+      const localPetName = loadPetName(DEFAULT_PET_NAME);
 
       syncDailyCoinsFromXP(state, totalXPFromUser);
       ensureLevelState(state);
@@ -531,7 +962,7 @@
       const tracker = buildHatchTracker(state.requirements);
 
       setText("petUserName", name);
-      renderPetName(petName);
+      renderPetName(localPetName);
       setText("petXpValue", String(Math.round(state.xp)));
       setText("petCoinValue", String(Math.round(state.coins)));
       renderLevelStatus(state.level);
@@ -547,6 +978,72 @@
         matching: tracker.matching,
       };
       savePetPreviewState(state);
+
+      if (typeof google !== "undefined" && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!result || !result.success || !result.data) {
+              syncPetStateToBackend(state, localPetName);
+              return;
+            }
+
+            const mergedState = loadPetPreviewState();
+            ensureLevelState(mergedState);
+
+            const server = result.data.petState || {};
+            const serverLevel = Math.max(1, parseInt(server.levelCurrent, 10) || 1);
+            const localLevel = Math.max(1, parseInt(mergedState.level.current, 10) || 1);
+            const mergedLevel = Math.max(serverLevel, localLevel);
+
+            let mergedProgress = clamp(server.levelProgress, 0, 100);
+            if (mergedLevel === localLevel && mergedLevel === serverLevel) {
+              mergedProgress = Math.max(mergedProgress, clamp(mergedState.level.progress, 0, 100));
+            } else if (mergedLevel === localLevel) {
+              mergedProgress = clamp(mergedState.level.progress, 0, 100);
+            }
+
+            mergedState.coins = Math.max(
+              clamp(server.coins, 0, 999999),
+              clamp(mergedState.coins, 0, 999999),
+            );
+            mergedState.level.current = mergedLevel;
+            mergedState.level.progress = mergedProgress;
+
+            const req = server.requirements || {};
+            mergedState.requirements = {
+              target: clamp(req.target != null ? req.target : mergedState.requirements.target, 1, 10),
+              learn: clamp(req.learn, 0, 10),
+              quiz: clamp(req.quiz, 0, 10),
+              matching: clamp(req.matching, 0, 10),
+            };
+
+            const serverPetName = normalizePetName(result.data.petName, "");
+            const finalPetName = serverPetName || localPetName;
+
+            savePetPreviewState(mergedState);
+            renderPetName(finalPetName);
+            setText("petCoinValue", String(Math.round(mergedState.coins)));
+            renderLevelStatus(mergedState.level);
+
+            applySnapshotToLocal(
+              Object.assign({}, result.data, {
+                petState: {
+                  coins: mergedState.coins,
+                  levelCurrent: mergedState.level.current,
+                  levelProgress: mergedState.level.progress,
+                  requirements: mergedState.requirements,
+                },
+                petName: finalPetName,
+              }),
+            );
+
+            syncPetStateToBackend(mergedState, finalPetName);
+          })
+          .withFailureHandler(function () {
+            syncPetStateToBackend(state, localPetName);
+          })
+          .getPetFoodCatalogForUser();
+      }
 
       setupPetNameEditor();
       setupEggHoverTilt();
@@ -565,26 +1062,12 @@
           const action = button.getAttribute("data-pet-action");
 
           if (action === "feed") {
-            const state = loadPetPreviewState();
-            ensureLevelState(state);
-
-            const gainResult = gainPetLevelProgress(state, 12);
-            if (gainResult.levelUpCount > 0) {
-              notify(
-                `Pet da len level ${gainResult.currentLevel}! Tien do hien tai ${gainResult.currentProgress}/100.`,
-                "success",
-              );
-            } else {
-              notify(
-                `Da cho an. Tien do level: ${gainResult.currentProgress}/100.`,
-                "success",
-              );
-            }
+            openPetFoodModal();
             return;
           }
 
           if (action === "shop") {
-            notify("Cửa hàng Pet đang ở chế độ xem trước giao diện.", "info");
+            openPetFoodModal();
             return;
           }
 
@@ -599,6 +1082,7 @@
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
         setupPetRenameModal();
+        setupPetFoodModal();
         setupGlobalEscHandler();
         initPetPage();
       });
@@ -606,6 +1090,7 @@
       setTimeout(function () {
         setupPetActions();
         setupPetRenameModal();
+        setupPetFoodModal();
         setupGlobalEscHandler();
         initPetPage();
       }, 80);
