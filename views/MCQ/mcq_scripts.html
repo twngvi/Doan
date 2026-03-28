@@ -348,6 +348,7 @@
     resetQuizState();
     startMCQHeaderMeteors();
     setupMCQHeaderMouseEffect();
+    setupMcqBackToTopButton();
 
     const entrySource = detectQuizEntrySource();
     quizState.entrySource = entrySource;
@@ -3395,6 +3396,47 @@
     }
   }
 
+  const MCQ_BACK_TO_TOP_SHOW_OFFSET = 220;
+  let mcqBackToTopScrollHandler = null;
+
+  function getMcqScrollTop() {
+    return (
+      window.pageYOffset ||
+      document.documentElement.scrollTop ||
+      document.body.scrollTop ||
+      0
+    );
+  }
+
+  function toggleMcqBackToTopButton() {
+    const button = document.getElementById("mcq-back-to-top");
+    if (!button) return;
+
+    const shouldShow = getMcqScrollTop() > MCQ_BACK_TO_TOP_SHOW_OFFSET;
+    button.classList.toggle("show", shouldShow);
+  }
+
+  function scrollMcqToTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function setupMcqBackToTopButton() {
+    const button = document.getElementById("mcq-back-to-top");
+    if (!button) return;
+
+    if (button.dataset.bound !== "true") {
+      button.addEventListener("click", scrollMcqToTop);
+      button.dataset.bound = "true";
+    }
+
+    if (!mcqBackToTopScrollHandler) {
+      mcqBackToTopScrollHandler = toggleMcqBackToTopButton;
+      window.addEventListener("scroll", mcqBackToTopScrollHandler, { passive: true });
+    }
+
+    toggleMcqBackToTopButton();
+  }
+
   // Make functions globally available
   // Make functions globally available
   window.initMCQPage = initMCQPage;
@@ -3424,6 +3466,7 @@
   window.showAllMasteredModal = showAllMasteredModal;
   window.closeAllMasteredModal = closeAllMasteredModal;
   window.reviewAllMastered = reviewAllMastered;
+  window.scrollMcqToTop = scrollMcqToTop;
   window.handleFillBlankInput = handleFillBlankInput;
   window.submitFillBlankAnswer = submitFillBlankAnswer;
 
