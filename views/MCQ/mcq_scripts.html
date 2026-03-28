@@ -348,7 +348,6 @@
     resetQuizState();
     startMCQHeaderMeteors();
     setupMCQHeaderMouseEffect();
-    setupMcqBackToTopButton();
 
     const entrySource = detectQuizEntrySource();
     quizState.entrySource = entrySource;
@@ -3396,88 +3395,6 @@
     }
   }
 
-  const MCQ_BACK_TO_TOP_SHOW_OFFSET = 220;
-  let mcqBackToTopScrollHandler = null;
-  let mcqBackToTopScrollSource = null;
-
-  function resolveMcqScrollSource() {
-    const pageMcq = document.getElementById("page-mcq");
-    return pageMcq || window;
-  }
-
-  function getMcqScrollTop(source) {
-    const scrollSource = source || mcqBackToTopScrollSource || window;
-
-    if (scrollSource === window) {
-      return (
-        window.pageYOffset ||
-        document.documentElement.scrollTop ||
-        document.body.scrollTop ||
-        0
-      );
-    }
-
-    return Number(scrollSource.scrollTop) || 0;
-  }
-
-  function toggleMcqBackToTopButton() {
-    const button = document.getElementById("mcq-back-to-top");
-    if (!button) return;
-
-    const shouldShow = getMcqScrollTop() > MCQ_BACK_TO_TOP_SHOW_OFFSET;
-    button.classList.toggle("show", shouldShow);
-  }
-
-  function scrollMcqToTop() {
-    const scrollSource = mcqBackToTopScrollSource || resolveMcqScrollSource();
-
-    if (scrollSource === window) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
-    if (typeof scrollSource.scrollTo === "function") {
-      scrollSource.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      scrollSource.scrollTop = 0;
-    }
-  }
-
-  function setupMcqBackToTopButton() {
-    const button = document.getElementById("mcq-back-to-top");
-    if (!button) return;
-
-    const nextScrollSource = resolveMcqScrollSource();
-
-    if (button.dataset.bound !== "true") {
-      button.addEventListener("click", scrollMcqToTop);
-      button.dataset.bound = "true";
-    }
-
-    if (!mcqBackToTopScrollHandler) {
-      mcqBackToTopScrollHandler = toggleMcqBackToTopButton;
-    }
-
-    if (
-      mcqBackToTopScrollSource &&
-      mcqBackToTopScrollSource !== nextScrollSource
-    ) {
-      mcqBackToTopScrollSource.removeEventListener(
-        "scroll",
-        mcqBackToTopScrollHandler,
-      );
-    }
-
-    if (mcqBackToTopScrollSource !== nextScrollSource) {
-      nextScrollSource.addEventListener("scroll", mcqBackToTopScrollHandler, {
-        passive: true,
-      });
-      mcqBackToTopScrollSource = nextScrollSource;
-    }
-
-    toggleMcqBackToTopButton();
-  }
-
   // Make functions globally available
   // Make functions globally available
   window.initMCQPage = initMCQPage;
@@ -3507,7 +3424,6 @@
   window.showAllMasteredModal = showAllMasteredModal;
   window.closeAllMasteredModal = closeAllMasteredModal;
   window.reviewAllMastered = reviewAllMastered;
-  window.scrollMcqToTop = scrollMcqToTop;
   window.handleFillBlankInput = handleFillBlankInput;
   window.submitFillBlankAnswer = submitFillBlankAnswer;
 

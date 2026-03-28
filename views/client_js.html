@@ -14,6 +14,10 @@
   let heartbeatMonitorId = null;
   let heartbeatEventsBound = false;
   let lastHeartbeatAt = 0;
+  const GLOBAL_BACK_TO_TOP_SHOW_OFFSET = 220;
+  let appBackToTopBound = false;
+  let appBackToTopScrollHandler = null;
+  let appBackToTopScrollSource = null;
 
   const HEARTBEAT_INTERVAL_MS = 30000;
   const HEARTBEAT_ACTIVITY_THROTTLE_MS = 20000;
@@ -129,6 +133,91 @@
     } catch (e) {
       console.warn("Apply user theme failed:", e);
     }
+  }
+
+  function getVisiblePageContent() {
+    const pages = document.querySelectorAll(".page-content");
+    for (const page of pages) {
+      if (window.getComputedStyle(page).display !== "none") {
+        return page;
+      }
+    }
+    return null;
+  }
+
+  function resolveAppBackToTopScrollSource() {
+    const visiblePage = getVisiblePageContent();
+    return visiblePage || window;
+  }
+
+  function getAppScrollTop(scrollSource) {
+    if (scrollSource === window) {
+      return (
+        window.pageYOffset ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0
+      );
+    }
+    return Number(scrollSource.scrollTop) || 0;
+  }
+
+  function updateAppBackToTopVisibility() {
+    const button = document.getElementById("app-back-to-top");
+    if (!button) return;
+
+    const source = appBackToTopScrollSource || resolveAppBackToTopScrollSource();
+    const shouldShow = getAppScrollTop(source) > GLOBAL_BACK_TO_TOP_SHOW_OFFSET;
+    button.classList.toggle("show", shouldShow);
+  }
+
+  function scrollActivePageToTop() {
+    const source = appBackToTopScrollSource || resolveAppBackToTopScrollSource();
+    if (source === window) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (typeof source.scrollTo === "function") {
+      source.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      source.scrollTop = 0;
+    }
+  }
+
+  function syncAppBackToTopScrollSource() {
+    if (!appBackToTopScrollHandler) {
+      appBackToTopScrollHandler = updateAppBackToTopVisibility;
+    }
+
+    const nextSource = resolveAppBackToTopScrollSource();
+    if (appBackToTopScrollSource && appBackToTopScrollSource !== nextSource) {
+      appBackToTopScrollSource.removeEventListener(
+        "scroll",
+        appBackToTopScrollHandler,
+      );
+    }
+
+    if (appBackToTopScrollSource !== nextSource) {
+      nextSource.addEventListener("scroll", appBackToTopScrollHandler, {
+        passive: true,
+      });
+      appBackToTopScrollSource = nextSource;
+    }
+
+    updateAppBackToTopVisibility();
+  }
+
+  function initGlobalBackToTop() {
+    const button = document.getElementById("app-back-to-top");
+    if (!button) return;
+
+    if (!appBackToTopBound) {
+      button.addEventListener("click", scrollActivePageToTop);
+      appBackToTopBound = true;
+    }
+
+    syncAppBackToTopScrollSource();
   }
 
   // ==================== Initialization ====================
@@ -334,8 +423,12 @@
     // Hiển thị trang cuối cùng
     showPage(targetPageId, {}, false);
 
+    initGlobalBackToTop();
+
     // Khôi phục vị trí scroll sau khi trang đã hiển thị
     restoreScrollPosition(finalPageName);
+
+    setTimeout(syncAppBackToTopScrollSource, 0);
 
     // Reset flag sau khi restore xong
     setTimeout(() => {
@@ -499,6 +592,10 @@
       // Scroll lên đầu trang khi chuyển trang (trừ khi đang restore)
       if (!window._isRestoringPage) {
         window.scrollTo({ top: 0, behavior: "instant" });
+      }
+
+      if (typeof syncAppBackToTopScrollSource === "function") {
+        setTimeout(syncAppBackToTopScrollSource, 0);
       }
 
       // --- KHU VỰC SỬA LỖI (FIX CRASH) ---
