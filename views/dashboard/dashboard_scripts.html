@@ -67,6 +67,66 @@
     localStorage.setItem("streakData", JSON.stringify(data));
   }
 
+  function getTodayVNKeyForPet() {
+    try {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+    } catch (error) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  function syncPetEconomyFromXPAward(xpAwarded, newTotalXP) {
+    try {
+      const xpDelta = parseInt(xpAwarded, 10) || 0;
+      if (xpDelta <= 0) return;
+
+      const stateKey = "oq_pet_preview_state";
+      const syncKey = "oq_pet_xp_coin_daily_sync";
+      const rawState = localStorage.getItem(stateKey);
+      const baseState = rawState
+        ? JSON.parse(rawState)
+        : {
+            xp: 0,
+            coins: 120,
+            status: { energy: 78, hunger: 65, mood: 82, clean: 74 },
+            requirements: { learn: 0, quiz: 0, matching: 0, target: 3 },
+          };
+
+      const safeCoins = Math.max(0, parseInt(baseState.coins, 10) || 0);
+      const xpAfter = Math.max(
+        0,
+        newTotalXP != null && newTotalXP !== ""
+          ? parseInt(newTotalXP, 10) || 0
+          : (parseInt(baseState.xp, 10) || 0) + xpDelta,
+      );
+
+      baseState.coins = safeCoins + xpDelta;
+      baseState.xp = xpAfter;
+
+      // XP and XQP are independent; spending XQP never modifies XP.
+      // This sync only mirrors positive XP gains into XQP for the same day.
+      localStorage.setItem(stateKey, JSON.stringify(baseState));
+      localStorage.setItem(
+        syncKey,
+        JSON.stringify({
+          date: getTodayVNKeyForPet(),
+          lastXP: xpAfter,
+        }),
+      );
+    } catch (error) {
+      console.warn("Pet economy sync from XP failed:", error);
+    }
+  }
+
   /**
    * Initialize Dashboard
    */
@@ -763,6 +823,7 @@
 
           // Show XP animation
           showXPAnimation(result.xpAwarded);
+          syncPetEconomyFromXPAward(result.xpAwarded, result.newTotalXP);
 
           if (typeof showToast === "function") {
             showToast("+" + result.xpAwarded + " XP! 🌟", "success");
@@ -1089,6 +1150,7 @@
               xpEl.textContent = result.newTotalXP.toLocaleString();
             }
             showXPAnimation(result.xpAwarded);
+            syncPetEconomyFromXPAward(result.xpAwarded, result.newTotalXP);
           }
 
           if (typeof showToast === "function") {

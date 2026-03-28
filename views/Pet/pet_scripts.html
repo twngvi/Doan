@@ -18,10 +18,14 @@
         target: 3,
       },
     };
+    const PET_STATE_STORAGE_KEY = "oq_pet_preview_state";
     const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
+    const PET_XP_COIN_DAILY_SYNC_KEY = "oq_pet_xp_coin_daily_sync";
     const DEFAULT_PET_NAME = "Bé Gà";
 
     let hatchModalEscBound = false;
+    let eggHoverRafId = 0;
+    let eggHoverRatioX = 0;
 
     function clamp(value, min, max) {
       const number = Number(value);
@@ -39,7 +43,7 @@
 
     function loadPetPreviewState() {
       try {
-        const raw = localStorage.getItem("oq_pet_preview_state");
+        const raw = localStorage.getItem(PET_STATE_STORAGE_KEY);
         if (!raw) return DEFAULT_STATE;
 
         const parsed = JSON.parse(raw);
@@ -67,6 +71,115 @@
         console.warn("Pet state parse failed, using defaults:", error);
         return DEFAULT_STATE;
       }
+    }
+
+    function savePetPreviewState(state) {
+      try {
+        const safeState = {
+          xp: clamp(state?.xp, 0, 999999),
+          coins: clamp(state?.coins, 0, 999999),
+          status: {
+            energy: clamp(state?.status?.energy, 0, 100),
+            hunger: clamp(state?.status?.hunger, 0, 100),
+            mood: clamp(state?.status?.mood, 0, 100),
+            clean: clamp(state?.status?.clean, 0, 100),
+          },
+          requirements: {
+            target: clamp(state?.requirements?.target, 1, 10),
+            learn: clamp(state?.requirements?.learn, 0, 10),
+            quiz: clamp(state?.requirements?.quiz, 0, 10),
+            matching: clamp(state?.requirements?.matching, 0, 10),
+          },
+        };
+
+        localStorage.setItem(PET_STATE_STORAGE_KEY, JSON.stringify(safeState));
+      } catch (error) {
+        console.warn("Pet state save failed:", error);
+      }
+    }
+
+    function getTodayVNKey() {
+      try {
+        return new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Ho_Chi_Minh",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+      } catch (error) {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+    }
+
+    function loadDailySyncInfo() {
+      try {
+        const raw = localStorage.getItem(PET_XP_COIN_DAILY_SYNC_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+
+        return {
+          date: String(parsed.date || ""),
+          lastXP: clamp(parsed.lastXP, 0, 999999),
+        };
+      } catch (error) {
+        console.warn("Pet daily sync parse failed:", error);
+        return null;
+      }
+    }
+
+    function saveDailySyncInfo(sync) {
+      try {
+        const safeSync = {
+          date: String(sync?.date || ""),
+          lastXP: clamp(sync?.lastXP, 0, 999999),
+        };
+        localStorage.setItem(PET_XP_COIN_DAILY_SYNC_KEY, JSON.stringify(safeSync));
+      } catch (error) {
+        console.warn("Pet daily sync save failed:", error);
+      }
+    }
+
+    function syncDailyCoinsFromXP(state, currentTotalXP) {
+      const today = getTodayVNKey();
+      const sync = loadDailySyncInfo();
+      const currentXP = clamp(currentTotalXP, 0, 999999);
+
+      if (!sync) {
+        state.xp = currentXP;
+        saveDailySyncInfo({ date: today, lastXP: currentXP });
+        savePetPreviewState(state);
+        return 0;
+      }
+
+      if (sync.date !== today) {
+        const carryDelta = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
+        if (carryDelta > 0) {
+          state.coins = clamp(state.coins + carryDelta, 0, 999999);
+        }
+
+        state.xp = currentXP;
+        saveDailySyncInfo({ date: today, lastXP: currentXP });
+        savePetPreviewState(state);
+        return carryDelta;
+      }
+
+      const deltaXP = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
+
+      if (deltaXP > 0) {
+        // Rule: XP tăng bao nhiêu trong ngày thì XQP tăng bấy nhiêu.
+        // XP và XQP là 2 luồng độc lập, chỉ cộng XQP từ phần XP tăng.
+        state.coins = clamp(state.coins + deltaXP, 0, 999999);
+      }
+
+      state.xp = currentXP;
+      saveDailySyncInfo({ date: today, lastXP: currentXP });
+      savePetPreviewState(state);
+      return deltaXP;
     }
 
     function normalizePetName(value, fallback) {
@@ -137,29 +250,168 @@
       nameTag.dataset.nameBound = "1";
 
       nameTag.addEventListener("click", function () {
-        const current = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
-        const input = window.prompt("Nhập tên mới cho pet:", current);
-        if (input === null) return;
+        openPetRenameModal();
+      });
+    }
 
-        const rawName = String(input || "")
-          .trim()
-          .replace(/\s+/g, " ");
+    function setupEggHoverTilt() {
+      const egg = document.querySelector(".pet-egg");
+      if (!egg || egg.dataset.tiltBound === "1") {
+        return;
+      }
+      egg.dataset.tiltBound = "1";
 
-        if (!rawName) {
-          notify("Tên pet không được để trống.", "warning");
+      function stopEggHoverAnimation() {
+        if (eggHoverRafId) {
+          cancelAnimationFrame(eggHoverRafId);
+          eggHoverRafId = 0;
+        }
+      }
+
+      function runEggHoverAnimation() {
+        const baseTilt = clamp(-eggHoverRatioX * 20, -14, 14);
+        const wobbleTilt = Math.sin(Date.now() / 90) * 2.4;
+        const finalTilt = baseTilt + wobbleTilt;
+        egg.style.setProperty("--pet-egg-tilt", `${finalTilt.toFixed(2)}deg`);
+        eggHoverRafId = requestAnimationFrame(runEggHoverAnimation);
+      }
+
+      egg.addEventListener("mouseenter", function () {
+        if (!eggHoverRafId) {
+          runEggHoverAnimation();
+        }
+      });
+
+      egg.addEventListener("mousemove", function (event) {
+        const rect = egg.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / rect.width;
+        eggHoverRatioX = clamp(x - 0.5, -0.5, 0.5);
+      });
+
+      egg.addEventListener("mouseleave", function () {
+        eggHoverRatioX = 0;
+        stopEggHoverAnimation();
+        egg.style.setProperty("--pet-egg-tilt", "0deg");
+      });
+    }
+
+    function setRenameHint(message, isError) {
+      const hintEl = document.getElementById("petRenameHint");
+      if (!hintEl) return;
+
+      hintEl.textContent = message || "";
+      hintEl.classList.toggle("error", !!isError);
+    }
+
+    function refreshBodyModalLock() {
+      const hatchOpen =
+        document.getElementById("petHatchModal")?.getAttribute("aria-hidden") === "false";
+      const renameOpen =
+        document.getElementById("petRenameModal")?.getAttribute("aria-hidden") === "false";
+
+      document.body.classList.toggle("pet-modal-open", hatchOpen || renameOpen);
+    }
+
+    function setRenameModalOpen(isOpen) {
+      const modal = document.getElementById("petRenameModal");
+      if (!modal) return;
+
+      modal.classList.toggle("open", !!isOpen);
+      modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      refreshBodyModalLock();
+    }
+
+    function openPetRenameModal() {
+      const input = document.getElementById("petRenameInput");
+      const current = document.getElementById("petDisplayName")?.textContent || DEFAULT_PET_NAME;
+
+      if (input) {
+        input.value = normalizePetName(current, DEFAULT_PET_NAME);
+      }
+
+      setRenameHint("Tối đa 24 ký tự.", false);
+      setRenameModalOpen(true);
+
+      setTimeout(function () {
+        if (!input) return;
+        input.focus();
+        input.select();
+      }, 30);
+    }
+
+    function closePetRenameModal() {
+      setRenameModalOpen(false);
+    }
+
+    function submitPetRename() {
+      const input = document.getElementById("petRenameInput");
+      const rawName = String(input?.value || "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+      if (!rawName) {
+        setRenameHint("Tên pet không được để trống.", true);
+        if (input) input.focus();
+        return;
+      }
+
+      if (rawName.length > 24) {
+        setRenameHint("Tên pet tối đa 24 ký tự.", true);
+        if (input) input.focus();
+        return;
+      }
+
+      const nextName = normalizePetName(rawName, DEFAULT_PET_NAME);
+      renderPetName(nextName);
+      savePetName(nextName);
+      closePetRenameModal();
+      notify("Đã đổi tên pet thành công.", "success");
+    }
+
+    function setupPetRenameModal() {
+      const modal = document.getElementById("petRenameModal");
+      const closeBtn = document.getElementById("petRenameModalClose");
+      const cancelBtn = document.getElementById("petRenameCancelBtn");
+      const saveBtn = document.getElementById("petRenameSaveBtn");
+      const input = document.getElementById("petRenameInput");
+
+      if (!modal || !closeBtn || !cancelBtn || !saveBtn || !input) {
+        return;
+      }
+
+      if (modal.dataset.modalBound === "1") {
+        return;
+      }
+      modal.dataset.modalBound = "1";
+
+      closeBtn.addEventListener("click", closePetRenameModal);
+      cancelBtn.addEventListener("click", closePetRenameModal);
+      saveBtn.addEventListener("click", submitPetRename);
+
+      input.addEventListener("input", function () {
+        const value = String(input.value || "").trim().replace(/\s+/g, " ");
+        if (!value) {
+          setRenameHint("Tên pet không được để trống.", true);
           return;
         }
-
-        if (rawName.length > 24) {
-          notify("Tên pet tối đa 24 ký tự.", "warning");
+        if (value.length > 24) {
+          setRenameHint("Tên pet tối đa 24 ký tự.", true);
           return;
         }
+        setRenameHint(`${value.length}/24 ký tự`, false);
+      });
 
-        const nextName = normalizePetName(rawName, DEFAULT_PET_NAME);
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          submitPetRename();
+        }
+      });
 
-        renderPetName(nextName);
-        savePetName(nextName);
-        notify("Đã đổi tên pet thành công.", "success");
+      modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+          closePetRenameModal();
+        }
       });
     }
 
@@ -186,7 +438,7 @@
 
       modal.classList.toggle("open", !!isOpen);
       modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
-      document.body.classList.toggle("pet-modal-open", !!isOpen);
+      refreshBodyModalLock();
     }
 
     function setupHatchModal() {
@@ -220,6 +472,13 @@
         hatchModalEscBound = true;
         document.addEventListener("keydown", function (event) {
           if (event.key !== "Escape") return;
+
+          const renameModal = document.getElementById("petRenameModal");
+          if (renameModal && renameModal.getAttribute("aria-hidden") === "false") {
+            closePetRenameModal();
+            return;
+          }
+
           const activeModal = document.getElementById("petHatchModal");
           if (!activeModal) return;
           if (activeModal.getAttribute("aria-hidden") === "false") {
@@ -235,7 +494,10 @@
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
       const name = user.displayName || user.username || "Người chơi";
+      const totalXPFromUser = clamp(user.totalXP, 0, 999999);
       const petName = loadPetName(DEFAULT_PET_NAME);
+
+      syncDailyCoinsFromXP(state, totalXPFromUser);
 
       const target = Math.max(1, Number(state.requirements.target) || 3);
       const learn = clamp(state.requirements.learn, 0, target);
@@ -270,6 +532,7 @@
       setProgressBar("petQuizProgress", (quiz / target) * 100);
       setProgressBar("petMatchProgress", (matching / target) * 100);
       setupPetNameEditor();
+      setupEggHoverTilt();
       setHatchModalOpen(false);
     }
 
@@ -306,12 +569,14 @@
       document.addEventListener("DOMContentLoaded", function () {
         setupPetActions();
         setupHatchModal();
+        setupPetRenameModal();
         initPetPage();
       });
     } else {
       setTimeout(function () {
         setupPetActions();
         setupHatchModal();
+        setupPetRenameModal();
         initPetPage();
       }, 80);
     }
