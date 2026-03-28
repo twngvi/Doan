@@ -302,9 +302,6 @@
 
       if (sync.date !== today) {
         const carryDelta = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
-        if (carryDelta > 0) {
-          state.coins = clamp(state.coins + carryDelta, 0, 999999);
-        }
 
         state.xp = currentXP;
         saveDailySyncInfo({ date: today, lastXP: currentXP });
@@ -313,12 +310,8 @@
       }
 
       const deltaXP = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
-
-      if (deltaXP > 0) {
-        // Rule: XP tăng bao nhiêu trong ngày thì XQP tăng bấy nhiêu.
-        // XP và XQP là 2 luồng độc lập, chỉ cộng XQP từ phần XP tăng.
-        state.coins = clamp(state.coins + deltaXP, 0, 999999);
-      }
+      // Server is the source of truth for XQP minting from XP gains.
+      // Client only tracks latest total XP seen for UI/local cache coherence.
 
       state.xp = currentXP;
       saveDailySyncInfo({ date: today, lastXP: currentXP });
@@ -437,7 +430,6 @@
         })
         .syncCurrentUserPetState({
           petName: normalizePetName(petName, DEFAULT_PET_NAME),
-          coins: clamp(state?.coins, 0, 999999),
           levelCurrent: Math.max(1, parseInt(state?.level?.current, 10) || 1),
           levelProgress: clamp(state?.level?.progress, 0, 100),
         });
@@ -1109,10 +1101,10 @@
               mergedProgress = clamp(mergedState.level.progress, 0, 100);
             }
 
-            mergedState.coins = Math.max(
-              clamp(server.coins, 0, 999999),
-              clamp(mergedState.coins, 0, 999999),
-            );
+            const serverCoinsParsed = parseInt(server.coins, 10);
+            mergedState.coins = Number.isFinite(serverCoinsParsed)
+              ? clamp(serverCoinsParsed, 0, 999999)
+              : clamp(mergedState.coins, 0, 999999);
             mergedState.level.current = mergedLevel;
             mergedState.level.progress = mergedProgress;
 

@@ -5156,7 +5156,7 @@ function getQuizStatsPerTopic() {
 /**
  * Get matching statistics per topic for current user.
  * Returns stats map by topicId:
- * {hasPlayed, bestScore, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt}
+ * {hasPlayed, bestScore, bestPercent, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt}
  * @returns {object} - {success, stats: {topicId: {...}, ...}}
  */
 function getMatchingStatsPerTopic() {
@@ -5227,10 +5227,20 @@ function getMatchingStatsPerTopic() {
         totalPairsCol >= 0 ? parseInt(data[i][totalPairsCol], 10) || 0 : 0;
       const playedAt = playedAtCol >= 0 ? data[i][playedAtCol] : null;
 
+      // Prefer explicit accuracy, fallback to score-normalized percent.
+      const computedPercent =
+        accuracy > 0
+          ? accuracy
+          : totalPairs > 0
+            ? Math.round((score / (totalPairs * 10)) * 100)
+            : 0;
+      const normalizedPercent = Math.max(0, Math.min(100, computedPercent));
+
       if (!statsMap[topicId]) {
         statsMap[topicId] = {
           hasPlayed: true,
           bestScore: score,
+          bestPercent: normalizedPercent,
           bestAccuracy: accuracy,
           bestTotalPairs: totalPairs,
           playCount: 1,
@@ -5240,11 +5250,26 @@ function getMatchingStatsPerTopic() {
         const topicStats = statsMap[topicId];
         topicStats.playCount++;
 
+        const currentBestPercent =
+          Number(topicStats.bestPercent) > 0
+            ? Number(topicStats.bestPercent)
+            : topicStats.bestTotalPairs > 0
+              ? Math.round(
+                  ((Number(topicStats.bestScore) || 0) /
+                    (Number(topicStats.bestTotalPairs) * 10)) *
+                    100,
+                )
+              : Math.max(0, Math.min(100, Number(topicStats.bestAccuracy) || 0));
+
         if (
-          score > topicStats.bestScore ||
-          (score === topicStats.bestScore && accuracy > topicStats.bestAccuracy)
+          normalizedPercent > currentBestPercent ||
+          (normalizedPercent === currentBestPercent && score > topicStats.bestScore) ||
+          (normalizedPercent === currentBestPercent &&
+            score === topicStats.bestScore &&
+            accuracy > topicStats.bestAccuracy)
         ) {
           topicStats.bestScore = score;
+          topicStats.bestPercent = normalizedPercent;
           topicStats.bestAccuracy = accuracy;
           topicStats.bestTotalPairs = totalPairs;
         }

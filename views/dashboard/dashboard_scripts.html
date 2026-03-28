@@ -101,7 +101,6 @@
             requirements: { learn: 0, quiz: 0, matching: 0, target: 3 },
           };
 
-      const safeCoins = Math.max(0, parseInt(baseState.coins, 10) || 0);
       const xpAfter = Math.max(
         0,
         newTotalXP != null && newTotalXP !== ""
@@ -109,11 +108,9 @@
           : (parseInt(baseState.xp, 10) || 0) + xpDelta,
       );
 
-      baseState.coins = safeCoins + xpDelta;
       baseState.xp = xpAfter;
 
-      // XP and XQP are independent; spending XQP never modifies XP.
-      // This sync only mirrors positive XP gains into XQP for the same day.
+      // Server is authoritative for XQP balance. Dashboard only keeps XP cache in sync.
       localStorage.setItem(stateKey, JSON.stringify(baseState));
       localStorage.setItem(
         syncKey,
@@ -122,19 +119,6 @@
           lastXP: xpAfter,
         }),
       );
-
-      if (typeof google !== "undefined" && google.script && google.script.run) {
-        const level = baseState.level || {};
-        google.script.run
-          .withFailureHandler(function (error) {
-            console.warn("Pet backend sync from dashboard failed:", error);
-          })
-          .syncCurrentUserPetState({
-            coins: Math.max(0, parseInt(baseState.coins, 10) || 0),
-            levelCurrent: Math.max(1, parseInt(level.current, 10) || 1),
-            levelProgress: Math.max(0, Math.min(100, parseInt(level.progress, 10) || 0)),
-          });
-      }
     } catch (error) {
       console.warn("Pet economy sync from XP failed:", error);
     }

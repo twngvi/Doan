@@ -983,6 +983,7 @@ function getPetUserRowByEmail_(email) {
   const emailCol = ensureUsersColumn(usersSheet, "email");
   const petNameCol = ensureUsersColumn(usersSheet, "petName");
   const petXqpCol = ensureUsersColumn(usersSheet, "petXqp");
+  const petXqpSyncedXpCol = ensureUsersColumn(usersSheet, "petXqpSyncedXp");
   const petLevelCol = ensureUsersColumn(usersSheet, "petLevel");
   const petLevelProgressCol = ensureUsersColumn(usersSheet, "petLevelProgress");
   const totalXpCol = ensureUsersColumn(usersSheet, "totalXP");
@@ -995,12 +996,45 @@ function getPetUserRowByEmail_(email) {
     if (rowEmail !== targetEmail) continue;
 
     const rowIndex = i + 1;
+    const rawXqp = parseInt(data[i][petXqpCol], 10);
+    const rawSyncedXp = parseInt(data[i][petXqpSyncedXpCol], 10);
+    const totalXP = Math.max(0, parseInt(data[i][totalXpCol], 10) || 0);
+
+    const hasStoredXqp = Number.isFinite(rawXqp);
+    const hasStoredSyncedXp = Number.isFinite(rawSyncedXp);
+
+    const storedXqp = hasStoredXqp ? Math.max(0, rawXqp) : null;
+    const storedSyncedXp = hasStoredSyncedXp ? Math.max(0, rawSyncedXp) : null;
+
+    let xqp = hasStoredXqp ? storedXqp : 120;
+    let syncedXp = hasStoredSyncedXp ? storedSyncedXp : totalXP;
+
+    // Keep sync baseline bounded when total XP is reset/lower than previous baseline.
+    if (syncedXp > totalXP) {
+      syncedXp = totalXP;
+    }
+
+    // Rule: every gained XP grants the same amount of XQP.
+    if (totalXP > syncedXp) {
+      xqp += totalXP - syncedXp;
+      syncedXp = totalXP;
+    }
+
+    if (!hasStoredXqp || xqp !== storedXqp) {
+      usersSheet.getRange(rowIndex, petXqpCol + 1).setValue(xqp);
+    }
+
+    if (!hasStoredSyncedXp || syncedXp !== storedSyncedXp) {
+      usersSheet.getRange(rowIndex, petXqpSyncedXpCol + 1).setValue(syncedXp);
+    }
+
     const petState = {
       petName: String(data[i][petNameCol] || "").trim() || "Be Ga",
-      xqp: Math.max(0, parseInt(data[i][petXqpCol], 10) || 120),
+      xqp: xqp,
+      xqpSyncedXp: syncedXp,
       level: Math.max(1, parseInt(data[i][petLevelCol], 10) || 1),
       levelProgress: Math.max(0, Math.min(100, parseInt(data[i][petLevelProgressCol], 10) || 0)),
-      totalXP: Math.max(0, parseInt(data[i][totalXpCol], 10) || 0),
+      totalXP: totalXP,
     };
 
     return {
@@ -1009,6 +1043,7 @@ function getPetUserRowByEmail_(email) {
       columns: {
         petNameCol: petNameCol,
         petXqpCol: petXqpCol,
+        petXqpSyncedXpCol: petXqpSyncedXpCol,
         petLevelCol: petLevelCol,
         petLevelProgressCol: petLevelProgressCol,
       },
@@ -1032,6 +1067,11 @@ function savePetUserStateByRow_(rowData, patch) {
   }
   if (cols.petXqpCol >= 0 && next.xqp != null) {
     sheet.getRange(rowIndex, cols.petXqpCol + 1).setValue(Math.max(0, parseInt(next.xqp, 10) || 0));
+  }
+  if (cols.petXqpSyncedXpCol >= 0 && next.xqpSyncedXp != null) {
+    sheet
+      .getRange(rowIndex, cols.petXqpSyncedXpCol + 1)
+      .setValue(Math.max(0, parseInt(next.xqpSyncedXp, 10) || 0));
   }
   if (cols.petLevelCol >= 0 && next.level != null) {
     sheet.getRange(rowIndex, cols.petLevelCol + 1).setValue(Math.max(1, parseInt(next.level, 10) || 1));
@@ -1472,7 +1512,6 @@ function syncCurrentUserPetState(syncInput) {
     const input = syncInput || {};
     savePetUserStateByRow_(rowData, {
       petName: input.petName != null ? String(input.petName || "") : rowData.state.petName,
-      xqp: input.coins != null ? Math.max(0, parseInt(input.coins, 10) || 0) : rowData.state.xqp,
       level: input.levelCurrent != null ? Math.max(1, parseInt(input.levelCurrent, 10) || 1) : rowData.state.level,
       levelProgress: input.levelProgress != null ? Math.max(0, Math.min(100, parseInt(input.levelProgress, 10) || 0)) : rowData.state.levelProgress,
     });

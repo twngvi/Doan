@@ -802,14 +802,16 @@
   function getMatchingBestPercent(stats) {
     if (!stats) return 0;
 
+    var byPercent = Number(stats.bestPercent);
     var byAccuracy = Number(stats.bestAccuracy);
-    if (Number.isFinite(byAccuracy) && byAccuracy >= 0) {
-      return Math.max(0, Math.min(100, Math.round(byAccuracy)));
+    var bestCandidate = -1;
+
+    if (Number.isFinite(byPercent) && byPercent >= 0) {
+      bestCandidate = Math.max(bestCandidate, byPercent);
     }
 
-    var byPercent = Number(stats.bestPercent);
-    if (Number.isFinite(byPercent) && byPercent >= 0) {
-      return Math.max(0, Math.min(100, Math.round(byPercent)));
+    if (Number.isFinite(byAccuracy) && byAccuracy >= 0) {
+      bestCandidate = Math.max(bestCandidate, byAccuracy);
     }
 
     var byScore = Number(stats.bestScore);
@@ -820,7 +822,11 @@
       totalPairs > 0
     ) {
       var percent = Math.round((byScore / (totalPairs * 10)) * 100);
-      return Math.max(0, Math.min(100, percent));
+      bestCandidate = Math.max(bestCandidate, percent);
+    }
+
+    if (bestCandidate >= 0) {
+      return Math.max(0, Math.min(100, Math.round(bestCandidate)));
     }
 
     return 0;
