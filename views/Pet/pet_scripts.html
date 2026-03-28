@@ -1,0 +1,166 @@
+<script>
+  (function () {
+    "use strict";
+
+    const DEFAULT_STATE = {
+      xp: 0,
+      coins: 120,
+      status: {
+        energy: 78,
+        hunger: 65,
+        mood: 82,
+        clean: 74,
+      },
+      requirements: {
+        learn: 0,
+        quiz: 0,
+        matching: 0,
+        target: 3,
+      },
+    };
+
+    function clamp(value, min, max) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return min;
+      return Math.min(max, Math.max(min, number));
+    }
+
+    function notify(message, type) {
+      if (typeof window.showToast === "function") {
+        window.showToast(message, type || "info");
+      } else {
+        console.log("Pet notice:", message);
+      }
+    }
+
+    function loadPetPreviewState() {
+      try {
+        const raw = localStorage.getItem("oq_pet_preview_state");
+        if (!raw) return DEFAULT_STATE;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+          return DEFAULT_STATE;
+        }
+
+        return {
+          xp: clamp(parsed.xp, 0, 999999),
+          coins: clamp(parsed.coins, 0, 999999),
+          status: {
+            energy: clamp(parsed.status?.energy, 0, 100),
+            hunger: clamp(parsed.status?.hunger, 0, 100),
+            mood: clamp(parsed.status?.mood, 0, 100),
+            clean: clamp(parsed.status?.clean, 0, 100),
+          },
+          requirements: {
+            target: clamp(parsed.requirements?.target, 1, 10),
+            learn: clamp(parsed.requirements?.learn, 0, 10),
+            quiz: clamp(parsed.requirements?.quiz, 0, 10),
+            matching: clamp(parsed.requirements?.matching, 0, 10),
+          },
+        };
+      } catch (error) {
+        console.warn("Pet state parse failed, using defaults:", error);
+        return DEFAULT_STATE;
+      }
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function setProgressBar(id, percent) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.width = `${clamp(percent, 0, 100)}%`;
+    }
+
+    function calcOverallPercent(requirements) {
+      const target = Math.max(1, Number(requirements.target) || 1);
+      const total =
+        clamp(requirements.learn, 0, target) +
+        clamp(requirements.quiz, 0, target) +
+        clamp(requirements.matching, 0, target);
+      const maxTotal = target * 3;
+      return Math.round((total / maxTotal) * 100);
+    }
+
+    function resolveStageLabel(percent) {
+      if (percent >= 100) return "Sẵn sàng nở";
+      if (percent >= 70) return "Trứng phát triển";
+      if (percent >= 35) return "Đang ấp";
+      return "Giai đoạn Trứng";
+    }
+
+    function initPetPage() {
+      const state = loadPetPreviewState();
+      const user = window.currentUser || {};
+      const name = user.displayName || user.username || "Người chơi";
+
+      const target = Math.max(1, Number(state.requirements.target) || 3);
+      const learn = clamp(state.requirements.learn, 0, target);
+      const quiz = clamp(state.requirements.quiz, 0, target);
+      const matching = clamp(state.requirements.matching, 0, target);
+      const overallPercent = calcOverallPercent({
+        target: target,
+        learn: learn,
+        quiz: quiz,
+        matching: matching,
+      });
+
+      setText("petUserName", name);
+      setText("petXpValue", String(Math.round(state.xp)));
+      setText("petCoinValue", String(Math.round(state.coins)));
+      setText("petEnergyValue", `${Math.round(state.status.energy)}%`);
+      setText("petHungerValue", `${Math.round(state.status.hunger)}%`);
+      setText("petMoodValue", `${Math.round(state.status.mood)}%`);
+      setText("petCleanValue", `${Math.round(state.status.clean)}%`);
+      setText("petLearnText", `${learn} / ${target}`);
+      setText("petQuizText", `${quiz} / ${target}`);
+      setText("petMatchText", `${matching} / ${target}`);
+      setText("petHatchProgressText", `${overallPercent}% điều kiện nở trứng`);
+      setText("petStageBadge", resolveStageLabel(overallPercent));
+
+      setProgressBar("petHatchProgress", overallPercent);
+      setProgressBar("petLearnProgress", (learn / target) * 100);
+      setProgressBar("petQuizProgress", (quiz / target) * 100);
+      setProgressBar("petMatchProgress", (matching / target) * 100);
+    }
+
+    function setupPetActions() {
+      const actions = document.querySelectorAll("[data-pet-action]");
+      actions.forEach((button) => {
+        button.addEventListener("click", function () {
+          const action = button.getAttribute("data-pet-action");
+
+          if (action === "feed") {
+            notify("Tính năng cho ăn sẽ được bật khi backend Pet hoàn thiện.", "info");
+            return;
+          }
+
+          if (action === "shop") {
+            notify("Cửa hàng Pet đang ở chế độ xem trước giao diện.", "info");
+            return;
+          }
+
+          notify("Đã nhận thao tác mua vật phẩm (chế độ xem trước).", "success");
+        });
+      });
+    }
+
+    window.initPetPage = initPetPage;
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () {
+        setupPetActions();
+        initPetPage();
+      });
+    } else {
+      setTimeout(function () {
+        setupPetActions();
+        initPetPage();
+      }, 80);
+    }
+  })();
+</script>
