@@ -259,14 +259,12 @@
   // ===== STATE =====
   let matchingMeteorInterval = null;
   let matchingTimerInterval = null;
-  const MATCHING_DEFAULT_CARD_COUNT = 6;
+  const MATCHING_DEFAULT_PAIR_COUNT = 10;
   const MATCHING_SETTINGS_PERSIST_KEY = "oq_matching_settings_v1";
 
   function getDefaultMatchingSettings() {
     return {
-      interactionMode: "click", // click | drag
       showConnectionLines: true,
-      cardCount: MATCHING_DEFAULT_CARD_COUNT,
     };
   }
 
@@ -280,9 +278,9 @@
     loadingTopics: false,
     topicError: null,
     // Game mode state
-    selectedModeKey: null, // click-6card | drag-6card
-    pairLimit: Math.max(1, Math.floor(MATCHING_DEFAULT_CARD_COUNT / 2)),
-    interactionMode: "click", // click | drag
+    selectedModeKey: null, // wire-10pair | nowire-10pair
+    pairLimit: MATCHING_DEFAULT_PAIR_COUNT,
+    interactionMode: "click", // fixed click mode
     showConnectionLines: true,
     settings: getDefaultMatchingSettings(),
     // Data loader state
@@ -336,26 +334,22 @@
       var raw = localStorage.getItem(MATCHING_SETTINGS_PERSIST_KEY);
       if (!raw) {
         matchingState.settings = defaults;
-        matchingState.interactionMode = defaults.interactionMode;
+        matchingState.interactionMode = "click";
         matchingState.showConnectionLines = defaults.showConnectionLines;
         return;
       }
 
       var parsed = JSON.parse(raw);
       var merged = Object.assign({}, defaults, parsed || {});
-      if (merged.interactionMode !== "click" && merged.interactionMode !== "drag") {
-        merged.interactionMode = "click";
-      }
       merged.showConnectionLines = merged.showConnectionLines !== false;
-      merged.cardCount = MATCHING_DEFAULT_CARD_COUNT;
 
       matchingState.settings = merged;
-      matchingState.interactionMode = merged.interactionMode;
+      matchingState.interactionMode = "click";
       matchingState.showConnectionLines = merged.showConnectionLines;
     } catch (error) {
       console.warn("⚠️ Failed to load matching settings:", error);
       matchingState.settings = defaults;
-      matchingState.interactionMode = defaults.interactionMode;
+      matchingState.interactionMode = "click";
       matchingState.showConnectionLines = defaults.showConnectionLines;
     }
   }
@@ -363,13 +357,9 @@
   function saveMatchingGameSettings() {
     try {
       var payload = {
-        interactionMode:
-          matchingState.settings && matchingState.settings.interactionMode === "drag"
-            ? "drag"
-            : "click",
         showConnectionLines:
           matchingState.settings && matchingState.settings.showConnectionLines !== false,
-        cardCount: MATCHING_DEFAULT_CARD_COUNT,
+        pairCount: MATCHING_DEFAULT_PAIR_COUNT,
       };
       localStorage.setItem(MATCHING_SETTINGS_PERSIST_KEY, JSON.stringify(payload));
     } catch (error) {
@@ -379,14 +369,10 @@
 
   function applyMatchingSettings(partialSettings) {
     var next = Object.assign({}, matchingState.settings || getDefaultMatchingSettings(), partialSettings || {});
-    if (next.interactionMode !== "click" && next.interactionMode !== "drag") {
-      next.interactionMode = "click";
-    }
     next.showConnectionLines = next.showConnectionLines !== false;
-    next.cardCount = MATCHING_DEFAULT_CARD_COUNT;
 
     matchingState.settings = next;
-    matchingState.interactionMode = next.interactionMode;
+    matchingState.interactionMode = "click";
     matchingState.showConnectionLines = next.showConnectionLines;
     saveMatchingGameSettings();
   }
@@ -1342,33 +1328,18 @@
   };
 
   function renderMatchingTopicSettings() {
-    var modeClickBtn = document.getElementById("matchingSettingModeClick");
-    var modeDragBtn = document.getElementById("matchingSettingModeDrag");
     var lineOnBtn = document.getElementById("matchingSettingLinesOn");
     var lineOffBtn = document.getElementById("matchingSettingLinesOff");
 
-    if (!modeClickBtn || !modeDragBtn || !lineOnBtn || !lineOffBtn) return;
+    if (!lineOnBtn || !lineOffBtn) return;
 
-    var mode =
-      matchingState.settings && matchingState.settings.interactionMode === "drag"
-        ? "drag"
-        : "click";
     var showLines =
       !matchingState.settings ||
       matchingState.settings.showConnectionLines !== false;
 
-    modeClickBtn.classList.toggle("active", mode === "click");
-    modeDragBtn.classList.toggle("active", mode === "drag");
     lineOnBtn.classList.toggle("active", showLines);
     lineOffBtn.classList.toggle("active", !showLines);
   }
-
-  window.setMatchingInteractionMode = function (mode) {
-    applyMatchingSettings({
-      interactionMode: mode === "drag" ? "drag" : "click",
-    });
-    renderMatchingTopicSettings();
-  };
 
   window.setMatchingConnectionLines = function (enabled) {
     applyMatchingSettings({
@@ -1415,18 +1386,17 @@
 
   function formatMatchingModeLabel(rawModeKey) {
     var normalized = String(rawModeKey || "").toLowerCase();
-    if (normalized === "click-6card") return "Bấm chọn · 6 thẻ";
-    if (normalized === "drag-6card") return "Kéo thả · 6 thẻ";
-    if (normalized === "click") return "Bấm chọn";
-    if (normalized === "drag") return "Kéo thả";
+    if (normalized === "wire-10pair") return "Có dây · 10 cặp";
+    if (normalized === "nowire-10pair") return "Không dây · 10 cặp";
+    if (normalized === "wire") return "Có dây";
+    if (normalized === "nowire") return "Không dây";
     return "Chế độ không xác định";
   }
 
   function getMatchingModeToken(rawModeKey) {
     var normalized = String(rawModeKey || "").toLowerCase();
-    if (normalized.indexOf("drag") !== -1) return "drag";
-    if (normalized.indexOf("click") !== -1) return "click";
-    return "click";
+    if (normalized.indexOf("nowire") !== -1) return "wireless";
+    return "wired";
   }
 
   function renderMatchingTopicHistory(history) {
@@ -1747,26 +1717,22 @@
     matchingState.loadingPairs = true;
     matchingState.pairsError = null;
 
-    var activeMode =
-      matchingState.settings && matchingState.settings.interactionMode === "drag"
-        ? "drag"
-        : "click";
     var showLines =
       !matchingState.settings ||
       matchingState.settings.showConnectionLines !== false;
-    matchingState.interactionMode = activeMode;
+    matchingState.interactionMode = "click";
     matchingState.showConnectionLines = showLines;
     matchingState.selectedModeKey =
-      activeMode === "drag" ? "drag-6card" : "click-6card";
-    matchingState.pairLimit = Math.max(1, Math.floor(MATCHING_DEFAULT_CARD_COUNT / 2));
+      showLines ? "wire-10pair" : "nowire-10pair";
+    matchingState.pairLimit = MATCHING_DEFAULT_PAIR_COUNT;
 
     var gameSubtitleEl = document.querySelector(
       "#matchingGameWrapper .matching-game-subtitle",
     );
     if (gameSubtitleEl) {
       gameSubtitleEl.textContent =
-        "Ghép nhanh 6 thẻ - " +
-        (matchingState.interactionMode === "drag" ? "Kéo thả" : "Bấm chọn");
+        "Ghép nhanh 10 cặp - " +
+        (matchingState.showConnectionLines ? "Có dây" : "Không dây");
     }
 
     renderMatchingInteractionHint();
@@ -1778,14 +1744,12 @@
     board.innerHTML =
       '<div class="matching-loading"><div class="matching-loading-spinner"></div><p>Đang tạo câu hỏi matching...</p></div>';
 
-    const pairLimit = matchingState.pairLimit || 3;
+    const pairLimit = matchingState.pairLimit || MATCHING_DEFAULT_PAIR_COUNT;
     console.log(
       "🎮 Starting matching game:",
       topic.title,
-      "| Mode:",
-      matchingState.interactionMode,
-      "| Cards:",
-      MATCHING_DEFAULT_CARD_COUNT,
+      "| Line mode:",
+      matchingState.showConnectionLines ? "wired" : "wireless",
       "| Pairs:",
       pairLimit,
     );
@@ -1976,8 +1940,8 @@
 
     renderMatchingInteractionHint();
 
-    if (matchingState.interactionMode === "drag") {
-      renderMatchingBoardDrag(board);
+    if (matchingState.showConnectionLines === false) {
+      renderMatchingBoardWireless(board);
       return;
     }
 
@@ -1985,7 +1949,7 @@
   }
 
   function renderMatchingBoardClick(board) {
-    board.classList.remove("matching-board-drag");
+    board.classList.remove("matching-board-drag", "matching-board-wireless");
 
     var leftHtml = matchingState.leftItems
       .map(function (item) {
@@ -2069,6 +2033,93 @@
     if (matchingState.showConnectionLines !== false) {
       requestAnimationFrame(drawMatchingConnectionLines);
     }
+  }
+
+  function renderMatchingBoardWireless(board) {
+    board.classList.remove("matching-board-drag");
+    board.classList.add("matching-board-wireless");
+
+    var leftHtml = matchingState.leftItems
+      .map(function (item) {
+        var isMatched =
+          matchingState.matchedPairIds.indexOf(item.pairId) !== -1;
+        var isSelected = matchingState.selectedLeftId === item.pairId;
+        var isWrong =
+          matchingState.wrongAttemptPair &&
+          matchingState.wrongAttemptPair.leftId === item.pairId;
+
+        var cls = "matching-item matching-item-left matching-item-square";
+        if (isMatched) cls += " matched";
+        else if (isWrong) cls += " wrong";
+        else if (isSelected) cls += " selected";
+
+        return (
+          '<button class="' +
+          cls +
+          '" id="matching-left-item-' +
+          item.pairId +
+          '" data-pair-id="' +
+          item.pairId +
+          '"' +
+          (isMatched ? " disabled" : "") +
+          " onclick=\"selectMatchingItem('left'," +
+          item.pairId +
+          ')">' +
+          '<span class="matching-item-text">' +
+          item.content +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+
+    var rightHtml = matchingState.rightItems
+      .map(function (item) {
+        var isMatched =
+          matchingState.matchedPairIds.indexOf(item.pairId) !== -1;
+        var isSelected = matchingState.selectedRightId === item.pairId;
+        var isWrong =
+          matchingState.wrongAttemptPair &&
+          matchingState.wrongAttemptPair.rightId === item.pairId;
+
+        var cls = "matching-item matching-item-right matching-item-square";
+        if (isMatched) cls += " matched";
+        else if (isWrong) cls += " wrong";
+        else if (isSelected) cls += " selected";
+
+        return (
+          '<button class="' +
+          cls +
+          '" id="matching-right-item-' +
+          item.pairId +
+          '" data-pair-id="' +
+          item.pairId +
+          '"' +
+          (isMatched ? " disabled" : "") +
+          " onclick=\"selectMatchingItem('right'," +
+          item.pairId +
+          ')">' +
+          '<span class="matching-item-text">' +
+          item.content +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
+
+    board.innerHTML =
+      '<div class="matching-column matching-column-left matching-column-grid">' +
+      '<div class="matching-column-header">Thuật ngữ</div>' +
+      '<div class="matching-grid-items">' +
+      leftHtml +
+      "</div>" +
+      "</div>" +
+      '<div class="matching-column matching-column-right matching-column-grid">' +
+      '<div class="matching-column-header">Định nghĩa</div>' +
+      '<div class="matching-grid-items">' +
+      rightHtml +
+      "</div>" +
+      "</div>";
   }
 
   function renderMatchingBoardDrag(board) {
@@ -2310,18 +2361,13 @@
       return;
     }
 
-    if (matchingState.interactionMode !== "drag") {
-      hintEl.style.display = "none";
-      hintEl.textContent = "";
-      return;
-    }
-
-    if (isLikelyTouchDevice()) {
+    if (matchingState.showConnectionLines) {
       hintEl.textContent =
-        "Mẹo mobile: chạm chọn 1 thẻ định nghĩa bên phải, rồi chạm vào ô thuật ngữ tương ứng để ghép.";
+        "Chế độ có dây: chọn 1 thẻ Thuật ngữ và 1 thẻ Định nghĩa để ghép cặp.";
     } else {
-      hintEl.textContent =
-        "Mẹo desktop: kéo thẻ định nghĩa vào ô tương ứng, hoặc bấm chọn thẻ rồi bấm ô để ghép nhanh hơn.";
+      hintEl.textContent = isLikelyTouchDevice()
+        ? "Chế độ không dây (mobile): chạm 1 ô bên trái, rồi chạm 1 ô bên phải để ghép. Các thẻ vuông được trộn ngẫu nhiên."
+        : "Chế độ không dây (desktop): bấm 1 ô bên trái, rồi bấm 1 ô bên phải để ghép. Các thẻ vuông được trộn ngẫu nhiên.";
     }
     hintEl.style.display = "block";
   }
@@ -2617,6 +2663,7 @@
 
       renderMatchingBoard();
       updateMatchingUI();
+      showMatchingWrongDropFeedback();
 
       setTimeout(function () {
         resetWrongSelection();
@@ -2755,7 +2802,7 @@
     var resultPayload = {
       topicId: topicId,
       topicTitle: topicTitle,
-      difficulty: matchingState.selectedModeKey || "click-6card",
+      difficulty: matchingState.selectedModeKey || "wire-10pair",
       totalPairs: matchingState.totalPairs,
       correctPairs: matchingState.correctCount,
       wrongAttempts: matchingState.wrongCount,
@@ -3066,7 +3113,7 @@
 
     matchingState.resultData = {
       topicName: matchingState.currentTopicName || "Unknown",
-      difficulty: matchingState.selectedModeKey || "click-6card",
+      difficulty: matchingState.selectedModeKey || "wire-10pair",
       score: matchingState.score,
       time: matchingState.elapsedTime,
       totalPairs: matchingState.totalPairs,
