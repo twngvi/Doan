@@ -270,6 +270,26 @@
         <section class="admin-pet-grid">
           <article class="admin-pet-card">
             <h3>Quản lý thức ăn</h3>
+            <p class="admin-pet-card-note">Thêm, xem và xóa danh sách thức ăn trong popup riêng.</p>
+            <button class="refresh-btn" type="button" onclick="openAdminPetModal('food')">
+              <span>Mở popup Thức ăn</span>
+            </button>
+          </article>
+
+          <article class="admin-pet-card">
+            <h3>Quản lý phụ kiện</h3>
+            <p class="admin-pet-card-note">Thêm, xem và xóa danh sách phụ kiện trong popup riêng.</p>
+            <button class="refresh-btn" type="button" onclick="openAdminPetModal('accessory')">
+              <span>Mở popup Phụ kiện</span>
+            </button>
+          </article>
+        </section>
+
+        <div id="adminPetFoodModal" class="admin-pet-modal-overlay" aria-hidden="true">
+          <div class="admin-pet-modal" role="dialog" aria-modal="true" aria-labelledby="adminPetFoodModalTitle">
+            <button class="admin-pet-modal-close" type="button" data-admin-pet-modal-close="food" aria-label="Đóng popup thức ăn">×</button>
+            <h3 id="adminPetFoodModalTitle">Quản lý thức ăn</h3>
+
             <form id="adminPetFoodForm" class="admin-pet-food-form">
               <div class="admin-pet-form-row">
                 <label>Tên thức ăn</label>
@@ -317,10 +337,14 @@
             </form>
 
             <div class="admin-food-list" id="adminFoodList"></div>
-          </article>
+          </div>
+        </div>
 
-          <article class="admin-pet-card">
-            <h3>Quản lý phụ kiện</h3>
+        <div id="adminPetAccessoryModal" class="admin-pet-modal-overlay" aria-hidden="true">
+          <div class="admin-pet-modal" role="dialog" aria-modal="true" aria-labelledby="adminPetAccessoryModalTitle">
+            <button class="admin-pet-modal-close" type="button" data-admin-pet-modal-close="accessory" aria-label="Đóng popup phụ kiện">×</button>
+            <h3 id="adminPetAccessoryModalTitle">Quản lý phụ kiện</h3>
+
             <form id="adminPetAccessoryForm" class="admin-pet-food-form">
               <div class="admin-pet-form-row">
                 <label>Tên phụ kiện</label>
@@ -356,8 +380,8 @@
             </form>
 
             <div class="admin-food-list" id="adminAccessoryList"></div>
-          </article>
-        </section>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -498,6 +522,12 @@
     margin: 0 0 0.8rem;
   }
 
+  .admin-pet-card-note {
+    margin: 0 0 0.8rem;
+    color: var(--theme-text-secondary);
+    font-size: 0.9rem;
+  }
+
   .admin-pet-food-form {
     display: flex;
     flex-direction: column;
@@ -585,6 +615,52 @@
     color: #dc2626;
     cursor: pointer;
     font-weight: 700;
+  }
+
+  .admin-pet-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.42);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 12000;
+  }
+
+  .admin-pet-modal-overlay.open {
+    display: flex;
+  }
+
+  .admin-pet-modal {
+    position: relative;
+    width: min(760px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    border-radius: 16px;
+    background: var(--theme-card);
+    border: 1px solid var(--theme-card-border);
+    padding: 1rem;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.24);
+  }
+
+  .admin-pet-modal h3 {
+    margin: 0 0 0.9rem;
+  }
+
+  .admin-pet-modal-close {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    border: 0;
+    border-radius: 10px;
+    width: 34px;
+    height: 34px;
+    font-size: 1.3rem;
+    line-height: 1;
+    color: #b91c1c;
+    background: rgba(248, 113, 113, 0.16);
+    cursor: pointer;
   }
 
   @media (max-width: 768px) {
@@ -720,6 +796,49 @@
     refreshAdminPetPage();
     setupAdminPetFoodForm();
     setupAdminPetAccessoryForm();
+    setupAdminPetModals();
+  }
+
+  function openAdminPetModal(type) {
+    const id = type === 'accessory' ? 'adminPetAccessoryModal' : 'adminPetFoodModal';
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeAdminPetModal(type) {
+    const id = type === 'accessory' ? 'adminPetAccessoryModal' : 'adminPetFoodModal';
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function setupAdminPetModals() {
+    const foodModal = document.getElementById('adminPetFoodModal');
+    const accessoryModal = document.getElementById('adminPetAccessoryModal');
+
+    [foodModal, accessoryModal].forEach(function(modal) {
+      if (!modal || modal.dataset.bound === '1') return;
+      modal.dataset.bound = '1';
+
+      modal.addEventListener('click', function(event) {
+        if (event.target === modal) {
+          modal.classList.remove('open');
+          modal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    });
+
+    const closeButtons = document.querySelectorAll('[data-admin-pet-modal-close]');
+    closeButtons.forEach(function(btn) {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', function() {
+        closeAdminPetModal(btn.getAttribute('data-admin-pet-modal-close'));
+      });
+    });
   }
 
   function refreshAdminPetPage() {
