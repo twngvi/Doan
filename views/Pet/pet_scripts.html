@@ -495,6 +495,18 @@
       renderPetFoodModal();
     }
 
+    function applyTabSelectionState(tabButtons, activeValue, attrName) {
+      if (!Array.isArray(tabButtons)) return;
+
+      tabButtons.forEach(function (btn) {
+        if (!btn) return;
+        const isActive = String(btn.getAttribute(attrName) || "") === String(activeValue || "");
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+        btn.setAttribute("tabindex", isActive ? "0" : "-1");
+      });
+    }
+
     function renderPetFoodModal() {
       const modePill = document.getElementById("petFoodModePill");
       const sectionTitle = document.getElementById("petFoodSectionTitle");
@@ -516,17 +528,8 @@
       const isFoodMode = petModalMode === "food";
       modePill.textContent = isFoodMode ? "Quản lý thức ăn" : "Quản lý phụ kiện";
 
-      modeFoodBtn.classList.toggle("active", isFoodMode);
-      modeFoodBtn.setAttribute("aria-selected", isFoodMode ? "true" : "false");
-      modeAccessoryBtn.classList.toggle("active", !isFoodMode);
-      modeAccessoryBtn.setAttribute("aria-selected", !isFoodMode ? "true" : "false");
-
-      [tabOwned, tabShop].forEach(function (tabBtn) {
-        const tabValue = tabBtn.getAttribute("data-pet-tab") || "owned";
-        const active = tabValue === petModalTab;
-        tabBtn.classList.toggle("active", active);
-        tabBtn.setAttribute("aria-selected", active ? "true" : "false");
-      });
+      applyTabSelectionState([modeFoodBtn, modeAccessoryBtn], petModalMode, "data-pet-mode");
+      applyTabSelectionState([tabOwned, tabShop], petModalTab, "data-pet-tab");
 
       tabOwned.textContent = isFoodMode ? "Kho thức ăn" : "Phụ kiện đã sở hữu";
       tabShop.textContent = isFoodMode ? "Cửa hàng thức ăn" : "Cửa hàng phụ kiện";
@@ -732,6 +735,7 @@
 
       modal.classList.toggle("open", !!isOpen);
       modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      document.body.classList.toggle("pet-food-sidebar-open", !!isOpen);
       refreshBodyModalLock();
 
       if (isOpen) {
@@ -784,6 +788,41 @@
       }
 
       modal.dataset.modalBound = "1";
+
+      const tablists = modal.querySelectorAll('[role="tablist"]');
+      tablists.forEach(function (tablist) {
+        if (!tablist || tablist.dataset.kbdBound === "1") return;
+        tablist.dataset.kbdBound = "1";
+
+        tablist.addEventListener("keydown", function (event) {
+          if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+
+          const tabs = Array.from(tablist.querySelectorAll('[role="tab"]')).filter(function (tab) {
+            return getComputedStyle(tab).display !== "none";
+          });
+          if (tabs.length === 0) return;
+
+          const currentIndex = Math.max(0, tabs.indexOf(document.activeElement));
+          let nextIndex = currentIndex;
+
+          if (event.key === "ArrowRight") {
+            nextIndex = (currentIndex + 1) % tabs.length;
+          } else if (event.key === "ArrowLeft") {
+            nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          } else if (event.key === "Home") {
+            nextIndex = 0;
+          } else if (event.key === "End") {
+            nextIndex = tabs.length - 1;
+          }
+
+          event.preventDefault();
+          const nextTab = tabs[nextIndex];
+          if (nextTab) {
+            nextTab.focus();
+            nextTab.click();
+          }
+        });
+      });
 
       closeBtn.addEventListener("click", closePetFoodModal);
 
@@ -884,10 +923,7 @@
     function refreshBodyModalLock() {
       const renameOpen =
         document.getElementById("petRenameModal")?.getAttribute("aria-hidden") === "false";
-      const foodOpen =
-        document.getElementById("petFoodModal")?.getAttribute("aria-hidden") === "false";
-
-      document.body.classList.toggle("pet-modal-open", renameOpen || foodOpen);
+      document.body.classList.toggle("pet-modal-open", renameOpen);
     }
 
     function setRenameModalOpen(isOpen) {
@@ -1016,6 +1052,7 @@
 
     function initPetPage() {
       document.body.classList.remove("pet-modal-open");
+      document.body.classList.remove("pet-food-sidebar-open");
 
       const state = loadPetPreviewState();
       const user = window.currentUser || {};
