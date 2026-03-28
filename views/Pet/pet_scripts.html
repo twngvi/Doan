@@ -54,7 +54,6 @@
     let eggHoverRafId = 0;
     let eggHoverRatioX = 0;
     let petModalMode = "food";
-    let petModalTab = "owned";
     let petFoodState = {
       foods: FALLBACK_FOODS.slice(),
       accessories: [],
@@ -491,7 +490,6 @@
 
     function setPetModalMode(mode) {
       petModalMode = normalizePetModalMode(mode);
-      petModalTab = "owned";
       renderPetFoodModal();
     }
 
@@ -514,9 +512,7 @@
       const listEl = document.getElementById("petFoodActiveList");
       const modeFoodBtn = document.getElementById("petModeFoodBtn");
       const modeAccessoryBtn = document.getElementById("petModeAccessoryBtn");
-      const tabOwned = document.getElementById("petTabOwned");
-      const tabShop = document.getElementById("petTabShop");
-      if (!modePill || !sectionTitle || !sectionDesc || !listEl || !modeFoodBtn || !modeAccessoryBtn || !tabOwned || !tabShop) {
+      if (!modePill || !sectionTitle || !sectionDesc || !listEl || !modeFoodBtn || !modeAccessoryBtn) {
         return;
       }
 
@@ -529,143 +525,157 @@
       modePill.textContent = isFoodMode ? "Quản lý thức ăn" : "Quản lý phụ kiện";
 
       applyTabSelectionState([modeFoodBtn, modeAccessoryBtn], petModalMode, "data-pet-mode");
-      applyTabSelectionState([tabOwned, tabShop], petModalTab, "data-pet-tab");
-
-      tabOwned.textContent = isFoodMode ? "Kho thức ăn" : "Phụ kiện đã sở hữu";
-      tabShop.textContent = isFoodMode ? "Cửa hàng thức ăn" : "Cửa hàng phụ kiện";
 
       if (isFoodMode) {
-        if (petModalTab === "owned") {
-          sectionTitle.textContent = "Kho của tôi";
-          sectionDesc.textContent = "Nhấn vào icon thức ăn đã mua để tăng thanh level pet.";
-          const ownedFoods = foods.filter((food) => ownedSet.has(String(food.id)));
-          if (ownedFoods.length === 0) {
-            listEl.innerHTML = '<div class="pet-food-empty">Bạn chưa có thức ăn nào trong kho.</div>';
-          } else {
-            listEl.innerHTML = ownedFoods
-              .map(function (food) {
+        sectionTitle.textContent = "Trang thức ăn";
+        sectionDesc.textContent = "Quản lý kho thức ăn và cửa hàng thức ăn của pet.";
+
+        const ownedFoods = foods.filter((food) => ownedSet.has(String(food.id)));
+        const ownedFoodsHtml =
+          ownedFoods.length === 0
+            ? '<div class="pet-food-empty">Bạn chưa có thức ăn nào trong kho.</div>'
+            : ownedFoods
+                .map(function (food) {
+                  return (
+                    '<button class="pet-food-icon-card" type="button" data-pet-eat-food-id="' +
+                    escapeHtml(food.id) +
+                    '">' +
+                    '<span class="pet-food-main-icon">' +
+                    escapeHtml(food.icon || "🍽️") +
+                    '</span>' +
+                    '<span class="pet-food-inline-meta">' +
+                    escapeHtml(food.name || "Food") +
+                    ' | +' +
+                    Number(food.xpGain || 0) +
+                    ' XP level</span>' +
+                    '</button>'
+                  );
+                })
+                .join("");
+
+        const shopFoodsHtml =
+          foods.length === 0
+            ? '<div class="pet-food-empty">Chưa có thức ăn trong cửa hàng.</div>'
+            : foods
+                .map(function (food) {
+                  const isUnlocked = food.unlocked !== false;
+                  const canBuy = isUnlocked;
+                  const unlockLabel = getUnlockLabel(food);
+                  return (
+                    '<div class="pet-food-icon-card ' +
+                    (isUnlocked ? "" : "disabled") +
+                    '" role="button" tabindex="0" aria-label="' +
+                    escapeHtml(food.name || "Food") +
+                    '">' +
+                    '<span class="pet-food-main-icon">' +
+                    escapeHtml(food.icon || "🍽️") +
+                    '</span>' +
+                    '<span class="pet-food-inline-meta">' +
+                    escapeHtml(food.name || "Food") +
+                    ' | +' +
+                    Number(food.xpGain || 0) +
+                    ' XP | ' +
+                    Number(food.priceXqp || 0) +
+                    ' XQP</span>' +
+                    '<span class="pet-food-info">' +
+                    escapeHtml(food.unlockReason || unlockLabel) +
+                    '</span>' +
+                    '<button class="pet-food-buy-btn" type="button" data-pet-buy-food-id="' +
+                    escapeHtml(food.id) +
+                    '" ' +
+                    (canBuy ? "" : "disabled") +
+                    '>Mua</button>' +
+                    '</div>'
+                  );
+                })
+                .join("");
+
+        listEl.innerHTML =
+          '<div class="pet-mode-block">' +
+          '<h4 class="pet-mode-block-title">Kho thức ăn</h4>' +
+          '<div class="pet-food-grid">' +
+          ownedFoodsHtml +
+          '</div>' +
+          '</div>' +
+          '<div class="pet-mode-block">' +
+          '<h4 class="pet-mode-block-title">Cửa hàng thức ăn</h4>' +
+          '<div class="pet-food-grid">' +
+          shopFoodsHtml +
+          '</div>' +
+          '</div>';
+        return;
+      }
+
+      sectionTitle.textContent = "Trang phụ kiện";
+      sectionDesc.textContent = "Xem phụ kiện đã sở hữu và danh sách phụ kiện trong cửa hàng.";
+
+      const ownedAccessories = accessories.filter((acc) => ownedAccessorySet.has(String(acc.id)));
+      const ownedAccessoriesHtml =
+        ownedAccessories.length === 0
+          ? '<div class="pet-food-empty">Bạn chưa sở hữu phụ kiện nào.</div>'
+          : ownedAccessories
+              .map(function (acc) {
                 return (
-                  '<button class="pet-food-icon-card" type="button" data-pet-eat-food-id="' +
-                  escapeHtml(food.id) +
+                  '<div class="pet-food-icon-card" role="img" aria-label="' +
+                  escapeHtml(acc.name || "Accessory") +
                   '">' +
                   '<span class="pet-food-main-icon">' +
-                  escapeHtml(food.icon || "🍽️") +
+                  escapeHtml(acc.icon || "🎒") +
                   '</span>' +
                   '<span class="pet-food-inline-meta">' +
-                  escapeHtml(food.name || "Food") +
-                  ' | +' +
-                  Number(food.xpGain || 0) +
-                  ' XP level</span>' +
-                  '</button>'
-                );
-              })
-              .join("");
-          }
-        } else {
-          sectionTitle.textContent = "Cửa hàng thức ăn";
-          sectionDesc.textContent = "Mua thức ăn bằng XQP. Hệ thống tự kiểm tra điều kiện unlock.";
-          if (foods.length === 0) {
-            listEl.innerHTML = '<div class="pet-food-empty">Chưa có thức ăn trong cửa hàng.</div>';
-          } else {
-            listEl.innerHTML = foods
-              .map(function (food) {
-                const isUnlocked = food.unlocked !== false;
-                const canBuy = isUnlocked;
-                const unlockLabel = getUnlockLabel(food);
-                return (
-                  '<div class="pet-food-icon-card ' +
-                  (isUnlocked ? "" : "disabled") +
-                  '" role="button" tabindex="0" aria-label="' +
-                  escapeHtml(food.name || "Food") +
-                  '">' +
-                  '<span class="pet-food-main-icon">' +
-                  escapeHtml(food.icon || "🍽️") +
-                  '</span>' +
-                  '<span class="pet-food-inline-meta">' +
-                  escapeHtml(food.name || "Food") +
-                  ' | +' +
-                  Number(food.xpGain || 0) +
-                  ' XP | ' +
-                  Number(food.priceXqp || 0) +
-                  ' XQP</span>' +
-                  '<span class="pet-food-info">' +
-                  escapeHtml(food.unlockReason || unlockLabel) +
-                  '</span>' +
-                  '<button class="pet-food-buy-btn" type="button" data-pet-buy-food-id="' +
-                  escapeHtml(food.id) +
-                  '" ' +
-                  (canBuy ? "" : "disabled") +
-                  '>Mua</button>' +
+                  escapeHtml(acc.name || "Accessory") +
+                  ' | Đã sở hữu</span>' +
                   '</div>'
                 );
               })
               .join("");
-          }
-        }
-        return;
-      }
 
-      if (petModalTab === "owned") {
-        sectionTitle.textContent = "Phụ kiện đã sở hữu";
-        sectionDesc.textContent = "Danh sách phụ kiện bạn đã có.";
-        const ownedAccessories = accessories.filter((acc) => ownedAccessorySet.has(String(acc.id)));
-        if (ownedAccessories.length === 0) {
-          listEl.innerHTML = '<div class="pet-food-empty">Bạn chưa sở hữu phụ kiện nào.</div>';
-        } else {
-          listEl.innerHTML = ownedAccessories
-            .map(function (acc) {
-              return (
-                '<div class="pet-food-icon-card" role="img" aria-label="' +
-                escapeHtml(acc.name || "Accessory") +
-                '">' +
-                '<span class="pet-food-main-icon">' +
-                escapeHtml(acc.icon || "🎒") +
-                '</span>' +
-                '<span class="pet-food-inline-meta">' +
-                escapeHtml(acc.name || "Accessory") +
-                ' | Đã sở hữu</span>' +
-                '</div>'
-              );
-            })
-            .join("");
-        }
-      } else {
-        sectionTitle.textContent = "Cửa hàng phụ kiện";
-        sectionDesc.textContent = "Danh sách phụ kiện theo điều kiện mở khóa.";
-        if (accessories.length === 0) {
-          listEl.innerHTML = '<div class="pet-food-empty">Chưa có phụ kiện trong cửa hàng.</div>';
-        } else {
-          listEl.innerHTML = accessories
-            .map(function (acc) {
-              const isOwned = ownedAccessorySet.has(String(acc.id));
-              const isUnlocked = acc.unlocked !== false;
-              const unlockLabel = getUnlockLabel(acc);
-              return (
-                '<div class="pet-food-icon-card ' +
-                (isUnlocked ? "" : "disabled") +
-                '" role="img" aria-label="' +
-                escapeHtml(acc.name || "Accessory") +
-                '">' +
-                '<span class="pet-food-main-icon">' +
-                escapeHtml(acc.icon || "🎒") +
-                '</span>' +
-                '<span class="pet-food-inline-meta">' +
-                escapeHtml(acc.name || "Accessory") +
-                ' | ' +
-                Number(acc.priceXqp || 0) +
-                ' XQP</span>' +
-                '<span class="pet-food-info">' +
-                escapeHtml(acc.unlockReason || unlockLabel) +
-                '</span>' +
-                '<button class="pet-food-buy-btn" type="button" disabled>' +
-                (isOwned ? "Đã có" : isUnlocked ? "Sắp mở" : "Khoá") +
-                '</button>' +
-                '</div>'
-              );
-            })
-            .join("");
-        }
-      }
+      const shopAccessoriesHtml =
+        accessories.length === 0
+          ? '<div class="pet-food-empty">Chưa có phụ kiện trong cửa hàng.</div>'
+          : accessories
+              .map(function (acc) {
+                const isOwned = ownedAccessorySet.has(String(acc.id));
+                const isUnlocked = acc.unlocked !== false;
+                const unlockLabel = getUnlockLabel(acc);
+                return (
+                  '<div class="pet-food-icon-card ' +
+                  (isUnlocked ? "" : "disabled") +
+                  '" role="img" aria-label="' +
+                  escapeHtml(acc.name || "Accessory") +
+                  '">' +
+                  '<span class="pet-food-main-icon">' +
+                  escapeHtml(acc.icon || "🎒") +
+                  '</span>' +
+                  '<span class="pet-food-inline-meta">' +
+                  escapeHtml(acc.name || "Accessory") +
+                  ' | ' +
+                  Number(acc.priceXqp || 0) +
+                  ' XQP</span>' +
+                  '<span class="pet-food-info">' +
+                  escapeHtml(acc.unlockReason || unlockLabel) +
+                  '</span>' +
+                  '<button class="pet-food-buy-btn" type="button" disabled>' +
+                  (isOwned ? "Đã có" : isUnlocked ? "Sắp mở" : "Khoá") +
+                  '</button>' +
+                  '</div>'
+                );
+              })
+              .join("");
+
+      listEl.innerHTML =
+        '<div class="pet-mode-block">' +
+        '<h4 class="pet-mode-block-title">Phụ kiện đã sở hữu</h4>' +
+        '<div class="pet-food-grid">' +
+        ownedAccessoriesHtml +
+        '</div>' +
+        '</div>' +
+        '<div class="pet-mode-block">' +
+        '<h4 class="pet-mode-block-title">Cửa hàng phụ kiện</h4>' +
+        '<div class="pet-food-grid">' +
+        shopAccessoriesHtml +
+        '</div>' +
+        '</div>';
     }
 
     function consumeOwnedFood(foodId) {
@@ -829,13 +839,6 @@
       modal.addEventListener("click", function (event) {
         if (event.target === modal) {
           closePetFoodModal();
-          return;
-        }
-
-        const tabBtn = event.target.closest("[data-pet-tab]");
-        if (tabBtn) {
-          petModalTab = tabBtn.getAttribute("data-pet-tab") === "shop" ? "shop" : "owned";
-          renderPetFoodModal();
           return;
         }
 
