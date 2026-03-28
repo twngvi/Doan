@@ -302,8 +302,6 @@
 
     // Session
     quizSession: null, // structured session object
-    resumeSession: null, // saved progress for resume
-    savedProgress: null, // raw saved progress data
 
     // UI state
     loading: false,
@@ -431,8 +429,6 @@
     quizState.elapsedTime = 0;
     quizState.timerInterval = null;
     quizState.quizSession = null;
-    quizState.resumeSession = null;
-    quizState.savedProgress = null;
     quizState.loading = false;
     quizState.error = null;
     quizState.isReviewing = false;
@@ -1419,7 +1415,8 @@
     if (!quizState.selectedTopic || quizState.isLoadingTopic) return;
 
     setQuizTopicHubLoading(true);
-    checkExistingQuizSession(quizState.selectedTopic.topicId);
+    showGameModeModal();
+    setQuizTopicHubLoading(false);
   };
 
   function setQuizTopicHubLoading(loading) {
@@ -1677,288 +1674,6 @@
   };
 
   /**
-   * checkExistingQuizSession — Kiểm tra có session quiz chưa hoàn thành không
-   * (Alias cho checkSavedProgress — chuẩn hóa tên theo spec)
-   */
-  function checkExistingQuizSession(topicId) {
-    checkSavedProgress(topicId);
-  }
-
-  /**
-   * Set loading state cho topic list
-   */
-  function setTopicLoadingState(loading) {
-    quizState.isLoadingTopic = loading;
-    const container = document.getElementById("topics-grid");
-    if (!container) return;
-
-    if (loading) {
-      // Không ẩn list để tránh cảm giác "reload" như trước.
-      // Chỉ khóa thao tác tạm thời trong lúc check session.
-      container.style.pointerEvents = "none";
-      container.style.opacity = "0.72";
-      document.body.style.cursor = "wait";
-    } else {
-      container.style.pointerEvents = "";
-      container.style.opacity = "";
-      document.body.style.cursor = "";
-
-      // Dọn overlay cũ nếu còn sót từ phiên trước
-      const loadingEl = document.getElementById("mcq-topic-loading-overlay");
-      if (loadingEl) loadingEl.remove();
-    }
-  }
-
-  /**
-   * Check if there's saved progress for this topic
-   */
-  function checkSavedProgress(topicId) {
-    console.log("🔍 Checking for saved progress...");
-
-    google.script.run
-      .withSuccessHandler(function (savedProgress) {
-        setQuizTopicHubLoading(false);
-        if (
-          savedProgress &&
-          savedProgress.questionDetails &&
-          savedProgress.questionDetails.length > 0
-        ) {
-          console.log("📁 Found saved progress:", savedProgress);
-          showResumeModal(savedProgress);
-        } else {
-          // No saved progress, show game mode selection
-          showGameModeModal();
-        }
-      })
-      .withFailureHandler(function (error) {
-        setQuizTopicHubLoading(false);
-        console.log("No saved progress or error:", error);
-        showGameModeModal();
-      })
-      .getSavedQuizProgress(topicId);
-  }
-
-  /**
-   * Show resume progress modal
-   */
-  function showResumeModal(savedProgress) {
-    let modal = document.getElementById("resume-progress-modal");
-    if (!modal) {
-      modal = document.createElement("div");
-      modal.id = "resume-progress-modal";
-      modal.className = "mcq-mode-modal";
-      modal.innerHTML = `
-        <div class="mcq-mode-dialog">
-          <div class="mcq-mode-header">
-            <div class="mcq-mode-icon" style="background: linear-gradient(135deg, #e8f7ee 0%, #d1fae5 100%);">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                <polyline points="17 21 17 13 7 13 7 21"/>
-                <polyline points="7 3 7 8 15 8"/>
-              </svg>
-            </div>
-            <h3 class="mcq-mode-title">Tiếp tục làm bài?</h3>
-            <p class="mcq-mode-subtitle">Bạn có tiến trình chưa hoàn thành</p>
-          </div>
-          
-          <div class="resume-progress-info">
-            <div class="resume-stat">
-              <span class="resume-stat-label">Đã trả lời</span>
-              <span class="resume-stat-value" id="resume-answered-count">0/0</span>
-            </div>
-            <div class="resume-stat">
-              <span class="resume-stat-label">Điểm hiện tại</span>
-              <span class="resume-stat-value" id="resume-current-score">0</span>
-            </div>
-          </div>
-          
-          <div class="mcq-mode-options">
-            <div class="mcq-mode-option resume-option" onclick="resumeQuiz()">
-              <div class="mode-option-icon" style="background: #e8f7ee; color: #10b981;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-              </div>
-              <div class="mode-option-info">
-                <h4>▶️ Tiếp tục làm bài</h4>
-                <p>Tiếp tục từ câu hỏi đã dừng lại</p>
-              </div>
-            </div>
-            
-            <div class="mcq-mode-option" onclick="startFreshQuiz()">
-              <div class="mode-option-icon" style="background: #fff4e5; color: #f57c00;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="23 4 23 10 17 10"/>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-              </div>
-              <div class="mode-option-info">
-                <h4>🔄 Làm lại từ đầu</h4>
-                <p>Bỏ tiến trình cũ và bắt đầu mới</p>
-              </div>
-            </div>
-          </div>
-          
-          <button class="mcq-btn-secondary mcq-mode-cancel" onclick="closeResumeModal()">
-            Quay lại
-          </button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-    }
-
-    // Update stats
-    const answered = savedProgress.questionDetails.filter(
-      (q) => q.wasAnswered,
-    ).length;
-    const total = savedProgress.questionDetails.length;
-    document.getElementById("resume-answered-count").textContent =
-      `${answered}/${total}`;
-    document.getElementById("resume-current-score").textContent =
-      savedProgress.score || 0;
-
-    // Store saved progress for resume
-    quizState.savedProgress = savedProgress;
-
-    modal.classList.add("show");
-  }
-
-  /**
-   * Close resume modal
-   */
-  function closeResumeModal() {
-    const modal = document.getElementById("resume-progress-modal");
-    if (modal) modal.classList.remove("show");
-  }
-
-  /**
-   * Resume quiz from saved progress — uses restoreQuizSession()
-   */
-  function resumeQuiz() {
-    closeResumeModal();
-    console.log("▶️ Resuming quiz from saved progress...");
-
-    const savedProgress = quizState.savedProgress;
-    if (!savedProgress) {
-      showGameModeModal();
-      return;
-    }
-
-    // Set game mode from saved session
-    quizState.quizMode = savedProgress.gameMode || "instant";
-
-    // Switch to quiz view
-    showQuizView();
-
-    // Show mode indicator
-    const modeIndicator = document.getElementById("quiz-mode-indicator");
-    if (modeIndicator) {
-      modeIndicator.textContent =
-        quizState.quizMode === "instant" ? "⚡ Trả lời nhanh" : "📝 Ôn tập";
-      modeIndicator.className = "quiz-mode-indicator " + quizState.quizMode;
-    }
-
-    // Load questions then restore state using restoreQuizSession
-    showLoading();
-    quizState.loading = true;
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        quizState.loading = false;
-
-        if (isMissingGeminiKeyError(result)) {
-          showGeminiKeyConfigWarning(result?.message);
-          showError(
-            result?.message ||
-              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
-          );
-          return;
-        }
-
-        // Parse questions from AI response
-        var questions = null;
-        if (result && result.data) {
-          var parsedData = result.data;
-          if (typeof parsedData === "string") {
-            try {
-              parsedData = JSON.parse(parsedData);
-            } catch (e) {
-              parsedData = null;
-            }
-          }
-          if (
-            parsedData &&
-            parsedData.questions &&
-            Array.isArray(parsedData.questions)
-          ) {
-            questions = parsedData.questions.map(function (q, index) {
-              var options = q.options;
-              if (!Array.isArray(options)) {
-                options = [options.A, options.B, options.C, options.D].filter(
-                  Boolean,
-                );
-              }
-              var correctAnswer = q.correctAnswer;
-              if (typeof correctAnswer === "string") {
-                var letterToIndex = { A: 0, B: 1, C: 2, D: 3 };
-                correctAnswer = letterToIndex[correctAnswer.toUpperCase()] || 0;
-              }
-              return {
-                id: q.id || "Q" + (index + 1),
-                question: q.question,
-                options: options,
-                correctAnswer: correctAnswer,
-                explanation: q.explanation || "",
-                hint: q.hint || "",
-                difficulty: q.difficulty || "medium",
-              };
-            });
-          }
-        }
-
-        if (questions && questions.length > 0) {
-          // Use restoreQuizSession to properly restore state
-          restoreQuizSession(savedProgress, questions);
-
-          // Start quiz UI with restored state
-          startQuizUI();
-        } else {
-          // Could not parse questions, fall back to game mode selection
-          showGameModeModal();
-        }
-      })
-      .withFailureHandler(function (error) {
-        quizState.loading = false;
-        console.error("Error loading questions for resume:", error);
-        if (isMissingGeminiKeyError(error)) {
-          showGeminiKeyConfigWarning(error?.message || error?.toString());
-          showError(
-            "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
-          );
-          return;
-        }
-        showGameModeModal();
-      })
-      .getAIContentForWeb(quizState.topicId, "questions", false, {
-        userId: currentUser?.userId || window.currentUser?.userId || "",
-      });
-  }
-
-  /**
-   * Start fresh quiz (ignore saved progress)
-   */
-  function startFreshQuiz() {
-    closeResumeModal();
-
-    // Delete saved progress
-    google.script.run.deleteSavedQuizProgress(quizState.topicId);
-    quizState.savedProgress = null;
-
-    // Show game mode selection
-    showGameModeModal();
-  }
-
-  /**
    * Show all mastered modal
    */
   function showAllMasteredModal(masteredCount) {
@@ -2074,70 +1789,6 @@
     closeGameModeModal();
     showQuizView();
     loadQuizData(false);
-  }
-
-  /**
-   * Exit confirmation target
-   */
-  let exitTarget = null;
-
-  /**
-   * Show exit confirmation modal when leaving quiz mid-game
-   */
-  function confirmExitQuiz(target) {
-    // Check if quiz is in progress (has questions and not finished)
-    const hasStarted = quizState.questions.length > 0;
-    const answeredCount = quizState.userAnswers.filter(
-      (a) => a !== null && a !== undefined,
-    ).length;
-    const isFinished =
-      document.getElementById("quiz-results")?.style.display !== "none";
-
-    // If quiz hasn't started or is finished, just navigate directly
-    if (!hasStarted || isFinished) {
-      if (target === "topic") {
-        backToQuizTopicHome();
-      } else {
-        showPage("page-dashboard");
-      }
-      return;
-    }
-
-    exitTarget = target;
-
-    // Update modal with current progress
-    document.getElementById("exit-answered-count").textContent =
-      `${answeredCount}/${quizState.questions.length}`;
-    document.getElementById("exit-current-score").textContent =
-      quizState.gameMode === "instant" ? quizState.score : "?";
-
-    // Show modal
-    const modal = document.getElementById("exit-quiz-modal");
-    modal.style.display = "flex";
-    setTimeout(() => modal.classList.add("show"), 10);
-  }
-
-  /**
-   * Close exit modal
-   */
-  function closeExitModal() {
-    const modal = document.getElementById("exit-quiz-modal");
-    modal.classList.remove("show");
-    setTimeout(() => {
-      modal.style.display = "none";
-    }, 300);
-  }
-
-  /**
-   * Confirm exit - actually leave the quiz
-   */
-  function confirmExit() {
-    closeExitModal();
-    if (exitTarget === "topic") {
-      backToQuizTopicHome();
-    } else {
-      showPage("page-dashboard");
-    }
   }
 
   function backToQuizTopicHome() {
@@ -2276,72 +1927,6 @@
       "with",
       finalQuestions.length,
       "questions",
-    );
-    return session;
-  }
-
-  /**
-   * restoreQuizSession(savedProgress, questions) — Khôi phục session từ bài dở dang
-   * @returns session object
-   */
-  function restoreQuizSession(savedProgress, questions) {
-    var sessionId = "QS_RESUME_" + Date.now();
-    var userAnswers = new Array(questions.length).fill(null);
-    var answeredQuestions = new Array(questions.length).fill(false);
-    var score = savedProgress.score || 0;
-
-    // Restore answers
-    if (savedProgress.questionDetails) {
-      savedProgress.questionDetails.forEach(function (detail, idx) {
-        if (detail.wasAnswered && idx < questions.length) {
-          userAnswers[idx] = detail.userAnswer;
-          answeredQuestions[idx] = true;
-        }
-      });
-    }
-
-    // Find first unanswered question
-    var resumeIndex = savedProgress.currentQuestionIndex || 0;
-    for (var i = 0; i < questions.length; i++) {
-      if (!answeredQuestions[i]) {
-        resumeIndex = i;
-        break;
-      }
-    }
-
-    var session = {
-      sessionId: sessionId,
-      topicId: quizState.topicId,
-      contentDocId: quizState.contentDocId,
-      quizMode: savedProgress.gameMode || quizState.quizMode,
-      questions: questions,
-      currentQuestionIndex: resumeIndex,
-      userAnswers: userAnswers,
-      score: score,
-      elapsedTime: 0,
-      startedAt: new Date().toISOString(),
-      status: "in_progress",
-    };
-
-    quizState.quizSession = session;
-    quizState.quizMode = session.quizMode;
-    quizState.questions = questions;
-    quizState.filteredQuestions = questions;
-    quizState.currentQuestionIndex = resumeIndex;
-    quizState.userAnswers = userAnswers;
-    quizState.answeredQuestions = answeredQuestions;
-    quizState.score = score;
-    quizState.loading = false;
-    quizState.error = null;
-
-    // Delete saved progress from server (we're resuming now)
-    google.script.run.deleteSavedQuizProgress(quizState.topicId);
-
-    console.log(
-      "▶️ Quiz session restored:",
-      sessionId,
-      "resuming at question",
-      resumeIndex + 1,
     );
     return session;
   }
@@ -2570,14 +2155,12 @@
   /**
    * Start quiz session
    */
-  function startQuizSession(isRestore) {
+  function startQuizSession() {
     console.log(
       "🎮 Starting quiz session with",
       quizState.questions.length,
       "questions, mode:",
       quizState.quizMode,
-      "restore:",
-      !!isRestore,
     );
 
     // Update session status
@@ -2591,14 +2174,11 @@
       window.LearningTracker.start("quiz");
     }
 
-    // Only reset progress fields for new sessions (not restore)
-    if (!isRestore) {
-      quizState.currentQuestionIndex = 0;
-      quizState.score = 0;
-      quizState.answeredQuestions = new Array(quizState.questions.length).fill(
-        false,
-      );
-    }
+    quizState.currentQuestionIndex = 0;
+    quizState.score = 0;
+    quizState.answeredQuestions = new Array(quizState.questions.length).fill(
+      false,
+    );
 
     quizState.startTime = new Date();
     quizState.isReviewing = false;
@@ -2625,13 +2205,6 @@
 
     startTimer();
     displayQuestion();
-  }
-
-  /**
-   * startQuizUI — Alias cho startQuizSession(true), dùng khi khôi phục bài dở dang
-   */
-  function startQuizUI() {
-    startQuizSession(true);
   }
 
   /**
@@ -3762,118 +3335,6 @@
   }
 
   /**
-   * Exit and save progress
-   */
-  function exitAndSaveProgress() {
-    const answeredCount = quizState.userAnswers.filter(
-      (a) => a !== null && a !== undefined,
-    ).length;
-    const totalQuestions = quizState.questions.length;
-
-    if (answeredCount === 0) {
-      // No progress to save, just exit
-      confirmExitQuiz("topic");
-      return;
-    }
-
-    // Calculate current score for instant mode
-    let currentScore = 0;
-    if (quizState.gameMode === "instant") {
-      currentScore = quizState.score;
-    } else {
-      // Calculate score for review mode
-      quizState.questions.forEach((q, idx) => {
-        if (quizState.userAnswers[idx] === q.correctAnswer) {
-          currentScore++;
-        }
-      });
-    }
-
-    // Save partial progress
-    const timeTaken = getElapsedTime();
-    const percentage = Math.round((currentScore / totalQuestions) * 100);
-
-    const progressData = {
-      topicId: quizState.topicId,
-      topicTitle: quizState.topicTitle,
-      score: currentScore,
-      totalQuestions: totalQuestions,
-      answeredCount: answeredCount,
-      percentage: percentage,
-      timeTaken: timeTaken,
-      gameMode: quizState.gameMode,
-      status: "partial", // Mark as partial save
-      questionDetails: quizState.questions.map((q, idx) => ({
-        question: q.question,
-        userAnswer: quizState.userAnswers[idx],
-        correctAnswer: q.correctAnswer,
-        isCorrect: quizState.userAnswers[idx] === q.correctAnswer,
-        wasAnswered:
-          quizState.userAnswers[idx] !== null &&
-          quizState.userAnswers[idx] !== undefined,
-      })),
-    };
-
-    // Show saving indicator
-    const exitBtn = document.getElementById("btn-exit-save");
-    if (exitBtn) {
-      exitBtn.disabled = true;
-      exitBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-          <circle cx="12" cy="12" r="10" stroke-dasharray="30 60"/>
-        </svg>
-        Đang lưu...
-      `;
-    }
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        console.log("✅ Progress saved:", result);
-        // Show success message briefly then exit
-        if (exitBtn) {
-          exitBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
-              <path d="M20 6L9 17l-5-5"/>
-            </svg>
-            Đã lưu!
-          `;
-        }
-        setTimeout(() => {
-          backToTopicSelection();
-        }, 500);
-      })
-      .withFailureHandler(function (error) {
-        console.error("❌ Error saving progress:", error);
-        if (exitBtn) {
-          exitBtn.disabled = false;
-          exitBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/>
-              <polyline points="7 3 7 8 15 8"/>
-            </svg>
-            Lưu & Thoát
-          `;
-        }
-        // Still allow exit even if save failed
-        if (typeof window.showAppConfirm === "function") {
-          window
-            .showAppConfirm("Không thể lưu tiến trình. Bạn có muốn thoát không?", {
-              title: "Lưu tiến trình thất bại",
-              confirmText: "Thoát",
-              cancelText: "Ở lại",
-            })
-            .then(function (shouldExit) {
-              if (shouldExit) backToTopicSelection();
-            });
-        } else {
-          console.warn("showAppConfirm is unavailable");
-        }
-      })
-      .saveQuizResult(progressData);
-  }
-
-  /**
    * Timer functions
    */
   function startTimer() {
@@ -3950,8 +3411,7 @@
   window.loadQuizQuestions = loadQuizQuestions;
   window.filterMasteredQuestions = filterMasteredQuestions;
   window.createQuizSession = createQuizSession;
-  window.restoreQuizSession = restoreQuizSession;
-  window.checkExistingQuizSession = checkExistingQuizSession;
+  window.backToQuizTopicHome = backToQuizTopicHome;
   window.nextQuestion = nextQuestion;
   window.previousQuestion = previousQuestion;
   window.selectAnswer = selectAnswer;
@@ -3962,17 +3422,8 @@
   window.showGameModeModal = showGameModeModal;
   window.closeGameModeModal = closeGameModeModal;
   window.startQuizWithMode = startQuizWithMode;
-  window.confirmExitQuiz = confirmExitQuiz;
-  window.closeExitModal = closeExitModal;
-  window.confirmExit = confirmExit;
-  window.exitAndSaveProgress = exitAndSaveProgress;
   window.showGeneratingModal = showGeneratingModal;
   window.hideGeneratingModal = hideGeneratingModal;
-  window.checkSavedProgress = checkSavedProgress;
-  window.showResumeModal = showResumeModal;
-  window.closeResumeModal = closeResumeModal;
-  window.resumeQuiz = resumeQuiz;
-  window.startFreshQuiz = startFreshQuiz;
   window.showAllMasteredModal = showAllMasteredModal;
   window.closeAllMasteredModal = closeAllMasteredModal;
   window.reviewAllMastered = reviewAllMastered;
