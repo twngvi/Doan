@@ -30,7 +30,8 @@
     const PET_NAME_STORAGE_KEY = "oq_pet_preview_name";
     const PET_XP_COIN_DAILY_SYNC_KEY = "oq_pet_xp_coin_daily_sync";
     const PET_FOOD_USER_CACHE_KEY = "oq_pet_food_user_cache";
-    const DEFAULT_PET_NAME = "Bé Gà";
+    const PET_VISUAL_PROFILE_STORAGE_KEY = "oq_pet_visual_profile_v1";
+    const DEFAULT_PET_NAME = "Bé Capi";
     const FALLBACK_FOODS = [
       {
         id: "food_corn",
@@ -54,6 +55,90 @@
       },
     ];
 
+    const PET_STAGE_CONFIG = [
+      {
+        index: 1,
+        key: "energy_seed",
+        label: "Giai đoạn 1 - Hạt năng lượng",
+        minLevel: 0,
+        prompt: "small rounded pastel-brown energy blob, soft inner glow, gentle wobble, pulse light",
+      },
+      {
+        index: 2,
+        key: "baby_capybara",
+        label: "Giai đoạn 2 - Baby capybara",
+        minLevel: 1,
+        prompt: "tiny super-round baby capybara, very small ears, tiny oval eyes with highlights, low lazy sitting pose",
+      },
+      {
+        index: 3,
+        key: "young_capybara",
+        label: "Giai đoạn 3 - Capybara con",
+        minLevel: 4,
+        prompt: "1.3x bigger young capybara, clearer muzzle form, visible tiny legs, richer shading, subtle blush",
+      },
+      {
+        index: 4,
+        key: "teen_capybara",
+        label: "Giai đoạn 4 - Capybara thiếu niên",
+        minLevel: 8,
+        prompt: "teen capybara with longer balanced body, smoother fur shading, light accessories like scarf, fruit hat, or towel, relax chill pose",
+      },
+      {
+        index: 5,
+        key: "adult_capybara",
+        label: "Giai đoạn 5 - Capybara trưởng thành",
+        minLevel: 15,
+        prompt: "fully polished adult capybara, smooth fur highlights, subtle aura glow, signature king-of-chill sitting pose with optional steam and sparkles",
+      },
+    ];
+
+    const PET_GENDER_CONFIG = {
+      male: {
+        label: "Capybara đực",
+        prompt:
+          "slightly squarer body form, deeper caramel-brown tone, accessories like scarf, fruit, or tiny glasses, slower cool movement",
+      },
+      female: {
+        label: "Capybara cái",
+        prompt:
+          "rounder softer silhouette, brighter beige-pastel brown palette, bow or flower accessory, gentle cute movement",
+      },
+      neutral: {
+        label: "Neutral",
+        prompt: "gender-neutral capybara silhouette, keep calm and soft identity",
+      },
+    };
+
+    const PET_STATE_CONFIG = {
+      happy: {
+        label: "Vui",
+        prompt: "eyes brighter and slightly wider, gentle body bounce, glow slightly stronger",
+      },
+      hungry: {
+        label: "Đói",
+        prompt: "droopy sleepy eyes, slightly flattened body, lighter desaturated tone, reduced glow",
+      },
+      clean: {
+        label: "Sạch",
+        prompt: "sparkles around body, glossier fur, subtle water shine and reflections",
+      },
+      dirty: {
+        label: "Bẩn",
+        prompt: "light dirt marks on body, duller tone, little to no glow",
+      },
+    };
+
+    const PET_STATE_PRESETS = {
+      happy: { hunger: 78, mood: 92, clean: 74 },
+      hungry: { hunger: 18, mood: 42, clean: 58 },
+      clean: { hunger: 72, mood: 80, clean: 96 },
+      dirty: { hunger: 58, mood: 46, clean: 18 },
+    };
+
+    const PET_NEGATIVE_PROMPT =
+      "realistic, detailed fur, dark lighting, horror style, sharp edges, complex background, aggressive, messy, human-like, low quality";
+
     let petGlobalEscBound = false;
     let eggHoverRafId = 0;
     let eggHoverRatioX = 0;
@@ -61,6 +146,10 @@
     let petIsHatchReady = false;
     let petHatchAnimating = false;
     let petModalMode = "food";
+    let petVisualProfile = {
+      gender: "female",
+      statePreset: "",
+    };
     let petFoodState = {
       foods: FALLBACK_FOODS.slice(),
       accessories: [],
@@ -353,6 +442,239 @@
       };
     }
 
+    function hashStringToInt(value) {
+      const text = String(value || "");
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) {
+        hash = (hash << 5) - hash + text.charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.abs(hash);
+    }
+
+    function loadPetVisualProfile(defaultGender) {
+      const safeDefaultGender = defaultGender === "male" ? "male" : "female";
+      try {
+        const raw = localStorage.getItem(PET_VISUAL_PROFILE_STORAGE_KEY);
+        if (!raw) {
+          return {
+            gender: safeDefaultGender,
+            statePreset: "",
+          };
+        }
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+          return {
+            gender: safeDefaultGender,
+            statePreset: "",
+          };
+        }
+
+        const gender = String(parsed.gender || "").toLowerCase();
+        const statePreset = String(parsed.statePreset || "").toLowerCase();
+
+        return {
+          gender: gender === "male" || gender === "female" ? gender : safeDefaultGender,
+          statePreset: PET_STATE_CONFIG[statePreset] ? statePreset : "",
+        };
+      } catch (error) {
+        console.warn("Pet visual profile parse failed:", error);
+        return {
+          gender: safeDefaultGender,
+          statePreset: "",
+        };
+      }
+    }
+
+    function savePetVisualProfile(profile) {
+      try {
+        const safeProfile = {
+          gender: profile?.gender === "male" ? "male" : "female",
+          statePreset: PET_STATE_CONFIG[profile?.statePreset] ? profile.statePreset : "",
+        };
+        localStorage.setItem(PET_VISUAL_PROFILE_STORAGE_KEY, JSON.stringify(safeProfile));
+      } catch (error) {
+        console.warn("Pet visual profile save failed:", error);
+      }
+    }
+
+    function resolvePetStage(state) {
+      const isHatched = !!state?.hatch?.isHatched;
+      if (!isHatched) {
+        return PET_STAGE_CONFIG[0];
+      }
+
+      const level = Math.max(1, parseInt(state?.level?.current, 10) || 1);
+      if (level >= 15) return PET_STAGE_CONFIG[4];
+      if (level >= 8) return PET_STAGE_CONFIG[3];
+      if (level >= 4) return PET_STAGE_CONFIG[2];
+      return PET_STAGE_CONFIG[1];
+    }
+
+    function resolvePetPrimaryState(state, forcedPreset) {
+      if (PET_STATE_CONFIG[forcedPreset]) {
+        return forcedPreset;
+      }
+
+      const hunger = clamp(state?.status?.hunger, 0, 100);
+      const mood = clamp(state?.status?.mood, 0, 100);
+      const clean = clamp(state?.status?.clean, 0, 100);
+
+      if (clean <= 34) return "dirty";
+      if (hunger <= 34) return "hungry";
+      if (clean >= 86) return "clean";
+      if (mood >= 68) return "happy";
+      return "happy";
+    }
+
+    function resolvePetGender(stage, preferredGender) {
+      if (!stage || stage.index < 4) {
+        return "neutral";
+      }
+      return preferredGender === "male" ? "male" : "female";
+    }
+
+    function updateClassTokenByPrefix(element, prefix, token) {
+      if (!element) return;
+
+      const toRemove = [];
+      for (let i = 0; i < element.classList.length; i++) {
+        const className = element.classList.item(i);
+        if (className && className.indexOf(prefix) === 0) {
+          toRemove.push(className);
+        }
+      }
+
+      toRemove.forEach(function (className) {
+        element.classList.remove(className);
+      });
+
+      if (token) {
+        element.classList.add(token);
+      }
+    }
+
+    function applyPetVisualClassTokens(stage, gender, stateKey) {
+      const page = document.getElementById("page-pet");
+      if (!page) return;
+
+      updateClassTokenByPrefix(page, "pet-stage-", "pet-stage-" + String(stage?.index || 1));
+      updateClassTokenByPrefix(page, "pet-gender-", "pet-gender-" + String(gender || "neutral"));
+      updateClassTokenByPrefix(page, "pet-state-", "pet-state-" + String(stateKey || "happy"));
+    }
+
+    function buildPetVisualPrompt(stage, gender, stateKey) {
+      const stagePrompt = stage?.prompt || PET_STAGE_CONFIG[0].prompt;
+      const genderPrompt = PET_GENDER_CONFIG[gender]?.prompt || PET_GENDER_CONFIG.neutral.prompt;
+      const statePrompt = PET_STATE_CONFIG[stateKey]?.prompt || PET_STATE_CONFIG.happy.prompt;
+
+      return (
+        "3D cartoon soft capybara character, premium mobile casual style, stylized rounded and chubby form, big head and compact body ratio around 60 over 40, tiny legs, pastel brown and caramel-beige palette, no hard outline, smooth clean shading, small oval eyes with highlights and calm cute chill vibe.\n" +
+        "Maintain same character identity across all evolution stages.\n" +
+        "Stage: " +
+        stagePrompt +
+        ".\n" +
+        "Gender variant: " +
+        genderPrompt +
+        ".\n" +
+        "State variant: " +
+        statePrompt +
+        ".\n" +
+        "Lighting and render: key light from top-left, gentle rear rim light, soft blurred ground shadow, subtle surrounding glow aura.\n" +
+        "Idle animation guide: gentle squash and stretch scale 0.97 to 1 loop, eye blink every 3 to 4 seconds, subtle chill body sway with occasional still sitting pause.\n" +
+        "Composition: character centered, simple gradient background in soft cyan or warm yellow, no complex scene clutter.\n" +
+        "Negative prompt: " +
+        PET_NEGATIVE_PROMPT
+      );
+    }
+
+    function renderPetEvolutionLane(stage) {
+      const nodes = document.querySelectorAll("[data-pet-stage-index]");
+      if (!nodes || nodes.length === 0) return;
+
+      const activeIndex = Math.max(1, parseInt(stage?.index, 10) || 1);
+      nodes.forEach(function (node) {
+        const nodeIndex = Math.max(1, parseInt(node.getAttribute("data-pet-stage-index"), 10) || 1);
+        node.classList.toggle("active", nodeIndex === activeIndex);
+      });
+    }
+
+    function renderPetGenderTabs(gender, allowGender) {
+      const genderButtons = document.querySelectorAll("[data-pet-gender-choice]");
+      genderButtons.forEach(function (button) {
+        const choice = String(button.getAttribute("data-pet-gender-choice") || "");
+        const active = allowGender && choice === gender;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+        button.disabled = !allowGender;
+      });
+
+      const hintEl = document.getElementById("petGenderHint");
+      if (!hintEl) return;
+      hintEl.textContent = allowGender
+        ? "Giới tính đang áp dụng cho stage hiện tại."
+        : "Giới tính chỉ áp dụng từ giai đoạn 4, hiện đang dùng neutral.";
+    }
+
+    function renderStatePresetButtons(activePreset) {
+      const stateButtons = document.querySelectorAll("[data-pet-preview-state]");
+      stateButtons.forEach(function (button) {
+        const preset = String(button.getAttribute("data-pet-preview-state") || "");
+        button.classList.toggle("active", preset === activePreset);
+      });
+    }
+
+    function renderPetVisualSystem(state) {
+      const user = window.currentUser || {};
+      const level = Math.max(1, parseInt(state?.level?.current, 10) || 1);
+      const seed = String(user.userId || user.email || user.username || "guest");
+
+      if (!petVisualProfile || typeof petVisualProfile !== "object") {
+        const fallbackGender = hashStringToInt(seed) % 2 === 0 ? "female" : "male";
+        petVisualProfile = loadPetVisualProfile(fallbackGender);
+      }
+
+      const stage = resolvePetStage(state);
+      const allowGender = stage.index >= 4;
+      const effectiveGender = resolvePetGender(stage, petVisualProfile.gender);
+      const stateKey = resolvePetPrimaryState(state, petVisualProfile.statePreset);
+
+      applyPetVisualClassTokens(stage, effectiveGender, stateKey);
+      renderPetEvolutionLane(stage);
+      renderPetGenderTabs(petVisualProfile.gender, allowGender);
+      renderStatePresetButtons(petVisualProfile.statePreset);
+
+      setText("petVisualStagePill", stage.label);
+      setText("petVisualIdentityValue", "Soft 3D Cartoon Capybara - L" + level);
+      setText("petVisualGenderValue", PET_GENDER_CONFIG[effectiveGender]?.label || "Neutral");
+      setText("petVisualStateValue", PET_STATE_CONFIG[stateKey]?.label || "Vui");
+
+      const prompt = buildPetVisualPrompt(stage, effectiveGender, stateKey);
+      const promptOutput = document.getElementById("petPromptOutput");
+      if (promptOutput) {
+        promptOutput.value = prompt;
+      }
+    }
+
+    function applyPetStatePreset(presetKey) {
+      const preset = PET_STATE_PRESETS[presetKey];
+      if (!preset) return;
+
+      const state = loadPetPreviewState();
+      state.status = Object.assign({}, state.status, {
+        hunger: clamp(preset.hunger, 0, 100),
+        mood: clamp(preset.mood, 0, 100),
+        clean: clamp(preset.clean, 0, 100),
+      });
+
+      savePetPreviewState(state);
+      setText("petHungerValue", `${Math.round(state.status.hunger)}%`);
+      setText("petMoodValue", `${Math.round(state.status.mood)}%`);
+      setText("petCleanValue", `${Math.round(state.status.clean)}%`);
+      renderPetVisualSystem(state);
+    }
+
     function setPetActionButtonsEnabled(isEnabled) {
       const actionButtons = document.querySelectorAll("[data-pet-action]");
       actionButtons.forEach(function (button) {
@@ -375,20 +697,20 @@
       const safeTracker = tracker || { target: 3, learn: 0, quiz: 0, matching: 0, percent: 0, isReady: false };
 
       if (isHatched) {
-        titleEl.textContent = "Pet đã nở thành công";
+        titleEl.textContent = "Capybara đã mở khóa";
         metaEl.textContent = "Toàn bộ tính năng Pet đã được mở khóa.";
         return;
       }
 
       if (safeTracker.isReady) {
-        titleEl.textContent = "Đã đủ điều kiện nở trứng";
-        metaEl.textContent = "Bấm vào quả trứng để kích hoạt hiệu ứng nở và mở khóa tính năng Pet.";
+        titleEl.textContent = "Đã đủ điều kiện tiến hóa";
+        metaEl.textContent = "Bấm vào hạt năng lượng để kích hoạt mở khóa capybara.";
         return;
       }
 
-      titleEl.textContent = "Trứng đang được ấp";
+      titleEl.textContent = "Hạt năng lượng đang tích tụ";
       metaEl.textContent =
-        "Tiến độ nở: Học " +
+        "Tiến độ mở khóa: Học " +
         safeTracker.learn +
         "/" +
         safeTracker.target +
@@ -435,13 +757,15 @@
 
       if (!isHatched) {
         setText("petLevelValue", "🔒 Chưa mở khóa");
-        setText("petLevelPointsText", "Trứng chưa nở");
+        setText("petLevelPointsText", "Capybara chưa mở khóa");
         setProgressBar("petLevelProgress", 0);
         closePetFoodModal();
         closePetRenameModal();
       } else {
         renderLevelStatus(state.level);
       }
+
+      renderPetVisualSystem(state);
     }
 
     function playPetHatchAnimation(onDone) {
@@ -480,6 +804,11 @@
       const normalized = String(value || "")
         .trim()
         .replace(/\s+/g, " ");
+
+      const lowered = normalized.toLowerCase();
+      if (lowered === "be ga" || lowered === "bé gà") {
+        return DEFAULT_PET_NAME;
+      }
 
       return normalized || safeFallback;
     }
@@ -525,6 +854,12 @@
       state.coins = clamp(serverState.coins, 0, 999999);
       state.level.current = Math.max(1, parseInt(serverState.levelCurrent, 10) || 1);
       state.level.progress = clamp(serverState.levelProgress, 0, 100);
+
+      if (serverState.gender != null) {
+        petVisualProfile.gender =
+          String(serverState.gender || "").toLowerCase() === "male" ? "male" : "female";
+        savePetVisualProfile(petVisualProfile);
+      }
 
       const req = serverState.requirements || {};
       state.requirements = {
@@ -578,6 +913,7 @@
           petName: normalizePetName(petName, DEFAULT_PET_NAME),
           levelCurrent: Math.max(1, parseInt(state?.level?.current, 10) || 1),
           levelProgress: clamp(state?.level?.progress, 0, 100),
+          gender: petVisualProfile?.gender === "male" ? "male" : "female",
         });
     }
 
@@ -1026,27 +1362,27 @@
       }
 
       if (petIsHatched) {
-        notify("Pet đã nở trước đó rồi.", "info");
+        notify("Capybara đã mở khóa trước đó rồi.", "info");
         return;
       }
 
       if (!tracker || !tracker.isReady) {
         notify(
-          "Chưa đủ điều kiện nở trứng. Hãy hoàn thành thêm bài học, quiz và matching.",
+          "Chưa đủ điều kiện mở khóa capybara. Hãy hoàn thành thêm bài học, quiz và matching.",
           "info",
         );
         return;
       }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        notify("Không thể kết nối server để nở trứng.", "error");
+        notify("Không thể kết nối server để mở khóa capybara.", "error");
         return;
       }
 
       google.script.run
         .withSuccessHandler(function (result) {
           if (!result || !result.success || !result.data) {
-            notify((result && result.message) || "Nở trứng thất bại.", "error");
+            notify((result && result.message) || "Mở khóa capybara thất bại.", "error");
             return;
           }
 
@@ -1059,11 +1395,11 @@
             applyPetLockState(nextState, nextTracker);
             setText("petCoinValue", String(Math.round(nextState.coins)));
             renderPetFoodModal();
-            notify(result.message || "Trứng đã nở, Pet đã được mở khóa!", "success");
+            notify(result.message || "Capybara đã được mở khóa!", "success");
           });
         })
         .withFailureHandler(function (error) {
-          notify("Lỗi nở trứng: " + error, "error");
+          notify("Lỗi mở khóa capybara: " + error, "error");
         })
         .hatchCurrentUserPet();
     }
@@ -1243,6 +1579,89 @@
       });
     }
 
+    function setupPetVisualControls() {
+      const systemSection = document.querySelector(".pet-character-system");
+      if (!systemSection || systemSection.dataset.boundVisualControls === "1") {
+        return;
+      }
+      systemSection.dataset.boundVisualControls = "1";
+
+      systemSection.addEventListener("click", function (event) {
+        const genderBtn = event.target.closest("[data-pet-gender-choice]");
+        if (genderBtn) {
+          const stage = resolvePetStage(loadPetPreviewState());
+          if (stage.index < 4) {
+            notify("Giới tính chỉ mở từ giai đoạn 4.", "info");
+            return;
+          }
+
+          const choice = String(genderBtn.getAttribute("data-pet-gender-choice") || "").toLowerCase();
+          if (choice !== "male" && choice !== "female") {
+            return;
+          }
+
+          petVisualProfile.gender = choice;
+          savePetVisualProfile(petVisualProfile);
+          const liveState = loadPetPreviewState();
+          renderPetVisualSystem(liveState);
+          syncPetStateToBackend(liveState, loadPetName(DEFAULT_PET_NAME));
+          notify("Đã cập nhật biến thể giới tính.", "success");
+          return;
+        }
+
+        const stateBtn = event.target.closest("[data-pet-preview-state]");
+        if (stateBtn) {
+          const preset = String(stateBtn.getAttribute("data-pet-preview-state") || "").toLowerCase();
+          if (!PET_STATE_PRESETS[preset]) {
+            return;
+          }
+
+          petVisualProfile.statePreset = petVisualProfile.statePreset === preset ? "" : preset;
+          savePetVisualProfile(petVisualProfile);
+
+          if (petVisualProfile.statePreset) {
+            applyPetStatePreset(petVisualProfile.statePreset);
+          } else {
+            renderPetVisualSystem(loadPetPreviewState());
+          }
+
+          return;
+        }
+
+        const copyBtn = event.target.closest("#petCopyPromptBtn");
+        if (copyBtn) {
+          const promptOutput = document.getElementById("petPromptOutput");
+          const promptText = String(promptOutput?.value || "").trim();
+          if (!promptText) {
+            notify("Không có prompt để copy.", "warning");
+            return;
+          }
+
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard
+              .writeText(promptText)
+              .then(function () {
+                notify("Đã copy prompt.", "success");
+              })
+              .catch(function () {
+                if (promptOutput) {
+                  promptOutput.focus();
+                  promptOutput.select();
+                }
+                notify("Đã chọn prompt. Nhấn Ctrl + C để copy.", "info");
+              });
+            return;
+          }
+
+          if (promptOutput) {
+            promptOutput.focus();
+            promptOutput.select();
+          }
+          notify("Đã chọn prompt. Nhấn Ctrl + C để copy.", "info");
+        }
+      });
+    }
+
     function setupGlobalEscHandler() {
       if (petGlobalEscBound) return;
       petGlobalEscBound = true;
@@ -1272,6 +1691,10 @@
       const name = user.displayName || user.username || "Người chơi";
       const totalXPFromUser = clamp(user.totalXP, 0, 999999);
       const localPetName = loadPetName(DEFAULT_PET_NAME);
+      const visualSeed = String(user.userId || user.email || user.username || "guest");
+      const fallbackGender = hashStringToInt(visualSeed) % 2 === 0 ? "female" : "male";
+
+      petVisualProfile = loadPetVisualProfile(fallbackGender);
 
       syncDailyCoinsFromXP(state, totalXPFromUser);
       ensureLevelState(state);
@@ -1312,6 +1735,11 @@
             ensureLevelState(mergedState);
 
             const server = result.data.petState || {};
+            if (server.gender != null) {
+              petVisualProfile.gender =
+                String(server.gender || "").toLowerCase() === "male" ? "male" : "female";
+              savePetVisualProfile(petVisualProfile);
+            }
             const serverLevel = Math.max(1, parseInt(server.levelCurrent, 10) || 1);
             const localLevel = Math.max(1, parseInt(mergedState.level.current, 10) || 1);
             const mergedLevel = Math.max(serverLevel, localLevel);
@@ -1359,6 +1787,7 @@
                   coins: mergedState.coins,
                   levelCurrent: mergedState.level.current,
                   levelProgress: mergedState.level.progress,
+                  gender: petVisualProfile.gender === "male" ? "male" : "female",
                   requirements: mergedState.requirements,
                   isHatched: mergedState.hatch.isHatched,
                   hatchedAt: mergedState.hatch.hatchedAt,
@@ -1413,6 +1842,7 @@
         setupPetActions();
         setupPetRenameModal();
         setupPetFoodModal();
+        setupPetVisualControls();
         setupGlobalEscHandler();
         initPetPage();
       });
@@ -1421,6 +1851,7 @@
         setupPetActions();
         setupPetRenameModal();
         setupPetFoodModal();
+        setupPetVisualControls();
         setupGlobalEscHandler();
         initPetPage();
       }, 80);

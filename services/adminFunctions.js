@@ -988,6 +988,7 @@ function getPetUserRowByEmail_(email) {
   const petLevelProgressCol = ensureUsersColumn(usersSheet, "petLevelProgress");
   const petHatchedCol = ensureUsersColumn(usersSheet, "petHatched");
   const petHatchedAtCol = ensureUsersColumn(usersSheet, "petHatchedAt");
+  const petGenderCol = ensureUsersColumn(usersSheet, "petGender");
   const totalXpCol = ensureUsersColumn(usersSheet, "totalXP");
 
   const data = usersSheet.getDataRange().getValues();
@@ -1030,14 +1031,21 @@ function getPetUserRowByEmail_(email) {
       usersSheet.getRange(rowIndex, petXqpSyncedXpCol + 1).setValue(syncedXp);
     }
 
+    const rawPetName = String(data[i][petNameCol] || "").trim();
+    const safePetName = rawPetName && rawPetName.toLowerCase() !== "be ga" ? rawPetName : "Be Capi";
+    if (safePetName !== rawPetName) {
+      usersSheet.getRange(rowIndex, petNameCol + 1).setValue(safePetName);
+    }
+
     const petState = {
-      petName: String(data[i][petNameCol] || "").trim() || "Be Ga",
+      petName: safePetName,
       xqp: xqp,
       xqpSyncedXp: syncedXp,
       level: Math.max(1, parseInt(data[i][petLevelCol], 10) || 1),
       levelProgress: Math.max(0, Math.min(100, parseInt(data[i][petLevelProgressCol], 10) || 0)),
       hatched: parsePetBool_(data[i][petHatchedCol]),
       hatchedAt: String(data[i][petHatchedAtCol] || "").trim(),
+      gender: String(data[i][petGenderCol] || "").trim().toLowerCase() === "male" ? "male" : "female",
       totalXP: totalXP,
     };
 
@@ -1052,6 +1060,7 @@ function getPetUserRowByEmail_(email) {
         petLevelProgressCol: petLevelProgressCol,
         petHatchedCol: petHatchedCol,
         petHatchedAtCol: petHatchedAtCol,
+        petGenderCol: petGenderCol,
       },
       state: petState,
     };
@@ -1069,7 +1078,7 @@ function savePetUserStateByRow_(rowData, patch) {
   const next = patch || {};
 
   if (cols.petNameCol >= 0 && next.petName != null) {
-    sheet.getRange(rowIndex, cols.petNameCol + 1).setValue(String(next.petName || "Be Ga").trim() || "Be Ga");
+    sheet.getRange(rowIndex, cols.petNameCol + 1).setValue(String(next.petName || "Be Capi").trim() || "Be Capi");
   }
   if (cols.petXqpCol >= 0 && next.xqp != null) {
     sheet.getRange(rowIndex, cols.petXqpCol + 1).setValue(Math.max(0, parseInt(next.xqp, 10) || 0));
@@ -1093,6 +1102,10 @@ function savePetUserStateByRow_(rowData, patch) {
     sheet
       .getRange(rowIndex, cols.petHatchedAtCol + 1)
       .setValue(next.hatchedAt ? String(next.hatchedAt) : "");
+  }
+  if (cols.petGenderCol >= 0 && next.gender != null) {
+    const safeGender = String(next.gender || "").trim().toLowerCase() === "male" ? "male" : "female";
+    sheet.getRange(rowIndex, cols.petGenderCol + 1).setValue(safeGender);
   }
 }
 
@@ -1196,7 +1209,7 @@ function getPetAdminOverviewData() {
           const uid = String(data[i][userIdCol] || "").trim();
           if (!uid) continue;
           const petName = String(data[i][petNameCol] || "").trim();
-          petNameByUserId[uid] = petName || "Be Ga";
+          petNameByUserId[uid] = petName || "Be Capi";
           if (petLevelCol >= 0) {
             petLevelByUserId[uid] = Math.max(1, parseInt(data[i][petLevelCol], 10) || 1);
           }
@@ -1211,7 +1224,7 @@ function getPetAdminOverviewData() {
         name: user.displayName || user.username || user.email || "Nguoi choi",
         email: user.email || "",
         level: petLevelByUserId[userId] || user.level || 1,
-        petName: petNameByUserId[userId] || "Be Ga",
+        petName: petNameByUserId[userId] || "Be Capi",
       };
     });
 
@@ -1488,12 +1501,13 @@ function buildPetUserSnapshotByEmail_(email) {
         coins: petState.xqp,
         levelCurrent: petState.level,
         levelProgress: petState.levelProgress,
+        gender: petState.gender || "female",
         requirements: requirements,
         isHatched: !!petState.hatched,
         hatchedAt: petState.hatchedAt || "",
         hatchReady: isPetReadyToHatch_(requirements),
       },
-      petName: petState.petName || "Be Ga",
+      petName: petState.petName || "Be Capi",
       foods: foodsWithUnlock,
       accessories: accessoriesWithUnlock,
       ownedFoodIds: ownedFoodIds,
@@ -1524,6 +1538,46 @@ function getPetFoodCatalogForUser() {
   }
 }
 
+function getCurrentUserPetCharacterDesignPayload() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return { success: false, message: "Chua dang nhap" };
+    }
+
+    const snapshot = buildPetUserSnapshotByEmail_(email);
+    if (!snapshot.success) {
+      return snapshot;
+    }
+
+    const petState = snapshot.data.petState || {};
+    const stageInfo = typeof resolvePet3DStageByLevel === "function"
+      ? resolvePet3DStageByLevel(petState.levelCurrent, !!petState.isHatched)
+      : null;
+
+    const prompt = typeof buildPet3DCharacterPrompt === "function"
+      ? buildPet3DCharacterPrompt({
+          levelCurrent: petState.levelCurrent,
+          isHatched: !!petState.isHatched,
+          gender: petState.gender || "female",
+          state: "happy",
+        })
+      : "";
+
+    return {
+      success: true,
+      data: {
+        petState: petState,
+        petName: snapshot.data.petName || "Be Capi",
+        stage: stageInfo,
+        prompt: prompt,
+      },
+    };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
 function syncCurrentUserPetState(syncInput) {
   try {
     const email = Session.getActiveUser().getEmail();
@@ -1548,6 +1602,7 @@ function syncCurrentUserPetState(syncInput) {
       petName: input.petName != null ? String(input.petName || "") : rowData.state.petName,
       level: input.levelCurrent != null ? Math.max(1, parseInt(input.levelCurrent, 10) || 1) : rowData.state.level,
       levelProgress: input.levelProgress != null ? Math.max(0, Math.min(100, parseInt(input.levelProgress, 10) || 0)) : rowData.state.levelProgress,
+      gender: input.gender != null ? String(input.gender || "") : rowData.state.gender,
     });
 
     const snapshot = buildPetUserSnapshotByEmail_(email);
