@@ -2184,24 +2184,17 @@
     document.getElementById("quiz-error").style.display = "none";
     document.getElementById("quiz-stats").style.display = "flex";
     document.getElementById("quiz-progress-bar").style.display = "none";
-    document.getElementById("quiz-section").style.display = "block";
-    document.getElementById("quiz-results").style.display = "none";
-
-    document.getElementById("total-questions").textContent =
-      quizState.questions.length;
-    document.getElementById("progress-total").textContent =
-      quizState.questions.length;
-    document.getElementById("current-score").textContent = quizState.score;
-
-    const modeIndicator = document.getElementById("quiz-mode-indicator");
-    if (modeIndicator) {
-      modeIndicator.textContent =
-        quizState.gameMode === "instant" ? "⚡ Trả lời nhanh" : "📝 Ôn tập";
-      modeIndicator.className = `quiz-mode-indicator ${quizState.gameMode}`;
-    }
-
     startTimer();
-    displayQuestion();
+    
+    if (quizState.gameMode === "review") {
+      document.getElementById("quiz-section").style.display = "none";
+      document.getElementById("review-questions-list").style.display = "block";
+      renderAllQuestionsForReview();
+    } else {
+      document.getElementById("quiz-section").style.display = "block";
+      document.getElementById("review-questions-list").style.display = "none";
+      displayQuestion();
+    }
   }
 
   /**
@@ -2268,6 +2261,86 @@
       document.getElementById("answer-feedback").style.display = "none";
     }
   }
+
+
+  /**
+   * Render all questions for Review Mode
+   */
+  function renderAllQuestionsForReview() {
+    const container = document.getElementById("review-questions-list");
+    container.innerHTML = "";
+    
+    quizState.questions.forEach((question, qIdx) => {
+      const qCard = document.createElement("div");
+      qCard.className = "review-question-card mcq-question-card mb-4";
+      qCard.id = `review-q-${qIdx}`;
+      
+      let optionsHtml = "";
+      const labels = ["A", "B", "C", "D"];
+      
+      if (question.questionType === "fill-blank") {
+        optionsHtml = `
+          <div class="fill-blank-question mt-3">
+            <input type="text" 
+                   class="fill-blank-input" 
+                   placeholder="Nhập đáp án..." 
+                   oninput="quizState.userAnswers[${qIdx}] = this.value"
+                   autocomplete="off">
+          </div>
+        `;
+      } else {
+        optionsHtml = '<div class="answer-options mt-3">';
+        question.options.forEach((opt, oIdx) => {
+          optionsHtml += `
+            <button class="answer-option" onclick="handleReviewAnswerClick(${qIdx}, ${oIdx}, this)">
+              <span class="option-label">${labels[oIdx]}</span>
+              <span class="option-text">${opt}</span>
+            </button>
+          `;
+        });
+        optionsHtml += '</div>';
+      }
+      
+      qCard.innerHTML = `
+        <div class="question-header">
+          <div class="question-number-badge">${qIdx + 1}</div>
+          <div class="question-content">
+            <p class="question-text">${question.question}</p>
+          </div>
+        </div>
+        ${optionsHtml}
+      `;
+      
+      container.appendChild(qCard);
+    });
+    
+    // Add Submit Button at the bottom
+    const submitBtnDiv = document.createElement("div");
+    submitBtnDiv.className = "review-submit-container text-center mt-4 mb-5";
+    submitBtnDiv.innerHTML = `
+      <button class="btn-primary btn-success btn-lg px-5 py-3" onclick="submitQuiz()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="me-2">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        Nộp bài & Xem kết quả
+      </button>
+    `;
+    container.appendChild(submitBtnDiv);
+  }
+
+  /**
+   * Handle MCQ answer click in Review Mode
+   */
+  window.handleReviewAnswerClick = function(qIdx, oIdx, btn) {
+    // Save answer
+    quizState.userAnswers[qIdx] = oIdx;
+    
+    // Update UI within this card
+    const card = document.getElementById(`review-q-${qIdx}`);
+    const buttons = card.querySelectorAll(".answer-option");
+    buttons.forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+  };
 
   /**
    * Render fill-in-blank options for retry questions
@@ -2853,8 +2926,23 @@
    * Submit quiz - Calculate final score for review mode
    */
   async function submitQuiz() {
+    // If in review mode, calculate the final score from userAnswers now
+    if (quizState.gameMode === "review") {
+      let finalReviewScore = 0;
+      quizState.questions.forEach((question, index) => {
+        const userAnswer = quizState.userAnswers[index];
+        if (userAnswer !== null) {
+          const isCorrect = question.questionType === "fill-blank"
+            ? checkFillBlankAnswer(userAnswer, question.correctAnswer)
+            : userAnswer === question.correctAnswer;
+          if (isCorrect) finalReviewScore++;
+        }
+      });
+      quizState.score = finalReviewScore;
+    }
+
     const unansweredCount = quizState.userAnswers.filter(
-      (a) => a === null,
+      (a) => a === null || a === "",
     ).length;
 
     if (unansweredCount > 0) {
@@ -2883,7 +2971,7 @@
       window.LearningTracker.stop();
     }
 
-    // Note: Điểm đã được tính real-time trong selectAnswer() cho cả 2 chế độ
+    // Results calculation
     const finalScore = quizState.score;
     const totalQuestions = quizState.questions.length;
     const percentage = Math.round((finalScore / totalQuestions) * 100);
