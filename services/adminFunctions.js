@@ -1499,6 +1499,7 @@ function buildPetUserSnapshotByEmail_(email) {
     data: {
       petState: {
         coins: petState.xqp,
+        totalXP: petState.totalXP,
         levelCurrent: petState.level,
         levelProgress: petState.levelProgress,
         gender: petState.gender || "female",

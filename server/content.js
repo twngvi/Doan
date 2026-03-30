@@ -1472,6 +1472,8 @@ function addXPToUserTotalByEmail(userEmail, xpDelta) {
     const headers = data[0];
     const emailCol = headers.indexOf("email");
     const xpCol = headers.indexOf("totalXP");
+    const petXqpCol = ensureUsersColumn(usersSheet, "petXqp");
+    const petXqpSyncedXpCol = ensureUsersColumn(usersSheet, "petXqpSyncedXp");
 
     if (emailCol < 0 || xpCol < 0) return null;
 
@@ -1481,8 +1483,18 @@ function addXPToUserTotalByEmail(userEmail, xpDelta) {
       }
 
       const currentXP = parseInt(data[i][xpCol]) || 0;
-      const newTotalXP = currentXP + (parseInt(xpDelta, 10) || 0);
+      const amount = parseInt(xpDelta, 10) || 0;
+      const newTotalXP = currentXP + amount;
+      
+      // Update XP
       usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+
+      // --- XQP Sync ---
+      const currentXqp = parseInt(data[i][petXqpCol], 10) || 0;
+      const newXqp = currentXqp + amount;
+      usersSheet.getRange(i + 1, petXqpCol + 1).setValue(newXqp);
+      usersSheet.getRange(i + 1, petXqpSyncedXpCol + 1).setValue(newTotalXP);
+
       return newTotalXP;
     }
 
@@ -2742,20 +2754,31 @@ function completeQuestAndAwardXP(questId, userContext) {
     const headers = data[0];
     const emailCol = headers.indexOf("email");
     const xpCol = headers.indexOf("totalXP");
+    const petXqpCol = ensureUsersColumn(usersSheet, "petXqp");
+    const petXqpSyncedXpCol = ensureUsersColumn(usersSheet, "petXqpSyncedXp");
 
     let newTotalXP = 0;
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailCol] === userEmail) {
         const currentXP = parseInt(data[i][xpCol]) || 0;
         newTotalXP = currentXP + quest.xp;
+        
+        // Update XP
         usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+
+        // --- XQP Sync ---
+        const currentXqp = parseInt(data[i][petXqpCol], 10) || 0;
+        const newXqp = currentXqp + quest.xp;
+        usersSheet.getRange(i + 1, petXqpCol + 1).setValue(newXqp);
+        usersSheet.getRange(i + 1, petXqpSyncedXpCol + 1).setValue(newTotalXP);
+
         Logger.log(
-          "✅ Updated totalXP for " +
+          "✅ Updated totalXP & XQP for " +
             userEmail +
-            ": " +
-            currentXP +
-            " -> " +
-            newTotalXP,
+            ": XP=" +
+            newTotalXP +
+            ", XQP=" +
+            newXqp,
         );
         break;
       }

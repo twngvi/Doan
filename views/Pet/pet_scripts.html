@@ -236,8 +236,8 @@
         }
 
         return {
-          xp: clamp(parsed.xp, 0, 999999),
-          coins: clamp(parsed.coins, 0, 999999),
+          xp: clamp(parsed.xp, 0, 999999999),
+          coins: clamp(parsed.coins, 0, 999999999),
           level: {
             current: Math.max(1, Math.floor(clamp(parsed.level?.current, 1, 9999))),
             progress: clamp(
@@ -272,8 +272,8 @@
     function savePetPreviewState(state) {
       try {
         const safeState = {
-          xp: clamp(state?.xp, 0, 999999),
-          coins: clamp(state?.coins, 0, 999999),
+          xp: clamp(state?.xp, 0, 999999999),
+          coins: clamp(state?.coins, 0, 999999999),
           level: {
             current: Math.max(1, Math.floor(clamp(state?.level?.current, 1, 9999))),
             progress: clamp(state?.level?.progress, 0, 100),
@@ -372,7 +372,7 @@
 
         return {
           date: String(parsed.date || ""),
-          lastXP: clamp(parsed.lastXP, 0, 999999),
+          lastXP: clamp(parsed.lastXP, 0, 999999999),
         };
       } catch (error) {
         console.warn("Pet daily sync parse failed:", error);
@@ -384,7 +384,7 @@
       try {
         const safeSync = {
           date: String(sync?.date || ""),
-          lastXP: clamp(sync?.lastXP, 0, 999999),
+          lastXP: clamp(sync?.lastXP, 0, 999999999),
         };
         localStorage.setItem(PET_XP_COIN_DAILY_SYNC_KEY, JSON.stringify(safeSync));
       } catch (error) {
@@ -395,31 +395,15 @@
     function syncDailyCoinsFromXP(state, currentTotalXP) {
       const today = getTodayVNKey();
       const sync = loadDailySyncInfo();
-      const currentXP = clamp(currentTotalXP, 0, 999999);
+      const currentXP = Math.max(0, parseInt(currentTotalXP, 10) || 0);
 
-      if (!sync) {
-        state.xp = currentXP;
-        saveDailySyncInfo({ date: today, lastXP: currentXP });
-        savePetPreviewState(state);
-        return 0;
-      }
-
-      if (sync.date !== today) {
-        const carryDelta = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
-
-        state.xp = currentXP;
-        saveDailySyncInfo({ date: today, lastXP: currentXP });
-        savePetPreviewState(state);
-        return carryDelta;
-      }
-
-      const deltaXP = Math.max(0, currentXP - clamp(sync.lastXP, 0, 999999));
-      // Server is the source of truth for XQP minting from XP gains.
-      // Client only tracks latest total XP seen for UI/local cache coherence.
+      const lastXP = sync ? clamp(sync.lastXP, 0, 999999999) : currentXP;
+      const deltaXP = Math.max(0, currentXP - lastXP);
 
       state.xp = currentXP;
       saveDailySyncInfo({ date: today, lastXP: currentXP });
       savePetPreviewState(state);
+      
       return deltaXP;
     }
 
@@ -851,7 +835,13 @@
       ensureLevelState(state);
 
       const serverState = snapshotData.petState || {};
-      state.coins = clamp(serverState.coins, 0, 999999);
+      state.coins = clamp(serverState.coins, 0, 999999999);
+      
+      const serverXP = parseInt(serverState.totalXP, 10);
+      if (Number.isFinite(serverXP)) {
+        state.xp = clamp(serverXP, 0, 999999999);
+      }
+      
       state.level.current = Math.max(1, parseInt(serverState.levelCurrent, 10) || 1);
       state.level.progress = clamp(serverState.levelProgress, 0, 100);
 
@@ -1176,6 +1166,7 @@
           const state = loadPetPreviewState();
           ensureLevelState(state);
           applyPetLockState(state, buildHatchTracker(state.requirements));
+          setText("petXpValue", String(Math.round(state.xp)));
           setText("petCoinValue", String(Math.round(state.coins)));
           renderLevelStatus(state.level);
           renderPetFoodModal();
@@ -1211,6 +1202,7 @@
           const state = loadPetPreviewState();
           ensureLevelState(state);
           applyPetLockState(state, buildHatchTracker(state.requirements));
+          setText("petXpValue", String(Math.round(state.xp)));
           setText("petCoinValue", String(Math.round(state.coins)));
           renderPetFoodModal();
           notify(result.message || "Mua thanh cong", "success");
@@ -1393,7 +1385,8 @@
 
           playPetHatchAnimation(function () {
             applyPetLockState(nextState, nextTracker);
-            setText("petCoinValue", String(Math.round(nextState.coins)));
+            setText("petXpValue", Math.round(nextState.xp).toLocaleString("en-US"));
+            setText("petCoinValue", Math.round(nextState.coins).toLocaleString("en-US"));
             renderPetFoodModal();
             notify(result.message || "Slime đã được mở khóa!", "success");
           });
@@ -1753,8 +1746,14 @@
 
             const serverCoinsParsed = parseInt(server.coins, 10);
             mergedState.coins = Number.isFinite(serverCoinsParsed)
-              ? clamp(serverCoinsParsed, 0, 999999)
-              : clamp(mergedState.coins, 0, 999999);
+              ? clamp(serverCoinsParsed, 0, 999999999)
+              : clamp(mergedState.coins, 0, 999999999);
+
+            const serverXPParsed = parseInt(server.totalXP, 10);
+            mergedState.xp = Number.isFinite(serverXPParsed)
+              ? clamp(serverXPParsed, 0, 999999999)
+              : clamp(mergedState.xp, 0, 999999999);
+
             mergedState.level.current = mergedLevel;
             mergedState.level.progress = mergedProgress;
 
@@ -1778,13 +1777,15 @@
 
             savePetPreviewState(mergedState);
             renderPetName(finalPetName);
-            setText("petCoinValue", String(Math.round(mergedState.coins)));
+            setText("petXpValue", Math.round(mergedState.xp).toLocaleString("en-US"));
+            setText("petCoinValue", Math.round(mergedState.coins).toLocaleString("en-US"));
             applyPetLockState(mergedState, mergedTracker);
 
             applySnapshotToLocal(
               Object.assign({}, result.data, {
                 petState: {
                   coins: mergedState.coins,
+                  totalXP: mergedState.xp,
                   levelCurrent: mergedState.level.current,
                   levelProgress: mergedState.level.progress,
                   gender: petVisualProfile.gender === "male" ? "male" : "female",
@@ -1876,6 +1877,7 @@
           var tracker = buildHatchTracker(state.requirements);
           tracker.isReady = true;
           applyPetLockState(state, tracker);
+          setText("petXpValue", String(Math.round(state.xp)));
           setText("petCoinValue", String(Math.round(state.coins)));
           /* Update test button active state */
           buttons.forEach(function (b) {
