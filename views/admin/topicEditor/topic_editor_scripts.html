@@ -1,7 +1,7 @@
 <script>
 /**
  * Topic Editor Scripts
- * Xử lý logic cho Rich Text Editor tạo Topic
+ * Xử lý logic cho Rich Text Editor tạo/chỉnh sửa Topic
  */
 
 // ========================================
@@ -9,28 +9,330 @@
 // ========================================
 
 let savedSelection = null;
+let isEditMode = false;
+let editingTopicId = null;
+let editingTopicData = null;
+let topicEditorSetupCompleted = false;
 
 // ========================================
 // INITIALIZATION
 // ========================================
 
-document.addEventListener('DOMContentLoaded', function() {
-  initializeEditor();
-  setupDragAndDrop();
-  setupKeyboardShortcuts();
-});
+function initializeTopicEditor() {
+  const editor = document.getElementById('contentEditor');
+  if (!editor) {
+    console.warn('[TopicEditor] contentEditor element not found');
+    return;
+  }
+
+  if (!topicEditorSetupCompleted) {
+    initializeEditor();
+    setupDragAndDrop();
+    setupKeyboardShortcuts();
+    topicEditorSetupCompleted = true;
+  } else {
+    editor.focus();
+  }
+
+  const requestedMode = localStorage.getItem('topicEditorMode');
+
+  if (requestedMode === 'create') {
+    resetForm();
+    localStorage.removeItem('topicEditorMode');
+    return;
+  }
+
+  checkEditMode();
+
+  if (requestedMode === 'edit') {
+    localStorage.removeItem('topicEditorMode');
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeTopicEditor();
+  });
+} else {
+  initializeTopicEditor();
+}
 
 function initializeEditor() {
   const editor = document.getElementById('contentEditor');
-  
+
   // Focus vào editor
   editor.focus();
-  
+
   // Handle paste - clean up pasted content
   editor.addEventListener('paste', function(e) {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
+  });
+}
+
+/**
+ * Check if we're in edit mode (editing existing topic)
+ */
+function checkEditMode() {
+  const editTopicId = localStorage.getItem('editTopicId');
+
+  if (editTopicId) {
+    isEditMode = true;
+    editingTopicId = editTopicId;
+
+    // Update UI for edit mode
+    document.getElementById('topicEditorTitle').textContent = '✏️ Chỉnh sửa bài học';
+    document.getElementById('publishBtn').innerHTML = '💾 Cập nhật';
+    setTopicMetadataEditable(false);
+
+    // Load topic data
+    loadTopicForEdit(editTopicId);
+
+    // Clear localStorage after reading
+    localStorage.removeItem('editTopicId');
+  }
+}
+
+/**
+ * Load topic data for editing
+ */
+function loadTopicForEdit(topicId) {
+  showTopicEditorLoading('Đang tải dữ liệu bài học...');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideTopicEditorLoading();
+
+      if (result && result.success) {
+        editingTopicData = result.topic;
+        populateFormWithTopicData(result.topic, result.content);
+        showToast('Đã tải dữ liệu bài học thành công!', 'success');
+      } else {
+        showToast('Lỗi: ' + (result?.message || 'Không thể tải dữ liệu bài học'), 'error');
+        // Reset to create mode
+        resetToCreateMode();
+      }
+    })
+    .withFailureHandler(function(error) {
+      hideTopicEditorLoading();
+      showToast('Lỗi: ' + error.message, 'error');
+      resetToCreateMode();
+    })
+    .getTopicForEdit(topicId);
+}
+
+/**
+ * Populate form with topic data
+ */
+function populateFormWithTopicData(topic, content) {
+  document.getElementById('topicId').value = topic.topicId || '';
+  document.getElementById('topicTitle').value = topic.title || '';
+  document.getElementById('topicCategory').value = topic.category || '';
+  document.getElementById('topicDescription').value = topic.description || '';
+  document.getElementById('topicOrder').value = topic.order || '';
+
+  // Parse content and convert markers to visual blocks
+  if (content) {
+    const editor = document.getElementById('contentEditor');
+    editor.innerHTML = convertMarkersToVisualBlocks(content);
+  }
+}
+
+/**
+ * Convert text markers from doc to visual blocks in editor
+ */
+function convertMarkersToVisualBlocks(html) {
+  let result = html;
+
+  // Block configs
+  const blockConfig = {
+    'NOTE': { icon: '📌', label: 'Ghi chú' },
+    'TIP': { icon: '💡', label: 'Mẹo' },
+    'WARNING': { icon: '⚠️', label: 'Cảnh báo' },
+    'HIGHLIGHT': { icon: '✨', label: 'Lưu ý' },
+    'EXAMPLE': { icon: '📖', label: 'Ví dụ' },
+    'CHECKPOINT': { icon: '✅', label: 'Kiểm tra' },
+    'TASK': { icon: '📋', label: 'Nhiệm vụ' },
+    'QA': { icon: '❓', label: 'Hỏi & Đáp' },
+    'RESOURCES': { icon: '📚', label: 'Tài nguyên' }
+  };
+
+  // Find innermost block
+  function findInnermostBlock(text) {
+    let bestMatch = null;
+    let bestIndex = -1;
+
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+
+    let match;
+    while ((match = openingRegex.exec(text)) !== null) {
+      const openTag = match[0];
+      const openIndex = match.index;
+      const tagInfo = match[1];
+      const tagType = tagInfo.split(':')[0].toUpperCase();
+
+      const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+      closeRegex.lastIndex = openIndex + openTag.length;
+
+      const closeMatch = closeRegex.exec(text);
+      if (closeMatch) {
+        const closeIndex = closeMatch.index;
+        const content = text.substring(openIndex + openTag.length, closeIndex);
+
+        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+
+        if (!hasNestedBlock) {
+          if (bestMatch === null || openIndex < bestIndex) {
+            bestMatch = {
+              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+              openTag: openTag,
+              closeTag: closeMatch[0],
+              tagInfo: tagInfo,
+              tagType: tagType,
+              content: content,
+              startIndex: openIndex,
+              endIndex: closeIndex + closeMatch[0].length
+            };
+            bestIndex = openIndex;
+          }
+        }
+      }
+    }
+    return bestMatch;
+  }
+
+  // Render single block to visual HTML
+  function renderSingleBlock(blockInfo) {
+    const { tagType, tagInfo, content } = blockInfo;
+
+    // Clean content from p tags
+    let cleanContent = content
+      .replace(/^(\s*<\/?p[^>]*>\s*)+/gi, '')
+      .replace(/(\s*<\/?p[^>]*>\s*)+$/gi, '')
+      .trim();
+
+    // Callout blocks
+    if (blockConfig[tagType]) {
+      const config = blockConfig[tagType];
+      return `
+        <div class="visual-block visual-block-${tagType.toLowerCase()}" data-block-type="${tagType}" contenteditable="false">
+          <span class="visual-block-icon">${config.icon}</span>
+          <div class="visual-block-content" contenteditable="true"><span class="visual-block-label">${config.label}:</span> ${cleanContent}</div>
+          <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+        </div>`;
+    }
+
+    // Code block
+    if (tagType === 'CODE') {
+      const language = tagInfo.split(':')[1] || 'JAVASCRIPT';
+      let codeContent = content
+        .replace(/<\/?p[^>]*>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?pre[^>]*>/gi, '')
+        .replace(/<\/?code[^>]*>/gi, '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/^\n+|\n+$/g, '')
+        .trim();
+
+      return `
+        <div class="visual-code-block" data-block-type="CODE" data-language="${language}" contenteditable="false">
+          <div class="visual-code-header">
+            <span class="visual-code-lang">${language}</span>
+          </div>
+          <pre class="visual-code-content" contenteditable="true">${escapeHtml(codeContent)}</pre>
+          <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+        </div>`;
+    }
+
+    // Terminal block
+    if (tagType === 'TERMINAL') {
+      let termContent = content
+        .replace(/<\/?p[^>]*>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/^\n+|\n+$/g, '')
+        .trim();
+
+      return `
+        <div class="visual-terminal-block" data-block-type="TERMINAL" contenteditable="false">
+          <div class="visual-terminal-label">🖥️ Terminal Output</div>
+          <div class="visual-terminal-content" contenteditable="true">${termContent}</div>
+          <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+        </div>`;
+    }
+
+    // Grid block
+    if (tagType === 'GRID') {
+      return `
+        <div class="visual-grid-block" data-block-type="GRID" contenteditable="false">
+          <div class="visual-grid-label">📊 Grid Cards</div>
+          <div class="visual-grid-content" contenteditable="true">${cleanContent}</div>
+          <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+        </div>`;
+    }
+
+    // Figure block
+    if (tagType === 'FIGURE') {
+      const caption = tagInfo.split(':').slice(1).join(':') || '';
+      return `
+        <div class="visual-figure-block" data-block-type="FIGURE" data-caption="${escapeHtml(caption)}" contenteditable="false">
+          <div class="visual-figure-content" contenteditable="true">${cleanContent}</div>
+          <div class="visual-figure-caption">📷 ${caption}</div>
+          <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+        </div>`;
+    }
+
+    // Color block
+    if (tagType === 'COLOR') {
+      const color = tagInfo.split(':')[1] || 'BLUE';
+      return `<span class="visual-color-block visual-color-${color.toLowerCase()}" data-color-type="${color}">${cleanContent}</span>`;
+    }
+
+    return content;
+  }
+
+  // Process blocks from innermost to outermost
+  let maxIterations = 200;
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    const innermostBlock = findInnermostBlock(result);
+    if (!innermostBlock) break;
+
+    const renderedHtml = renderSingleBlock(innermostBlock);
+    result = result.substring(0, innermostBlock.startIndex) +
+             renderedHtml +
+             result.substring(innermostBlock.endIndex);
+    iterations++;
+  }
+
+  return result;
+}
+
+/**
+ * Reset to create mode if edit fails
+ */
+function resetToCreateMode() {
+  isEditMode = false;
+  editingTopicId = null;
+  editingTopicData = null;
+
+  document.getElementById('topicEditorTitle').textContent = '✨ Tạo Topic mới';
+  document.getElementById('publishBtn').innerHTML = '🚀 Publish';
+  setTopicMetadataEditable(true);
+}
+
+function setTopicMetadataEditable(isEditable) {
+  const fieldIds = ['topicId', 'topicTitle', 'topicCategory', 'topicDescription', 'topicOrder'];
+  fieldIds.forEach(function(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    field.disabled = !isEditable;
+    field.style.backgroundColor = isEditable ? '' : '#f0f0f0';
+    field.style.cursor = isEditable ? '' : 'not-allowed';
   });
 }
 
@@ -920,35 +1222,49 @@ async function publishTopic() {
     return;
   }
 
-  // Confirm publish
+  // Different confirm message for edit vs create
+  const confirmMessage = isEditMode
+    ? 'Bạn có chắc muốn cập nhật topic này?\n\nTopic: ' + title
+    : 'Bạn có chắc muốn publish topic này?\n\nTopic: ' + title;
+
+  const confirmTitle = isEditMode ? 'Xác nhận cập nhật' : 'Xác nhận publish';
+  const confirmBtnText = isEditMode ? 'Cập nhật' : 'Publish';
+
   const shouldPublish =
     typeof window.showAppConfirm === 'function'
-      ? await window.showAppConfirm(
-          'Bạn có chắc muốn publish topic này?\n\nTopic: ' + title,
-          {
-            title: 'Xác nhận publish',
-            confirmText: 'Publish',
-            cancelText: 'Hủy'
-          }
-        )
+      ? await window.showAppConfirm(confirmMessage, {
+          title: confirmTitle,
+          confirmText: confirmBtnText,
+          cancelText: 'Hủy'
+        })
       : false;
 
   if (!shouldPublish) {
     return;
   }
 
-  showTopicEditorLoading('Đang tạo và publish topic...');
+  const loadingText = isEditMode ? 'Đang cập nhật topic...' : 'Đang tạo và publish topic...';
+  showTopicEditorLoading(loadingText);
+
+  const resolvedTopicId = isEditMode && editingTopicData ? (editingTopicData.topicId || topicId) : topicId;
+  const resolvedTitle = isEditMode && editingTopicData ? (editingTopicData.title || title) : title;
+  const resolvedDescription = isEditMode && editingTopicData ? (editingTopicData.description || description) : description;
+  const resolvedCategory = isEditMode && editingTopicData ? (editingTopicData.category || category) : category;
+  const resolvedOrder = isEditMode && editingTopicData ? (parseInt(editingTopicData.order) || 999) : parseInt(order);
 
   const topicData = {
-    topicId: topicId,
-    title: title,
-    description: description,
-    category: category,
-    order: parseInt(order),
-    content: content
+    topicId: resolvedTopicId,
+    title: resolvedTitle,
+    description: resolvedDescription,
+    category: resolvedCategory,
+    order: resolvedOrder,
+    content: content,
+    isEditMode: isEditMode,
+    contentDocId: (isEditMode && editingTopicData && editingTopicData.contentDocId) ? editingTopicData.contentDocId : '',
+    requireExistingDoc: !!isEditMode
   };
 
-  console.log('📤 Publishing topic:', topicData);
+  console.log(isEditMode ? '📤 Updating topic:' : '📤 Publishing topic:', topicData);
 
   // Check if google.script.run is available
   if (typeof google === 'undefined' || !google.script || !google.script.run) {
@@ -965,85 +1281,152 @@ async function publishTopic() {
     console.error('Publish timeout - server took too long to respond');
   }, 60000); // 60 seconds timeout
 
-  google.script.run
-    .withSuccessHandler(function(result) {
-      clearTimeout(publishTimeout);
-      hideTopicEditorLoading();
-      console.log('✅ Server response:', result);
+  // Choose the appropriate server function
+  const serverFunction = isEditMode
+    ? google.script.run.withSuccessHandler(handleUpdateSuccess).withFailureHandler(handlePublishFailure).updateTopicContent(topicData)
+    : google.script.run.withSuccessHandler(handlePublishSuccess).withFailureHandler(handlePublishFailure).createAndPublishTopic(topicData);
 
-      try {
-        if (result && result.success) {
-          showToast('🎉 Publish thành công!', 'success');
+  function handlePublishSuccess(result) {
+    clearTimeout(publishTimeout);
+    hideTopicEditorLoading();
+    console.log('✅ Server response:', result);
 
-          // Show success message with doc link - use simple alert if dialog fails
-          setTimeout(function() {
-            try {
-              var message = '✅ Topic đã được publish thành công!\n\n' +
-                '📄 Doc ID: ' + result.docId + '\n' +
-                '🔗 Link: ' + result.docUrl + '\n\n' +
-                'Topic đã được thêm vào MasterDB.';
+    try {
+      if (result && result.success) {
+        showToast('🎉 Publish thành công!', 'success');
 
-              if (typeof window.showAppAlert === 'function') {
-                window.showAppAlert(message, { title: 'Publish thành công', confirmText: 'Đã hiểu' })
-                  .then(function() {
-                    askCreateNew();
-                  })
-                  .catch(function(e) {
-                    console.warn('showAppAlert error:', e);
-                    askCreateNew();
-                  });
-              } else {
-                alert(message);
-                askCreateNew();
-              }
-            } catch (e) {
-              console.error('Success dialog error:', e);
+        // Show success message with doc link
+        setTimeout(function() {
+          try {
+            var message = '✅ Topic đã được publish thành công!\n\n' +
+              '📄 Doc ID: ' + result.docId + '\n' +
+              '🔗 Link: ' + result.docUrl + '\n\n' +
+              'Topic đã được thêm vào MasterDB.';
+
+            if (typeof window.showAppAlert === 'function') {
+              window.showAppAlert(message, { title: 'Publish thành công', confirmText: 'Đã hiểu' })
+                .then(function() {
+                  askCreateNew();
+                })
+                .catch(function(e) {
+                  console.warn('showAppAlert error:', e);
+                  askCreateNew();
+                });
+            } else {
+              alert(message);
               askCreateNew();
             }
+          } catch (e) {
+            console.error('Success dialog error:', e);
+            askCreateNew();
+          }
 
-            function askCreateNew() {
-              try {
-                if (typeof window.showAppConfirm === 'function') {
-                  window.showAppConfirm('Bạn có muốn tạo topic mới?', {
-                    title: 'Tạo topic mới',
-                    confirmText: 'Tạo mới',
-                    cancelText: 'Không'
-                  }).then(function(shouldCreateNew) {
-                    if (shouldCreateNew) resetForm();
-                  }).catch(function(e) {
-                    console.warn('showAppConfirm error:', e);
-                  });
-                }
-              } catch (e) {
-                console.warn('askCreateNew error:', e);
+          function askCreateNew() {
+            try {
+              if (typeof window.showAppConfirm === 'function') {
+                window.showAppConfirm('Bạn có muốn tạo topic mới?', {
+                  title: 'Tạo topic mới',
+                  confirmText: 'Tạo mới',
+                  cancelText: 'Không'
+                }).then(function(shouldCreateNew) {
+                  if (shouldCreateNew) resetForm();
+                }).catch(function(e) {
+                  console.warn('showAppConfirm error:', e);
+                });
               }
+            } catch (e) {
+              console.warn('askCreateNew error:', e);
             }
-          }, 500);
-        } else {
-          showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
-        }
-      } catch (e) {
-        console.error('Success handler error:', e);
-        showToast('Có lỗi xảy ra khi xử lý kết quả', 'error');
+          }
+        }, 500);
+      } else {
+        showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
       }
-    })
-    .withFailureHandler(function(error) {
-      clearTimeout(publishTimeout);
-      hideTopicEditorLoading();
-      console.error('❌ Server error:', error);
-      var errorMsg = error && error.message ? error.message : String(error);
-      showToast('Lỗi: ' + errorMsg, 'error');
+    } catch (e) {
+      console.error('Success handler error:', e);
+      showToast('Có lỗi xảy ra khi xử lý kết quả', 'error');
+    }
+  }
 
-      try {
-        if (typeof window.showAppAlert === 'function') {
-          window.showAppAlert('Chi tiết lỗi:\n\n' + errorMsg, { title: 'Lỗi publish topic' })
-            .catch(function(e) { console.warn('Alert error:', e); });
-        }
-      } catch (e) {
-        console.warn('Failure handler alert error:', e);
+  function handleUpdateSuccess(result) {
+    clearTimeout(publishTimeout);
+    hideTopicEditorLoading();
+    console.log('✅ Update response:', result);
+
+    try {
+      if (result && result.success) {
+        showToast('🎉 Cập nhật thành công!', 'success');
+
+        // Show success message
+        setTimeout(function() {
+          try {
+            var message = '✅ Topic đã được cập nhật thành công!\n\n' +
+              '📄 Doc ID: ' + result.docId + '\n' +
+              '🔗 Link: ' + result.docUrl;
+
+            if (typeof window.showAppAlert === 'function') {
+              window.showAppAlert(message, { title: 'Cập nhật thành công', confirmText: 'Đã hiểu' })
+                .then(function() {
+                  askGoBack();
+                })
+                .catch(function(e) {
+                  console.warn('showAppAlert error:', e);
+                  askGoBack();
+                });
+            } else {
+              alert(message);
+              askGoBack();
+            }
+          } catch (e) {
+            console.error('Success dialog error:', e);
+            askGoBack();
+          }
+
+          function askGoBack() {
+            try {
+              if (typeof window.showAppConfirm === 'function') {
+                window.showAppConfirm('Quay lại trang quản lý bài học?', {
+                  title: 'Hoàn tất',
+                  confirmText: 'Quay lại',
+                  cancelText: 'Ở lại chỉnh sửa'
+                }).then(function(shouldGoBack) {
+                  if (shouldGoBack) {
+                    goBackToAdmin();
+                  }
+                }).catch(function(e) {
+                  console.warn('showAppConfirm error:', e);
+                });
+              }
+            } catch (e) {
+              console.warn('askGoBack error:', e);
+            }
+          }
+        }, 500);
+      } else {
+        showToast('Lỗi: ' + (result ? result.message : 'Không có phản hồi từ server'), 'error');
       }
-    })
-    .createAndPublishTopic(topicData);
+    } catch (e) {
+      console.error('Update handler error:', e);
+      showToast('Có lỗi xảy ra khi xử lý kết quả', 'error');
+    }
+  }
+
+  function handlePublishFailure(error) {
+    clearTimeout(publishTimeout);
+    hideTopicEditorLoading();
+    console.error('❌ Server error:', error);
+    var errorMsg = error && error.message ? error.message : String(error);
+    showToast('Lỗi: ' + errorMsg, 'error');
+
+    try {
+      if (typeof window.showAppAlert === 'function') {
+        window.showAppAlert('Chi tiết lỗi:\n\n' + errorMsg, { title: isEditMode ? 'Lỗi cập nhật topic' : 'Lỗi publish topic' })
+          .catch(function(e) { console.warn('Alert error:', e); });
+      }
+    } catch (e) {
+      console.warn('Failure handler alert error:', e);
+    }
+  }
 }
 
 function resetForm() {
@@ -1053,6 +1436,9 @@ function resetForm() {
   document.getElementById('topicDescription').value = '';
   document.getElementById('topicOrder').value = '';
   document.getElementById('contentEditor').innerHTML = '';
+
+  // Reset to create mode
+  resetToCreateMode();
 }
 
 // ========================================
@@ -1242,5 +1628,11 @@ window.deleteVisualBlock = deleteVisualBlock;
 window.insertTerminalBlock = insertTerminalBlock;
 window.insertGridBlock = insertGridBlock;
 window.convertVisualBlocksToMarkers = convertVisualBlocksToMarkers;
+window.initializeTopicEditor = initializeTopicEditor;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
+// Edit mode functions
+window.checkEditMode = checkEditMode;
+window.loadTopicForEdit = loadTopicForEdit;
+window.resetToCreateMode = resetToCreateMode;
+window.convertMarkersToVisualBlocks = convertMarkersToVisualBlocks;
 </script>
