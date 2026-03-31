@@ -1,5 +1,5 @@
 <script>
-// ===== Content Management Scripts =====
+// ===== Content Management Scripts - Enhanced Version =====
 
 // State variables
 let allTopics = [];
@@ -7,10 +7,37 @@ let filteredTopics = [];
 let currentPage = 1;
 const itemsPerPage = 10;
 let topicToDelete = null;
+let currentView = 'table'; // 'table' or 'cards'
+let categoriesList = [];
+let isDataLoaded = false; // Flag để track data đã load chưa
 
 // ===== Initialize =====
 function initContentManagement() {
   console.log('[ContentManagement] Initializing...');
+
+  // Khôi phục view preference TRƯỚC KHI load data (chỉ set UI, không render)
+  const savedView = localStorage.getItem('cm-view-preference');
+  if (savedView && (savedView === 'table' || savedView === 'cards')) {
+    currentView = savedView;
+    // Chỉ update UI buttons và visibility, không render content
+    document.getElementById('view-table-btn').classList.toggle('active', savedView === 'table');
+    document.getElementById('view-cards-btn').classList.toggle('active', savedView === 'cards');
+    document.getElementById('cm-table-view').style.display = savedView === 'table' ? 'block' : 'none';
+    document.getElementById('cm-cards-view').style.display = savedView === 'cards' ? 'block' : 'none';
+  }
+
+  // Setup search input events
+  const searchInput = document.getElementById('cm-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      const clearBtn = document.getElementById('cm-search-clear');
+      if (clearBtn) {
+        clearBtn.style.display = this.value ? 'flex' : 'none';
+      }
+    });
+  }
+
+  // Load data - sẽ tự render khi load xong
   loadCategories();
   loadTopicsList();
 }
@@ -21,7 +48,7 @@ function loadCategories() {
     .withSuccessHandler(function(categories) {
       const select = document.getElementById('cm-category-filter');
       if (select && categories) {
-        // Giữ option đầu tiên
+        categoriesList = categories;
         select.innerHTML = '<option value="">Tất cả danh mục</option>';
         categories.forEach(function(cat) {
           const option = document.createElement('option');
@@ -29,6 +56,7 @@ function loadCategories() {
           option.textContent = cat;
           select.appendChild(option);
         });
+        updateStats();
       }
     })
     .withFailureHandler(function(error) {
@@ -40,22 +68,104 @@ function loadCategories() {
 // ===== Load Topics List =====
 function loadTopicsList() {
   showLoading(true);
+  isDataLoaded = false;
 
   google.script.run
     .withSuccessHandler(function(topics) {
       allTopics = topics || [];
       filteredTopics = [...allTopics];
       currentPage = 1;
-      renderTopicsTable();
+      isDataLoaded = true;
+      updateStats();
+      renderContent();
       showLoading(false);
-      console.log('[ContentManagement] Loaded', allTopics.length, 'topics');
+      console.log('[ContentManagement] Loaded', allTopics.length, 'lessons');
     })
     .withFailureHandler(function(error) {
       console.error('[ContentManagement] Failed to load topics:', error);
+      isDataLoaded = true; // Vẫn set true để cho phép hiện empty state
+      allTopics = [];
+      filteredTopics = [];
       showLoading(false);
       showEmptyState(true);
     })
     .getAllTopicsForAdmin();
+}
+
+// ===== Update Statistics =====
+function updateStats() {
+  const totalEl = document.getElementById('stat-total-topics');
+  const activeEl = document.getElementById('stat-active-topics');
+  const lockedEl = document.getElementById('stat-locked-topics');
+  const categoriesEl = document.getElementById('stat-categories');
+
+  const total = allTopics.length;
+  const active = allTopics.filter(t => !(t.isLocked === true || t.isLocked === 'TRUE')).length;
+  const locked = allTopics.filter(t => t.isLocked === true || t.isLocked === 'TRUE').length;
+  const uniqueCategories = [...new Set(allTopics.map(t => t.category).filter(Boolean))];
+
+  // Animate numbers
+  animateValue(totalEl, 0, total, 500);
+  animateValue(activeEl, 0, active, 500);
+  animateValue(lockedEl, 0, locked, 500);
+  animateValue(categoriesEl, 0, uniqueCategories.length, 500);
+}
+
+function animateValue(element, start, end, duration) {
+  if (!element) return;
+
+  const startTime = performance.now();
+
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const easeOut = 1 - Math.pow(1 - progress, 3);
+    const current = Math.floor(start + (end - start) * easeOut);
+    element.textContent = current;
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+// ===== View Toggle =====
+function switchView(view, save = true) {
+  currentView = view;
+
+  // Update buttons
+  const tableBtn = document.getElementById('view-table-btn');
+  const cardsBtn = document.getElementById('view-cards-btn');
+  const tableView = document.getElementById('cm-table-view');
+  const cardsView = document.getElementById('cm-cards-view');
+
+  if (tableBtn) tableBtn.classList.toggle('active', view === 'table');
+  if (cardsBtn) cardsBtn.classList.toggle('active', view === 'cards');
+
+  // Toggle views
+  if (tableView) tableView.style.display = view === 'table' ? 'block' : 'none';
+  if (cardsView) cardsView.style.display = view === 'cards' ? 'block' : 'none';
+
+  // Save preference
+  if (save) {
+    localStorage.setItem('cm-view-preference', view);
+  }
+
+  // Chỉ render nếu đã có data (tránh render empty khi data chưa load)
+  if (allTopics.length > 0 || filteredTopics.length > 0) {
+    renderContent();
+  }
+}
+
+// ===== Render Content =====
+function renderContent() {
+  if (currentView === 'table') {
+    renderTopicsTable();
+  } else {
+    renderTopicsCards();
+  }
 }
 
 // ===== Render Topics Table =====
@@ -63,38 +173,43 @@ function renderTopicsTable() {
   const tbody = document.getElementById('cm-topics-tbody');
   if (!tbody) return;
 
+  // Chỉ hiển thị empty state nếu data đã load xong và thực sự rỗng
   if (filteredTopics.length === 0) {
     tbody.innerHTML = '';
-    showEmptyState(true);
-    document.getElementById('cm-pagination').style.display = 'none';
+    if (isDataLoaded) {
+      showEmptyState(true);
+    }
+    const pagination = document.getElementById('cm-pagination');
+    if (pagination) pagination.style.display = 'none';
     return;
   }
 
   showEmptyState(false);
 
-  // Tính toán pagination
+  // Calculate pagination
   const totalPages = Math.ceil(filteredTopics.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, filteredTopics.length);
   const pageTopics = filteredTopics.slice(startIndex, endIndex);
 
-  // Render rows
+  // Render rows with staggered animation
   tbody.innerHTML = pageTopics.map(function(topic, index) {
     const rowNum = startIndex + index + 1;
     const categoryClass = getCategoryClass(topic.category);
     const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
     const statusClass = isLocked ? 'locked' : 'active';
-    const statusText = isLocked ? 'Đã khóa' : 'Hoạt động';
+    const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
     const updatedAt = formatDate(topic.updatedAt);
 
     return `
-      <tr data-topic-id="${topic.topicId}">
-        <td>${rowNum}</td>
+      <tr data-topic-id="${topic.topicId}" style="animation: fadeInRow 0.3s ease ${index * 0.05}s both;">
+        <td><strong>${rowNum}</strong></td>
         <td>
           <div class="topic-info">
             <div class="topic-icon">
               ${topic.iconUrl
-                ? `<img src="${topic.iconUrl}" alt="${topic.title}">`
+                ? `<img src="${topic.iconUrl}" alt="${topic.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                   <span class="material-symbols-sharp" style="display: none;">article</span>`
                 : '<span class="material-symbols-sharp">article</span>'
               }
             </div>
@@ -109,7 +224,12 @@ function renderTopicsTable() {
         <td>
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
         </td>
-        <td>${topic.estimatedTime || '-'}</td>
+        <td>
+          <span class="time-badge">
+            <span class="material-symbols-sharp">schedule</span>
+            ${topic.estimatedTime || '-'}
+          </span>
+        </td>
         <td>
           <span class="status-badge ${statusClass}">${statusText}</span>
         </td>
@@ -122,12 +242,113 @@ function renderTopicsTable() {
             <button class="action-btn edit" title="Chỉnh sửa" onclick="editTopic('${topic.topicId}')">
               <span class="material-symbols-sharp">edit</span>
             </button>
-            <button class="action-btn delete" title="Xóa" onclick="deleteTopic('${topic.topicId}', '${escapeHtml(topic.title)}')">
+            <button class="action-btn delete" title="Xóa" onclick="deleteTopic('${topic.topicId}', '${escapeHtml(topic.title).replace(/'/g, "\\'")}')">
               <span class="material-symbols-sharp">delete</span>
             </button>
           </div>
         </td>
       </tr>
+    `;
+  }).join('');
+
+  // Add animation keyframes if not exists
+  if (!document.getElementById('cm-animations')) {
+    const style = document.createElement('style');
+    style.id = 'cm-animations';
+    style.textContent = `
+      @keyframes fadeInRow {
+        from { opacity: 0; transform: translateX(-10px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes fadeInCard {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Render pagination
+  renderPagination(totalPages, startIndex + 1, endIndex, filteredTopics.length);
+}
+
+// ===== Render Topics Cards =====
+function renderTopicsCards() {
+  const grid = document.getElementById('cm-cards-grid');
+  if (!grid) return;
+
+  // Chỉ hiển thị empty state nếu data đã load xong và thực sự rỗng
+  if (filteredTopics.length === 0) {
+    grid.innerHTML = '';
+    if (isDataLoaded) {
+      showEmptyState(true);
+    }
+    const pagination = document.getElementById('cm-pagination');
+    if (pagination) pagination.style.display = 'none';
+    return;
+  }
+
+  showEmptyState(false);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredTopics.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, filteredTopics.length);
+  const pageTopics = filteredTopics.slice(startIndex, endIndex);
+
+  // Render cards
+  grid.innerHTML = pageTopics.map(function(topic, index) {
+    const categoryClass = getCategoryClass(topic.category);
+    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
+    const statusClass = isLocked ? 'locked' : 'active';
+    const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
+    const updatedAt = formatDate(topic.updatedAt);
+
+    return `
+      <div class="cm-topic-card" data-topic-id="${topic.topicId}" style="animation: fadeInCard 0.4s ease ${index * 0.08}s both;">
+        <div class="cm-card-header">
+          <div class="cm-card-icon">
+            ${topic.iconUrl
+              ? `<img src="${topic.iconUrl}" alt="${topic.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                 <span class="material-symbols-sharp" style="display: none;">article</span>`
+              : '<span class="material-symbols-sharp">article</span>'
+            }
+          </div>
+          <div class="cm-card-title-wrapper">
+            <h4 class="cm-card-title" title="${escapeHtml(topic.title)}">${escapeHtml(topic.title)}</h4>
+            <p class="cm-card-desc">${escapeHtml(topic.description || 'Chưa có mô tả')}</p>
+          </div>
+        </div>
+
+        <div class="cm-card-meta">
+          <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
+          <span class="status-badge ${statusClass}">${statusText}</span>
+          ${topic.estimatedTime ? `
+            <span class="time-badge">
+              <span class="material-symbols-sharp">schedule</span>
+              ${topic.estimatedTime}
+            </span>
+          ` : ''}
+        </div>
+
+        <div class="cm-card-footer">
+          <span class="cm-card-date">
+            <span class="material-symbols-sharp">update</span>
+            ${updatedAt}
+          </span>
+          <div class="action-buttons">
+            <button class="action-btn view" title="Xem trước" onclick="viewTopic('${topic.topicId}')">
+              <span class="material-symbols-sharp">visibility</span>
+            </button>
+            <button class="action-btn edit" title="Chỉnh sửa" onclick="editTopic('${topic.topicId}')">
+              <span class="material-symbols-sharp">edit</span>
+            </button>
+            <button class="action-btn delete" title="Xóa" onclick="deleteTopic('${topic.topicId}', '${escapeHtml(topic.title).replace(/'/g, "\\'")}')">
+              <span class="material-symbols-sharp">delete</span>
+            </button>
+          </div>
+        </div>
+      </div>
     `;
   }).join('');
 
@@ -171,7 +392,7 @@ function renderPagination(totalPages, start, end, total) {
   if (startPage > 1) {
     html += `<button class="cm-page-btn" onclick="goToPage(1)">1</button>`;
     if (startPage > 2) {
-      html += `<span style="padding: 0 8px;">...</span>`;
+      html += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
     }
   }
 
@@ -185,7 +406,7 @@ function renderPagination(totalPages, start, end, total) {
 
   if (endPage < totalPages) {
     if (endPage < totalPages - 1) {
-      html += `<span style="padding: 0 8px;">...</span>`;
+      html += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
     }
     html += `<button class="cm-page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
   }
@@ -202,9 +423,12 @@ function renderPagination(totalPages, start, end, total) {
 
 function goToPage(page) {
   currentPage = page;
-  renderTopicsTable();
-  // Scroll to top of table
-  document.querySelector('.cm-table-wrapper').scrollIntoView({ behavior: 'smooth' });
+  renderContent();
+  // Smooth scroll to top of content
+  const wrapper = document.querySelector('.cm-content-wrapper, .cm-cards-container');
+  if (wrapper) {
+    wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 // ===== Search & Filter =====
@@ -216,6 +440,13 @@ function handleSearchTopics() {
 function handleFilterChange() {
   const searchTerm = document.getElementById('cm-search-input').value.toLowerCase().trim();
   applyFilters(searchTerm);
+}
+
+function clearSearch() {
+  const input = document.getElementById('cm-search-input');
+  input.value = '';
+  document.getElementById('cm-search-clear').style.display = 'none';
+  applyFilters('');
 }
 
 function applyFilters(searchTerm) {
@@ -242,12 +473,12 @@ function applyFilters(searchTerm) {
   });
 
   currentPage = 1;
-  renderTopicsTable();
+  renderContent();
 }
 
 // ===== Topic Actions =====
 
-// Xem topic
+// View topic - Load and display doc content
 function viewTopic(topicId) {
   const topic = allTopics.find(function(t) { return t.topicId === topicId; });
   if (!topic) return;
@@ -255,55 +486,125 @@ function viewTopic(topicId) {
   document.getElementById('preview-topic-title').textContent = topic.title;
   document.getElementById('preview-topic-content').innerHTML = `
     <div class="cm-loading">
-      <div class="spinner"></div>
-      <p>Đang tải nội dung...</p>
+      <div class="cm-loading-spinner">
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+      </div>
+      <p>Đang tải nội dung bài học...</p>
     </div>
   `;
   document.getElementById('cm-preview-modal').style.display = 'flex';
 
-  // TODO: Load nội dung topic từ Google Doc
-  // google.script.run
-  //   .withSuccessHandler(function(content) { ... })
-  //   .getTopicContent(topicId);
-
-  // Tạm thời hiển thị thông tin cơ bản
-  setTimeout(function() {
+  // Check if topic has contentDocId
+  if (!topic.contentDocId) {
     document.getElementById('preview-topic-content').innerHTML = `
-      <div style="padding: 20px;">
-        <p><strong>Topic ID:</strong> ${topicId}</p>
-        <p><strong>Tiêu đề:</strong> ${escapeHtml(topic.title)}</p>
-        <p><strong>Mô tả:</strong> ${escapeHtml(topic.description || 'Chưa có')}</p>
-        <p><strong>Danh mục:</strong> ${escapeHtml(topic.category || 'Chưa phân loại')}</p>
-        <p><strong>Thời gian học:</strong> ${topic.estimatedTime || 'Chưa xác định'}</p>
-        <p><strong>Google Doc:</strong> ${topic.contentDocUrl ? `<a href="${topic.contentDocUrl}" target="_blank">Mở trong tab mới</a>` : 'Chưa có'}</p>
-        <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
-        <p style="color: #64748b; font-style: italic;">Chức năng xem chi tiết nội dung sẽ được phát triển sau.</p>
+      <div class="cm-preview-empty">
+        <div class="cm-preview-empty-icon">
+          <span class="material-symbols-sharp">description</span>
+        </div>
+        <h4>Chưa có nội dung</h4>
+        <p>Bài học này chưa được liên kết với tài liệu Google Doc.</p>
+        ${topic.contentDocUrl ? `
+          <a href="${topic.contentDocUrl}" target="_blank" class="cm-btn cm-btn-primary" style="margin-top: 16px;">
+            <span class="material-symbols-sharp">edit_document</span>
+            Mở Google Doc
+          </a>
+        ` : ''}
       </div>
     `;
-  }, 500);
+    return;
+  }
+
+  // Load doc content from server
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success && response.content) {
+        const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
+        document.getElementById('preview-topic-content').innerHTML = `
+          <div class="cm-preview-wrapper">
+            <!-- Topic Info Header -->
+            <div class="cm-preview-header">
+              <div class="cm-preview-info">
+                <div class="cm-preview-icon">
+                  ${topic.iconUrl
+                    ? `<img src="${topic.iconUrl}" alt="${topic.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                       <span class="material-symbols-sharp" style="display: none;">article</span>`
+                    : '<span class="material-symbols-sharp">article</span>'
+                  }
+                </div>
+                <div class="cm-preview-meta">
+                  <span class="category-badge ${getCategoryClass(topic.category)}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
+                  <span class="status-badge ${isLocked ? 'locked' : 'active'}">${isLocked ? 'Đang ẩn' : 'Đang hiển thị'}</span>
+                  ${topic.estimatedTime ? `<span class="time-badge"><span class="material-symbols-sharp">schedule</span>${topic.estimatedTime}</span>` : ''}
+                </div>
+              </div>
+              ${topic.contentDocUrl ? `
+                <a href="${topic.contentDocUrl}" target="_blank" class="cm-btn cm-btn-secondary cm-btn-sm">
+                  <span class="material-symbols-sharp">edit_document</span>
+                  Chỉnh sửa Doc
+                </a>
+              ` : ''}
+            </div>
+
+            <!-- Doc Content -->
+            <div class="cm-preview-content lesson-content-styles">
+              ${response.content}
+            </div>
+          </div>
+        `;
+        // Parse content markers to render blocks
+        const contentContainer = document.querySelector('.cm-preview-content');
+        if (contentContainer) {
+          parseContentMarkersForPreview(contentContainer);
+        }
+      } else {
+        document.getElementById('preview-topic-content').innerHTML = `
+          <div class="cm-preview-empty">
+            <div class="cm-preview-empty-icon error">
+              <span class="material-symbols-sharp">error</span>
+            </div>
+            <h4>Không thể tải nội dung</h4>
+            <p>${response?.message || 'Đã xảy ra lỗi khi tải nội dung bài học.'}</p>
+            <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px;">
+              <span class="material-symbols-sharp">refresh</span>
+              Thử lại
+            </button>
+          </div>
+        `;
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.error('[ContentManagement] Failed to load topic content:', error);
+      document.getElementById('preview-topic-content').innerHTML = `
+        <div class="cm-preview-empty">
+          <div class="cm-preview-empty-icon error">
+            <span class="material-symbols-sharp">error</span>
+          </div>
+          <h4>Lỗi tải nội dung</h4>
+          <p>${error?.message || 'Không thể kết nối với server.'}</p>
+          <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px;">
+            <span class="material-symbols-sharp">refresh</span>
+            Thử lại
+          </button>
+        </div>
+      `;
+    })
+    .getTopicContentByDocId(topic.contentDocId);
 }
 
 function closePreviewModal() {
   document.getElementById('cm-preview-modal').style.display = 'none';
 }
 
-// Chỉnh sửa topic
+// Edit topic
 function editTopic(topicId) {
-  // TODO: Chuyển đến trang Topic Editor với mode edit
-  // Có thể dùng hash hoặc localStorage để truyền topicId
   console.log('[ContentManagement] Edit topic:', topicId);
-
-  // Tạm thời: lưu topicId và chuyển trang
   localStorage.setItem('editTopicId', topicId);
   showAdminPage('page-topic-editor');
-
-  // Thông báo
-  if (typeof showNotification === 'function') {
-    showNotification('Chức năng chỉnh sửa đang được phát triển', 'info');
-  }
 }
 
-// Xóa topic
+// Delete topic
 function deleteTopic(topicId, topicTitle) {
   topicToDelete = topicId;
   document.getElementById('delete-topic-name').textContent = topicTitle;
@@ -322,19 +623,12 @@ function confirmDeleteTopic() {
   deleteBtn.disabled = true;
   deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
 
-  // TODO: Gọi API xóa topic
-  // google.script.run
-  //   .withSuccessHandler(function() { ... })
-  //   .withFailureHandler(function(error) { ... })
-  //   .deleteTopic(topicToDelete);
-
-  // Tạm thời: giả lập xóa
+  // TODO: Call API to delete topic
   setTimeout(function() {
     closeDeleteModal();
     deleteBtn.disabled = false;
-    deleteBtn.innerHTML = '<span class="material-symbols-sharp">delete</span> Xóa Topic';
+    deleteBtn.innerHTML = '<span class="material-symbols-sharp">delete</span> Xóa bài học';
 
-    // Thông báo
     if (typeof showNotification === 'function') {
       showNotification('Chức năng xóa đang được phát triển', 'info');
     } else {
@@ -345,15 +639,36 @@ function confirmDeleteTopic() {
 
 // ===== Navigate to Create Topic =====
 function goToCreateTopic() {
-  localStorage.removeItem('editTopicId'); // Đảm bảo không ở mode edit
+  localStorage.removeItem('editTopicId');
   showAdminPage('page-topic-editor');
 }
 
 // ===== Refresh =====
-function refreshTopicsList() {
-  document.getElementById('cm-search-input').value = '';
-  document.getElementById('cm-category-filter').value = '';
-  document.getElementById('cm-status-filter').value = '';
+function refreshTopicsList(e) {
+  const searchInput = document.getElementById('cm-search-input');
+  const searchClear = document.getElementById('cm-search-clear');
+  const categoryFilter = document.getElementById('cm-category-filter');
+  const statusFilter = document.getElementById('cm-status-filter');
+
+  if (searchInput) searchInput.value = '';
+  if (searchClear) searchClear.style.display = 'none';
+  if (categoryFilter) categoryFilter.value = '';
+  if (statusFilter) statusFilter.value = '';
+
+  // Add rotation animation to refresh button
+  const refreshBtn = e ? e.currentTarget : null;
+  if (refreshBtn) {
+    const icon = refreshBtn.querySelector('.material-symbols-sharp');
+    if (icon) {
+      icon.style.animation = 'spin 0.5s ease';
+      setTimeout(() => {
+        icon.style.animation = '';
+      }, 500);
+    }
+  }
+
+  // Reset flag và load lại data
+  isDataLoaded = false;
   loadTopicsList();
 }
 
@@ -361,10 +676,12 @@ function refreshTopicsList() {
 function showLoading(show) {
   const loadingEl = document.getElementById('cm-loading-state');
   const tbody = document.getElementById('cm-topics-tbody');
+  const cardsGrid = document.getElementById('cm-cards-grid');
 
   if (show) {
     loadingEl.style.display = 'flex';
-    tbody.innerHTML = '';
+    if (tbody) tbody.innerHTML = '';
+    if (cardsGrid) cardsGrid.innerHTML = '';
   } else {
     loadingEl.style.display = 'none';
   }
@@ -378,7 +695,7 @@ function showEmptyState(show) {
 function getCategoryClass(category) {
   if (!category) return '';
   const lowerCat = category.toLowerCase();
-  if (lowerCat.includes('javascript')) return 'javascript';
+  if (lowerCat.includes('javascript') || lowerCat.includes('js')) return 'javascript';
   if (lowerCat.includes('python')) return 'python';
   if (lowerCat.includes('html') || lowerCat.includes('css')) return 'html-css';
   return '';
@@ -405,7 +722,303 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ===== Parse Content Markers for Preview =====
+// Converts [[CODE:X]], [[NOTE]], [[TIP]], [[WARNING]], etc. to HTML blocks
+function parseContentMarkersForPreview(container) {
+  let html = container.innerHTML;
+
+  console.log('[Preview] Original HTML length:', html.length);
+
+  // Step 1: Create a temporary div to get clean text
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+
+  // Step 2: Walk through text nodes and rebuild with markers preserved
+  // First, let's try a simpler approach: extract text, find markers, then work with that
+
+  // Decode HTML entities
+  html = html.replace(/&#91;/g, '[');
+  html = html.replace(/&#93;/g, ']');
+  html = html.replace(/&lbrack;/g, '[');
+  html = html.replace(/&rbrack;/g, ']');
+  html = html.replace(/&#x5B;/gi, '[');
+  html = html.replace(/&#x5D;/gi, ']');
+
+  // Handle Unicode bracket variants
+  html = html.replace(/[\u27E6\u301A\uFF3B]/g, '[');
+  html = html.replace(/[\u27E7\u301B\uFF3D]/g, ']');
+
+  // Remove zero-width characters
+  html = html.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+  // KEY FIX: More aggressive cleaning - remove ALL tags between brackets
+  // This handles cases like: [<span>[</span><span>CODE:PYTHON</span><span>]</span><span>]</span>
+
+  // First, normalize by removing tags around individual brackets
+  html = html.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, '[');
+  html = html.replace(/(<[^>]*>)*\](<[^>]*>)*/g, ']');
+
+  // Now clean inside [[ and ]]
+  html = html.replace(/\[\[([^\[\]]*?)\]\]/g, function(match, inner) {
+    const cleanInner = inner.replace(/<[^>]*>/g, '').trim();
+    return '[[' + cleanInner + ']]';
+  });
+
+  // Normalize closing tags
+  html = html.replace(/\[\[\s*\/\s*(\w+)\s*\]\]/gi, '[[/$1]]');
+
+  // Normalize opening tags
+  html = html.replace(/\[\[\s*(\w+(?::\w+)?)\s*\]\]/gi, '[[$1]]');
+
+  // Debug
+  const markerMatches = html.match(/\[\[(\w+(?::\w+)?)\]\]/g);
+  console.log('[Preview] Found markers:', markerMatches);
+  const closeMarkerMatches = html.match(/\[\[\/\w+\]\]/g);
+  console.log('[Preview] Found closing markers:', closeMarkerMatches);
+
+  // Debug: Show a sample of the processed HTML (first 500 chars)
+  console.log('[Preview] Sample HTML after preprocessing:', html.substring(0, 500));
+
+  // Find innermost block (block không chứa block khác bên trong)
+  function findInnermostBlock(text) {
+    let bestMatch = null;
+    let bestIndex = -1;
+
+    // Updated regex: CODE can be [[CODE]] or [[CODE:LANG]]
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+
+    let match;
+    while ((match = openingRegex.exec(text)) !== null) {
+      const openTag = match[0];
+      const openIndex = match.index;
+      const tagInfo = match[1];
+      const tagType = tagInfo.split(':')[0].toUpperCase();
+
+      const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+      closeRegex.lastIndex = openIndex + openTag.length;
+
+      const closeMatch = closeRegex.exec(text);
+      if (closeMatch) {
+        const closeIndex = closeMatch.index;
+        const content = text.substring(openIndex + openTag.length, closeIndex);
+
+        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+
+        if (!hasNestedBlock) {
+          if (bestMatch === null || openIndex < bestIndex) {
+            bestMatch = {
+              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+              openTag: openTag,
+              closeTag: closeMatch[0],
+              tagInfo: tagInfo,
+              tagType: tagType,
+              content: content,
+              startIndex: openIndex,
+              endIndex: closeIndex + closeMatch[0].length
+            };
+            bestIndex = openIndex;
+          }
+        }
+      }
+    }
+    return bestMatch;
+  }
+
+  // Render single block to HTML
+  function renderSingleBlock(blockInfo) {
+    const { tagType, tagInfo, content } = blockInfo;
+
+    // COLOR SECTIONS
+    if (tagType === 'COLOR') {
+      const color = tagInfo.split(':')[1] || 'BLUE';
+      const colorMap = {
+        ORANGE: "preview-section-orange",
+        RED: "preview-section-red",
+        BLUE: "preview-section-blue",
+        GREEN: "preview-section-green",
+        PURPLE: "preview-section-purple",
+        CYAN: "preview-section-cyan",
+      };
+      const className = colorMap[color.toUpperCase()] || "preview-section-blue";
+      return `<div class="${className}">${content}</div>`;
+    }
+
+    // CODE BLOCKS
+    if (tagType === 'CODE') {
+      const lang = tagInfo.split(':')[1] || 'TEXT';
+      const cleanCode = content
+        .trim()
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/div>/gi, "\n")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/^\n+|\n+$/g, "");
+      return `
+        <div class="preview-code-block">
+          <div class="preview-code-header">
+            <span class="preview-code-lang">${lang.toUpperCase()}</span>
+          </div>
+          <pre><code>${escapeHtml(cleanCode)}</code></pre>
+        </div>`;
+    }
+
+    // EXAMPLE BLOCKS
+    if (tagType === 'EXAMPLE') {
+      return `<div class="preview-example-block">${content}</div>`;
+    }
+
+    // CALLOUT BLOCKS
+    const calloutConfig = {
+      'NOTE': { icon: 'info', class: 'preview-callout-note', label: 'Lưu ý' },
+      'TIP': { icon: 'lightbulb', class: 'preview-callout-tip', label: 'Mẹo' },
+      'WARNING': { icon: 'warning', class: 'preview-callout-warning', label: 'Cảnh báo' },
+      'CHECKPOINT': { icon: 'flag', class: 'preview-callout-checkpoint', label: 'Checkpoint' },
+      'TASK': { icon: 'task_alt', class: 'preview-callout-task', label: 'Bài tập' },
+      'QA': { icon: 'help', class: 'preview-callout-qa', label: 'Hỏi đáp' },
+      'HIGHLIGHT': { icon: 'star', class: 'preview-callout-highlight', label: 'Nổi bật' }
+    };
+    if (calloutConfig[tagType]) {
+      const cfg = calloutConfig[tagType];
+      return `
+        <div class="${cfg.class}">
+          <div class="preview-callout-header">
+            <span class="material-symbols-sharp">${cfg.icon}</span>
+            <span>${cfg.label}</span>
+          </div>
+          <div class="preview-callout-content">${content}</div>
+        </div>`;
+    }
+
+    // RESOURCES
+    if (tagType === 'RESOURCES') {
+      return `<div class="preview-resources">${content}</div>`;
+    }
+
+    // FIGURE
+    if (tagType === 'FIGURE') {
+      const caption = tagInfo.split(':').slice(1).join(':') || '';
+      return `<figure class="preview-figure">${content}<figcaption>${caption}</figcaption></figure>`;
+    }
+
+    // GRID
+    if (tagType === 'GRID') {
+      return `<div class="preview-grid">${content}</div>`;
+    }
+
+    // TERMINAL
+    if (tagType === 'TERMINAL') {
+      const langPart = tagInfo.split(':')[1] || '';
+      const language = (langPart || "shell").toLowerCase();
+      const cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/div>/gi, "\n")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/^\n+|\n+$/g, "");
+      const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
+      return `
+        <div class="preview-terminal-block">
+          <div class="preview-terminal-header">
+            <div class="preview-terminal-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <span class="preview-terminal-title">${langLabel}</span>
+          </div>
+          <pre class="preview-terminal-body"><code>${escapeHtml(cleanContent)}</code></pre>
+        </div>`;
+    }
+
+    // CMD
+    if (tagType === 'CMD') {
+      const cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/div>/gi, "\n")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/^\n+|\n+$/g, "");
+      return `<div class="preview-cmd-block"><pre><code>${escapeHtml(cleanContent)}</code></pre></div>`;
+    }
+
+    // OUTPUT
+    if (tagType === 'OUTPUT') {
+      const cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/div>/gi, "\n")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/^\n+|\n+$/g, "");
+      return `<div class="preview-output-block"><pre><code>${escapeHtml(cleanContent)}</code></pre></div>`;
+    }
+
+    return content;
+  }
+
+  // Process blocks from innermost to outermost
+  let maxIterations = 200;
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    const innermostBlock = findInnermostBlock(html);
+    if (!innermostBlock) break;
+
+    console.log('[Preview] Found block:', innermostBlock.tagType, '- content length:', innermostBlock.content.length);
+
+    const renderedHtml = renderSingleBlock(innermostBlock);
+    html = html.substring(0, innermostBlock.startIndex) +
+           renderedHtml +
+           html.substring(innermostBlock.endIndex);
+    iterations++;
+  }
+
+  console.log('[Preview] Total blocks processed:', iterations);
+
+  // Handle markdown code blocks ```lang ... ```
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    const language = lang || "plaintext";
+    const cleanCode = code
+      .trim()
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/^\n+|\n+$/g, "");
+    return `
+      <div class="preview-code-block">
+        <div class="preview-code-header">
+          <span class="preview-code-lang">${language.toUpperCase()}</span>
+        </div>
+        <pre><code>${escapeHtml(cleanCode)}</code></pre>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
 // ===== Auto-init when page shown =====
-// Hàm này sẽ được gọi bởi sidebar khi chuyển trang
 window.initcontentmanagement = initContentManagement;
 </script>
