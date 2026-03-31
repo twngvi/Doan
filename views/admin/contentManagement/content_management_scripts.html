@@ -620,21 +620,63 @@ function confirmDeleteTopic() {
   if (!topicToDelete) return;
 
   const deleteBtn = document.querySelector('.cm-btn-danger');
+  const originalBtnHtml = deleteBtn.innerHTML;
   deleteBtn.disabled = true;
   deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
 
-  // TODO: Call API to delete topic
-  setTimeout(function() {
-    closeDeleteModal();
-    deleteBtn.disabled = false;
-    deleteBtn.innerHTML = '<span class="material-symbols-sharp">delete</span> Xóa bài học';
+  // Gọi API xóa topic và document
+  google.script.run
+    .withSuccessHandler(function(result) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = originalBtnHtml;
+      closeDeleteModal();
 
-    if (typeof showNotification === 'function') {
-      showNotification('Chức năng xóa đang được phát triển', 'info');
-    } else {
-      alert('Chức năng xóa đang được phát triển');
-    }
-  }, 1000);
+      if (result && result.success) {
+        // Xóa topic khỏi mảng local
+        allTopics = allTopics.filter(function(t) { return t.topicId !== topicToDelete; });
+        filteredTopics = filteredTopics.filter(function(t) { return t.topicId !== topicToDelete; });
+
+        // Cập nhật UI
+        updateStats();
+        renderContent();
+
+        // Hiển thị thông báo thành công
+        if (typeof showNotification === 'function') {
+          showNotification(result.message || 'Đã xóa bài học thành công!', 'success');
+        } else {
+          alert(result.message || 'Đã xóa bài học thành công!');
+        }
+
+        // Log nếu doc cũng bị xóa
+        if (result.docDeleted) {
+          console.log('[ContentManagement] Document cũng đã được chuyển vào thùng rác');
+        }
+      } else {
+        // Hiển thị lỗi
+        if (typeof showNotification === 'function') {
+          showNotification(result?.message || 'Không thể xóa bài học', 'error');
+        } else {
+          alert(result?.message || 'Không thể xóa bài học');
+        }
+      }
+
+      topicToDelete = null;
+    })
+    .withFailureHandler(function(error) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = originalBtnHtml;
+      closeDeleteModal();
+
+      console.error('[ContentManagement] Delete failed:', error);
+      if (typeof showNotification === 'function') {
+        showNotification('Lỗi khi xóa bài học: ' + (error?.message || error), 'error');
+      } else {
+        alert('Lỗi khi xóa bài học: ' + (error?.message || error));
+      }
+
+      topicToDelete = null;
+    })
+    .deleteTopicWithDoc(topicToDelete);
 }
 
 // ===== Navigate to Create Topic =====

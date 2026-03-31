@@ -2851,6 +2851,101 @@ function saveTopicToMasterDB(topicData) {
 }
 
 /**
+ * Xóa topic và document Google Doc liên quan
+ * @param {string} topicId - ID của topic cần xóa
+ * @returns {Object} Kết quả xóa
+ */
+function deleteTopicWithDoc(topicId) {
+  try {
+    Logger.log("=== DELETE TOPIC WITH DOC ===");
+    Logger.log("Topic ID: " + topicId);
+
+    // Kiểm tra quyền admin
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext.success) {
+      return { success: false, message: adminContext.message || "Không có quyền admin" };
+    }
+
+    // Lấy sheet Topics
+    const sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Topics" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdIndex = headers.indexOf("topicId");
+    const contentDocIdIndex = headers.indexOf("contentDocId");
+    const titleIndex = headers.indexOf("title");
+
+    if (topicIdIndex === -1) {
+      return { success: false, message: "Không tìm thấy cột topicId trong sheet" };
+    }
+
+    // Tìm row chứa topic
+    let rowIndex = -1;
+    let contentDocId = null;
+    let topicTitle = "";
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdIndex] === topicId) {
+        rowIndex = i + 1; // +1 vì sheet row bắt đầu từ 1, không phải 0
+        if (contentDocIdIndex !== -1) {
+          contentDocId = data[i][contentDocIdIndex];
+        }
+        if (titleIndex !== -1) {
+          topicTitle = data[i][titleIndex];
+        }
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      return { success: false, message: "Không tìm thấy topic với ID: " + topicId };
+    }
+
+    Logger.log("Found topic at row: " + rowIndex);
+    Logger.log("Topic title: " + topicTitle);
+    Logger.log("Content Doc ID: " + contentDocId);
+
+    // Xóa Google Doc nếu có
+    let docDeleted = false;
+    if (contentDocId) {
+      try {
+        const file = DriveApp.getFileById(contentDocId);
+        file.setTrashed(true);
+        docDeleted = true;
+        Logger.log("✅ Document moved to trash: " + contentDocId);
+      } catch (docError) {
+        Logger.log("⚠️ Could not delete document: " + docError.toString());
+        // Vẫn tiếp tục xóa topic trong sheet
+      }
+    }
+
+    // Xóa row trong sheet
+    sheet.deleteRow(rowIndex);
+    Logger.log("✅ Topic row deleted from sheet");
+
+    // Xóa cache
+    try {
+      clearTopicsCache();
+    } catch (cacheError) {
+      Logger.log("⚠️ Could not clear cache: " + cacheError.toString());
+    }
+
+    return {
+      success: true,
+      message: "Đã xóa bài học " + (topicTitle ? '"' + topicTitle + '"' : topicId) + " thành công!",
+      docDeleted: docDeleted
+    };
+
+  } catch (error) {
+    Logger.log("❌ Error deleting topic: " + error.toString());
+    return { success: false, message: "Lỗi khi xóa topic: " + error.toString() };
+  }
+}
+
+/**
  * Lấy danh sách categories từ Topics hiện có
  * Trả về mảng categories trực tiếp
  */
