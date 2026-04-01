@@ -9,22 +9,21 @@
 // ========================================
 
 let savedSelection = null;
+let isEditMode = false;
+let editingTopicId = null;
 
 // ========================================
 // INITIALIZATION
 // ========================================
 
 document.addEventListener('DOMContentLoaded', function() {
-  initializeEditor();
+  initializeTopicEditor();
   setupDragAndDrop();
   setupKeyboardShortcuts();
 });
 
-function initializeEditor() {
+function initializeTopicEditor() {
   const editor = document.getElementById('contentEditor');
-  
-  // Focus vào editor
-  editor.focus();
   
   // Handle paste - clean up pasted content
   editor.addEventListener('paste', function(e) {
@@ -32,6 +31,14 @@ function initializeEditor() {
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
   });
+
+  // Check edit mode
+  initEditMode();
+
+  // Focus editor after init (delay to allow edit mode to load)
+  if (!isEditMode) {
+    editor.focus();
+  }
 }
 
 // ========================================
@@ -1046,6 +1053,427 @@ async function publishTopic() {
     .createAndPublishTopic(topicData);
 }
 
+// ========================================
+// EDIT MODE
+// ========================================
+
+/**
+ * Check localStorage for editTopicId and enter edit mode
+ */
+function initEditMode() {
+  var editTopicId = localStorage.getItem('editTopicId');
+  if (!editTopicId) {
+    // If we transition from EDIT to CREATE, reset the form
+    if (isEditMode) {
+      console.log('[TopicEditor] Transitioning from EDIT to CREATE mode. Resetting form.');
+      resetForm();
+    }
+    isEditMode = false;
+    editingTopicId = null;
+    return;
+  }
+
+  console.log('[TopicEditor] Entering EDIT mode for:', editTopicId);
+  isEditMode = true;
+  editingTopicId = editTopicId;
+
+  // Update UI for edit mode
+  var titleEl = document.getElementById('topicEditorTitle');
+  if (titleEl) titleEl.textContent = '\u270f\ufe0f Ch\u1ec9nh s\u1eeda b\u00e0i h\u1ecdc';
+
+  var btnPublish = document.getElementById('btnPublish');
+  var btnUpdate = document.getElementById('btnUpdate');
+  if (btnPublish) btnPublish.style.display = 'none';
+  if (btnUpdate) btnUpdate.style.display = 'inline-flex';
+
+  // Make topicId field readonly
+  var topicIdInput = document.getElementById('topicId');
+  if (topicIdInput) {
+    topicIdInput.readOnly = true;
+    topicIdInput.style.opacity = '0.7';
+    topicIdInput.style.cursor = 'not-allowed';
+  }
+  var topicIdHint = document.getElementById('topicIdEditHint');
+  if (topicIdHint) topicIdHint.style.display = 'block';
+
+  // Show loading
+  showTopicEditorLoading('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+
+  // Load topic data
+  google.script.run
+    .withSuccessHandler(function(result) {
+      hideTopicEditorLoading();
+      if (result && result.success && result.data) {
+        populateEditForm(result.data);
+      } else {
+        showToast('L\u1ed7i: ' + (result ? result.message : 'Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u'), 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      hideTopicEditorLoading();
+      showToast('L\u1ed7i: ' + (error ? error.message : error), 'error');
+    })
+    .getTopicForEdit(editTopicId);
+
+  // Clean up localStorage (so refresh doesn't re-enter edit mode)
+  localStorage.removeItem('editTopicId');
+}
+
+/**
+ * Populate form fields with topic data for editing
+ */
+function populateEditForm(data) {
+  var topic = data.topic;
+  var content = data.content || '';
+
+  console.log('[TopicEditor] Populating edit form:', topic.topicId);
+
+  // Fill form fields
+  document.getElementById('topicId').value = topic.topicId || '';
+  document.getElementById('topicTitle').value = topic.title || '';
+  document.getElementById('topicCategory').value = topic.category || '';
+  document.getElementById('topicDescription').value = topic.description || '';
+  var orderField = document.getElementById('topicOrder');
+  if (orderField) orderField.value = topic.order || '';
+
+  // Set content in editor
+  var editor = document.getElementById('contentEditor');
+  if (content) {
+    editor.innerHTML = content;
+    // Parse text markers into visual blocks
+    parseMarkersToVisualBlocks(editor);
+  }
+
+  editor.focus();
+  console.log('[TopicEditor] Edit form populated successfully');
+}
+
+/**
+ * Parse [[BLOCK]] markers from Doc HTML into visual editable blocks
+ * Reuses the same innermost-first approach from preview parsing
+ */
+function parseMarkersToVisualBlocks(container) {
+  var html = container.innerHTML;
+
+  // === Normalize brackets (same as preview) ===
+  html = html.replace(/&#91;/g, '[');
+  html = html.replace(/&#93;/g, ']');
+  html = html.replace(/&lbrack;/g, '[');
+  html = html.replace(/&rbrack;/g, ']');
+  html = html.replace(/&#x5B;/gi, '[');
+  html = html.replace(/&#x5D;/gi, ']');
+  html = html.replace(/[\u27E6\u301A\uFF3B]/g, '[');
+  html = html.replace(/[\u27E7\u301B\uFF3D]/g, ']');
+  html = html.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+  // Remove tags between/around brackets
+  html = html.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, '[');
+  html = html.replace(/(<[^>]*>)*\](<[^>]*>)*/g, ']');
+
+  // Clean inside [[ and ]]
+  html = html.replace(/\[\[([^\[\]]*?)\]\]/g, function(match, inner) {
+    var cleanInner = inner.replace(/<[^>]*>/g, '').trim();
+    return '[[' + cleanInner + ']]';
+  });
+
+  // Normalize closing/opening tags
+  html = html.replace(/\[\[\s*\/\s*(\w+)\s*\]\]/gi, '[[/$1]]');
+  html = html.replace(/\[\[\s*(\w+(?::\w+)?)\s*\]\]/gi, '[[$1]]');
+
+  console.log('[EditMode] Parsing markers. Found:',
+    (html.match(/\[\[(\w+(?::\w+)?)\]\]/g) || []).length, 'opening,',
+    (html.match(/\[\[\/\w+\]\]/g) || []).length, 'closing');
+
+  // === Find innermost block ===
+  function findInnermostBlock(text) {
+    var bestMatch = null;
+    var bestIndex = -1;
+    var openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+    var match;
+    while ((match = openingRegex.exec(text)) !== null) {
+      var openTag = match[0];
+      var openIndex = match.index;
+      var tagInfo = match[1];
+      var tagType = tagInfo.split(':')[0].toUpperCase();
+      var closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+      closeRegex.lastIndex = openIndex + openTag.length;
+      var closeMatch = closeRegex.exec(text);
+      if (closeMatch) {
+        var closeIndex = closeMatch.index;
+        var innerContent = text.substring(openIndex + openTag.length, closeIndex);
+        var hasNested = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(innerContent);
+        if (!hasNested) {
+          if (bestMatch === null || openIndex < bestIndex) {
+            bestMatch = {
+              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+              openTag: openTag,
+              closeTag: closeMatch[0],
+              tagInfo: tagInfo,
+              tagType: tagType,
+              content: innerContent,
+              startIndex: openIndex,
+              endIndex: closeIndex + closeMatch[0].length
+            };
+            bestIndex = openIndex;
+          }
+        }
+      }
+    }
+    return bestMatch;
+  }
+
+  // === Render a block as a visual editable block ===
+  function renderEditableBlock(blockInfo) {
+    var tagType = blockInfo.tagType;
+    var tagInfo = blockInfo.tagInfo;
+    var content = blockInfo.content;
+
+    // Clean content: strip surrounding <p> tags but keep inner HTML
+    var cleanContent = content
+      .replace(/^(\s*<\/?p[^>]*>\s*)+/gi, '')
+      .replace(/(\s*<\/?p[^>]*>\s*)+$/gi, '')
+      .trim();
+
+    // CODE blocks
+    if (tagType === 'CODE') {
+      var lang = tagInfo.split(':')[1] || 'JAVASCRIPT';
+      var cleanCode = cleanContent
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="visual-code-block" data-block-type="CODE" data-language="' + lang + '" contenteditable="false">' +
+        '<div class="visual-code-header"><span class="visual-code-lang">' + lang + '</span></div>' +
+        '<pre class="visual-code-content" contenteditable="true">' + escapeHtml(cleanCode) + '</pre>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // TERMINAL blocks
+    if (tagType === 'TERMINAL') {
+      var termContent = cleanContent
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="visual-terminal-block" data-block-type="TERMINAL" contenteditable="false">' +
+        '<div class="visual-terminal-label">\ud83d\udda5\ufe0f Terminal Output</div>' +
+        '<div class="visual-terminal-content" contenteditable="true">' + escapeHtml(termContent) + '</div>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // GRID blocks
+    if (tagType === 'GRID') {
+      return '<div class="visual-grid-block" data-block-type="GRID" contenteditable="false">' +
+        '<div class="visual-grid-label">\ud83d\udcca Grid Cards</div>' +
+        '<div class="visual-grid-content" contenteditable="true">' + cleanContent + '</div>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // FIGURE blocks
+    if (tagType === 'FIGURE') {
+      var caption = tagInfo.split(':').slice(1).join(':') || '';
+      return '<div class="visual-figure-block" data-block-type="FIGURE" data-caption="' + escapeHtml(caption) + '" contenteditable="false">' +
+        '<div class="visual-figure-content" contenteditable="true">' + cleanContent + '</div>' +
+        '<div class="visual-figure-caption">\ud83d\udcf7 ' + caption + '</div>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // COLOR blocks
+    if (tagType === 'COLOR') {
+      var color = tagInfo.split(':')[1] || 'BLUE';
+      return '<span class="visual-color-block visual-color-' + color.toLowerCase() + '" data-color-type="' + color + '">' + cleanContent + '</span>';
+    }
+
+    // Callout blocks (NOTE, TIP, WARNING, HIGHLIGHT, EXAMPLE, CHECKPOINT, TASK, QA, RESOURCES)
+    var blockConfig = {
+      'NOTE': { icon: '\ud83d\udccc', label: 'Ghi ch\u00fa' },
+      'TIP': { icon: '\ud83d\udca1', label: 'M\u1eb9o' },
+      'WARNING': { icon: '\u26a0\ufe0f', label: 'C\u1ea3nh b\u00e1o' },
+      'HIGHLIGHT': { icon: '\u2728', label: 'L\u01b0u \u00fd' },
+      'EXAMPLE': { icon: '\ud83d\udcd6', label: 'V\u00ed d\u1ee5' },
+      'CHECKPOINT': { icon: '\u2705', label: 'Ki\u1ec3m tra' },
+      'TASK': { icon: '\ud83d\udccb', label: 'Nhi\u1ec7m v\u1ee5' },
+      'QA': { icon: '\u2753', label: 'H\u1ecfi \u0026 \u0110\u00e1p' },
+      'RESOURCES': { icon: '\ud83d\udcda', label: 'T\u00e0i nguy\u00ean' }
+    };
+
+    var config = blockConfig[tagType];
+    if (config) {
+      return '<div class="visual-block visual-block-' + tagType.toLowerCase() + '" data-block-type="' + tagType + '" contenteditable="false">' +
+        '<span class="visual-block-icon">' + config.icon + '</span>' +
+        '<div class="visual-block-content" contenteditable="true"><span class="visual-block-label">' + config.label + ':</span> ' + cleanContent + '</div>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // CMD / OUTPUT blocks
+    if (tagType === 'CMD' || tagType === 'OUTPUT') {
+      var monoContent = cleanContent
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="visual-terminal-block" data-block-type="' + tagType + '" contenteditable="false">' +
+        '<div class="visual-terminal-label">' + tagType + '</div>' +
+        '<div class="visual-terminal-content" contenteditable="true">' + escapeHtml(monoContent) + '</div>' +
+        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
+        '</div>';
+    }
+
+    // Fallback: return content as-is
+    return cleanContent;
+  }
+
+  // === Process blocks from innermost to outermost ===
+  var maxIterations = 200;
+  var iterations = 0;
+  while (iterations < maxIterations) {
+    var innermostBlock = findInnermostBlock(html);
+    if (!innermostBlock) break;
+    console.log('[EditMode] Converting block:', innermostBlock.tagType);
+    var rendered = renderEditableBlock(innermostBlock);
+    html = html.substring(0, innermostBlock.startIndex) + rendered + html.substring(innermostBlock.endIndex);
+    iterations++;
+  }
+  console.log('[EditMode] Total blocks converted:', iterations);
+
+  container.innerHTML = html;
+}
+
+/**
+ * Update existing topic (edit mode)
+ */
+async function updateTopic() {
+  // Validate form
+  var topicId = editingTopicId;
+  var title = document.getElementById('topicTitle').value.trim();
+  var category = document.getElementById('topicCategory').value;
+  var description = document.getElementById('topicDescription').value.trim();
+  var order = document.getElementById('topicOrder').value || 999;
+  var content = document.getElementById('contentEditor').innerHTML.trim();
+
+  // Convert visual blocks to text markers for Google Doc
+  content = convertVisualBlocksToMarkers(content);
+
+  // Validation
+  if (!title) {
+    showToast('Vui l\u00f2ng nh\u1eadp ti\u00eau \u0111\u1ec1', 'error');
+    document.getElementById('topicTitle').focus();
+    return;
+  }
+  if (!category) {
+    showToast('Vui l\u00f2ng ch\u1ecdn danh m\u1ee5c', 'error');
+    document.getElementById('topicCategory').focus();
+    return;
+  }
+  if (!content || content === '<br>' || content === '<p><br></p>') {
+    showToast('Vui l\u00f2ng nh\u1eadp n\u1ed9i dung b\u00e0i h\u1ecdc', 'error');
+    document.getElementById('contentEditor').focus();
+    return;
+  }
+
+  // Confirm update
+  var shouldUpdate =
+    typeof window.showAppConfirm === 'function'
+      ? await window.showAppConfirm(
+          'B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc n\u00e0y?\n\nTopic: ' + title,
+          {
+            title: 'X\u00e1c nh\u1eadn c\u1eadp nh\u1eadt',
+            confirmText: 'C\u1eadp nh\u1eadt',
+            cancelText: 'H\u1ee7y'
+          }
+        )
+      : confirm('B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc n\u00e0y?');
+
+  if (!shouldUpdate) return;
+
+  showTopicEditorLoading('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
+
+  var topicData = {
+    title: title,
+    description: description,
+    category: category,
+    order: parseInt(order),
+    content: content
+  };
+
+  console.log('\ud83d\udce4 Updating topic:', topicId, topicData);
+
+  // Check google.script.run
+  if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    hideTopicEditorLoading();
+    showToast('L\u1ed7i: Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i v\u1edbi server.', 'error');
+    return;
+  }
+
+  var updateTimeout = setTimeout(function() {
+    hideTopicEditorLoading();
+    showToast('\u23f1 Qu\u00e1 th\u1eddi gian ch\u1edd (60s). Vui l\u00f2ng ki\u1ec3m tra l\u1ea1i.', 'error');
+  }, 60000);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      clearTimeout(updateTimeout);
+      hideTopicEditorLoading();
+      console.log('\u2705 Update response:', result);
+
+      if (result && result.success) {
+        showToast('\ud83c\udf89 C\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng!', 'success');
+
+        setTimeout(function() {
+          try {
+            if (typeof window.showAppAlert === 'function') {
+              window.showAppAlert(
+                '\u2705 B\u00e0i h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng!\n\nTopic: ' + title,
+                { title: 'C\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng', confirmText: '\u0110\u00e3 hi\u1ec3u' }
+              ).then(function() {
+                resetForm();
+                goBackToAdmin();
+              }).catch(function() {
+                resetForm();
+                goBackToAdmin();
+              });
+            } else {
+              alert('\u2705 B\u00e0i h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng!');
+              resetForm();
+              goBackToAdmin();
+            }
+          } catch (e) {
+            console.error('Success dialog error:', e);
+            goBackToAdmin();
+          }
+        }, 500);
+      } else {
+        showToast('L\u1ed7i: ' + (result ? result.message : 'Kh\u00f4ng c\u00f3 ph\u1ea3n h\u1ed3i t\u1eeb server'), 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      clearTimeout(updateTimeout);
+      hideTopicEditorLoading();
+      console.error('\u274c Update error:', error);
+      var errorMsg = error && error.message ? error.message : String(error);
+      showToast('L\u1ed7i: ' + errorMsg, 'error');
+    })
+    .updateTopicWithContent(topicId, topicData);
+}
+
 function resetForm() {
   document.getElementById('topicId').value = '';
   document.getElementById('topicTitle').value = '';
@@ -1053,6 +1481,29 @@ function resetForm() {
   document.getElementById('topicDescription').value = '';
   document.getElementById('topicOrder').value = '';
   document.getElementById('contentEditor').innerHTML = '';
+
+  // Reset edit mode state
+  isEditMode = false;
+  editingTopicId = null;
+  localStorage.removeItem('editTopicId');
+
+  // Restore create mode UI
+  var titleEl = document.getElementById('topicEditorTitle');
+  if (titleEl) titleEl.textContent = '\u2728 T\u1ea1o Topic m\u1edbi';
+
+  var btnPublish = document.getElementById('btnPublish');
+  var btnUpdate = document.getElementById('btnUpdate');
+  if (btnPublish) btnPublish.style.display = 'inline-flex';
+  if (btnUpdate) btnUpdate.style.display = 'none';
+
+  var topicIdInput = document.getElementById('topicId');
+  if (topicIdInput) {
+    topicIdInput.readOnly = false;
+    topicIdInput.style.opacity = '1';
+    topicIdInput.style.cursor = '';
+  }
+  var topicIdHint = document.getElementById('topicIdEditHint');
+  if (topicIdHint) topicIdHint.style.display = 'none';
 }
 
 // ========================================
@@ -1188,6 +1639,9 @@ async function goBackToAdmin() {
     }
   }
 
+  // Clear form when leaving
+  resetForm();
+
   // Navigate back to Content Management page
   if (typeof showAdminPage === 'function') {
     showAdminPage('page-content-management');
@@ -1242,5 +1696,10 @@ window.deleteVisualBlock = deleteVisualBlock;
 window.insertTerminalBlock = insertTerminalBlock;
 window.insertGridBlock = insertGridBlock;
 window.convertVisualBlocksToMarkers = convertVisualBlocksToMarkers;
+// Edit mode functions
+window.updateTopic = updateTopic;
+window.initEditMode = initEditMode;
+window.parseMarkersToVisualBlocks = parseMarkersToVisualBlocks;
+window.initializeTopicEditor = initializeTopicEditor;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
 </script>

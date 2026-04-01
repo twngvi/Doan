@@ -2973,3 +2973,219 @@ function getTopicCategories() {
     return [];
   }
 }
+
+// ========================================
+// EDIT TOPIC - Load & Update
+// ========================================
+
+/**
+ * Lấy thông tin topic + nội dung doc HTML để edit
+ * @param {string} topicId - ID của topic cần edit
+ * @returns {object} { success, data: { topic, content } }
+ */
+function getTopicForEdit(topicId) {
+  try {
+    Logger.log("=== GET TOPIC FOR EDIT ===");
+    Logger.log("Topic ID: " + topicId);
+
+    // Kiểm tra quyền admin
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin"
+      };
+    }
+
+    // Validate
+    if (!topicId) {
+      return { success: false, message: "Thiếu Topic ID" };
+    }
+
+    // Lấy topic metadata từ sheet
+    const sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Topics" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    let topicRow = null;
+    let topicRowIndex = -1;
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][headers.indexOf("topicId")] === topicId) {
+        topicRow = data[i];
+        topicRowIndex = i;
+        break;
+      }
+    }
+
+    if (!topicRow) {
+      return { success: false, message: "Không tìm thấy topic: " + topicId };
+    }
+
+    // Build topic object
+    var topic = {
+      topicId: topicRow[headers.indexOf("topicId")] || "",
+      title: topicRow[headers.indexOf("title")] || "",
+      description: topicRow[headers.indexOf("description")] || "",
+      category: topicRow[headers.indexOf("category")] || "",
+      order: topicRow[headers.indexOf("order")] || 999,
+      iconUrl: topicRow[headers.indexOf("iconUrl")] || "",
+      estimatedTime: topicRow[headers.indexOf("estimatedTime")] || "",
+      contentDocId: topicRow[headers.indexOf("contentDocId")] || "",
+      contentDocUrl: topicRow[headers.indexOf("contentDocUrl")] || "",
+      isLocked: topicRow[headers.indexOf("isLocked")] === true || topicRow[headers.indexOf("isLocked")] === "TRUE"
+    };
+
+    // Lấy nội dung doc HTML
+    var content = "";
+    if (topic.contentDocId) {
+      var docResult = getTopicContentByDocId(topic.contentDocId);
+      if (docResult && docResult.success && docResult.content) {
+        content = docResult.content;
+      }
+    }
+
+    Logger.log("✅ Topic loaded for edit: " + topic.title);
+    Logger.log("Content length: " + content.length);
+
+    return {
+      success: true,
+      data: {
+        topic: topic,
+        content: content
+      }
+    };
+  } catch (error) {
+    Logger.log("❌ Error getting topic for edit: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi khi tải topic: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Cập nhật topic: metadata in MasterDB + nội dung Google Doc
+ * @param {string} topicId - ID topic cần cập nhật
+ * @param {object} topicData - { title, description, category, order, content }
+ * @returns {object} { success, message }
+ */
+function updateTopicWithContent(topicId, topicData) {
+  try {
+    Logger.log("=== UPDATE TOPIC WITH CONTENT ===");
+    Logger.log("Topic ID: " + topicId);
+
+    // Kiểm tra quyền admin
+    var adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin"
+      };
+    }
+
+    // Validate
+    if (!topicId) {
+      return { success: false, message: "Thiếu Topic ID" };
+    }
+    if (!topicData) {
+      return { success: false, message: "Không có dữ liệu cập nhật" };
+    }
+
+    // Tìm topic trong sheet
+    var sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Topics" };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var topicRowIndex = -1;
+    var contentDocId = "";
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][headers.indexOf("topicId")] === topicId) {
+        topicRowIndex = i;
+        contentDocId = data[i][headers.indexOf("contentDocId")] || "";
+        break;
+      }
+    }
+
+    if (topicRowIndex === -1) {
+      return { success: false, message: "Không tìm thấy topic: " + topicId };
+    }
+
+    // 1. Cập nhật metadata trong sheet Topics
+    var now = new Date().toISOString();
+    var titleCol = headers.indexOf("title");
+    var descCol = headers.indexOf("description");
+    var categoryCol = headers.indexOf("category");
+    var orderCol = headers.indexOf("order");
+    var updatedAtCol = headers.indexOf("updatedAt");
+
+    var rowNum = topicRowIndex + 1; // 1-indexed for sheet
+
+    if (titleCol >= 0 && topicData.title) {
+      sheet.getRange(rowNum, titleCol + 1).setValue(topicData.title);
+    }
+    if (descCol >= 0 && topicData.description !== undefined) {
+      sheet.getRange(rowNum, descCol + 1).setValue(topicData.description || "");
+    }
+    if (categoryCol >= 0 && topicData.category) {
+      sheet.getRange(rowNum, categoryCol + 1).setValue(topicData.category);
+    }
+    if (orderCol >= 0 && topicData.order !== undefined) {
+      sheet.getRange(rowNum, orderCol + 1).setValue(parseInt(topicData.order) || 999);
+    }
+    if (updatedAtCol >= 0) {
+      sheet.getRange(rowNum, updatedAtCol + 1).setValue(now);
+    }
+
+    Logger.log("✅ Metadata updated in MasterDB");
+
+    // 2. Cập nhật nội dung Google Doc
+    if (contentDocId && topicData.content) {
+      try {
+        var doc = DocumentApp.openById(contentDocId);
+        var body = doc.getBody();
+
+        // Clear và ghi nội dung mới
+        convertHtmlToDocContent(topicData.content, body);
+
+        doc.saveAndClose();
+        Logger.log("✅ Google Doc updated: " + contentDocId);
+      } catch (docError) {
+        Logger.log("❌ Error updating Doc: " + docError.toString());
+        return {
+          success: false,
+          message: "Đã cập nhật metadata nhưng lỗi khi cập nhật Doc: " + docError.toString()
+        };
+      }
+    } else if (!contentDocId && topicData.content) {
+      Logger.log("⚠️ No contentDocId found, skipping Doc update");
+    }
+
+    // Clear cache để data mới hiện ngay
+    try {
+      clearTopicsCache();
+    } catch (e) {
+      Logger.log("⚠️ Could not clear topics cache: " + e.toString());
+    }
+
+    Logger.log("✅ Topic updated successfully");
+
+    return {
+      success: true,
+      message: "Đã cập nhật bài học thành công!"
+    };
+  } catch (error) {
+    Logger.log("❌ Error updating topic: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi khi cập nhật topic: " + error.toString()
+    };
+  }
+}
