@@ -47,6 +47,46 @@
 
     const BLINK_INTERVAL_MS = 5000;
     const BLINK_CLOSE_DURATION_MS = 220;
+    const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
+      return "Phụ kiện_" + (index + 1) + ".svg";
+    });
+
+    const ACCESSORY_RULES = {
+      "Phụ kiện_1.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
+      "Phụ kiện_2.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
+      "Phụ kiện_3.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
+      "Phụ kiện_6.svg": { allowedPositions: ["left", "right"] },
+      "Phụ kiện_7.svg": { allowedPositions: ["left", "right"] },
+      "Phụ kiện_8.svg": { allowedPositions: ["left", "right"] },
+      "Phụ kiện_9.svg": { allowedPositions: ["left", "right"] },
+      "Phụ kiện_10.svg": { scale: 1.1, topOffset: -20 },
+      "Phụ kiện_11.svg": { scale: 1.15, topOffset: -40 },
+      "Phụ kiện_12.svg": {
+        allowedPositions: ["center"],
+        forcedPosition: "center",
+        scale: 1.5,
+        topOverride: 50,
+        leftOverride: 50,
+      },
+      "Phụ kiện_14.svg": { scale: 1.15, topOffset: -10 },
+      "Phụ kiện_15.svg": { topOffset: -30 },
+      "Phụ kiện_17.svg": {
+        allowedPositions: ["center"],
+        forcedPosition: "center",
+        scale: 1.3,
+      },
+      "Phụ kiện_18.svg": {
+        allowedPositions: ["center"],
+        forcedPosition: "center",
+        scale: 1.3,
+      },
+      "Phụ kiện_19.svg": {
+        allowedPositions: ["center"],
+        forcedPosition: "center",
+        scale: 1.3,
+      },
+      "Phụ kiện_20.svg": { topOffset: -30 },
+    };
 
     const state = {
       currentIndex: 0,
@@ -55,7 +95,19 @@
       isEyesClosed: false,
       blinkIntervalId: null,
       blinkTimeoutId: null,
+      isPressing: false,
+      pressZone: null,
+      selectedAccessory: "",
+      accessoryPosition: "center",
     };
+
+    const INTERACTION_CLASSES = [
+      "level1-tilt-left",
+      "level1-tilt-right",
+      "level2-press-left",
+      "level2-press-right",
+      "level2-press-center",
+    ];
 
     const PET_ASSET_BASE_URLS = [
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/",
@@ -63,6 +115,30 @@
       "Image/",
       "/Image/",
     ];
+
+    function normalizeAssetKey(fileName) {
+      return String(fileName || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .toLowerCase();
+    }
+
+    function findInlineAssetValue(inlineAssets, fileName) {
+      if (!inlineAssets || !fileName) return "";
+      if (inlineAssets[fileName]) return inlineAssets[fileName];
+
+      const targetKey = normalizeAssetKey(fileName);
+      const allKeys = Object.keys(inlineAssets);
+      for (let i = 0; i < allKeys.length; i++) {
+        const key = allKeys[i];
+        if (normalizeAssetKey(key) === targetKey) {
+          return inlineAssets[key];
+        }
+      }
+      return "";
+    }
 
     function resolveAssetCandidates(fileName) {
       if (!fileName) return [];
@@ -73,8 +149,9 @@
           : {};
 
       const candidates = [];
-      if (inlineAssets[fileName]) {
-        candidates.push(inlineAssets[fileName]);
+      const inlineAssetValue = findInlineAssetValue(inlineAssets, fileName);
+      if (inlineAssetValue) {
+        candidates.push(inlineAssetValue);
       }
 
       const encodedFileName = encodeURIComponent(fileName || "");
@@ -126,16 +203,174 @@
         img.style.display = "block";
       };
 
+      // Keep eyes visible immediately while switching level/state.
+      img.style.display = "block";
       img.src = candidates[idx];
     }
 
-    function updateDots(activeIndex) {
-      const dotsWrap = document.getElementById("petSwitchDots");
-      if (!dotsWrap) return;
+    function clearInteractionClasses() {
+      const visualEl = document.getElementById("petVisual");
+      if (!visualEl) return;
+      INTERACTION_CLASSES.forEach(function (className) {
+        visualEl.classList.remove(className);
+      });
+    }
 
-      const dots = dotsWrap.querySelectorAll(".pet-dot");
-      dots.forEach((dot, index) => {
-        dot.classList.toggle("active", index === activeIndex);
+    function applyLevel1TiltByPointer(clientX) {
+      if (state.isLevelTwo || state.isPressing) return;
+
+      const visualEl = document.getElementById("petVisual");
+      if (!visualEl) return;
+
+      const rect = visualEl.getBoundingClientRect();
+      const halfX = rect.left + rect.width / 2;
+
+      visualEl.classList.remove("level1-tilt-left", "level1-tilt-right");
+      if (clientX < halfX) {
+        visualEl.classList.add("level1-tilt-right");
+      } else {
+        visualEl.classList.add("level1-tilt-left");
+      }
+    }
+
+    function resolvePressZone(clientX) {
+      const visualEl = document.getElementById("petVisual");
+      if (!visualEl) return "center";
+
+      const rect = visualEl.getBoundingClientRect();
+      const ratio = (clientX - rect.left) / rect.width;
+      if (ratio < 0.34) return "left";
+      if (ratio > 0.66) return "right";
+      return "center";
+    }
+
+    function applyPressShape(zone) {
+      const visualEl = document.getElementById("petVisual");
+      if (!visualEl) return;
+
+      visualEl.classList.remove(
+        "level2-press-left",
+        "level2-press-right",
+        "level2-press-center",
+      );
+
+      if (zone === "left") {
+        visualEl.classList.add("level2-press-right");
+      } else if (zone === "right") {
+        visualEl.classList.add("level2-press-left");
+      } else {
+        visualEl.classList.add("level2-press-center");
+      }
+    }
+
+    function releasePressState() {
+      if (!state.isPressing) return;
+
+      state.isPressing = false;
+      state.pressZone = null;
+      state.isEyesClosed = false;
+      clearInteractionClasses();
+      renderEyes();
+    }
+
+    function playLevelTransitionAnimation() {
+      const animatorEl = document.getElementById("petAnimator");
+      if (!animatorEl) return;
+
+      animatorEl.classList.remove("anim-level1-roll", "anim-level2-drop");
+      void animatorEl.offsetWidth;
+      animatorEl.classList.add(
+        state.isLevelTwo ? "anim-level2-drop" : "anim-level1-roll",
+      );
+    }
+
+    function updateColorButtons(activeIndex) {
+      const buttonsWrap = document.getElementById("petColorButtons");
+      if (!buttonsWrap) return;
+
+      const buttons = buttonsWrap.querySelectorAll(".pet-color-btn");
+      buttons.forEach((button, index) => {
+        button.classList.toggle("active", index === activeIndex);
+      });
+    }
+
+    function getAccessoryRule(fileName) {
+      if (!fileName) return {};
+      return ACCESSORY_RULES[fileName] || {};
+    }
+
+    function getAllowedAccessoryPositions(fileName) {
+      const rule = getAccessoryRule(fileName);
+      return rule.allowedPositions || ["left", "center", "right"];
+    }
+
+    function resolveAccessoryPosition(fileName, desiredPosition) {
+      const rule = getAccessoryRule(fileName);
+      if (rule.forcedPosition) return rule.forcedPosition;
+
+      const allowed = getAllowedAccessoryPositions(fileName);
+      if (allowed.indexOf(desiredPosition) >= 0) return desiredPosition;
+      return allowed[0] || "center";
+    }
+
+    function updateAccessoryPositionClasses() {
+      const accessoryImageEl = document.getElementById("petAccessoryImage");
+      if (!accessoryImageEl) return;
+
+      const rule = getAccessoryRule(state.selectedAccessory);
+      const finalPosition = resolveAccessoryPosition(
+        state.selectedAccessory,
+        state.accessoryPosition,
+      );
+      state.accessoryPosition = finalPosition;
+
+      const baseTop = 12;
+      const baseLeftMap = {
+        left: 40,
+        center: 50,
+        right: 60,
+      };
+
+      const topValue =
+        typeof rule.topOverride === "number"
+          ? rule.topOverride
+          : baseTop + (rule.topOffset || 0);
+      const leftValue =
+        typeof rule.leftOverride === "number"
+          ? rule.leftOverride
+          : baseLeftMap[finalPosition] || 50;
+      const rotValue = finalPosition === "left" ? -14 : finalPosition === "right" ? 14 : 0;
+      const scaleValue = rule.scale || 1;
+
+      accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
+      accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
+      accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
+      accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue));
+    }
+
+    function updateAccessoryButtons() {
+      const gridEl = document.getElementById("petAccessoryGrid");
+      if (!gridEl) return;
+
+      const buttons = gridEl.querySelectorAll(".pet-accessory-btn");
+      buttons.forEach(function (button) {
+        const fileName = button.getAttribute("data-file");
+        button.classList.toggle("active", fileName === state.selectedAccessory);
+      });
+    }
+
+    function updateAccessoryPositionButtons() {
+      const container = document.getElementById("petAccessoryPosition");
+      if (!container) return;
+
+      const allowed = getAllowedAccessoryPositions(state.selectedAccessory);
+
+      const buttons = container.querySelectorAll(".pet-pill-btn");
+      buttons.forEach(function (button) {
+        const pos = button.getAttribute("data-pos") || "";
+        const isAllowed = allowed.indexOf(pos) >= 0;
+        button.disabled = !isAllowed;
+        button.classList.toggle("active", isAllowed && pos === state.accessoryPosition);
       });
     }
 
@@ -146,9 +381,32 @@
       const eyesImageEl = document.getElementById("petEyesImage");
       if (!eyesImageEl) return;
 
-      const eyeAsset = state.isEyesClosed ? variant.eyeClosed : variant.eyeOpen;
+      if (!state.isLevelTwo) {
+        eyesImageEl.style.display = "none";
+        return;
+      }
+
+      const shouldCloseEyes =
+        state.isPressing || (state.isLevelTwo && state.isEyesClosed);
+      const eyeAsset = shouldCloseEyes ? variant.eyeClosed : variant.eyeOpen;
       const eyeCandidates = resolveAssetCandidates(eyeAsset);
       setOverlayImageWithFallback(eyesImageEl, eyeCandidates, 0);
+    }
+
+    function renderAccessory() {
+      const accessoryImageEl = document.getElementById("petAccessoryImage");
+      if (!accessoryImageEl) return;
+
+      updateAccessoryPositionClasses();
+
+      if (!state.selectedAccessory) {
+        accessoryImageEl.style.display = "none";
+        accessoryImageEl.src = "";
+        return;
+      }
+
+      const candidates = resolveAssetCandidates(state.selectedAccessory);
+      setOverlayImageWithFallback(accessoryImageEl, candidates, 0);
     }
 
     function renderPet() {
@@ -183,15 +441,27 @@
           : "Nâng lên Level 2";
       }
 
+      clearInteractionClasses();
+      if (!state.isLevelTwo) {
+        state.isPressing = false;
+        state.pressZone = null;
+      }
+
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       const candidates = resolveAssetCandidates(imageName);
       setImageWithFallback(previewImageEl, errorEl, candidates, 0);
       renderEyes();
+      renderAccessory();
+      playLevelTransitionAnimation();
 
-      updateDots(state.currentIndex);
+      updateColorButtons(state.currentIndex);
+      updateAccessoryButtons();
+      updateAccessoryPositionButtons();
     }
 
     function triggerBlink() {
+      if (!state.isLevelTwo || state.isPressing) return;
+
       state.isEyesClosed = true;
       renderEyes();
 
@@ -220,26 +490,107 @@
     function movePet(step) {
       const total = PET_VARIANTS.length;
       state.currentIndex = (state.currentIndex + step + total) % total;
+      releasePressState();
       renderPet();
     }
 
-    function buildDots() {
-      const dotsWrap = document.getElementById("petSwitchDots");
-      if (!dotsWrap) return;
+    function buildColorButtons() {
+      const buttonsWrap = document.getElementById("petColorButtons");
+      if (!buttonsWrap) return;
 
-      dotsWrap.innerHTML = "";
+      buttonsWrap.innerHTML = "";
       PET_VARIANTS.forEach((variant, index) => {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "pet-dot";
+        btn.className = "pet-color-btn";
         btn.title = variant.name;
-        btn.style.background = variant.tone;
+        btn.innerHTML =
+          '<span class="pet-color-dot" style="background:' +
+          variant.tone +
+          '"></span>' +
+          variant.name.replace("Pet ", "");
         btn.addEventListener("click", function () {
           state.currentIndex = index;
+          releasePressState();
           renderPet();
         });
-        dotsWrap.appendChild(btn);
+        buttonsWrap.appendChild(btn);
       });
+    }
+
+    function buildAccessoryButtons() {
+      const gridEl = document.getElementById("petAccessoryGrid");
+      if (!gridEl) return;
+
+      gridEl.innerHTML = "";
+      ACCESSORY_FILES.forEach(function (fileName, index) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pet-accessory-btn";
+        btn.setAttribute("data-file", fileName);
+        btn.textContent = "PK " + (index + 1);
+        btn.addEventListener("click", function () {
+          state.selectedAccessory = fileName;
+          state.accessoryPosition = resolveAccessoryPosition(
+            state.selectedAccessory,
+            state.accessoryPosition,
+          );
+          renderAccessory();
+          updateAccessoryButtons();
+          updateAccessoryPositionButtons();
+        });
+        gridEl.appendChild(btn);
+      });
+    }
+
+    function bindAccessoryControls() {
+      const positionContainer = document.getElementById("petAccessoryPosition");
+      if (!positionContainer) return;
+
+      positionContainer.addEventListener("click", function (event) {
+        const target = event.target.closest(".pet-pill-btn[data-pos]");
+        if (!target) return;
+
+        const pos = target.getAttribute("data-pos");
+        if (!pos) return;
+
+        const allowed = getAllowedAccessoryPositions(state.selectedAccessory);
+        if (allowed.indexOf(pos) < 0) return;
+
+        state.accessoryPosition = pos;
+        updateAccessoryPositionButtons();
+        renderAccessory();
+      });
+    }
+
+    function bindStageInteractions() {
+      const stageEl = document.getElementById("petStage");
+      if (!stageEl) return;
+
+      stageEl.addEventListener("mousemove", function (event) {
+        if (state.isLevelTwo || state.isPressing) return;
+        applyLevel1TiltByPointer(event.clientX);
+      });
+
+      stageEl.addEventListener("mouseleave", function () {
+        if (!state.isLevelTwo) clearInteractionClasses();
+      });
+
+      stageEl.addEventListener("mousedown", function (event) {
+        if (!state.isLevelTwo) return;
+
+        const zone = resolvePressZone(event.clientX);
+        state.isPressing = true;
+        state.pressZone = zone;
+
+        clearInteractionClasses();
+        applyPressShape(zone);
+        renderEyes();
+
+        event.preventDefault();
+      });
+
+      document.addEventListener("mouseup", releasePressState);
     }
 
     function bindControls() {
@@ -261,7 +612,9 @@
 
       if (toggleLevelBtn) {
         toggleLevelBtn.addEventListener("click", function () {
+          releasePressState();
           state.isLevelTwo = !state.isLevelTwo;
+          state.isEyesClosed = false;
           renderPet();
         });
       }
@@ -270,7 +623,10 @@
     function initPetPage() {
       if (!state.initialized) {
         bindControls();
-        buildDots();
+        bindStageInteractions();
+        buildColorButtons();
+        buildAccessoryButtons();
+        bindAccessoryControls();
         startBlinkLoop();
         state.initialized = true;
       }
