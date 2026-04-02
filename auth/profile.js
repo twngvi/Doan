@@ -318,3 +318,132 @@ function saveUserAvatarUrl(userId, avatarUrl) {
     };
   }
 }
+
+function getUserPetName(userId) {
+  const DEFAULT_NAME = "NAMEPET";
+  try {
+    if (!userId) {
+      return { success: false, message: "User ID is required", petName: DEFAULT_NAME };
+    }
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Users sheet not found", petName: DEFAULT_NAME };
+    }
+
+    const allData = usersSheet.getDataRange().getValues();
+    const headers = allData[0] || [];
+    const progressIdx = headers.indexOf("progressSheetId");
+    if (progressIdx === -1) {
+      return { success: false, message: "progressSheetId column not found", petName: DEFAULT_NAME };
+    }
+
+    let progressSheetId = "";
+    for (let i = 1; i < allData.length; i++) {
+      if (allData[i][0] === userId) {
+        progressSheetId = String(allData[i][progressIdx] || "").trim();
+        break;
+      }
+    }
+
+    if (!progressSheetId) {
+      return { success: false, message: "User personal sheet not found", petName: DEFAULT_NAME };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const profileSheet = userSpreadsheet.getSheetByName("Profile");
+    if (!profileSheet) {
+      return { success: false, message: "Profile sheet not found", petName: DEFAULT_NAME };
+    }
+
+    let profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    let petNameColIndex = profileHeaders.indexOf("petName");
+    if (petNameColIndex === -1) {
+      profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
+      petNameColIndex = profileHeaders.length;
+      profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    }
+
+    let petNameValue = String(profileSheet.getRange(2, petNameColIndex + 1).getValue() || "").trim();
+    if (!petNameValue) {
+      petNameValue = DEFAULT_NAME;
+      profileSheet.getRange(2, petNameColIndex + 1).setValue(petNameValue);
+    }
+
+    return { success: true, message: "OK", petName: petNameValue };
+  } catch (error) {
+    return {
+      success: false,
+      message: "getUserPetName error: " + error.toString(),
+      petName: DEFAULT_NAME,
+    };
+  }
+}
+
+function saveUserPetName(payload) {
+  try {
+    const DEFAULT_NAME = "NAMEPET";
+    const userId = payload && payload.userId ? String(payload.userId).trim() : "";
+    const incomingName = payload && payload.petName ? String(payload.petName).trim() : "";
+    const petName = (incomingName || DEFAULT_NAME).slice(0, 24);
+
+    if (!userId) {
+      return { success: false, message: "User ID is required", petName: DEFAULT_NAME };
+    }
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Users sheet not found", petName: DEFAULT_NAME };
+    }
+
+    const allData = usersSheet.getDataRange().getValues();
+    const headers = allData[0] || [];
+    const progressIdx = headers.indexOf("progressSheetId");
+    if (progressIdx === -1) {
+      return { success: false, message: "progressSheetId column not found", petName: DEFAULT_NAME };
+    }
+
+    let progressSheetId = "";
+    for (let i = 1; i < allData.length; i++) {
+      if (allData[i][0] === userId) {
+        progressSheetId = String(allData[i][progressIdx] || "").trim();
+        break;
+      }
+    }
+
+    if (!progressSheetId) {
+      return { success: false, message: "User personal sheet not found", petName: DEFAULT_NAME };
+    }
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const profileSheet = userSpreadsheet.getSheetByName("Profile");
+    if (!profileSheet) {
+      return { success: false, message: "Profile sheet not found", petName: DEFAULT_NAME };
+    }
+
+    const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    let petNameColIndex = profileHeaders.indexOf("petName");
+    if (petNameColIndex === -1) {
+      profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
+      petNameColIndex = profileHeaders.length;
+    }
+
+    profileSheet.getRange(2, petNameColIndex + 1).setValue(petName);
+
+    logActivity({
+      level: "INFO",
+      category: "USER",
+      userId: userId,
+      action: "UPDATE_PET_NAME",
+      details: "Updated pet name to " + petName,
+    });
+
+    return { success: true, message: "Đã lưu tên PET", petName: petName };
+  } catch (error) {
+    return {
+      success: false,
+      message: "saveUserPetName error: " + error.toString(),
+      petName: "NAMEPET",
+    };
+  }
+}

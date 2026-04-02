@@ -47,45 +47,54 @@
 
     const BLINK_INTERVAL_MS = 5000;
     const BLINK_CLOSE_DURATION_MS = 220;
+    const DEFAULT_PET_NAME = "NAMEPET";
+    const PET_NAME_MAX_LENGTH = 24;
     const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
       return "Phụ kiện_" + (index + 1) + ".svg";
     });
 
     const ACCESSORY_RULES = {
-      "Phụ kiện_1.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
-      "Phụ kiện_2.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
-      "Phụ kiện_3.svg": { allowedPositions: ["left", "right"], scale: 0.75 },
-      "Phụ kiện_6.svg": { allowedPositions: ["left", "right"] },
-      "Phụ kiện_7.svg": { allowedPositions: ["left", "right"] },
-      "Phụ kiện_8.svg": { allowedPositions: ["left", "right"] },
-      "Phụ kiện_9.svg": { allowedPositions: ["left", "right"] },
-      "Phụ kiện_10.svg": { scale: 1.1, topOffset: -20 },
-      "Phụ kiện_11.svg": { scale: 1.15, topOffset: -40 },
+      "Phụ kiện_1.svg": { allowedPositions: ["left", "right"], scale: 0.5625 },
+      "Phụ kiện_2.svg": {
+        allowedPositions: ["left", "right"],
+        scale: 0.5625,
+        topOffset: -3,
+      },
+      "Phụ kiện_3.svg": { scale: 0.75, topOffset: -5 },
+      "Phụ kiện_6.svg": { scale: 0.75 },
+      "Phụ kiện_7.svg": { scale: 0.75 },
+      "Phụ kiện_8.svg": {},
+      "Phụ kiện_9.svg": {},
+      "Phụ kiện_10.svg": { scale: 1.21, topOffset: -10 },
+      "Phụ kiện_11.svg": { scale: 1.656, topOffset: 0 },
       "Phụ kiện_12.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
-        scale: 1.5,
-        topOverride: 50,
+        scale: 1.654,
+        topOverride: 55,
         leftOverride: 50,
       },
-      "Phụ kiện_14.svg": { scale: 1.15, topOffset: -10 },
-      "Phụ kiện_15.svg": { topOffset: -30 },
+      "Phụ kiện_14.svg": { scale: 1.15, topOffset: 0 },
+      "Phụ kiện_15.svg": { topOffset: -5 },
+      "Phụ kiện_16.svg": { scale: 0.81, topOffset: 5 },
       "Phụ kiện_17.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
-        scale: 1.3,
+        scale: 1.5015,
+        topOffset: 12,
       },
       "Phụ kiện_18.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
-        scale: 1.3,
+        scale: 1.365,
       },
       "Phụ kiện_19.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
-        scale: 1.3,
+        scale: 1.5015,
+        topOffset: 12,
       },
-      "Phụ kiện_20.svg": { topOffset: -30 },
+      "Phụ kiện_20.svg": { topOffset: -10 },
     };
 
     const state = {
@@ -99,6 +108,8 @@
       pressZone: null,
       selectedAccessory: "",
       accessoryPosition: "center",
+      petDisplayName: DEFAULT_PET_NAME,
+      petNameLoaded: false,
     };
 
     const INTERACTION_CLASSES = [
@@ -162,6 +173,11 @@
       return candidates.filter(function (value, index, arr) {
         return Boolean(value) && arr.indexOf(value) === index;
       });
+    }
+
+    function getAccessoryPreviewSrc(fileName) {
+      const candidates = resolveAssetCandidates(fileName);
+      return candidates.length > 0 ? candidates[0] : "";
     }
 
     function setImageWithFallback(img, errorEl, candidates, idx) {
@@ -294,6 +310,113 @@
       });
     }
 
+    function sanitizePetName(value) {
+      const raw = String(value || "").trim();
+      if (!raw) return DEFAULT_PET_NAME;
+      return raw.slice(0, PET_NAME_MAX_LENGTH);
+    }
+
+    function updatePetNameTagUI() {
+      const nameEl = document.getElementById("petNameTagValue");
+      if (!nameEl) return;
+      nameEl.textContent = sanitizePetName(state.petDisplayName);
+    }
+
+    function savePetNameToServer(newPetName) {
+      if (!window.currentUser?.userId) return;
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      )
+        return;
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || !result.success) {
+            if (typeof showToast === "function") {
+              showToast((result && result.message) || "Không lưu được tên PET", "error");
+            }
+            return;
+          }
+
+          state.petDisplayName = sanitizePetName(result.petName || newPetName);
+          updatePetNameTagUI();
+
+          if (typeof showToast === "function") {
+            showToast("Đã lưu tên PET", "success");
+          }
+        })
+        .withFailureHandler(function (error) {
+          if (typeof showToast === "function") {
+            showToast("Lỗi lưu tên PET: " + (error && error.message ? error.message : error), "error");
+          }
+        })
+        .savePetName({
+          userId: window.currentUser.userId,
+          petName: newPetName,
+        });
+    }
+
+    function loadPetNameFromServer() {
+      if (state.petNameLoaded) return;
+      state.petNameLoaded = true;
+
+      if (!window.currentUser?.userId) {
+        updatePetNameTagUI();
+        return;
+      }
+
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        updatePetNameTagUI();
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (result && result.success && result.petName) {
+            state.petDisplayName = sanitizePetName(result.petName);
+          }
+          updatePetNameTagUI();
+        })
+        .withFailureHandler(function () {
+          updatePetNameTagUI();
+        })
+        .getPetName(window.currentUser.userId);
+    }
+
+    function bindPetNameEditor() {
+      const tagBtn = document.getElementById("petNameTagButton");
+      if (!tagBtn) return;
+
+      tagBtn.addEventListener("click", async function () {
+        const currentName = sanitizePetName(state.petDisplayName);
+        let input = null;
+
+        if (typeof window.showAppPrompt === "function") {
+          input = await window.showAppPrompt("Nhập tên PET mới", currentName, {
+            title: "Đổi Tên PET",
+            confirmText: "Lưu",
+            cancelText: "Hủy",
+            inputType: "text",
+          });
+        } else {
+          input = window.prompt("Nhập tên PET mới", currentName);
+        }
+
+        if (input === null) return;
+
+        const nextName = sanitizePetName(input);
+        state.petDisplayName = nextName;
+        updatePetNameTagUI();
+        savePetNameToServer(nextName);
+      });
+    }
+
     function getAccessoryRule(fileName) {
       if (!fileName) return {};
       return ACCESSORY_RULES[fileName] || {};
@@ -326,9 +449,9 @@
 
       const baseTop = 12;
       const baseLeftMap = {
-        left: 40,
+        left: 35,
         center: 50,
-        right: 60,
+        right: 65,
       };
 
       const topValue =
@@ -346,6 +469,19 @@
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
       accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue));
+    }
+
+    function updateAccessoryPanelState() {
+      const panelEl = document.getElementById("petAccessoryPanel");
+      if (!panelEl) return;
+
+      panelEl.classList.toggle("disabled", !state.isLevelTwo);
+      panelEl.setAttribute("aria-disabled", state.isLevelTwo ? "false" : "true");
+
+      const accessoryButtons = panelEl.querySelectorAll(".pet-accessory-btn");
+      accessoryButtons.forEach(function (button) {
+        button.disabled = !state.isLevelTwo;
+      });
     }
 
     function updateAccessoryButtons() {
@@ -368,7 +504,7 @@
       const buttons = container.querySelectorAll(".pet-pill-btn");
       buttons.forEach(function (button) {
         const pos = button.getAttribute("data-pos") || "";
-        const isAllowed = allowed.indexOf(pos) >= 0;
+        const isAllowed = state.isLevelTwo && allowed.indexOf(pos) >= 0;
         button.disabled = !isAllowed;
         button.classList.toggle("active", isAllowed && pos === state.accessoryPosition);
       });
@@ -397,6 +533,12 @@
       const accessoryImageEl = document.getElementById("petAccessoryImage");
       if (!accessoryImageEl) return;
 
+      if (!state.isLevelTwo) {
+        accessoryImageEl.style.display = "none";
+        accessoryImageEl.src = "";
+        return;
+      }
+
       updateAccessoryPositionClasses();
 
       if (!state.selectedAccessory) {
@@ -413,7 +555,6 @@
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
 
-      const petNameEl = document.getElementById("petName");
       const petDescEl = document.getElementById("petDescription");
       const levelBadgeEl = document.getElementById("petLevelBadge");
       const previewImageEl = document.getElementById("petPreviewImage");
@@ -421,8 +562,8 @@
       const stageEl = document.getElementById("petStage");
       const levelBtn = document.getElementById("petToggleLevelBtn");
 
-      if (petNameEl) petNameEl.textContent = variant.name;
       if (petDescEl) petDescEl.textContent = variant.description;
+      updatePetNameTagUI();
 
       const levelText = state.isLevelTwo ? "Level 2" : "Level 1";
       if (levelBadgeEl) {
@@ -453,6 +594,7 @@
       renderEyes();
       renderAccessory();
       playLevelTransitionAnimation();
+      updateAccessoryPanelState();
 
       updateColorButtons(state.currentIndex);
       updateAccessoryButtons();
@@ -528,8 +670,25 @@
         btn.type = "button";
         btn.className = "pet-accessory-btn";
         btn.setAttribute("data-file", fileName);
-        btn.textContent = "PK " + (index + 1);
+
+        const thumb = document.createElement("img");
+        thumb.className = "pet-accessory-thumb";
+        thumb.alt = "PK " + (index + 1);
+        thumb.loading = "lazy";
+        thumb.src = getAccessoryPreviewSrc(fileName);
+        thumb.onerror = function () {
+          thumb.style.visibility = "hidden";
+        };
+
+        const label = document.createElement("span");
+        label.className = "pet-accessory-label";
+        label.textContent = "PK " + (index + 1);
+
+        btn.appendChild(thumb);
+        btn.appendChild(label);
         btn.addEventListener("click", function () {
+          if (!state.isLevelTwo) return;
+
           state.selectedAccessory = fileName;
           state.accessoryPosition = resolveAccessoryPosition(
             state.selectedAccessory,
@@ -548,6 +707,8 @@
       if (!positionContainer) return;
 
       positionContainer.addEventListener("click", function (event) {
+        if (!state.isLevelTwo) return;
+
         const target = event.target.closest(".pet-pill-btn[data-pos]");
         if (!target) return;
 
@@ -622,12 +783,14 @@
 
     function initPetPage() {
       if (!state.initialized) {
+        bindPetNameEditor();
         bindControls();
         bindStageInteractions();
         buildColorButtons();
         buildAccessoryButtons();
         bindAccessoryControls();
         startBlinkLoop();
+        loadPetNameFromServer();
         state.initialized = true;
       }
       renderPet();
