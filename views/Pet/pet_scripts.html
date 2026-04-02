@@ -49,6 +49,7 @@
     const BLINK_CLOSE_DURATION_MS = 220;
     const DEFAULT_PET_NAME = "NAMEPET";
     const PET_NAME_MAX_LENGTH = 24;
+     const NO_ACCESSORY_VALUE = "";
     const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
       return "Phụ kiện_" + (index + 1) + ".svg";
     });
@@ -555,14 +556,12 @@
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
 
-      const petDescEl = document.getElementById("petDescription");
       const levelBadgeEl = document.getElementById("petLevelBadge");
       const previewImageEl = document.getElementById("petPreviewImage");
       const errorEl = document.getElementById("petImageError");
       const stageEl = document.getElementById("petStage");
       const levelBtn = document.getElementById("petToggleLevelBtn");
 
-      if (petDescEl) petDescEl.textContent = variant.description;
       updatePetNameTagUI();
 
       const levelText = state.isLevelTwo ? "Level 2" : "Level 1";
@@ -665,6 +664,27 @@
       if (!gridEl) return;
 
       gridEl.innerHTML = "";
+
+       const noAccessoryBtn = document.createElement("button");
+       noAccessoryBtn.type = "button";
+       noAccessoryBtn.className = "pet-accessory-btn no-accessory";
+       noAccessoryBtn.setAttribute("data-file", NO_ACCESSORY_VALUE);
+
+       const noAccessoryLabel = document.createElement("span");
+       noAccessoryLabel.className = "pet-accessory-label";
+       noAccessoryLabel.textContent = "Khong phu kien";
+
+       noAccessoryBtn.appendChild(noAccessoryLabel);
+       noAccessoryBtn.addEventListener("click", function () {
+         if (!state.isLevelTwo) return;
+
+         state.selectedAccessory = NO_ACCESSORY_VALUE;
+         renderAccessory();
+         updateAccessoryButtons();
+         updateAccessoryPositionButtons();
+       });
+       gridEl.appendChild(noAccessoryBtn);
+
       ACCESSORY_FILES.forEach(function (fileName, index) {
         const btn = document.createElement("button");
         btn.type = "button";
@@ -712,8 +732,6 @@
         const target = event.target.closest(".pet-pill-btn[data-pos]");
         if (!target) return;
 
-        const pos = target.getAttribute("data-pos");
-        if (!pos) return;
 
         const allowed = getAllowedAccessoryPositions(state.selectedAccessory);
         if (allowed.indexOf(pos) < 0) return;
