@@ -9,6 +9,8 @@
         tone: "#ff70e2",
         level1: "level1_hong.svg",
         level2: "level2_hong.svg",
+        eyeOpen: "mathong_mở.svg",
+        eyeClosed: "mathong_nhắm.svg",
         description: "Tươi vui, nổi bật và phù hợp cho phong cách năng động.",
       },
       {
@@ -17,6 +19,8 @@
         tone: "#facc15",
         level1: "level1_vang.svg",
         level2: "level2_vang.svg",
+        eyeOpen: "matvang_mở.svg",
+        eyeClosed: "matvang_nhắm.svg",
         description: "Ấm áp và tích cực, tạo cảm giác thân thiện khi học.",
       },
       {
@@ -25,6 +29,8 @@
         tone: "#38bdf8",
         level1: "level1_xanhduong.svg",
         level2: "level2_xanhduong.svg",
+        eyeOpen: "matxanhduong_mở.svg",
+        eyeClosed: "matxanhduong_nhắm.svg",
         description: "Điềm tĩnh, tập trung, phù hợp cho các phiên học dài.",
       },
       {
@@ -33,14 +39,22 @@
         tone: "#4ade80",
         level1: "level1_xanhla.svg",
         level2: "level2_xanhla.svg",
+        eyeOpen: "matxanhla_mở.svg",
+        eyeClosed: "matxanhla_nhắm.svg",
         description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
       },
     ];
+
+    const BLINK_INTERVAL_MS = 5000;
+    const BLINK_CLOSE_DURATION_MS = 220;
 
     const state = {
       currentIndex: 0,
       isLevelTwo: false,
       initialized: false,
+      isEyesClosed: false,
+      blinkIntervalId: null,
+      blinkTimeoutId: null,
     };
 
     const PET_ASSET_BASE_URLS = [
@@ -51,8 +65,25 @@
     ];
 
     function resolveAssetCandidates(fileName) {
-      return PET_ASSET_BASE_URLS.map(function (baseUrl) {
-        return baseUrl + fileName;
+      if (!fileName) return [];
+
+      const inlineAssets =
+        window.PET_ASSET_DATA && typeof window.PET_ASSET_DATA === "object"
+          ? window.PET_ASSET_DATA
+          : {};
+
+      const candidates = [];
+      if (inlineAssets[fileName]) {
+        candidates.push(inlineAssets[fileName]);
+      }
+
+      const encodedFileName = encodeURIComponent(fileName || "");
+      PET_ASSET_BASE_URLS.forEach(function (baseUrl) {
+        candidates.push(baseUrl + encodedFileName);
+      });
+
+      return candidates.filter(function (value, index, arr) {
+        return Boolean(value) && arr.indexOf(value) === index;
       });
     }
 
@@ -78,6 +109,26 @@
       img.src = candidates[idx];
     }
 
+    function setOverlayImageWithFallback(img, candidates, idx) {
+      if (!img || !candidates || idx >= candidates.length) {
+        if (img) {
+          img.style.display = "none";
+          img.src = "";
+        }
+        return;
+      }
+
+      img.onerror = function () {
+        setOverlayImageWithFallback(img, candidates, idx + 1);
+      };
+
+      img.onload = function () {
+        img.style.display = "block";
+      };
+
+      img.src = candidates[idx];
+    }
+
     function updateDots(activeIndex) {
       const dotsWrap = document.getElementById("petSwitchDots");
       if (!dotsWrap) return;
@@ -86,6 +137,18 @@
       dots.forEach((dot, index) => {
         dot.classList.toggle("active", index === activeIndex);
       });
+    }
+
+    function renderEyes() {
+      const variant = PET_VARIANTS[state.currentIndex];
+      if (!variant) return;
+
+      const eyesImageEl = document.getElementById("petEyesImage");
+      if (!eyesImageEl) return;
+
+      const eyeAsset = state.isEyesClosed ? variant.eyeClosed : variant.eyeOpen;
+      const eyeCandidates = resolveAssetCandidates(eyeAsset);
+      setOverlayImageWithFallback(eyesImageEl, eyeCandidates, 0);
     }
 
     function renderPet() {
@@ -123,8 +186,35 @@
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       const candidates = resolveAssetCandidates(imageName);
       setImageWithFallback(previewImageEl, errorEl, candidates, 0);
+      renderEyes();
 
       updateDots(state.currentIndex);
+    }
+
+    function triggerBlink() {
+      state.isEyesClosed = true;
+      renderEyes();
+
+      if (state.blinkTimeoutId) {
+        clearTimeout(state.blinkTimeoutId);
+      }
+
+      state.blinkTimeoutId = setTimeout(function () {
+        state.isEyesClosed = false;
+        renderEyes();
+      }, BLINK_CLOSE_DURATION_MS);
+    }
+
+    function startBlinkLoop() {
+      if (state.blinkIntervalId) {
+        clearInterval(state.blinkIntervalId);
+      }
+      if (state.blinkTimeoutId) {
+        clearTimeout(state.blinkTimeoutId);
+      }
+
+      state.isEyesClosed = false;
+      state.blinkIntervalId = setInterval(triggerBlink, BLINK_INTERVAL_MS);
     }
 
     function movePet(step) {
@@ -181,6 +271,7 @@
       if (!state.initialized) {
         bindControls();
         buildDots();
+        startBlinkLoop();
         state.initialized = true;
       }
       renderPet();
