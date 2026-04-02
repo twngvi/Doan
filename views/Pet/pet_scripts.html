@@ -1,0 +1,191 @@
+<script>
+  (function () {
+    "use strict";
+
+    const PET_VARIANTS = [
+      {
+        id: "pink",
+        name: "Pet Hồng",
+        tone: "#ff70e2",
+        level1: "level1_hong.svg",
+        level2: "level2_hong.svg",
+        description: "Tươi vui, nổi bật và phù hợp cho phong cách năng động.",
+      },
+      {
+        id: "yellow",
+        name: "Pet Vàng",
+        tone: "#facc15",
+        level1: "level1_vang.svg",
+        level2: "level2_vang.svg",
+        description: "Ấm áp và tích cực, tạo cảm giác thân thiện khi học.",
+      },
+      {
+        id: "blue",
+        name: "Pet Xanh Dương",
+        tone: "#38bdf8",
+        level1: "level1_xanhduong.svg",
+        level2: "level2_xanhduong.svg",
+        description: "Điềm tĩnh, tập trung, phù hợp cho các phiên học dài.",
+      },
+      {
+        id: "green",
+        name: "Pet Xanh Lá",
+        tone: "#4ade80",
+        level1: "level1_xanhla.svg",
+        level2: "level2_xanhla.svg",
+        description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
+      },
+    ];
+
+    const state = {
+      currentIndex: 0,
+      isLevelTwo: false,
+      initialized: false,
+    };
+
+    const PET_ASSET_BASE_URLS = [
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/",
+      "https://raw.githubusercontent.com/twngvi/Doan/main/Image/",
+      "Image/",
+      "/Image/",
+    ];
+
+    function resolveAssetCandidates(fileName) {
+      return PET_ASSET_BASE_URLS.map(function (baseUrl) {
+        return baseUrl + fileName;
+      });
+    }
+
+    function setImageWithFallback(img, errorEl, candidates, idx) {
+      if (!img || !candidates || idx >= candidates.length) {
+        if (img) {
+          img.style.display = "none";
+          img.src = "";
+        }
+        if (errorEl) errorEl.style.display = "block";
+        return;
+      }
+
+      img.onerror = function () {
+        setImageWithFallback(img, errorEl, candidates, idx + 1);
+      };
+
+      img.onload = function () {
+        img.style.display = "block";
+        if (errorEl) errorEl.style.display = "none";
+      };
+
+      img.src = candidates[idx];
+    }
+
+    function updateDots(activeIndex) {
+      const dotsWrap = document.getElementById("petSwitchDots");
+      if (!dotsWrap) return;
+
+      const dots = dotsWrap.querySelectorAll(".pet-dot");
+      dots.forEach((dot, index) => {
+        dot.classList.toggle("active", index === activeIndex);
+      });
+    }
+
+    function renderPet() {
+      const variant = PET_VARIANTS[state.currentIndex];
+      if (!variant) return;
+
+      const petNameEl = document.getElementById("petName");
+      const petDescEl = document.getElementById("petDescription");
+      const levelBadgeEl = document.getElementById("petLevelBadge");
+      const previewImageEl = document.getElementById("petPreviewImage");
+      const errorEl = document.getElementById("petImageError");
+      const stageEl = document.getElementById("petStage");
+      const levelBtn = document.getElementById("petToggleLevelBtn");
+
+      if (petNameEl) petNameEl.textContent = variant.name;
+      if (petDescEl) petDescEl.textContent = variant.description;
+
+      const levelText = state.isLevelTwo ? "Level 2" : "Level 1";
+      if (levelBadgeEl) {
+        levelBadgeEl.textContent = levelText;
+        levelBadgeEl.style.borderColor = variant.tone;
+        levelBadgeEl.style.color = variant.tone;
+      }
+
+      if (stageEl) {
+        stageEl.style.boxShadow = "inset 0 0 0 1px " + variant.tone + "44";
+      }
+
+      if (levelBtn) {
+        levelBtn.textContent = state.isLevelTwo
+          ? "Chuyển về Level 1"
+          : "Nâng lên Level 2";
+      }
+
+      const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
+      const candidates = resolveAssetCandidates(imageName);
+      setImageWithFallback(previewImageEl, errorEl, candidates, 0);
+
+      updateDots(state.currentIndex);
+    }
+
+    function movePet(step) {
+      const total = PET_VARIANTS.length;
+      state.currentIndex = (state.currentIndex + step + total) % total;
+      renderPet();
+    }
+
+    function buildDots() {
+      const dotsWrap = document.getElementById("petSwitchDots");
+      if (!dotsWrap) return;
+
+      dotsWrap.innerHTML = "";
+      PET_VARIANTS.forEach((variant, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pet-dot";
+        btn.title = variant.name;
+        btn.style.background = variant.tone;
+        btn.addEventListener("click", function () {
+          state.currentIndex = index;
+          renderPet();
+        });
+        dotsWrap.appendChild(btn);
+      });
+    }
+
+    function bindControls() {
+      const prevBtn = document.getElementById("petPrevBtn");
+      const nextBtn = document.getElementById("petNextBtn");
+      const toggleLevelBtn = document.getElementById("petToggleLevelBtn");
+
+      if (prevBtn) {
+        prevBtn.addEventListener("click", function () {
+          movePet(-1);
+        });
+      }
+
+      if (nextBtn) {
+        nextBtn.addEventListener("click", function () {
+          movePet(1);
+        });
+      }
+
+      if (toggleLevelBtn) {
+        toggleLevelBtn.addEventListener("click", function () {
+          state.isLevelTwo = !state.isLevelTwo;
+          renderPet();
+        });
+      }
+    }
+
+    function initPetPage() {
+      if (!state.initialized) {
+        bindControls();
+        buildDots();
+        state.initialized = true;
+      }
+      renderPet();
+    }
+
+    window.initPetPage = initPetPage;
+  })();
+</script>
