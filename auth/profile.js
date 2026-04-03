@@ -333,41 +333,58 @@ function getUserPetName(userId) {
 
     const allData = usersSheet.getDataRange().getValues();
     const headers = allData[0] || [];
+    let petNameIdx = headers.indexOf("petName");
     const progressIdx = headers.indexOf("progressSheetId");
-    if (progressIdx === -1) {
-      return { success: false, message: "progressSheetId column not found", petName: DEFAULT_NAME };
-    }
-
-    let progressSheetId = "";
+    let userRow = -1;
     for (let i = 1; i < allData.length; i++) {
       if (allData[i][0] === userId) {
-        progressSheetId = String(allData[i][progressIdx] || "").trim();
+        userRow = i;
         break;
       }
     }
 
-    if (!progressSheetId) {
-      return { success: false, message: "User personal sheet not found", petName: DEFAULT_NAME };
+    if (userRow === -1) {
+      return { success: false, message: "User not found", petName: DEFAULT_NAME };
     }
 
-    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
-    const profileSheet = userSpreadsheet.getSheetByName("Profile");
-    if (!profileSheet) {
-      return { success: false, message: "Profile sheet not found", petName: DEFAULT_NAME };
+    if (petNameIdx === -1) {
+      usersSheet.getRange(1, headers.length + 1).setValue("petName");
+      petNameIdx = headers.length;
     }
 
-    let profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-    let petNameColIndex = profileHeaders.indexOf("petName");
-    if (petNameColIndex === -1) {
-      profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
-      petNameColIndex = profileHeaders.length;
-      profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-    }
+    let petNameValue = String(
+      usersSheet.getRange(userRow + 1, petNameIdx + 1).getValue() || "",
+    ).trim();
 
-    let petNameValue = String(profileSheet.getRange(2, petNameColIndex + 1).getValue() || "").trim();
+    // Backward compatibility: migrate legacy value from personal Profile sheet once.
     if (!petNameValue) {
-      petNameValue = DEFAULT_NAME;
-      profileSheet.getRange(2, petNameColIndex + 1).setValue(petNameValue);
+      let legacyName = "";
+      const progressSheetId =
+        progressIdx !== -1
+          ? String(allData[userRow][progressIdx] || "").trim()
+          : "";
+
+      if (progressSheetId) {
+        try {
+          const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+          const profileSheet = userSpreadsheet.getSheetByName("Profile");
+          if (profileSheet) {
+            const profileHeaders =
+              profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
+            const profilePetIdx = profileHeaders.indexOf("petName");
+            if (profilePetIdx !== -1) {
+              legacyName = String(
+                profileSheet.getRange(2, profilePetIdx + 1).getValue() || "",
+              ).trim();
+            }
+          }
+        } catch (legacyError) {
+          Logger.log("Legacy petName read failed: " + legacyError.toString());
+        }
+      }
+
+      petNameValue = legacyName || DEFAULT_NAME;
+      usersSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petNameValue);
     }
 
     return { success: true, message: "OK", petName: petNameValue };
@@ -398,37 +415,50 @@ function saveUserPetName(payload) {
 
     const allData = usersSheet.getDataRange().getValues();
     const headers = allData[0] || [];
+    let petNameIdx = headers.indexOf("petName");
     const progressIdx = headers.indexOf("progressSheetId");
-    if (progressIdx === -1) {
-      return { success: false, message: "progressSheetId column not found", petName: DEFAULT_NAME };
-    }
-
-    let progressSheetId = "";
+    let userRow = -1;
     for (let i = 1; i < allData.length; i++) {
       if (allData[i][0] === userId) {
-        progressSheetId = String(allData[i][progressIdx] || "").trim();
+        userRow = i;
         break;
       }
     }
 
-    if (!progressSheetId) {
-      return { success: false, message: "User personal sheet not found", petName: DEFAULT_NAME };
+    if (userRow === -1) {
+      return { success: false, message: "User not found", petName: DEFAULT_NAME };
     }
 
-    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
-    const profileSheet = userSpreadsheet.getSheetByName("Profile");
-    if (!profileSheet) {
-      return { success: false, message: "Profile sheet not found", petName: DEFAULT_NAME };
+    if (petNameIdx === -1) {
+      usersSheet.getRange(1, headers.length + 1).setValue("petName");
+      petNameIdx = headers.length;
     }
 
-    const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-    let petNameColIndex = profileHeaders.indexOf("petName");
-    if (petNameColIndex === -1) {
-      profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
-      petNameColIndex = profileHeaders.length;
-    }
+    usersSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petName);
 
-    profileSheet.getRange(2, petNameColIndex + 1).setValue(petName);
+    // Keep legacy profile column in sync if user has personal sheet.
+    const progressSheetId =
+      progressIdx !== -1
+        ? String(allData[userRow][progressIdx] || "").trim()
+        : "";
+    if (progressSheetId) {
+      try {
+        const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+        const profileSheet = userSpreadsheet.getSheetByName("Profile");
+        if (profileSheet) {
+          const profileHeaders =
+            profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
+          let profilePetIdx = profileHeaders.indexOf("petName");
+          if (profilePetIdx === -1) {
+            profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
+            profilePetIdx = profileHeaders.length;
+          }
+          profileSheet.getRange(2, profilePetIdx + 1).setValue(petName);
+        }
+      } catch (legacySyncError) {
+        Logger.log("Legacy petName sync failed: " + legacySyncError.toString());
+      }
+    }
 
     logActivity({
       level: "INFO",

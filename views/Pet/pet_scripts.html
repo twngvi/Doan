@@ -109,9 +109,15 @@
       pressZone: null,
       selectedAccessory: "",
       accessoryPosition: "center",
+      accessoryPanelOpen: false,
+      settingsPanelOpen: false,
       petDisplayName: DEFAULT_PET_NAME,
-      petNameLoaded: false,
+      petNameLoadedUserId: "",
+      petNameLoading: false,
     };
+
+    let petMeteorInterval = null;
+    let petHeaderMouseEffectBound = false;
 
     const INTERACTION_CLASSES = [
       "level1-tilt-left",
@@ -319,8 +325,36 @@
 
     function updatePetNameTagUI() {
       const nameEl = document.getElementById("petNameTagValue");
-      if (!nameEl) return;
-      nameEl.textContent = sanitizePetName(state.petDisplayName);
+      const safeName = sanitizePetName(state.petDisplayName);
+
+      if (nameEl) {
+        nameEl.textContent = safeName;
+      }
+
+      const headerNameEl = document.getElementById("petHeaderPetName");
+      if (headerNameEl) {
+        headerNameEl.textContent = safeName;
+      }
+    }
+
+    function updatePetLevelProgressUI() {
+      const level = state.isLevelTwo ? 2 : 1;
+      const progressPercent = state.isLevelTwo ? 100 : 50;
+
+      const levelTextEl = document.getElementById("petHeaderLevelText");
+      if (levelTextEl) {
+        levelTextEl.textContent = "Level " + level;
+      }
+
+      const progressFillEl = document.getElementById("petLevelProgressFill");
+      if (progressFillEl) {
+        progressFillEl.style.width = progressPercent + "%";
+      }
+
+      const progressValueEl = document.getElementById("petLevelProgressValue");
+      if (progressValueEl) {
+        progressValueEl.textContent = progressPercent + "%";
+      }
     }
 
     function savePetNameToServer(newPetName) {
@@ -360,10 +394,16 @@
     }
 
     function loadPetNameFromServer() {
-      if (state.petNameLoaded) return;
-      state.petNameLoaded = true;
+      const userId = window.currentUser?.userId
+        ? String(window.currentUser.userId).trim()
+        : "";
 
-      if (!window.currentUser?.userId) {
+      if (!userId) {
+        updatePetNameTagUI();
+        return;
+      }
+
+      if (state.petNameLoading || state.petNameLoadedUserId === userId) {
         updatePetNameTagUI();
         return;
       }
@@ -377,17 +417,85 @@
         return;
       }
 
+      state.petNameLoading = true;
+
       google.script.run
         .withSuccessHandler(function (result) {
           if (result && result.success && result.petName) {
             state.petDisplayName = sanitizePetName(result.petName);
           }
+          state.petNameLoadedUserId = userId;
+          state.petNameLoading = false;
           updatePetNameTagUI();
         })
         .withFailureHandler(function () {
+          state.petNameLoading = false;
           updatePetNameTagUI();
         })
-        .getPetName(window.currentUser.userId);
+        .getPetName(userId);
+    }
+
+    function updateAccessoryPanelVisibility() {
+      const panelEl = document.getElementById("petAccessoryPanel");
+      const toggleBtn = document.getElementById("petBagToggleBtn");
+
+      if (panelEl) {
+        panelEl.classList.toggle("is-hidden", !state.accessoryPanelOpen);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.classList.toggle("active", state.accessoryPanelOpen);
+        toggleBtn.setAttribute(
+          "aria-expanded",
+          state.accessoryPanelOpen ? "true" : "false",
+        );
+      }
+    }
+
+    function updateSettingsPanelVisibility() {
+      const panelEl = document.getElementById("petSettingsPopover");
+      const toggleBtn = document.getElementById("petSettingsToggleBtn");
+
+      if (panelEl) {
+        panelEl.classList.toggle("is-hidden", !state.settingsPanelOpen);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.classList.toggle("active", state.settingsPanelOpen);
+        toggleBtn.setAttribute(
+          "aria-expanded",
+          state.settingsPanelOpen ? "true" : "false",
+        );
+      }
+    }
+
+    function bindSettingsPanelToggle() {
+      const toggleBtn = document.getElementById("petSettingsToggleBtn");
+      const headerEl = document.getElementById("petPageHeader");
+      if (!toggleBtn || !headerEl) return;
+
+      toggleBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        state.settingsPanelOpen = !state.settingsPanelOpen;
+        updateSettingsPanelVisibility();
+      });
+
+      document.addEventListener("click", function (event) {
+        if (!state.settingsPanelOpen) return;
+        if (headerEl.contains(event.target)) return;
+        state.settingsPanelOpen = false;
+        updateSettingsPanelVisibility();
+      });
+    }
+
+    function bindAccessoryPanelToggle() {
+      const toggleBtn = document.getElementById("petBagToggleBtn");
+      if (!toggleBtn) return;
+
+      toggleBtn.addEventListener("click", function () {
+        state.accessoryPanelOpen = !state.accessoryPanelOpen;
+        updateAccessoryPanelVisibility();
+      });
     }
 
     function bindPetNameEditor() {
@@ -571,14 +679,23 @@
         levelBadgeEl.style.color = variant.tone;
       }
 
+      updatePetLevelProgressUI();
+
       if (stageEl) {
         stageEl.style.boxShadow = "inset 0 0 0 1px " + variant.tone + "44";
       }
 
       if (levelBtn) {
-        levelBtn.textContent = state.isLevelTwo
+        const nextActionLabel = state.isLevelTwo
           ? "Chuyển về Level 1"
           : "Nâng lên Level 2";
+        levelBtn.setAttribute("aria-label", nextActionLabel);
+        levelBtn.setAttribute("title", nextActionLabel);
+
+        const levelIconEl = document.getElementById("petToggleLevelIcon");
+        if (levelIconEl) {
+          levelIconEl.textContent = state.isLevelTwo ? "arrow_downward" : "arrow_upward";
+        }
       }
 
       clearInteractionClasses();
@@ -645,11 +762,11 @@
         btn.type = "button";
         btn.className = "pet-color-btn";
         btn.title = variant.name;
+        btn.setAttribute("aria-label", variant.name);
         btn.innerHTML =
           '<span class="pet-color-dot" style="background:' +
           variant.tone +
-          '"></span>' +
-          variant.name.replace("Pet ", "");
+          '"></span>';
         btn.addEventListener("click", function () {
           state.currentIndex = index;
           releasePressState();
@@ -802,6 +919,69 @@
       }
     }
 
+    function startPetHeaderMeteors() {
+      const container = document.getElementById("petMeteorContainer");
+      if (!container) return;
+
+      if (petMeteorInterval) {
+        clearInterval(petMeteorInterval);
+      }
+
+      petMeteorInterval = setInterval(function () {
+        if (!document.getElementById("petMeteorContainer")) {
+          clearInterval(petMeteorInterval);
+          return;
+        }
+        createPetMeteor();
+      }, 800);
+
+      createPetMeteor();
+    }
+
+    function createPetMeteor() {
+      const container = document.getElementById("petMeteorContainer");
+      if (!container) return;
+
+      const meteor = document.createElement("div");
+      meteor.className = "pet-header-meteor";
+
+      const startX = Math.random() * 40;
+      const startY = Math.random() * 20;
+      meteor.style.left = startX + "%";
+      meteor.style.top = startY + "%";
+
+      const height = 35 + Math.random() * 35;
+      meteor.style.height = height + "px";
+      meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
+
+      container.appendChild(meteor);
+
+      setTimeout(function () {
+        meteor.remove();
+      }, 1500);
+    }
+
+    function setupPetHeaderMouseEffect() {
+      if (petHeaderMouseEffectBound) return;
+
+      const header = document.querySelector("#page-pet .pet-page-header");
+      const stars = document.getElementById("petHeaderStars");
+      if (!header || !stars) return;
+
+      header.addEventListener("mousemove", function (e) {
+        const rect = header.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width - 0.5;
+        const y = (e.clientY - rect.top) / rect.height - 0.5;
+        stars.style.transform = "translate(" + x * 15 + "px, " + y * 15 + "px)";
+      });
+
+      header.addEventListener("mouseleave", function () {
+        stars.style.transform = "translate(0, 0)";
+      });
+
+      petHeaderMouseEffectBound = true;
+    }
+
     function initPetPage() {
       if (!state.initialized) {
         bindPetNameEditor();
@@ -810,10 +990,16 @@
         buildColorButtons();
         buildAccessoryButtons();
         bindAccessoryControls();
+        bindSettingsPanelToggle();
+        bindAccessoryPanelToggle();
         startBlinkLoop();
-        loadPetNameFromServer();
+        updateSettingsPanelVisibility();
+        updateAccessoryPanelVisibility();
         state.initialized = true;
       }
+      startPetHeaderMeteors();
+      setupPetHeaderMouseEffect();
+      loadPetNameFromServer();
       renderPet();
     }
 
