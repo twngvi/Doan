@@ -73,13 +73,34 @@
     z-index: 1;
   }
 
+  .pet-main-layout {
+    display: block;
+  }
+
+  .pet-main-layout.with-accessory-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .pet-main-layout.with-accessory-panel .pet-card {
+    min-height: 560px;
+  }
+
+  .pet-main-layout.with-accessory-panel .pet-accessory-panel {
+    margin-top: 0;
+    height: 100%;
+    align-self: stretch;
+  }
+
   .pet-page-header {
     margin-bottom: 1.5rem;
     border: 1px solid color-mix(in srgb, var(--pet-accent) 38%, var(--pet-card-border));
     box-shadow:
       0 14px 34px color-mix(in srgb, var(--pet-accent) 24%, transparent),
       inset 0 1px 0 color-mix(in srgb, #ffffff 22%, transparent);
-    overflow: hidden;
+    overflow: visible;
   }
 
   .pet-page-header::after {
@@ -152,6 +173,10 @@
   }
 
   .pet-header-settings-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 40;
     min-width: 172px;
     border: 1px solid var(--pet-card-border);
     border-radius: 14px;
@@ -205,10 +230,9 @@
   .pet-card,
   .pet-stage,
   .pet-name-tag,
-  .pet-bag-btn,
+  .pet-header-icon-btn,
   .pet-level-badge,
-  .pet-btn,
-  .pet-settings-panel,
+  .pet-header-settings-popover,
   .pet-accessory-panel,
   .pet-pill-btn,
   .pet-accessory-btn,
@@ -465,7 +489,12 @@
     gap: 22px;
     border-radius: 22px;
     border: 1px solid var(--pet-card-border);
-    background: var(--pet-card-bg);
+    background:
+      linear-gradient(
+        160deg,
+        color-mix(in srgb, var(--pet-card-bg) 88%, transparent) 0%,
+        color-mix(in srgb, var(--pet-soft-surface) 86%, transparent) 100%
+      );
     box-shadow: var(--theme-card-shadow, 0 20px 45px rgba(15, 23, 42, 0.18));
     backdrop-filter: blur(8px);
     padding: 22px;
@@ -815,7 +844,7 @@
   }
 
   .pet-accessory-panel {
-    margin-top: 10px;
+    margin-top: 14px;
     border: 1px solid var(--pet-card-border);
     border-radius: 14px;
     background: var(--pet-card-bg);
@@ -890,34 +919,31 @@
     border: 1px solid var(--pet-card-border);
     border-radius: 10px;
     background: var(--pet-soft-surface);
-    padding: 6px 4px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--pet-text-secondary);
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    padding: 6px;
     cursor: pointer;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 4px;
-    min-height: 56px;
+    justify-content: center;
   }
 
   .pet-accessory-btn.no-accessory {
-    justify-content: center;
     border-style: dashed;
   }
 
   .pet-accessory-thumb {
-    width: 24px;
-    height: 24px;
+    width: 30px;
+    height: 30px;
     object-fit: contain;
     display: block;
   }
 
-  .pet-accessory-label {
+  .pet-accessory-empty-icon {
+    font-size: 20px;
     line-height: 1;
-    font-size: 0.74rem;
-    font-weight: 800;
+    color: var(--pet-text-secondary);
   }
 
   .pet-accessory-btn.active {
@@ -1002,6 +1028,15 @@
     .pet-header-settings-popover {
       width: 100%;
       min-width: 0;
+      position: static;
+    }
+
+    .pet-main-layout.with-accessory-panel {
+      grid-template-columns: 1fr;
+    }
+
+    .pet-main-layout.with-accessory-panel .pet-card {
+      min-height: 0;
     }
 
     .pet-header-title-wrap {
