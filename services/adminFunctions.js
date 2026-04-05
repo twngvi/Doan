@@ -1367,6 +1367,7 @@ function convertHtmlToDocContent(html, body) {
     // If no content, add placeholder
     if (!html || html.trim() === '' || html.trim() === '<br>' || html.trim() === '<p><br></p>') {
       body.appendParagraph("(Nội dung trống)");
+      ensureDocEndsWithHetMarker(body);
       return true;
     }
 
@@ -1398,6 +1399,7 @@ function convertHtmlToDocContent(html, body) {
             body.appendParagraph(divContent[i].trim());
           }
         }
+        ensureDocEndsWithHetMarker(body);
         return true;
       }
 
@@ -1414,6 +1416,7 @@ function convertHtmlToDocContent(html, body) {
       } else {
         body.appendParagraph("(Không thể parse nội dung)");
       }
+      ensureDocEndsWithHetMarker(body);
       return true;
     }
 
@@ -1532,14 +1535,59 @@ function convertHtmlToDocContent(html, body) {
       }
     }
 
+    ensureDocEndsWithHetMarker(body);
     Logger.log("✅ HTML converted successfully");
     return true;
   } catch (error) {
     Logger.log("Error converting HTML to Doc: " + error.toString());
     // Fallback: just add plain text
     body.appendParagraph(html.replace(/<[^>]*>/g, ''));
+    ensureDocEndsWithHetMarker(body);
     return false;
   }
+}
+
+/**
+ * Ensure the Google Doc ends with centered "Hết".
+ * Only appends when the last meaningful line is not already "Hết".
+ * @param {Body} body
+ */
+function ensureDocEndsWithHetMarker(body) {
+  if (!body) return;
+
+  function normalizeLineText(text) {
+    return String(text || "")
+      .replace(/\u00A0/g, " ")
+      .trim();
+  }
+
+  var lastMeaningfulText = "";
+  for (var i = body.getNumChildren() - 1; i >= 0; i--) {
+    var child = body.getChild(i);
+    var childType = child.getType();
+    var text = "";
+
+    if (childType === DocumentApp.ElementType.PARAGRAPH) {
+      text = child.asParagraph().getText();
+    } else if (childType === DocumentApp.ElementType.LIST_ITEM) {
+      text = child.asListItem().getText();
+    } else {
+      continue;
+    }
+
+    text = normalizeLineText(text);
+    if (text) {
+      lastMeaningfulText = text;
+      break;
+    }
+  }
+
+  if (lastMeaningfulText === "Hết") {
+    return;
+  }
+
+  var endParagraph = body.appendParagraph("Hết");
+  endParagraph.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 }
 
 /**
