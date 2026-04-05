@@ -7,6 +7,7 @@
         id: "pink",
         name: "Pet Hồng",
         tone: "#ff70e2",
+        stageBackground: "Nền 4.png",
         level1: "level1_hong.svg",
         level2: "level2_hong.svg",
         eyeOpen: "mathong_mở.svg",
@@ -17,6 +18,7 @@
         id: "yellow",
         name: "Pet Vàng",
         tone: "#facc15",
+        stageBackground: "Nền 2.png",
         level1: "level1_vang.svg",
         level2: "level2_vang.svg",
         eyeOpen: "matvang_mở.svg",
@@ -27,6 +29,7 @@
         id: "blue",
         name: "Pet Xanh Dương",
         tone: "#38bdf8",
+        stageBackground: "Nền 3.png",
         level1: "level1_xanhduong.svg",
         level2: "level2_xanhduong.svg",
         eyeOpen: "matxanhduong_mở.svg",
@@ -37,6 +40,7 @@
         id: "green",
         name: "Pet Xanh Lá",
         tone: "#4ade80",
+        stageBackground: "Nền 1.png",
         level1: "level1_xanhla.svg",
         level2: "level2_xanhla.svg",
         eyeOpen: "matxanhla_mở.svg",
@@ -49,7 +53,14 @@
     const BLINK_CLOSE_DURATION_MS = 220;
     const DEFAULT_PET_NAME = "NAMEPET";
     const PET_NAME_MAX_LENGTH = 24;
-     const NO_ACCESSORY_VALUE = "";
+    const NO_ACCESSORY_VALUE = "";
+    const MAX_ACCESSORIES_PER_PET = 3;
+    const STAGE_BACKGROUNDS = [
+      { id: "bg1", name: "Nền 1", fileName: "Nền 1.png" },
+      { id: "bg2", name: "Nền 2", fileName: "Nền 2.png" },
+      { id: "bg3", name: "Nền 3", fileName: "Nền 3.png" },
+      { id: "bg4", name: "Nền 4", fileName: "Nền 4.png" },
+    ];
     const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
       return "Phụ kiện_" + (index + 1) + ".svg";
     });
@@ -108,12 +119,17 @@
       isPressing: false,
       pressZone: null,
       selectedAccessory: "",
+      selectedAccessories: [],
       accessoryPosition: "center",
-      accessoryPanelOpen: false,
+      accessoryPanelOpen: true,
+      panelControlsDropdownOpen: false,
       settingsPanelOpen: false,
+      backgroundPanelOpen: false,
+      selectedStageBackgroundIndex: 0,
       petDisplayName: DEFAULT_PET_NAME,
       petNameLoadedUserId: "",
       petNameLoading: false,
+      driveAssetUrls: {},
     };
 
     let petMeteorInterval = null;
@@ -133,6 +149,15 @@
       "Image/",
       "/Image/",
     ];
+    const PET_ASSET_URLS_LOCAL_CACHE_KEY = "petDriveAssetUrlsCache.v1";
+    const PET_ASSET_URLS_LOCAL_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+    const PET_RESOLVED_URLS_LOCAL_CACHE_KEY = "petResolvedAssetUrlsCache.v1";
+    const PET_RESOLVED_URLS_CACHE_MAX_SIZE = 200;
+
+    state.driveAssetsLoading = false;
+    state.resolvedAssetUrls = {};
+    state.failedAssetUrls = {};
+    state.preferredAssetBaseUrl = PET_ASSET_BASE_URLS[0] || "";
 
     function normalizeAssetKey(fileName) {
       return String(fileName || "")
@@ -158,27 +183,174 @@
       return "";
     }
 
+    function canUseLocalStorage() {
+      try {
+        return typeof window !== "undefined" && !!window.localStorage;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function readLocalJson(key) {
+      if (!canUseLocalStorage() || !key) return null;
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function writeLocalJson(key, value) {
+      if (!canUseLocalStorage() || !key) return;
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      } catch (error) {
+        // Ignore localStorage quota errors.
+      }
+    }
+
+    function loadDriveAssetUrlsFromLocalCache() {
+      const cached = readLocalJson(PET_ASSET_URLS_LOCAL_CACHE_KEY);
+      if (!cached || !cached.urls || typeof cached.urls !== "object") return;
+
+      const cachedAt = Number(cached.cachedAt || 0);
+      if (!cachedAt || Date.now() - cachedAt > PET_ASSET_URLS_LOCAL_CACHE_TTL_MS) {
+        return;
+      }
+
+      state.driveAssetUrls = cached.urls;
+    }
+
+    function persistDriveAssetUrlsToLocalCache(urls) {
+      if (!urls || typeof urls !== "object") return;
+      writeLocalJson(PET_ASSET_URLS_LOCAL_CACHE_KEY, {
+        cachedAt: Date.now(),
+        urls: urls,
+      });
+    }
+
+    function loadResolvedAssetUrlsFromLocalCache() {
+      const cached = readLocalJson(PET_RESOLVED_URLS_LOCAL_CACHE_KEY);
+      if (!cached || !cached.urls || typeof cached.urls !== "object") return;
+      state.resolvedAssetUrls = cached.urls;
+      if (cached.preferredAssetBaseUrl) {
+        state.preferredAssetBaseUrl = String(cached.preferredAssetBaseUrl);
+      }
+    }
+
+    function persistResolvedAssetUrlsToLocalCache() {
+      const keys = Object.keys(state.resolvedAssetUrls || {});
+      if (keys.length > PET_RESOLVED_URLS_CACHE_MAX_SIZE) {
+        const trimmed = {};
+        const startIndex = keys.length - PET_RESOLVED_URLS_CACHE_MAX_SIZE;
+        keys.slice(startIndex).forEach(function (key) {
+          trimmed[key] = state.resolvedAssetUrls[key];
+        });
+        state.resolvedAssetUrls = trimmed;
+      }
+
+      writeLocalJson(PET_RESOLVED_URLS_LOCAL_CACHE_KEY, {
+        updatedAt: Date.now(),
+        preferredAssetBaseUrl: state.preferredAssetBaseUrl,
+        urls: state.resolvedAssetUrls,
+      });
+    }
+
+    function getAssetBaseUrl(url) {
+      if (!url) return "";
+      const value = String(url);
+      for (let i = 0; i < PET_ASSET_BASE_URLS.length; i++) {
+        const base = PET_ASSET_BASE_URLS[i];
+        if (value.indexOf(base) === 0) return base;
+      }
+      return "";
+    }
+
+    function markAssetUrlSuccess(fileName, url) {
+      if (!fileName || !url) return;
+
+      const normalized = normalizeAssetKey(fileName);
+      state.resolvedAssetUrls[normalized] = String(url);
+
+      const base = getAssetBaseUrl(url);
+      if (base) {
+        state.preferredAssetBaseUrl = base;
+      }
+
+      if (state.failedAssetUrls[url]) {
+        delete state.failedAssetUrls[url];
+      }
+
+      persistResolvedAssetUrlsToLocalCache();
+    }
+
+    function markAssetUrlFailed(url) {
+      if (!url) return;
+      state.failedAssetUrls[String(url)] = true;
+    }
+
+    function shouldSkipLocalImagePaths() {
+      try {
+        const host = (window.location && window.location.hostname) || "";
+        return host.indexOf("googleusercontent.com") >= 0 || host.indexOf("script.google.com") >= 0;
+      } catch (error) {
+        return false;
+      }
+    }
+
     function resolveAssetCandidates(fileName) {
       if (!fileName) return [];
 
-      const inlineAssets =
-        window.PET_ASSET_DATA && typeof window.PET_ASSET_DATA === "object"
-          ? window.PET_ASSET_DATA
+      const driveAssets =
+        state.driveAssetUrls && typeof state.driveAssetUrls === "object"
+          ? state.driveAssetUrls
           : {};
 
       const candidates = [];
-      const inlineAssetValue = findInlineAssetValue(inlineAssets, fileName);
-      if (inlineAssetValue) {
-        candidates.push(inlineAssetValue);
+      const normalizedFileName = normalizeAssetKey(fileName);
+
+      if (state.resolvedAssetUrls && state.resolvedAssetUrls[normalizedFileName]) {
+        candidates.push(state.resolvedAssetUrls[normalizedFileName]);
+      }
+
+      const driveAssetValue = findInlineAssetValue(driveAssets, fileName);
+      if (driveAssetValue) {
+        if (Array.isArray(driveAssetValue)) {
+          driveAssetValue.forEach(function (url) {
+            candidates.push(url);
+          });
+        } else if (driveAssetValue && typeof driveAssetValue === "object") {
+          Object.keys(driveAssetValue).forEach(function (key) {
+            candidates.push(driveAssetValue[key]);
+          });
+        } else {
+          candidates.push(driveAssetValue);
+        }
       }
 
       const encodedFileName = encodeURIComponent(fileName || "");
-      PET_ASSET_BASE_URLS.forEach(function (baseUrl) {
+      const skipLocalPaths = shouldSkipLocalImagePaths();
+      let baseUrls = PET_ASSET_BASE_URLS.filter(function (baseUrl) {
+        if (!skipLocalPaths) return true;
+        return baseUrl !== "Image/" && baseUrl !== "/Image/";
+      });
+
+      if (state.preferredAssetBaseUrl && baseUrls.indexOf(state.preferredAssetBaseUrl) >= 0) {
+        baseUrls = [state.preferredAssetBaseUrl].concat(
+          baseUrls.filter(function (baseUrl) {
+            return baseUrl !== state.preferredAssetBaseUrl;
+          }),
+        );
+      }
+
+      baseUrls.forEach(function (baseUrl) {
         candidates.push(baseUrl + encodedFileName);
       });
 
       return candidates.filter(function (value, index, arr) {
-        return Boolean(value) && arr.indexOf(value) === index;
+        return Boolean(value) && !state.failedAssetUrls[value] && arr.indexOf(value) === index;
       });
     }
 
@@ -187,29 +359,87 @@
       return candidates.length > 0 ? candidates[0] : "";
     }
 
-    function setImageWithFallback(img, errorEl, candidates, idx) {
+    function loadPetAssetUrlsFromDrive() {
+      if (state.driveAssetsLoading) {
+        return;
+      }
+
+      if (Object.keys(state.driveAssetUrls).length > 0) {
+        return;
+      }
+
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        return;
+      }
+
+      state.driveAssetsLoading = true;
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          state.driveAssetsLoading = false;
+
+          if (!result || !result.success || !result.urls) {
+            if (result && result.message && typeof showToast === "function") {
+              showToast(result.message, "error");
+            }
+            renderPet();
+            return;
+          }
+
+          state.driveAssetUrls = result.urls;
+          persistDriveAssetUrlsToLocalCache(result.urls);
+          buildAccessoryButtons();
+          buildBackgroundButtons();
+          renderPet();
+        })
+        .withFailureHandler(function (error) {
+          state.driveAssetsLoading = false;
+
+          if (typeof showToast === "function") {
+            showToast(
+              "Lỗi tải ảnh PET từ Drive: " +
+                (error && error.message ? error.message : error),
+              "error",
+            );
+          }
+
+          renderPet();
+        })
+        .getPetAssetUrls();
+    }
+
+    function setImageWithFallback(img, errorEl, candidates, idx, fileName) {
       if (!img || !candidates || idx >= candidates.length) {
         if (img) {
           img.style.display = "none";
           img.src = "";
         }
-        if (errorEl) errorEl.style.display = "block";
+        if (errorEl) {
+          errorEl.style.display = state.driveAssetsLoading ? "none" : "block";
+        }
         return;
       }
 
+      const currentUrl = candidates[idx];
       img.onerror = function () {
-        setImageWithFallback(img, errorEl, candidates, idx + 1);
+        markAssetUrlFailed(currentUrl);
+        setImageWithFallback(img, errorEl, candidates, idx + 1, fileName);
       };
 
       img.onload = function () {
+        markAssetUrlSuccess(fileName, currentUrl);
         img.style.display = "block";
         if (errorEl) errorEl.style.display = "none";
       };
 
-      img.src = candidates[idx];
+      img.src = currentUrl;
     }
 
-    function setOverlayImageWithFallback(img, candidates, idx) {
+    function setOverlayImageWithFallback(img, candidates, idx, fileName) {
       if (!img || !candidates || idx >= candidates.length) {
         if (img) {
           img.style.display = "none";
@@ -218,17 +448,42 @@
         return;
       }
 
+      const currentUrl = candidates[idx];
       img.onerror = function () {
-        setOverlayImageWithFallback(img, candidates, idx + 1);
+        markAssetUrlFailed(currentUrl);
+        setOverlayImageWithFallback(img, candidates, idx + 1, fileName);
       };
 
       img.onload = function () {
+        markAssetUrlSuccess(fileName, currentUrl);
         img.style.display = "block";
       };
 
       // Keep eyes visible immediately while switching level/state.
       img.style.display = "block";
-      img.src = candidates[idx];
+      img.src = currentUrl;
+    }
+
+    function setStageBackgroundWithFallback(stageEl, candidates, idx, fileName) {
+      if (!stageEl || !candidates || idx >= candidates.length) {
+        if (stageEl) {
+          stageEl.style.setProperty("--pet-stage-bg-image", "none");
+        }
+        return;
+      }
+
+      const testImg = new Image();
+      const currentUrl = candidates[idx];
+      testImg.onload = function () {
+        markAssetUrlSuccess(fileName, currentUrl);
+        const safeUrl = String(currentUrl).replace(/"/g, '\\"');
+        stageEl.style.setProperty("--pet-stage-bg-image", 'url("' + safeUrl + '")');
+      };
+      testImg.onerror = function () {
+        markAssetUrlFailed(currentUrl);
+        setStageBackgroundWithFallback(stageEl, candidates, idx + 1, fileName);
+      };
+      testImg.src = currentUrl;
     }
 
     function clearInteractionClasses() {
@@ -437,70 +692,162 @@
 
     function updateAccessoryPanelVisibility() {
       const panelEl = document.getElementById("petAccessoryPanel");
-      const toggleBtn = document.getElementById("petBagToggleBtn");
       const mainLayoutEl = document.getElementById("petMainLayout");
 
+      state.accessoryPanelOpen = true;
+
       if (panelEl) {
-        panelEl.classList.toggle("is-hidden", !state.accessoryPanelOpen);
+        panelEl.classList.remove("is-hidden");
       }
 
       if (mainLayoutEl) {
-        mainLayoutEl.classList.toggle("with-accessory-panel", state.accessoryPanelOpen);
+        mainLayoutEl.classList.add("with-accessory-panel");
       }
+    }
+
+    function updatePanelControlsDropdownVisibility() {
+      const dropdownEl = document.getElementById("petPanelControlsDropdown");
+      const toggleBtn = document.getElementById("petPanelControlsToggleBtn");
 
       if (toggleBtn) {
-        toggleBtn.classList.toggle("active", state.accessoryPanelOpen);
         toggleBtn.setAttribute(
           "aria-expanded",
-          state.accessoryPanelOpen ? "true" : "false",
+          state.panelControlsDropdownOpen ? "true" : "false",
         );
+      }
+
+      if (dropdownEl) {
+        dropdownEl.classList.toggle("is-hidden", !state.panelControlsDropdownOpen);
       }
     }
 
     function updateSettingsPanelVisibility() {
       const panelEl = document.getElementById("petSettingsPopover");
       const toggleBtn = document.getElementById("petSettingsToggleBtn");
+      const isVisible = state.panelControlsDropdownOpen && state.settingsPanelOpen;
 
       if (panelEl) {
-        panelEl.classList.toggle("is-hidden", !state.settingsPanelOpen);
+        panelEl.classList.toggle("is-hidden", !isVisible);
       }
 
       if (toggleBtn) {
-        toggleBtn.classList.toggle("active", state.settingsPanelOpen);
+        toggleBtn.classList.toggle("active", isVisible);
         toggleBtn.setAttribute(
           "aria-expanded",
-          state.settingsPanelOpen ? "true" : "false",
+          isVisible ? "true" : "false",
+        );
+      }
+    }
+
+    function updateBackgroundPanelVisibility() {
+      const panelEl = document.getElementById("petBackgroundPopover");
+      const toggleBtn = document.getElementById("petBackgroundToggleBtn");
+      const isVisible = state.panelControlsDropdownOpen && state.backgroundPanelOpen;
+
+      if (panelEl) {
+        panelEl.classList.toggle("is-hidden", !isVisible);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.classList.toggle("active", isVisible);
+        toggleBtn.setAttribute(
+          "aria-expanded",
+          isVisible ? "true" : "false",
         );
       }
     }
 
     function bindSettingsPanelToggle() {
       const toggleBtn = document.getElementById("petSettingsToggleBtn");
-      const headerEl = document.getElementById("petPageHeader");
-      if (!toggleBtn || !headerEl) return;
+      const controlsRoot = document.getElementById("petPanelControls");
+      if (!toggleBtn || !controlsRoot) return;
 
       toggleBtn.addEventListener("click", function (event) {
         event.stopPropagation();
+        state.panelControlsDropdownOpen = true;
+        state.backgroundPanelOpen = false;
         state.settingsPanelOpen = !state.settingsPanelOpen;
+        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
-      });
-
-      document.addEventListener("click", function (event) {
-        if (!state.settingsPanelOpen) return;
-        if (headerEl.contains(event.target)) return;
-        state.settingsPanelOpen = false;
-        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
       });
     }
 
-    function bindAccessoryPanelToggle() {
-      const toggleBtn = document.getElementById("petBagToggleBtn");
+    function bindBackgroundPanelToggle() {
+      const toggleBtn = document.getElementById("petBackgroundToggleBtn");
       if (!toggleBtn) return;
 
-      toggleBtn.addEventListener("click", function () {
-        state.accessoryPanelOpen = !state.accessoryPanelOpen;
-        updateAccessoryPanelVisibility();
+      toggleBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        state.panelControlsDropdownOpen = true;
+        state.settingsPanelOpen = false;
+        state.backgroundPanelOpen = !state.backgroundPanelOpen;
+        updatePanelControlsDropdownVisibility();
+        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
       });
+    }
+
+    function bindPanelControlsDropdown() {
+      const toggleBtn = document.getElementById("petPanelControlsToggleBtn");
+      const controlsRoot = document.getElementById("petPanelControls");
+      if (!toggleBtn || !controlsRoot) return;
+
+      toggleBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        if (state.panelControlsDropdownOpen) {
+          state.panelControlsDropdownOpen = false;
+          state.settingsPanelOpen = false;
+          state.backgroundPanelOpen = false;
+        } else {
+          state.panelControlsDropdownOpen = true;
+        }
+
+        updatePanelControlsDropdownVisibility();
+        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
+      });
+
+      document.addEventListener("click", function (event) {
+        if (
+          !state.panelControlsDropdownOpen &&
+          !state.settingsPanelOpen &&
+          !state.backgroundPanelOpen
+        ) {
+          return;
+        }
+        if (controlsRoot.contains(event.target)) return;
+
+        state.panelControlsDropdownOpen = false;
+        state.settingsPanelOpen = false;
+        state.backgroundPanelOpen = false;
+
+        updatePanelControlsDropdownVisibility();
+        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
+        if (!state.panelControlsDropdownOpen) return;
+
+        state.panelControlsDropdownOpen = false;
+        state.settingsPanelOpen = false;
+        state.backgroundPanelOpen = false;
+
+        updatePanelControlsDropdownVisibility();
+        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
+      });
+
+      if (!state.panelControlsDropdownOpen) {
+        state.settingsPanelOpen = false;
+        state.backgroundPanelOpen = false;
+      }
+
+      updatePanelControlsDropdownVisibility();
+      updateSettingsPanelVisibility();
+      updateBackgroundPanelVisibility();
     }
 
     function bindPetNameEditor() {
@@ -550,16 +897,47 @@
       return allowed[0] || "center";
     }
 
-    function updateAccessoryPositionClasses() {
-      const accessoryImageEl = document.getElementById("petAccessoryImage");
-      if (!accessoryImageEl) return;
+    function getAccessoryImageElements() {
+      return [1, 2, 3]
+        .map(function (index) {
+          return document.getElementById("petAccessoryImage" + index);
+        })
+        .filter(Boolean);
+    }
 
-      const rule = getAccessoryRule(state.selectedAccessory);
-      const finalPosition = resolveAccessoryPosition(
-        state.selectedAccessory,
-        state.accessoryPosition,
-      );
-      state.accessoryPosition = finalPosition;
+    function getSelectedAccessoryIndex(fileName) {
+      return state.selectedAccessories.findIndex(function (item) {
+        return item.fileName === fileName;
+      });
+    }
+
+    function getSelectedAccessoryByFile(fileName) {
+      const index = getSelectedAccessoryIndex(fileName);
+      if (index < 0) return null;
+      return state.selectedAccessories[index];
+    }
+
+    function resolveActiveAccessory() {
+      if (!state.selectedAccessory) return null;
+      const selected = getSelectedAccessoryByFile(state.selectedAccessory);
+      if (!selected) {
+        state.selectedAccessory = "";
+        return null;
+      }
+      return selected;
+    }
+
+    function clearAccessoryImage(accessoryImageEl) {
+      if (!accessoryImageEl) return;
+      accessoryImageEl.style.display = "none";
+      accessoryImageEl.src = "";
+    }
+
+    function updateAccessoryPositionClasses(accessoryImageEl, fileName, desiredPosition) {
+      if (!accessoryImageEl || !fileName) return "center";
+
+      const rule = getAccessoryRule(fileName);
+      const finalPosition = resolveAccessoryPosition(fileName, desiredPosition);
 
       const baseTop = 12;
       const baseLeftMap = {
@@ -583,6 +961,8 @@
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
       accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue));
+
+      return finalPosition;
     }
 
     function updateAccessoryPanelState() {
@@ -602,10 +982,19 @@
       const gridEl = document.getElementById("petAccessoryGrid");
       if (!gridEl) return;
 
+      const selectedMap = {};
+      state.selectedAccessories.forEach(function (item) {
+        selectedMap[item.fileName] = true;
+      });
+
       const buttons = gridEl.querySelectorAll(".pet-accessory-btn");
       buttons.forEach(function (button) {
-        const fileName = button.getAttribute("data-file");
-        button.classList.toggle("active", fileName === state.selectedAccessory);
+        const fileName = button.getAttribute("data-file") || "";
+        if (fileName === NO_ACCESSORY_VALUE) {
+          button.classList.toggle("active", state.selectedAccessories.length === 0);
+          return;
+        }
+        button.classList.toggle("active", Boolean(selectedMap[fileName]));
       });
     }
 
@@ -613,14 +1002,20 @@
       const container = document.getElementById("petAccessoryPosition");
       if (!container) return;
 
-      const allowed = getAllowedAccessoryPositions(state.selectedAccessory);
+      const activeAccessory = resolveActiveAccessory();
+      const allowed = getAllowedAccessoryPositions(
+        activeAccessory ? activeAccessory.fileName : "",
+      );
+      const activePosition = activeAccessory
+        ? activeAccessory.position
+        : state.accessoryPosition;
 
       const buttons = container.querySelectorAll(".pet-pill-btn");
       buttons.forEach(function (button) {
         const pos = button.getAttribute("data-pos") || "";
         const isAllowed = state.isLevelTwo && allowed.indexOf(pos) >= 0;
         button.disabled = !isAllowed;
-        button.classList.toggle("active", isAllowed && pos === state.accessoryPosition);
+        button.classList.toggle("active", isAllowed && pos === activePosition);
       });
     }
 
@@ -640,29 +1035,34 @@
         state.isPressing || (state.isLevelTwo && state.isEyesClosed);
       const eyeAsset = shouldCloseEyes ? variant.eyeClosed : variant.eyeOpen;
       const eyeCandidates = resolveAssetCandidates(eyeAsset);
-      setOverlayImageWithFallback(eyesImageEl, eyeCandidates, 0);
+      setOverlayImageWithFallback(eyesImageEl, eyeCandidates, 0, eyeAsset);
     }
 
     function renderAccessory() {
-      const accessoryImageEl = document.getElementById("petAccessoryImage");
-      if (!accessoryImageEl) return;
+      const accessoryImageEls = getAccessoryImageElements();
+      if (accessoryImageEls.length === 0) return;
 
       if (!state.isLevelTwo) {
-        accessoryImageEl.style.display = "none";
-        accessoryImageEl.src = "";
+        accessoryImageEls.forEach(clearAccessoryImage);
         return;
       }
 
-      updateAccessoryPositionClasses();
+      accessoryImageEls.forEach(function (accessoryImageEl, index) {
+        const selected = state.selectedAccessories[index];
+        if (!selected) {
+          clearAccessoryImage(accessoryImageEl);
+          return;
+        }
 
-      if (!state.selectedAccessory) {
-        accessoryImageEl.style.display = "none";
-        accessoryImageEl.src = "";
-        return;
-      }
+        selected.position = updateAccessoryPositionClasses(
+          accessoryImageEl,
+          selected.fileName,
+          selected.position,
+        );
 
-      const candidates = resolveAssetCandidates(state.selectedAccessory);
-      setOverlayImageWithFallback(accessoryImageEl, candidates, 0);
+        const candidates = resolveAssetCandidates(selected.fileName);
+        setOverlayImageWithFallback(accessoryImageEl, candidates, 0, selected.fileName);
+      });
     }
 
     function renderPet() {
@@ -688,6 +1088,10 @@
 
       if (stageEl) {
         stageEl.style.boxShadow = "inset 0 0 0 1px " + variant.tone + "44";
+        const activeBackground =
+          STAGE_BACKGROUNDS[state.selectedStageBackgroundIndex] || STAGE_BACKGROUNDS[0];
+        const stageBackgroundCandidates = resolveAssetCandidates(activeBackground.fileName);
+        setStageBackgroundWithFallback(stageEl, stageBackgroundCandidates, 0, activeBackground.fileName);
       }
 
       if (levelBtn) {
@@ -711,13 +1115,14 @@
 
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       const candidates = resolveAssetCandidates(imageName);
-      setImageWithFallback(previewImageEl, errorEl, candidates, 0);
+      setImageWithFallback(previewImageEl, errorEl, candidates, 0, imageName);
       renderEyes();
       renderAccessory();
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
 
       updateColorButtons(state.currentIndex);
+      updateBackgroundButtons(state.selectedStageBackgroundIndex);
       updateAccessoryButtons();
       updateAccessoryPositionButtons();
     }
@@ -781,6 +1186,39 @@
       });
     }
 
+    function updateBackgroundButtons(activeIndex) {
+      const buttonsWrap = document.getElementById("petBackgroundButtons");
+      if (!buttonsWrap) return;
+
+      const buttons = buttonsWrap.querySelectorAll(".pet-bg-btn");
+      buttons.forEach((button, index) => {
+        button.classList.toggle("active", index === activeIndex);
+      });
+    }
+
+    function buildBackgroundButtons() {
+      const buttonsWrap = document.getElementById("petBackgroundButtons");
+      if (!buttonsWrap) return;
+
+      buttonsWrap.innerHTML = "";
+
+      STAGE_BACKGROUNDS.forEach(function (background, index) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pet-bg-btn";
+        btn.title = background.name;
+        btn.setAttribute("aria-label", background.name);
+        btn.textContent = background.name;
+        btn.addEventListener("click", function () {
+          state.selectedStageBackgroundIndex = index;
+          renderPet();
+        });
+        buttonsWrap.appendChild(btn);
+      });
+
+      updateBackgroundButtons(state.selectedStageBackgroundIndex);
+    }
+
     function buildAccessoryButtons() {
       const gridEl = document.getElementById("petAccessoryGrid");
       if (!gridEl) return;
@@ -803,7 +1241,9 @@
        noAccessoryBtn.addEventListener("click", function () {
          if (!state.isLevelTwo) return;
 
+         state.selectedAccessories = [];
          state.selectedAccessory = NO_ACCESSORY_VALUE;
+         state.accessoryPosition = "center";
          renderAccessory();
          updateAccessoryButtons();
          updateAccessoryPositionButtons();
@@ -831,11 +1271,45 @@
         btn.addEventListener("click", function () {
           if (!state.isLevelTwo) return;
 
+          const selectedIndex = getSelectedAccessoryIndex(fileName);
+          if (selectedIndex >= 0) {
+            if (state.selectedAccessory !== fileName) {
+              const selected = state.selectedAccessories[selectedIndex];
+              state.selectedAccessory = fileName;
+              state.accessoryPosition = selected.position;
+            } else {
+              state.selectedAccessories.splice(selectedIndex, 1);
+              const fallbackSelected =
+                state.selectedAccessories[selectedIndex] ||
+                state.selectedAccessories[selectedIndex - 1] ||
+                null;
+              state.selectedAccessory = fallbackSelected ? fallbackSelected.fileName : "";
+              if (fallbackSelected) {
+                state.accessoryPosition = fallbackSelected.position;
+              }
+            }
+
+            renderAccessory();
+            updateAccessoryButtons();
+            updateAccessoryPositionButtons();
+            return;
+          }
+
+          if (state.selectedAccessories.length >= MAX_ACCESSORIES_PER_PET) {
+            if (typeof showToast === "function") {
+              showToast("Mỗi pet chỉ gắn tối đa 3 phụ kiện");
+            }
+            return;
+          }
+
+          const finalPosition = resolveAccessoryPosition(fileName, state.accessoryPosition);
+          state.selectedAccessories.push({
+            fileName: fileName,
+            position: finalPosition,
+          });
           state.selectedAccessory = fileName;
-          state.accessoryPosition = resolveAccessoryPosition(
-            state.selectedAccessory,
-            state.accessoryPosition,
-          );
+          state.accessoryPosition = finalPosition;
+
           renderAccessory();
           updateAccessoryButtons();
           updateAccessoryPositionButtons();
@@ -858,10 +1332,20 @@
         if (!pos) return;
 
 
-        const allowed = getAllowedAccessoryPositions(state.selectedAccessory);
+        const activeAccessory = resolveActiveAccessory();
+        const allowed = getAllowedAccessoryPositions(
+          activeAccessory ? activeAccessory.fileName : "",
+        );
         if (allowed.indexOf(pos) < 0) return;
 
-        state.accessoryPosition = pos;
+        if (activeAccessory) {
+          const finalPosition = resolveAccessoryPosition(activeAccessory.fileName, pos);
+          activeAccessory.position = finalPosition;
+          state.accessoryPosition = finalPosition;
+        } else {
+          state.accessoryPosition = pos;
+        }
+
         updateAccessoryPositionButtons();
         renderAccessory();
       });
@@ -989,19 +1473,26 @@
 
     function initPetPage() {
       if (!state.initialized) {
+        loadResolvedAssetUrlsFromLocalCache();
+        loadDriveAssetUrlsFromLocalCache();
         bindPetNameEditor();
         bindControls();
         bindStageInteractions();
         buildColorButtons();
+        buildBackgroundButtons();
         buildAccessoryButtons();
         bindAccessoryControls();
         bindSettingsPanelToggle();
-        bindAccessoryPanelToggle();
+        bindBackgroundPanelToggle();
+        bindPanelControlsDropdown();
         startBlinkLoop();
+        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
         state.initialized = true;
       }
+      loadPetAssetUrlsFromDrive();
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
       loadPetNameFromServer();
