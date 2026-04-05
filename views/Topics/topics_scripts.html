@@ -18,13 +18,28 @@
     let progressCache = null;
     let lastLoadTime = 0;
     const CACHE_DURATION = 60000; // Cache 1 phút
+    const TOPICS_DATA_CHANGED_KEY = "topics_data_changed_at";
+    let lastTopicsDataChangeStamp = 0;
 
     // ⭐ Expose function to invalidate LOCAL cache from other pages
     window.invalidateTopicsLocalCache = function () {
       progressCache = null;
+      topicsCache = null;
       lastLoadTime = 0;
       console.log("🔄 Topics LOCAL progress cache invalidated");
     };
+
+    function getTopicsDataChangedStamp() {
+      try {
+        const raw = localStorage.getItem(TOPICS_DATA_CHANGED_KEY);
+        if (!raw) return 0;
+        const stamp = Number(raw);
+        return Number.isFinite(stamp) ? stamp : 0;
+      } catch (e) {
+        console.warn("⚠️ Could not read topics changed marker:", e);
+        return 0;
+      }
+    }
 
     /**
      * ⭐ Merge localStorage lesson progress into progress map
@@ -123,6 +138,21 @@
       console.log("Loading topics from database...");
 
       const now = Date.now();
+      const topicsChangedStamp = getTopicsDataChangedStamp();
+      const hasTopicsDataChanged = topicsChangedStamp > lastTopicsDataChangeStamp;
+      if (hasTopicsDataChanged) {
+        console.log("🔄 Topics data changed marker detected, forcing fresh reload...");
+        forceRefresh = true;
+        lastTopicsDataChangeStamp = topicsChangedStamp;
+        topicsCache = null;
+        progressCache = null;
+        lastLoadTime = 0;
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.data = null;
+          window.globalTopicsCache.progress = null;
+          window.globalTopicsCache.lastLoadTime = 0;
+        }
+      }
 
       // ⭐ Hiện loading state trước khi check cache
       if (!forceRefresh) {

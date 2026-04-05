@@ -10,6 +10,7 @@ let topicToDelete = null;
 let currentView = 'table'; // 'table' or 'cards'
 let categoriesList = [];
 let isDataLoaded = false; // Flag để track data đã load chưa
+const TOPICS_DATA_CHANGED_KEY = 'topics_data_changed_at';
 
 // ===== Initialize =====
 function initContentManagement() {
@@ -618,6 +619,7 @@ function closeDeleteModal() {
 
 function confirmDeleteTopic() {
   if (!topicToDelete) return;
+  const deletingTopicId = topicToDelete;
 
   const deleteBtn = document.querySelector('.cm-btn-danger');
   const originalBtnHtml = deleteBtn.innerHTML;
@@ -632,13 +634,16 @@ function confirmDeleteTopic() {
       closeDeleteModal();
 
       if (result && result.success) {
-        // Xóa topic khỏi mảng local
-        allTopics = allTopics.filter(function(t) { return t.topicId !== topicToDelete; });
-        filteredTopics = filteredTopics.filter(function(t) { return t.topicId !== topicToDelete; });
+        // Đồng bộ cache giữa các page để buộc Topics page reload từ DB
+        markTopicsDataChanged();
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.data = null;
+          window.globalTopicsCache.progress = null;
+          window.globalTopicsCache.lastLoadTime = 0;
+        }
 
-        // Cập nhật UI
-        updateStats();
-        renderContent();
+        // Reload lại data từ server để UI luôn khớp DB
+        loadTopicsList();
 
         // Hiển thị thông báo thành công
         if (typeof showNotification === 'function') {
@@ -676,7 +681,7 @@ function confirmDeleteTopic() {
 
       topicToDelete = null;
     })
-    .deleteTopicWithDoc(topicToDelete);
+    .deleteTopicWithDoc(deletingTopicId);
 }
 
 // ===== Navigate to Create Topic =====
@@ -762,6 +767,14 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function markTopicsDataChanged() {
+  try {
+    localStorage.setItem(TOPICS_DATA_CHANGED_KEY, String(Date.now()));
+  } catch (e) {
+    console.warn('[ContentManagement] Could not persist topics changed marker:', e);
+  }
 }
 
 // ===== Parse Content Markers for Preview =====
