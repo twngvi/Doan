@@ -1510,51 +1510,7 @@ function convertHtmlToDocContent(html, body) {
               break;
             }
             imageCount++;
-
-            // Kiểm tra nếu là Google Drive URL - lấy fileId và fetch trực tiếp qua DriveApp
-            let imageBlob = null;
-            const drivePatterns = [
-              /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,  // https://lh3.googleusercontent.com/d/FILE_ID
-              /drive\.google\.com\/uc\?.*id=([a-zA-Z0-9_-]+)/,     // https://drive.google.com/uc?export=view&id=FILE_ID
-              /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,     // https://drive.google.com/file/d/FILE_ID/view
-              /drive\.google\.com\/thumbnail\?.*id=([a-zA-Z0-9_-]+)/ // https://drive.google.com/thumbnail?id=FILE_ID
-            ];
-
-            let driveFileId = null;
-            for (let p = 0; p < drivePatterns.length; p++) {
-              const match = block.src.match(drivePatterns[p]);
-              if (match && match[1]) {
-                driveFileId = match[1];
-                break;
-              }
-            }
-
-            if (driveFileId) {
-              // Fetch trực tiếp từ Google Drive bằng DriveApp
-              Logger.log("Fetching image from Drive: " + driveFileId);
-              try {
-                const driveFile = DriveApp.getFileById(driveFileId);
-                imageBlob = driveFile.getBlob();
-                Logger.log("✅ Got image blob from Drive");
-              } catch (driveErr) {
-                Logger.log("⚠️ DriveApp fetch failed: " + driveErr.toString());
-              }
-            }
-
-            // Nếu không phải Drive URL hoặc DriveApp fail, thử UrlFetchApp
-            if (!imageBlob) {
-              const imageResponse = UrlFetchApp.fetch(block.src, {
-                muteHttpExceptions: true,
-                followRedirects: true,
-                validateHttpsCertificates: false
-              });
-
-              if (imageResponse.getResponseCode() === 200) {
-                imageBlob = imageResponse.getBlob();
-              } else {
-                Logger.log("Image fetch failed: " + block.src + " - Status: " + imageResponse.getResponseCode());
-              }
-            }
+            const imageBlob = getImageBlobFromSrc(block.src);
 
             if (imageBlob) {
               body.appendImage(imageBlob);
@@ -1582,6 +1538,88 @@ function convertHtmlToDocContent(html, body) {
     body.appendParagraph(html.replace(/<[^>]*>/g, ''));
     return false;
   }
+}
+
+/**
+ * Lấy blob ảnh từ src (data URL, Google Drive URL, Google Docs export URL, hoặc URL thường)
+ * @param {string} src
+ * @returns {Blob|null}
+ */
+function getImageBlobFromSrc(src) {
+  var imageSrc = String(src || "").trim();
+  if (!imageSrc) return null;
+
+  // 1) Data URL (quan trọng cho edit mode vì ảnh cũ có thể đã được normalize thành base64)
+  if (imageSrc.indexOf("data:") === 0) {
+    var dataMatch = imageSrc.match(/^data:([^;,]+)?((?:;[^,]*)*),(.*)$/i);
+    if (!dataMatch) return null;
+
+    var mimeType = dataMatch[1] || "application/octet-stream";
+    var meta = dataMatch[2] || "";
+    var payload = String(dataMatch[3] || "");
+    var isBase64 = /;base64/i.test(meta);
+
+    try {
+      if (isBase64) {
+        // Dọn payload để decode ổn định (tránh xuống dòng/khoảng trắng, url-safe base64)
+        payload = payload.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+        var bytes = Utilities.base64Decode(payload);
+        return Utilities.newBlob(bytes, mimeType, "embedded_image");
+      }
+      var decodedText = decodeURIComponent(payload);
+      return Utilities.newBlob(decodedText, mimeType, "embedded_image");
+    } catch (dataError) {
+      Logger.log("⚠️ Data URL decode failed: " + dataError.toString());
+      return null;
+    }
+  }
+
+  // 2) Google Drive URL -> lấy trực tiếp bằng DriveApp
+  var drivePatterns = [
+    /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,
+    /drive\.google\.com\/uc\?.*id=([a-zA-Z0-9_-]+)/,
+    /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
+    /drive\.google\.com\/thumbnail\?.*id=([a-zA-Z0-9_-]+)/
+  ];
+
+  for (var i = 0; i < drivePatterns.length; i++) {
+    var driveMatch = imageSrc.match(drivePatterns[i]);
+    if (driveMatch && driveMatch[1]) {
+      try {
+        Logger.log("Fetching image from Drive: " + driveMatch[1]);
+        return DriveApp.getFileById(driveMatch[1]).getBlob();
+      } catch (driveError) {
+        Logger.log("⚠️ Drive fetch failed: " + driveError.toString());
+      }
+      break;
+    }
+  }
+
+  // 3) Fetch URL từ web, thử với OAuth trước cho googleusercontent/docsz
+  try {
+    var useAuth =
+      imageSrc.indexOf("googleusercontent.com/") !== -1 ||
+      imageSrc.indexOf("docs.google.com/") !== -1;
+
+    var options = {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      validateHttpsCertificates: false
+    };
+    if (useAuth) {
+      options.headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+    }
+
+    var response = UrlFetchApp.fetch(imageSrc, options);
+    if (response.getResponseCode() === 200) {
+      return response.getBlob();
+    }
+    Logger.log("Image fetch failed: " + imageSrc + " - Status: " + response.getResponseCode());
+  } catch (fetchError) {
+    Logger.log("⚠️ UrlFetch image failed: " + fetchError.toString());
+  }
+
+  return null;
 }
 
 /**
@@ -1632,8 +1670,8 @@ function parseHtmlBlocks(html) {
     // Callout blocks
     { regex: /<div class="callout callout-(\w+)"[^>]*>[\s\S]*?<span class="callout-icon"[^>]*>([^<]*)<\/span>[\s\S]*?<div class="callout-content"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<\/div>/gi, type: 'callout' },
     // Image wrapper with img inside
-    { regex: /<div class="image-wrapper"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<\/div>/gi, type: 'image' },
-    { regex: /<img[^>]*src="([^"]*)"[^>]*>/gi, type: 'image' },
+    { regex: /<div[^>]*class=(["'])[^"']*\bimage-wrapper\b[^"']*\1[^>]*>[\s\S]*?<img[^>]*src=(["'])(.*?)\2[^>]*>[\s\S]*?<\/div>/gi, type: 'image', srcGroup: 3 },
+    { regex: /<img[^>]*src=(["'])(.*?)\1[^>]*>/gi, type: 'image', srcGroup: 2 },
     { regex: /<p[^>]*>([\s\S]*?)<\/p>/gi, type: 'p' },
     // Generic div (common from contenteditable) - must be last
     { regex: /<div[^>]*>([\s\S]*?)<\/div>/gi, type: 'div' }
@@ -1678,7 +1716,22 @@ function parseHtmlBlocks(html) {
         matchData.icon = match[2];
         matchData.text = stripHtml(match[3]);
       } else if (pattern.type === 'image') {
-        matchData.src = match[1];
+        const srcValue = pattern.srcGroup ? match[pattern.srcGroup] : "";
+        matchData.src = String(srcValue || "").trim();
+      } else if (pattern.type === 'p') {
+        const pInnerHtml = match[1] || "";
+        // Tránh để <p> chứa ảnh/code/list bị parse thành text và làm rơi block con.
+        if (/<img\b|<ul\b|<ol\b|<pre\b|<div\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout)\b[^"']*\1/i.test(pInnerHtml)) {
+          continue;
+        }
+        matchData.text = stripHtml(pInnerHtml);
+      } else if (pattern.type === 'div') {
+        const divInnerHtml = match[1] || "";
+        // Tránh để generic div nuốt mất các block đặc thù (đặc biệt là ảnh).
+        if (/<img\b|<ul\b|<ol\b|<pre\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout)\b[^"']*\1/i.test(divInnerHtml)) {
+          continue;
+        }
+        matchData.text = stripHtml(divInnerHtml);
       } else {
         matchData.text = stripHtml(match[1] || '');
       }
@@ -1688,7 +1741,26 @@ function parseHtmlBlocks(html) {
   }
 
   // Sort by position
-  allMatches.sort((a, b) => a.index - b.index);
+  const priority = {
+    image: 90,
+    codeblock: 80,
+    callout: 80,
+    pre: 70,
+    ul: 70,
+    ol: 70,
+    h1: 60,
+    h2: 60,
+    h3: 60,
+    p: 40,
+    div: 10
+  };
+  allMatches.sort((a, b) => {
+    if (a.index !== b.index) return a.index - b.index;
+    const pa = priority[a.type] || 0;
+    const pb = priority[b.type] || 0;
+    if (pa !== pb) return pb - pa;
+    return b.length - a.length;
+  });
 
   // Remove nested/overlapping matches
   const finalMatches = [];
@@ -2055,7 +2127,7 @@ function getTopicForEdit(topicId) {
     if (topic.contentDocId) {
       var docResult = getTopicContentByDocId(topic.contentDocId);
       if (docResult && docResult.success && docResult.content) {
-        content = docResult.content;
+        content = normalizeDocImagesForTopicEditor(docResult.content);
       }
     }
 
@@ -2076,6 +2148,88 @@ function getTopicForEdit(topicId) {
       message: "Lỗi khi tải topic: " + error.toString()
     };
   }
+}
+
+/**
+ * Chuẩn hóa ảnh từ Google Doc export để hiển thị ổn định trong Topic Editor.
+ * Google Doc thường trả URL dạng docsz/googleusercontent tạm thời, có thể không render được ở client.
+ * Hàm này đổi các ảnh đó sang data URL để khi mở màn hình edit vẫn thấy ảnh.
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function normalizeDocImagesForTopicEditor(html) {
+  if (!html || typeof html !== "string") {
+    return "";
+  }
+
+  var imgRegex = /<img\b([^>]*?)\bsrc=(["'])(.*?)\2([^>]*)>/gi;
+
+  var normalized = html.replace(imgRegex, function (fullMatch, preAttr, quote, src, postAttr) {
+    var originalSrc = String(src || "").trim();
+    if (!originalSrc) return fullMatch;
+
+    // Keep already-stable/public URLs as-is.
+    if (
+      originalSrc.indexOf("data:") === 0 ||
+      originalSrc.indexOf("lh3.googleusercontent.com/d/") !== -1 ||
+      originalSrc.indexOf("drive.google.com/uc?") !== -1 ||
+      originalSrc.indexOf("drive.google.com/file/d/") !== -1
+    ) {
+      return fullMatch;
+    }
+
+    // Chỉ xử lý nhóm URL ảnh export từ Google Docs.
+    var isGoogleDocExportImage =
+      originalSrc.indexOf("googleusercontent.com/docsz/") !== -1 ||
+      originalSrc.indexOf("googleusercontent.com/docs/") !== -1 ||
+      originalSrc.indexOf("googleusercontent.com/") !== -1;
+
+    if (!isGoogleDocExportImage) {
+      return fullMatch;
+    }
+
+    try {
+      var response = UrlFetchApp.fetch(originalSrc, {
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true,
+        followRedirects: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log(
+          "⚠️ normalizeDocImagesForTopicEditor: cannot fetch image (" +
+            response.getResponseCode() +
+            "): " +
+            originalSrc,
+        );
+        return fullMatch;
+      }
+
+      var blob = response.getBlob();
+      var mimeType = blob.getContentType() || "image/png";
+      var bytes = blob.getBytes();
+      var base64 = Utilities.base64Encode(bytes);
+      var dataUrl = "data:" + mimeType + ";base64," + base64;
+
+      return (
+        "<img" +
+        (preAttr || "") +
+        'src="' +
+        dataUrl +
+        '"' +
+        (postAttr || "") +
+        ">"
+      );
+    } catch (imageError) {
+      Logger.log(
+        "⚠️ normalizeDocImagesForTopicEditor error: " + imageError.toString(),
+      );
+      return fullMatch;
+    }
+  });
+
+  return normalized;
 }
 
 /**
