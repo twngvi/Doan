@@ -1142,10 +1142,78 @@ function populateEditForm(data) {
     editor.innerHTML = content;
     // Parse text markers into visual blocks
     parseMarkersToVisualBlocks(editor);
+    // Ensure loaded Doc content is readable in editor (always black text)
+    normalizeLoadedDocTextColors(editor);
   }
 
   editor.focus();
   console.log('[TopicEditor] Edit form populated successfully');
+}
+
+/**
+ * Normalize inline text colors from loaded Doc content to black.
+ * This prevents white/invisible text caused by imported inline styles.
+ */
+function normalizeLoadedDocTextColors(editor) {
+  if (!editor) return;
+
+  // Phase 1: hard reset normal content to black, even when color is inherited
+  // from previously inserted dark blocks.
+  var normalNodes = editor.querySelectorAll('*');
+  for (var n = 0; n < normalNodes.length; n++) {
+    var normalNode = normalNodes[n];
+    if (normalNode.closest(
+      '.visual-terminal-block, .visual-code-block, .visual-code-content, .visual-terminal-content, pre, code, .code-block, .visual-color-block'
+    )) {
+      continue;
+    }
+    normalNode.style.setProperty('color', '#000000', 'important');
+    normalNode.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
+  }
+
+  // Phase 2: normalize explicit inline color values from imported Doc HTML.
+  var nodes = editor.querySelectorAll('[style], font[color]');
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+
+    // Keep intentional code/terminal/color-marker styling
+    if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block, .visual-color-block')) {
+      continue;
+    }
+
+    if (node.style) {
+      var hasColor = !!node.style.getPropertyValue('color');
+      var hasTextFillColor = !!node.style.getPropertyValue('-webkit-text-fill-color');
+
+      if (hasColor) {
+        node.style.setProperty('color', '#000000', 'important');
+      }
+      if (hasTextFillColor) {
+        node.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
+      }
+    }
+
+    if (node.tagName === 'FONT' && node.hasAttribute('color')) {
+      node.setAttribute('color', '#000000');
+    }
+  }
+
+  // Keep the editor root readable too.
+  editor.style.setProperty('color', '#000000', 'important');
+  editor.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
+
+  // Restore intended dark-block text colors (must run after black normalization).
+  var terminalContentNodes = editor.querySelectorAll('.visual-terminal-block, .visual-terminal-content');
+  for (var t = 0; t < terminalContentNodes.length; t++) {
+    terminalContentNodes[t].style.setProperty('color', '#c9d1d9', 'important');
+    terminalContentNodes[t].style.setProperty('-webkit-text-fill-color', '#c9d1d9', 'important');
+  }
+
+  var codeContentNodes = editor.querySelectorAll('.visual-code-content, .visual-code-content *');
+  for (var c = 0; c < codeContentNodes.length; c++) {
+    codeContentNodes[c].style.setProperty('color', '#d4d4d4', 'important');
+    codeContentNodes[c].style.setProperty('-webkit-text-fill-color', '#d4d4d4', 'important');
+  }
 }
 
 /**
