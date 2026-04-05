@@ -1062,7 +1062,9 @@ function getCurrentAdminContext() {
 // Folder IDs for Topic Editor
 const TOPIC_EDITOR_CONFIG = {
   TOPIC_DOCS_FOLDER_ID: "1b2Z59iRVfi8c_JzRh2MKYKrx170JipD3",
-  IMAGES_FOLDER_ID: "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN"
+  IMAGES_FOLDER_ID: "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN",
+  DOC_IMAGE_MAX_WIDTH: 520,
+  DOC_IMAGE_MAX_HEIGHT: 700
 };
 
 /**
@@ -1513,7 +1515,7 @@ function convertHtmlToDocContent(html, body) {
             const imageBlob = getImageBlobFromSrc(block.src);
 
             if (imageBlob) {
-              body.appendImage(imageBlob);
+              appendResizedImageToDoc(body, imageBlob);
             } else {
               body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
             }
@@ -1620,6 +1622,41 @@ function getImageBlobFromSrc(src) {
   }
 
   return null;
+}
+
+/**
+ * Thêm ảnh vào Google Doc và tự thu nhỏ theo giới hạn cấu hình, giữ tỉ lệ gốc.
+ * @param {Body} body
+ * @param {Blob} imageBlob
+ * @returns {InlineImage|null}
+ */
+function appendResizedImageToDoc(body, imageBlob) {
+  try {
+    var image = body.appendImage(imageBlob);
+    var maxWidth = Number(TOPIC_EDITOR_CONFIG.DOC_IMAGE_MAX_WIDTH) || 520;
+    var maxHeight = Number(TOPIC_EDITOR_CONFIG.DOC_IMAGE_MAX_HEIGHT) || 700;
+
+    var originalWidth = image.getWidth();
+    var originalHeight = image.getHeight();
+
+    if (!originalWidth || !originalHeight) {
+      return image;
+    }
+
+    var widthRatio = maxWidth / originalWidth;
+    var heightRatio = maxHeight / originalHeight;
+    var scale = Math.min(widthRatio, heightRatio, 1); // Không phóng to ảnh nhỏ
+
+    if (scale < 1) {
+      image.setWidth(Math.round(originalWidth * scale));
+      image.setHeight(Math.round(originalHeight * scale));
+    }
+
+    return image;
+  } catch (error) {
+    Logger.log("⚠️ appendResizedImageToDoc error: " + error.toString());
+    return null;
+  }
 }
 
 /**
