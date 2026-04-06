@@ -1681,6 +1681,10 @@ function getImageBlobFromSrc(src) {
 function appendResizedImageToDoc(body, imageBlob) {
   try {
     var image = body.appendImage(imageBlob);
+    var parent = image.getParent();
+    if (parent && parent.getType && parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      parent.asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    }
     var maxWidth = Number(TOPIC_EDITOR_CONFIG.DOC_IMAGE_MAX_WIDTH) || 520;
     var maxHeight = Number(TOPIC_EDITOR_CONFIG.DOC_IMAGE_MAX_HEIGHT) || 700;
 
