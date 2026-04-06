@@ -11,6 +11,7 @@ let currentView = 'table'; // 'table' or 'cards'
 let categoriesList = [];
 let isDataLoaded = false; // Flag để track data đã load chưa
 const TOPICS_DATA_CHANGED_KEY = 'topics_data_changed_at';
+let latestTopicsLoadRequestId = 0; // Tránh race condition khi gọi load nhiều lần
 
 // ===== Initialize =====
 function initContentManagement() {
@@ -68,11 +69,15 @@ function loadCategories() {
 
 // ===== Load Topics List =====
 function loadTopicsList() {
+  const requestId = ++latestTopicsLoadRequestId;
   showLoading(true);
   isDataLoaded = false;
 
   google.script.run
     .withSuccessHandler(function(topics) {
+      // Bỏ qua response cũ để không ghi đè data mới hơn
+      if (requestId !== latestTopicsLoadRequestId) return;
+
       allTopics = topics || [];
       filteredTopics = [...allTopics];
       currentPage = 1;
@@ -83,11 +88,26 @@ function loadTopicsList() {
       console.log('[ContentManagement] Loaded', allTopics.length, 'lessons');
     })
     .withFailureHandler(function(error) {
+      // Bỏ qua lỗi của request cũ
+      if (requestId !== latestTopicsLoadRequestId) return;
+
       console.error('[ContentManagement] Failed to load topics:', error);
+      showLoading(false);
+
+      // Giữ nguyên dữ liệu cũ nếu đang có để tránh danh sách "biến mất" khi lỗi tạm thời
+      if (allTopics.length > 0) {
+        isDataLoaded = true;
+        renderContent();
+        if (typeof showNotification === 'function') {
+          showNotification('Không thể tải lại danh sách từ server. Đang giữ dữ liệu hiện tại.', 'warning');
+        }
+        return;
+      }
+
+      // Chỉ rỗng khi chưa từng có data
       isDataLoaded = true; // Vẫn set true để cho phép hiện empty state
       allTopics = [];
       filteredTopics = [];
-      showLoading(false);
       showEmptyState(true);
     })
     .getAllTopicsForAdmin();
@@ -722,13 +742,9 @@ function refreshTopicsList(e) {
 // ===== Helper Functions =====
 function showLoading(show) {
   const loadingEl = document.getElementById('cm-loading-state');
-  const tbody = document.getElementById('cm-topics-tbody');
-  const cardsGrid = document.getElementById('cm-cards-grid');
 
   if (show) {
     loadingEl.style.display = 'flex';
-    if (tbody) tbody.innerHTML = '';
-    if (cardsGrid) cardsGrid.innerHTML = '';
   } else {
     loadingEl.style.display = 'none';
   }
