@@ -30,6 +30,12 @@ function doGet(e) {
     if (e.parameter.code && e.parameter.state === "google_login_flow") {
       return handleGoogleCallback(e.parameter.code);
     }
+
+    // --- PHẦN THÊM MỚI: Phục vụ Service Worker ---
+    if (e.parameter.path === "sw.js") {
+      return ContentService.createTextOutput(include("views/Pet/sw_js"))
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
     // --------------------------------------------------
 
     const template = HtmlService.createTemplateFromFile("views/index");
@@ -152,103 +158,7 @@ function savePetName(payload) {
   return saveUserPetName(payload);
 }
 
-function getPetAssetUrls() {
-  const PET_ASSET_FOLDER_ID = "12jqWFzHKYywN8eTT_Y9F8lFeOs9gjI-I";
-  const IMAGE_FILE_PATTERN = /\.(svg|png|jpg|jpeg|webp|gif)$/i;
-  const STAGE_FILE_PATTERN = /^(N[eề]n|Nen|stage_bg_)\s*_?(\d{1,2})\.png$/i;
-  const CACHE_KEY = "PET_ASSET_URLS_CACHE_V1";
-  const CACHE_TTL_SECONDS = 6 * 60 * 60;
-
-  try {
-    const cache = CacheService.getScriptCache();
-    const cachedRaw = cache.get(CACHE_KEY);
-    if (cachedRaw) {
-      const cached = JSON.parse(cachedRaw);
-      if (cached && cached.success && cached.urls) {
-        return cached;
-      }
-    }
-
-    const folder = DriveApp.getFolderById(PET_ASSET_FOLDER_ID);
-    const urls = {};
-    const queue = [folder];
-
-    while (queue.length > 0) {
-      const currentFolder = queue.shift();
-      if (!currentFolder) continue;
-
-      const subFolders = currentFolder.getFolders();
-      while (subFolders.hasNext()) {
-        queue.push(subFolders.next());
-      }
-
-      const files = currentFolder.getFiles();
-      while (files.hasNext()) {
-        const file = files.next();
-        const fileName = String(file.getName() || "").trim();
-        if (!IMAGE_FILE_PATTERN.test(fileName)) continue;
-
-        const fileId = file.getId();
-        const candidateUrls = [
-          "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w2000",
-          "https://drive.google.com/uc?export=view&id=" + fileId,
-          "https://drive.google.com/uc?export=download&id=" + fileId,
-          "https://lh3.googleusercontent.com/d/" + fileId + "=w2000",
-        ];
-
-        // Try to make file public, but do not fail the whole response if restricted.
-        try {
-          const sharingAccess = file.getSharingAccess();
-          if (
-            sharingAccess !== DriveApp.Access.ANYONE &&
-            sharingAccess !== DriveApp.Access.ANYONE_WITH_LINK
-          ) {
-            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          }
-        } catch (sharingError) {
-          Logger.log("Skipping setSharing for " + fileName + ": " + sharingError);
-        }
-
-        urls[fileName] = candidateUrls;
-
-        const stageMatch = fileName.match(STAGE_FILE_PATTERN);
-        if (stageMatch) {
-          const stageIndex = Number(stageMatch[2]);
-          if (stageIndex >= 1 && stageIndex <= 4) {
-            urls["Nền " + stageIndex + ".png"] = candidateUrls;
-            urls["Nen " + stageIndex + ".png"] = candidateUrls;
-            urls["stage_bg_" + stageIndex + ".png"] = candidateUrls;
-          }
-        }
-      }
-    }
-
-    if (!Object.keys(urls).length) {
-      return {
-        success: false,
-        message: "Không tìm thấy ảnh PET trong Drive folder.",
-      };
-    }
-
-    const payload = {
-      success: true,
-      urls: urls,
-    };
-
-    try {
-      cache.put(CACHE_KEY, JSON.stringify(payload), CACHE_TTL_SECONDS);
-    } catch (cacheError) {
-      Logger.log("Cache put failed for getPetAssetUrls: " + cacheError);
-    }
-
-    return payload;
-  } catch (error) {
-    return {
-      success: false,
-      message: "Lỗi lấy ảnh PET từ Google Drive: " + (error && error.message ? error.message : error),
-    };
-  }
-}
+// getPetAssetUrls removed as per PET refactor plan (using CDN + Manifest)
 
 // ⭐ Wrapper for clearing all learning data - forwards to content.js function
 // Note: The actual clearAllLearningData function is in server/content.js

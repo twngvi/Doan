@@ -1,0 +1,31 @@
+const CACHE_NAME = 'pet-assets-v1';
+const ASSET_PATH_TRIGGER = '/Image/'; // Or any identifier in the URL
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  
+  // Only cache PET assets from CDN
+  if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('/Image/')) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((response) => {
+          if (response) {
+            return response; // Cache First
+          }
+          return fetch(event.request).then((networkResponse) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        });
+      })
+    );
+  }
+});
