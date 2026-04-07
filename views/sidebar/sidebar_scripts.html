@@ -476,6 +476,194 @@
     setTimeout(addMobileMenuToggle, 200);
   })();
 </script>
+
+<!-- ============================================================
+     Game Flyout Submenu Controller
+     ============================================================ -->
+<script>
+  (function () {
+    "use strict";
+
+    // Submenu child pages for active-state detection
+    const GAME_CHILD_PAGES = ["page-mcq", "page-matching"];
+
+    let hideTimer = null;
+    let showTimer = null;
+    const SHOW_DELAY = 80;   // ms before showing (avoids flicker on fast mouse-through)
+    const HIDE_DELAY = 180;  // ms before hiding (allows bridge between item and flyout)
+
+    function getEls() {
+      return {
+        trigger: document.getElementById("navGameItem"),
+        flyout:  document.getElementById("gameSubmenu"),
+        arrow:   document.querySelector("#gameSubmenu .sidebar-flyout-arrow"),
+        items:   document.querySelectorAll("#gameSubmenu .sidebar-flyout-item"),
+        sidebar: document.getElementById("globalSidebar"),
+      };
+    }
+
+    // --------------- Positioning ---------------
+    function positionFlyout(trigger, flyout, sidebar) {
+      const tr   = trigger.getBoundingClientRect();
+      const fw   = flyout.offsetWidth  || 230;
+      const fh   = flyout.offsetHeight || 120;
+      const sbW  = sidebar  ? sidebar.getBoundingClientRect().right : tr.right;
+
+      // Place to the right of sidebar, aligned vertically to trigger
+      let left = sbW + 8;
+      let top  = tr.top + tr.height / 2 - fh / 2;
+
+      // Clamp vertically inside viewport
+      const vp = window.innerHeight;
+      top = Math.max(8, Math.min(top, vp - fh - 8));
+
+      flyout.style.left = left + "px";
+      flyout.style.top  = top  + "px";
+
+      // Position arrow vertically relative to trigger center
+      const flyoutTop = parseFloat(flyout.style.top);
+      const arrowTop  = tr.top + tr.height / 2 - flyoutTop;
+      if (flyout.querySelector(".sidebar-flyout-arrow")) {
+        flyout.querySelector(".sidebar-flyout-arrow").style.top = arrowTop + "px";
+        flyout.querySelector(".sidebar-flyout-arrow").style.transform = "none";
+      }
+    }
+
+    // --------------- Show / Hide ---------------
+    function showFlyout() {
+      clearTimeout(hideTimer);
+      clearTimeout(showTimer);
+      showTimer = setTimeout(() => {
+        const { trigger, flyout, sidebar } = getEls();
+        if (!trigger || !flyout) return;
+        positionFlyout(trigger, flyout, sidebar);
+        flyout.classList.add("flyout-visible");
+        trigger.classList.add("submenu-open");
+        trigger.setAttribute("aria-expanded", "true");
+        updateFlyoutActiveItems();
+      }, SHOW_DELAY);
+    }
+
+    function hideFlyout() {
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        const { trigger, flyout } = getEls();
+        if (!flyout) return;
+        flyout.classList.remove("flyout-visible");
+        if (trigger) {
+          trigger.classList.remove("submenu-open");
+          trigger.setAttribute("aria-expanded", "false");
+        }
+      }, HIDE_DELAY);
+    }
+
+    function cancelHide() {
+      clearTimeout(hideTimer);
+    }
+
+    // --------------- Active child highlight ---------------
+    function updateGameItemActive(pageId) {
+      const { trigger, items } = getEls();
+      if (!trigger) return;
+      const isChild = GAME_CHILD_PAGES.includes(pageId);
+      trigger.classList.toggle("child-active", isChild);
+
+      // Update flyout item active state
+      items.forEach(item => {
+        const p = item.getAttribute("data-page");
+        item.classList.toggle("flyout-active", p === pageId);
+      });
+    }
+
+    function updateFlyoutActiveItems() {
+      const currentPage =
+        (window.GlobalSidebar && window.GlobalSidebar.getCurrentPageId
+          ? window.GlobalSidebar.getCurrentPageId()
+          : "") || "";
+      updateGameItemActive(currentPage);
+    }
+
+    // --------------- Navigation ---------------
+    function navigateTo(pageId) {
+      hideFlyout();
+      if (typeof showPage === "function") {
+        showPage(pageId);
+      }
+    }
+
+    // --------------- Setup ---------------
+    function setupGameFlyout() {
+      const { trigger, flyout, items } = getEls();
+      if (!trigger || !flyout) return;
+
+      // Trigger hover
+      trigger.addEventListener("mouseenter", showFlyout);
+      trigger.addEventListener("mouseleave", hideFlyout);
+
+      // Keep open when mouse is over flyout
+      flyout.addEventListener("mouseenter", cancelHide);
+      flyout.addEventListener("mouseleave", hideFlyout);
+
+      // Click on trigger (prevents navigation, opens flyout)
+      trigger.addEventListener("click", function (e) {
+        e.preventDefault();
+        const isOpen = flyout.classList.contains("flyout-visible");
+        isOpen ? hideFlyout() : showFlyout();
+      });
+
+      // Click on flyout items → navigate
+      items.forEach(item => {
+        item.addEventListener("click", function (e) {
+          e.preventDefault();
+          const pageId = item.getAttribute("data-page");
+          if (pageId) navigateTo(pageId);
+        });
+      });
+
+      // Keyboard: Escape closes
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") hideFlyout();
+      });
+
+      // Click outside closes
+      document.addEventListener("click", function (e) {
+        const { trigger: t, flyout: f } = getEls();
+        if (!f || !t) return;
+        if (!f.contains(e.target) && !t.contains(e.target)) {
+          hideFlyout();
+        }
+      });
+
+      // Reposition on resize/scroll
+      window.addEventListener("resize", function () {
+        const f = document.getElementById("gameSubmenu");
+        if (f && f.classList.contains("flyout-visible")) {
+          const { trigger: t, sidebar: s } = getEls();
+          positionFlyout(t, f, s);
+        }
+      });
+
+      // Hook into showPage to update active state
+      const _origShowPage2 = window.showPage;
+      window.showPage = function (pageId, ...rest) {
+        if (typeof _origShowPage2 === "function") _origShowPage2(pageId, ...rest);
+        updateGameItemActive(pageId);
+      };
+
+      // Initial active check
+      setTimeout(updateFlyoutActiveItems, 300);
+    }
+
+    // Init when DOM ready
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setupGameFlyout);
+    } else {
+      setupGameFlyout();
+    }
+  })();
+</script>
+
 <script>
   (function () {
     "use strict";
@@ -531,6 +719,16 @@
         tagClass: "tag-page",
         keywords: "pet thu cung ban dong hanh",
         action: { type: "page", pageId: "page-pet" },
+      },
+      {
+        id: "page-code-playground",
+        group: "pages",
+        title: "Code Playground",
+        subtitle: "Trình soạn thảo code online",
+        tag: "Trang",
+        tagClass: "tag-page",
+        keywords: "code playground editor html css javascript python java sql",
+        action: { type: "page", pageId: "page-code-playground" },
       },
       {
         id: "page-profile",

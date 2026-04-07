@@ -1,0 +1,1310 @@
+<script type="module">
+/* =============================================================
+   CODE PLAYGROUND – Main Script (ES Module)
+   Uses CodeMirror 6 via CDN, Piston API, sql.js, marked.js
+   ============================================================= */
+
+// ---------------------------------------------------------------
+// CDN Imports (CodeMirror 6 via esm.sh for reliability)
+// ---------------------------------------------------------------
+const CDN = 'https://esm.sh/';
+
+async function importCM() {
+  const [
+    { EditorState },
+    { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection },
+    { defaultKeymap, history, historyKeymap, indentWithTab },
+    { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter },
+    { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap },
+    { html },
+    { css },
+    { javascript },
+    { python },
+    { sql },
+    { json },
+    { markdown },
+  ] = await Promise.all([
+    import(`${CDN}@codemirror/state`),
+    import(`${CDN}@codemirror/view`),
+    import(`${CDN}@codemirror/commands`),
+    import(`${CDN}@codemirror/language`),
+    import(`${CDN}@codemirror/autocomplete`),
+    import(`${CDN}@codemirror/lang-html`),
+    import(`${CDN}@codemirror/lang-css`),
+    import(`${CDN}@codemirror/lang-javascript`),
+    import(`${CDN}@codemirror/lang-python`),
+    import(`${CDN}@codemirror/lang-sql`),
+    import(`${CDN}@codemirror/lang-json`),
+    import(`${CDN}@codemirror/lang-markdown`),
+  ]);
+
+  return {
+    EditorState, EditorView, keymap, lineNumbers, highlightActiveLine,
+    highlightActiveLineGutter, drawSelection,
+    defaultKeymap, history, historyKeymap, indentWithTab,
+    syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
+    autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
+    langHtml: html, langCss: css, langJs: javascript,
+    langPython: python, langSql: sql, langJson: json, langMarkdown: markdown,
+  };
+}
+
+// ---------------------------------------------------------------
+// Default code templates per language
+// ---------------------------------------------------------------
+const DEFAULT_CODE = {
+  html: `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Hello World</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    h1 { color: #4f46e5; margin: 0 0 0.5rem; }
+    p  { color: #6b7280; }
+    button {
+      margin-top: 1rem;
+      padding: 0.6rem 1.5rem;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: transform 0.2s;
+    }
+    button:hover { transform: scale(1.05); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🚀 Hello, World!</h1>
+    <p>Chào mừng đến Code Playground</p>
+    <button onclick="this.textContent='✨ Clicked!'">Click me</button>
+  </div>
+</body>
+</html>`,
+
+  css: `/* CSS Preview – nội dung mẫu */
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: #f0f4ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.box {
+  width: 200px;
+  height: 200px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  animation: rotate 3s ease-in-out infinite;
+  box-shadow: 0 10px 40px rgba(102,126,234,0.4);
+}
+
+@keyframes rotate {
+  0%   { transform: rotate(0deg) scale(1); }
+  50%  { transform: rotate(180deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}`,
+
+  javascript: `// JavaScript Playground
+
+// Fibonacci với memoization
+function fibonacci(n, memo = {}) {
+  if (n in memo) return memo[n];
+  if (n <= 1) return n;
+  memo[n] = fibonacci(n - 1, memo) + fibonacci(n - 2, memo);
+  return memo[n];
+}
+
+console.log('🔢 Fibonacci sequence:');
+for (let i = 0; i <= 10; i++) {
+  console.log(\`F(\${i}) = \${fibonacci(i)}\`);
+}
+
+// Async example
+async function fetchJoke() {
+  try {
+    console.log('\\n🤣 Fetching a joke...');
+    const res = await fetch('https://official-joke-api.appspot.com/random_joke');
+    const joke = await res.json();
+    console.log(\`Setup: \${joke.setup}\`);
+    console.log(\`Punchline: \${joke.punchline}\`);
+  } catch (e) {
+    console.log('Could not fetch joke (no network in sandbox)');
+  }
+}
+
+fetchJoke();`,
+
+  python: `# Python Playground
+
+def fibonacci(n):
+    """Tính dãy Fibonacci"""
+    a, b = 0, 1
+    result = []
+    for _ in range(n):
+        result.append(a)
+        a, b = b, a + b
+    return result
+
+print("🔢 Fibonacci(10):", fibonacci(10))
+
+# List comprehension
+squares = [x**2 for x in range(1, 11)]
+print("📐 Squares:", squares)
+
+# Dictionary
+student = {
+    "name": "Nguyễn Văn A",
+    "score": 95,
+    "grade": "A"
+}
+for key, value in student.items():
+    print(f"  {key}: {value}")
+
+# Class example
+class Circle:
+    def __init__(self, radius):
+        self.radius = radius
+    
+    def area(self):
+        import math
+        return round(math.pi * self.radius ** 2, 2)
+    
+    def __repr__(self):
+        return f"Circle(r={self.radius}, area={self.area()})"
+
+print("\\n⭕", Circle(5))
+print("⭕", Circle(10))`,
+
+  c: `#include <stdio.h>
+#include <string.h>
+
+// Sắp xếp nổi bọt (Bubble Sort)
+void bubbleSort(int arr[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+}
+
+int main() {
+    printf("=== C Playground ===\\n\\n");
+    
+    int arr[] = {64, 34, 25, 12, 22, 11, 90};
+    int n = sizeof(arr) / sizeof(arr[0]);
+    
+    printf("Before sort: ");
+    for (int i = 0; i < n; i++) printf("%d ", arr[i]);
+    printf("\\n");
+    
+    bubbleSort(arr, n);
+    
+    printf("After sort:  ");
+    for (int i = 0; i < n; i++) printf("%d ", arr[i]);
+    printf("\\n");
+    
+    // String operations
+    char greeting[] = "Hello, Code Playground!";
+    printf("\\nString: %s\\n", greeting);
+    printf("Length: %lu chars\\n", strlen(greeting));
+    
+    return 0;
+}`,
+
+  cpp: `#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <string>
+using namespace std;
+
+// Template function
+template<typename T>
+void printVector(const vector<T>& v, const string& label = "") {
+    if (!label.empty()) cout << label << ": ";
+    for (const auto& x : v) cout << x << " ";
+    cout << endl;
+}
+
+// Class with operator overloading
+class Vector2D {
+public:
+    double x, y;
+    Vector2D(double x, double y) : x(x), y(y) {}
+    
+    Vector2D operator+(const Vector2D& other) const {
+        return Vector2D(x + other.x, y + other.y);
+    }
+    
+    double magnitude() const {
+        return sqrt(x*x + y*y);
+    }
+    
+    friend ostream& operator<<(ostream& os, const Vector2D& v) {
+        return os << "(" << v.x << ", " << v.y << ")";
+    }
+};
+
+int main() {
+    cout << "=== C++ Playground ===" << endl << endl;
+    
+    // STL vector + sort
+    vector<int> nums = {5, 2, 8, 1, 9, 3, 7, 4, 6};
+    printVector(nums, "Original");
+    sort(nums.begin(), nums.end());
+    printVector(nums, "Sorted  ");
+    
+    // Lambda
+    auto isEven = [](int n) { return n % 2 == 0; };
+    vector<int> evens;
+    copy_if(nums.begin(), nums.end(), back_inserter(evens), isEven);
+    printVector(evens, "Evens   ");
+    
+    // Custom class
+    Vector2D v1(3, 4), v2(1, 2);
+    cout << "\\nv1 = " << v1 << ", |v1| = " << v1.magnitude() << endl;
+    cout << "v2 = " << v2 << endl;
+    cout << "v1 + v2 = " << (v1 + v2) << endl;
+    
+    return 0;
+}`,
+
+  java: `public class Main {
+    // Fibonacci với đệ quy + memoization
+    static long[] memo = new long[50];
+    
+    static long fibonacci(int n) {
+        if (n <= 1) return n;
+        if (memo[n] != 0) return memo[n];
+        memo[n] = fibonacci(n - 1) + fibonacci(n - 2);
+        return memo[n];
+    }
+    
+    // Generic Stack implementation
+    static class Stack<T> {
+        private Object[] data;
+        private int size;
+        
+        public Stack(int capacity) {
+            data = new Object[capacity];
+            size = 0;
+        }
+        
+        public void push(T item) {
+            if (size < data.length) data[size++] = item;
+        }
+        
+        @SuppressWarnings("unchecked")
+        public T pop() {
+            return size > 0 ? (T) data[--size] : null;
+        }
+        
+        public boolean isEmpty() { return size == 0; }
+        public int size() { return size; }
+    }
+    
+    public static void main(String[] args) {
+        System.out.println("=== Java Playground ===\\n");
+        
+        // Fibonacci
+        System.out.print("Fibonacci: ");
+        for (int i = 0; i < 10; i++) {
+            System.out.print(fibonacci(i) + " ");
+        }
+        System.out.println();
+        
+        // Stack usage
+        Stack<String> stack = new Stack<>(10);
+        stack.push("Hello");
+        stack.push("World");
+        stack.push("Java");
+        
+        System.out.println("\\nStack pop order:");
+        while (!stack.isEmpty()) {
+            System.out.println("  → " + stack.pop());
+        }
+        
+        // String manipulation
+        String text = "Code Playground";
+        System.out.println("\\nString: " + text);
+        System.out.println("Upper:  " + text.toUpperCase());
+        System.out.println("Chars:  " + text.length());
+    }
+}`,
+
+  sql: `-- SQL Playground (SQLite)
+
+-- Tạo bảng
+CREATE TABLE IF NOT EXISTS students (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  name    TEXT    NOT NULL,
+  score   INTEGER NOT NULL,
+  subject TEXT    NOT NULL
+);
+
+-- Chèn dữ liệu
+INSERT INTO students (name, score, subject) VALUES
+  ('Nguyễn Văn A', 95, 'Math'),
+  ('Trần Thị B',   88, 'Science'),
+  ('Lê Văn C',     76, 'Math'),
+  ('Phạm Thị D',   92, 'Science'),
+  ('Hoàng Văn E',  84, 'Math');
+
+-- Truy vấn cơ bản
+SELECT * FROM students ORDER BY score DESC;
+
+-- Tổng hợp theo môn học
+SELECT 
+  subject,
+  COUNT(*) AS total,
+  ROUND(AVG(score), 1) AS avg_score,
+  MAX(score) AS max_score,
+  MIN(score) AS min_score
+FROM students
+GROUP BY subject;`,
+
+  json: `{
+  "name": "Code Playground",
+  "version": "1.0.0",
+  "description": "Online code editor với syntax highlighting",
+  "features": [
+    "Syntax highlighting",
+    "Multiple languages",
+    "Real-time preview",
+    "API sandbox execution"
+  ],
+  "languages": {
+    "frontend": ["HTML", "CSS", "JavaScript"],
+    "backend": ["Python", "C", "C++", "Java"],
+    "data": ["SQL", "JSON", "Markdown"]
+  },
+  "settings": {
+    "theme": "dark",
+    "fontSize": 13,
+    "tabSize": 2,
+    "autoSave": true,
+    "lineNumbers": true
+  },
+  "author": {
+    "name": "Developer",
+    "year": 2025
+  }
+}`,
+
+  markdown: `# Code Playground 🚀
+
+Chào mừng đến với **Code Playground** – trình soạn thảo code online!
+
+## Tính năng chính
+
+- ✅ **Syntax highlighting** với CodeMirror 6
+- ✅ **10 ngôn ngữ** được hỗ trợ
+- ✅ **Preview real-time** cho HTML/CSS/JS
+- ✅ **API sandbox** cho Python, C, C++, Java
+- ✅ **SQL** chạy bằng WebAssembly (sql.js)
+- ✅ **Light/Dark theme** có thể chuyển đổi
+- ✅ **Fullscreen mode**
+- ✅ **Copy & Reset** code nhanh chóng
+
+## Hướng dẫn sử dụng
+
+1. Chọn **ngôn ngữ** từ dropdown bên trên
+2. Nhập hoặc chỉnh sửa code trong **editor bên trái**
+3. Nhấn **▶ Run** hoặc `Ctrl+Enter` để chạy
+4. Kết quả hiển thị trong **panel bên phải**
+
+## Ví dụ code Python
+
+\`\`\`python
+def greet(name):
+    return f"Hello, {name}!"
+
+print(greet("World"))
+\`\`\`
+
+## Bảng so sánh
+
+| Ngôn ngữ | Engine | Realtime |
+|---------|--------|----------|
+| HTML/CSS/JS | iframe | ✅ |
+| Python/Java | Piston API | ❌ |
+| SQL | sql.js | ❌ |
+| Markdown | marked.js | ✅ |
+
+> 💡 **Tip:** Kéo thanh phân chia giữa để thay đổi kích thước editor!
+`
+};
+
+// ---------------------------------------------------------------
+// Language metadata
+// ---------------------------------------------------------------
+const LANG_META = {
+  html:       { title: 'index.html',   engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
+  css:        { title: 'style.css',    engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
+  javascript: { title: 'script.js',    engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
+  python:     { title: 'main.py',      engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
+  c:          { title: 'main.c',       engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
+  cpp:        { title: 'main.cpp',     engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
+  java:       { title: 'Main.java',    engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
+  sql:        { title: 'query.sql',    engine: 'sqljs',     badge: 'SQLite',   badgeClass: 'badge-compiled' },
+  json:       { title: 'data.json',    engine: 'json',      badge: 'validate', badgeClass: 'badge-realtime' },
+  markdown:   { title: 'README.md',    engine: 'markdown',  badge: 'preview',  badgeClass: 'badge-realtime' },
+};
+
+// Piston API language/version mapping
+const PISTON_LANGS = {
+  python: { language: 'python',  version: '3.10.0' },
+  c:      { language: 'c',       version: '10.2.0' },
+  cpp:    { language: 'c++',     version: '10.2.0' },
+  java:   { language: 'java',    version: '15.0.2' },
+};
+
+// ---------------------------------------------------------------
+// State
+// ---------------------------------------------------------------
+let cmView = null;
+let cmModules = null;
+let currentLang = 'html';
+let isDarkTheme = true;
+let isFullscreen = false;
+let runTimeout = null;
+let sqlDb = null;
+let markedLoaded = false;
+let codeStorage = {};   // lang -> code (auto-save)
+let isCmLoaded = false;
+
+// DOM refs (populated on init)
+let el = {};
+
+// ---------------------------------------------------------------
+// Init on page show
+// ---------------------------------------------------------------
+function cpInit() {
+  el = {
+    root:           document.getElementById('cpRoot'),
+    langSelect:     document.getElementById('cpLangSelect'),
+    engineBadge:    document.getElementById('cpEngineBadge'),
+    runBtn:         document.getElementById('cpRunBtn'),
+    resetBtn:       document.getElementById('cpResetBtn'),
+    copyBtn:        document.getElementById('cpCopyBtn'),
+    themeBtn:       document.getElementById('cpThemeBtn'),
+    themeIcon:      document.getElementById('cpThemeIcon'),
+    fsBtn:          document.getElementById('cpFullscreenBtn'),
+    fsIcon:         document.getElementById('cpFsIcon'),
+    clearBtn:       document.getElementById('cpClearBtn'),
+    editorWrap:     document.getElementById('cpEditorWrap'),
+    editorTitle:    document.getElementById('cpEditorTitle'),
+    editorInfo:     document.getElementById('cpEditorInfo'),
+    fallbackTA:     document.getElementById('cpFallbackTextarea'),
+    resizer:        document.getElementById('cpResizer'),
+    editorPanel:    document.getElementById('cpEditorPanel'),
+    outputPanel:    document.getElementById('cpOutputPanel'),
+    outputBody:     document.getElementById('cpOutputBody'),
+    spinner:        document.getElementById('cpSpinner'),
+    spinnerText:    document.getElementById('cpSpinnerText'),
+    previewFrame:   document.getElementById('cpPreviewFrame'),
+    console:        document.getElementById('cpConsole'),
+    consoleEmpty:   document.getElementById('cpConsoleEmpty'),
+    mdPreview:      document.getElementById('cpMarkdownPreview'),
+    tabPreview:     document.getElementById('cpTabPreview'),
+    tabConsole:     document.getElementById('cpTabConsole'),
+    statusDot:      document.getElementById('cpStatusDot'),
+    statusText:     document.getElementById('cpStatusText'),
+    statusTime:     document.getElementById('cpStatusTime'),
+    cursorPos:      document.getElementById('cpCursorPos'),
+    charCount:      document.getElementById('cpCharCount'),
+    copyToast:      document.getElementById('cpCopyToast'),
+  };
+
+  // Restore saved theme
+  const savedTheme = localStorage.getItem('cp_theme');
+  if (savedTheme === 'light') { isDarkTheme = false; el.root.classList.add('cp-light'); el.themeIcon.textContent = 'light_mode'; }
+
+  // Restore saved language
+  const savedLang = localStorage.getItem('cp_lang') || 'html';
+  el.langSelect.value = savedLang;
+
+  // Load auto-saved codes
+  try { codeStorage = JSON.parse(localStorage.getItem('cp_codes') || '{}'); } catch(e) { codeStorage = {}; }
+
+  // Event listeners
+  el.langSelect.addEventListener('change', () => switchLanguage(el.langSelect.value));
+  el.runBtn.addEventListener('click', runCode);
+  el.resetBtn.addEventListener('click', resetCode);
+  el.copyBtn.addEventListener('click', copyCode);
+  el.themeBtn.addEventListener('click', toggleTheme);
+  el.fsBtn.addEventListener('click', toggleFullscreen);
+  el.clearBtn.addEventListener('click', clearOutput);
+  el.tabPreview.addEventListener('click', () => switchTab('preview'));
+  el.tabConsole.addEventListener('click', () => switchTab('console'));
+
+  // Resizer drag
+  setupResizer();
+
+  // Keyboard shortcut: Ctrl+Enter = Run
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runCode(); }
+    if (e.key === 'F11' && el.root.contains(document.activeElement)) {
+      e.preventDefault(); toggleFullscreen();
+    }
+  });
+
+  // Load CodeMirror then set language
+  loadCodeMirror().then(() => {
+    switchLanguage(savedLang, true);
+  });
+}
+
+// ---------------------------------------------------------------
+// CodeMirror 6 loader
+// ---------------------------------------------------------------
+async function loadCodeMirror() {
+  setStatus('loading', 'Đang tải editor...');
+  try {
+    cmModules = await importCM();
+    isCmLoaded = true;
+    setStatus('ready', 'Sẵn sàng');
+  } catch (err) {
+    console.warn('[CP] CodeMirror failed to load, using fallback textarea:', err);
+    isCmLoaded = false;
+    el.fallbackTA.style.display = 'block';
+    el.fallbackTA.value = DEFAULT_CODE[currentLang] || '';
+    setStatus('ready', 'Editor (basic mode)');
+  }
+}
+
+function getLangExtension(lang) {
+  const { langHtml, langCss, langJs, langPython, langSql, langJson, langMarkdown } = cmModules;
+  const map = {
+    html: langHtml(),
+    css: langCss(),
+    javascript: langJs(),
+    python: langPython(),
+    c: langJs(),         // no C mode in CM6 free tier – use JS highlighter as fallback
+    cpp: langJs(),
+    java: langJs(),
+    sql: langSql(),
+    json: langJson(),
+    markdown: langMarkdown(),
+  };
+  return map[lang] || langHtml();
+}
+
+function buildCmExtensions(lang) {
+  const {
+    EditorView, keymap, lineNumbers, highlightActiveLine,
+    highlightActiveLineGutter, drawSelection,
+    defaultKeymap, history, historyKeymap, indentWithTab,
+    syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
+    autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
+  } = cmModules;
+
+  const baseTheme = EditorView.baseTheme({
+    '&': { height: '100%', fontSize: '13.5px' },
+    '.cm-scroller': { overflow: 'auto', fontFamily: "'JetBrains Mono','Fira Code',monospace" },
+  });
+
+  return [
+    lineNumbers(),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    history(),
+    drawSelection(),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion(),
+    foldGutter(),
+    syntaxHighlighting(defaultHighlightStyle),
+    getLangExtension(lang),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      ...completionKeymap,
+      indentWithTab,
+      { key: 'Ctrl-Enter', run: () => { runCode(); return true; } },
+    ]),
+    baseTheme,
+    EditorView.updateListener.of((v) => {
+      if (v.docChanged) onEditorChange(v.state.doc.toString());
+      if (v.selectionSet) updateCursorPos(v.state);
+    }),
+    EditorView.theme({}, { dark: isDarkTheme }),
+  ];
+}
+
+function createCmView(code, lang) {
+  const { EditorState, EditorView } = cmModules;
+
+  if (cmView) {
+    cmView.destroy();
+    cmView = null;
+  }
+
+  const state = EditorState.create({
+    doc: code,
+    extensions: buildCmExtensions(lang),
+  });
+
+  cmView = new EditorView({ state, parent: el.editorWrap });
+}
+
+// ---------------------------------------------------------------
+// Language switching
+// ---------------------------------------------------------------
+function switchLanguage(lang, skipSave = false) {
+  if (!skipSave && currentLang) {
+    codeStorage[currentLang] = getCode();
+    persistCodes();
+  }
+
+  currentLang = lang;
+  localStorage.setItem('cp_lang', lang);
+
+  const meta = LANG_META[lang] || LANG_META.html;
+  el.editorTitle.textContent = meta.title;
+  el.engineBadge.textContent = meta.badge;
+  el.engineBadge.className = `cp-lang-badge ${meta.badgeClass}`;
+
+  // Restore saved code or use default
+  const code = codeStorage[lang] !== undefined ? codeStorage[lang] : DEFAULT_CODE[lang] || '';
+
+  if (isCmLoaded) {
+    createCmView(code, lang);
+  } else {
+    el.fallbackTA.value = code;
+  }
+
+  updateCharCount(code);
+
+  // Auto-switch output tab based on engine
+  if (['html', 'css', 'javascript', 'markdown'].includes(lang)) {
+    switchTab('preview');
+    // Auto-run preview languages
+    if (['html', 'css', 'javascript', 'markdown'].includes(lang)) {
+      scheduleAutoRun();
+    }
+  } else {
+    switchTab('console');
+    clearOutput();
+  }
+
+  setStatus('ready', 'Sẵn sàng');
+}
+
+// ---------------------------------------------------------------
+// Editor helpers
+// ---------------------------------------------------------------
+function getCode() {
+  if (isCmLoaded && cmView) return cmView.state.doc.toString();
+  return el.fallbackTA.value;
+}
+
+function setCode(code) {
+  if (isCmLoaded && cmView) {
+    const { EditorState } = cmModules;
+    cmView.setState(EditorState.create({
+      doc: code,
+      extensions: buildCmExtensions(currentLang),
+    }));
+  } else {
+    el.fallbackTA.value = code;
+  }
+  updateCharCount(code);
+}
+
+function onEditorChange(code) {
+  codeStorage[currentLang] = code;
+  persistCodes();
+  updateCharCount(code);
+  if (['html', 'css', 'javascript', 'markdown'].includes(currentLang)) {
+    scheduleAutoRun();
+  }
+}
+
+let autoRunTimer = null;
+function scheduleAutoRun() {
+  clearTimeout(autoRunTimer);
+  autoRunTimer = setTimeout(() => runCode(true), 800);
+}
+
+function updateCharCount(code) {
+  if (el.charCount) el.charCount.textContent = `${code.length} chars`;
+}
+
+function updateCursorPos(state) {
+  const pos = state.selection.main.head;
+  const line = state.doc.lineAt(pos);
+  const col = pos - line.from + 1;
+  if (el.cursorPos) el.cursorPos.textContent = `Ln ${line.number}, Col ${col}`;
+}
+
+function persistCodes() {
+  try { localStorage.setItem('cp_codes', JSON.stringify(codeStorage)); } catch(e) {}
+}
+
+// ---------------------------------------------------------------
+// Run Code dispatcher
+// ---------------------------------------------------------------
+async function runCode(isAutoRun = false) {
+  const code = getCode().trim();
+  if (!code && !isAutoRun) return;
+
+  const meta = LANG_META[currentLang];
+  const t0 = performance.now();
+
+  if (!isAutoRun) {
+    el.runBtn.disabled = true;
+    el.runBtn.classList.add('running');
+    el.runBtn.querySelector('.btn-label').textContent = 'Running...';
+  }
+
+  setStatus('running', 'Đang chạy...');
+
+  try {
+    switch (meta.engine) {
+      case 'iframe':    await runIframe(code);   break;
+      case 'piston':    await runPiston(code);   break;
+      case 'sqljs':     await runSqlJs(code);    break;
+      case 'json':      runJson(code);           break;
+      case 'markdown':  runMarkdown(code);       break;
+    }
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+    el.statusTime.textContent = `${elapsed}s`;
+    setStatus('success', 'Hoàn thành');
+  } catch (err) {
+    setStatus('error', err.message || 'Lỗi không xác định');
+    appendConsole('error', '❌ Error: ' + (err.message || err));
+    if (!isAutoRun) switchTab('console');
+  } finally {
+    if (!isAutoRun) {
+      el.runBtn.disabled = false;
+      el.runBtn.classList.remove('running');
+      el.runBtn.querySelector('.btn-label').textContent = 'Run';
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// Engine: iframe (HTML / CSS / JS)
+// ---------------------------------------------------------------
+async function runIframe(code) {
+  let src = '';
+  if (currentLang === 'html') {
+    src = code;
+  } else if (currentLang === 'css') {
+    src = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>body{margin:0;padding:1rem;font-family:sans-serif}</style>
+<style>${code}</style></head>
+<body>
+<div class="box">CSS Preview</div>
+<p>Đây là đoạn văn bản mẫu để xem CSS của bạn.</p>
+<a href="#">Link mẫu</a>
+<button>Button mẫu</button>
+</body></html>`;
+  } else if (currentLang === 'javascript') {
+    src = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  body { margin:0; padding:1rem; font-family:'Segoe UI',sans-serif; background:#0f172a; color:#e2e8f0; }
+  #output { white-space:pre-wrap; font-family:monospace; font-size:13px; }
+  .line { margin:0.1em 0; }
+  .err { color:#f87171; }
+</style></head>
+<body>
+<div id="output"></div>
+<script>
+(function() {
+  const out = document.getElementById('output');
+  const origLog = console.log;
+  const origErr = console.error;
+  const origWarn = console.warn;
+  function appendLine(text, cls='') {
+    const d = document.createElement('div');
+    d.className = 'line' + (cls ? ' ' + cls : '');
+    d.textContent = text;
+    out.appendChild(d);
+  }
+  console.log = function(...a) { origLog(...a); appendLine(a.map(x=>typeof x==='object'?JSON.stringify(x,null,2):String(x)).join(' ')); };
+  console.error = function(...a) { origErr(...a); appendLine('❌ ' + a.join(' '), 'err'); };
+  console.warn = function(...a) { origWarn(...a); appendLine('⚠️ ' + a.join(' ')); };
+  window.onerror = function(msg) { appendLine('❌ ' + msg, 'err'); };
+  try {
+    ${code}
+  } catch(e) { appendLine('❌ ' + e.message, 'err'); }
+})();
+<\/script>
+</body></html>`;
+  }
+
+  switchTab('preview');
+  showSpinner(false);
+  el.previewFrame.srcdoc = src;
+}
+
+// ---------------------------------------------------------------
+// Engine: Piston API (Python / C / C++ / Java)
+// ---------------------------------------------------------------
+const PISTON_API = 'https://emkc.org/api/v2/piston/execute';
+
+async function runPiston(code) {
+  switchTab('console');
+  showSpinner(true, 'Đang biên dịch & chạy...');
+  clearConsoleSilent();
+
+  const cfg = PISTON_LANGS[currentLang];
+  if (!cfg) throw new Error('Ngôn ngữ chưa được hỗ trợ');
+
+  const meta = LANG_META[currentLang];
+  const filename = meta.title;
+
+  const response = await fetch(PISTON_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      language: cfg.language,
+      version: cfg.version,
+      files: [{ name: filename, content: code }],
+      stdin: '',
+      args: [],
+      compile_timeout: 10000,
+      run_timeout: 5000,
+      compile_memory_limit: -1,
+      run_memory_limit: -1,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Piston API error: ${response.status} ${response.statusText}`);
+  }
+
+  const result = await response.json();
+  showSpinner(false);
+
+  const run = result.run || {};
+  const compile = result.compile || {};
+
+  // Show compile errors if any
+  if (compile.stderr) {
+    compile.stderr.trim().split('\n').forEach(line => appendConsole('error', line));
+  }
+  if (compile.stdout) {
+    compile.stdout.trim().split('\n').forEach(line => appendConsole('info', line));
+  }
+
+  // Show run output
+  if (run.stdout && run.stdout.trim()) {
+    run.stdout.trim().split('\n').forEach(line => appendConsole('output', line));
+  }
+  if (run.stderr && run.stderr.trim()) {
+    run.stderr.trim().split('\n').forEach(line => appendConsole('error', line));
+  }
+
+  if (!run.stdout && !run.stderr && !compile.stderr) {
+    appendConsole('info', '(Không có output)');
+  }
+
+  if (run.code !== 0) {
+    appendConsole('error', `Exit code: ${run.code}`);
+  } else {
+    appendConsole('success', `✓ Chạy thành công (exit 0)`);
+  }
+}
+
+// ---------------------------------------------------------------
+// Engine: sql.js (WebAssembly SQLite)
+// ---------------------------------------------------------------
+async function runSqlJs(code) {
+  switchTab('console');
+  showSpinner(true, 'Khởi tạo SQLite...');
+  clearConsoleSilent();
+
+  try {
+    // Lazy-load sql.js
+    if (!sqlDb) {
+      await loadSqlJs();
+    }
+
+    showSpinner(false);
+
+    // Split into individual statements (by semicolon)
+    const statements = code
+      .split(/;(?=(?:[^']*'[^']*')*[^']*$)/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    let hasOutput = false;
+
+    for (const stmt of statements) {
+      try {
+        appendConsole('info', `▶ ${stmt.substring(0, 80)}${stmt.length > 80 ? '...' : ''}`);
+        const results = sqlDb.exec(stmt);
+
+        if (results && results.length > 0) {
+          hasOutput = true;
+          for (const r of results) {
+            // Header
+            appendConsole('output', r.columns.join(' | '));
+            appendConsole('output', r.columns.map(c => '-'.repeat(c.length + 2)).join('-|-'));
+            // Rows
+            for (const row of r.values) {
+              appendConsole('output', row.map(v => v === null ? 'NULL' : String(v)).join(' | '));
+            }
+            appendConsole('success', `(${r.values.length} row${r.values.length !== 1 ? 's' : ''})`);
+          }
+        } else {
+          appendConsole('success', 'OK');
+        }
+      } catch (e) {
+        appendConsole('error', '❌ ' + e.message);
+      }
+      appendConsole('output', '');
+    }
+
+  } catch (e) {
+    showSpinner(false);
+    throw e;
+  }
+}
+
+async function loadSqlJs() {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js';
+    script.onload = async () => {
+      try {
+        const SQL = await window.initSqlJs({
+          locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${file}`
+        });
+        sqlDb = new SQL.Database();
+        resolve();
+      } catch (e) { reject(e); }
+    };
+    script.onerror = () => reject(new Error('Không tải được sql.js'));
+    document.head.appendChild(script);
+  });
+}
+
+// ---------------------------------------------------------------
+// Engine: JSON validate & format
+// ---------------------------------------------------------------
+function runJson(code) {
+  switchTab('console');
+  clearConsoleSilent();
+  try {
+    const parsed = JSON.parse(code);
+    const formatted = JSON.stringify(parsed, null, 2);
+    const lines = formatted.split('\n');
+    appendConsole('success', `✓ JSON hợp lệ (${lines.length} dòng, ${code.length} chars)`);
+    appendConsole('output', '');
+    lines.forEach(line => appendConsole('output', line));
+  } catch (e) {
+    appendConsole('error', '❌ JSON không hợp lệ: ' + e.message);
+  }
+}
+
+// ---------------------------------------------------------------
+// Engine: Markdown preview
+// ---------------------------------------------------------------
+async function runMarkdown(code) {
+  switchTab('preview');
+  showSpinner(false);
+
+  if (!markedLoaded) {
+    await loadMarked();
+  }
+
+  try {
+    const html = window.marked.parse(code, { breaks: true, gfm: true });
+    el.mdPreview.innerHTML = html;
+    el.mdPreview.classList.add('active');
+    el.previewFrame.style.display = 'none';
+  } catch(e) {
+    appendConsole('error', '❌ Markdown error: ' + e.message);
+  }
+}
+
+async function loadMarked() {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js';
+    s.onload = () => { markedLoaded = true; resolve(); };
+    s.onerror = () => reject(new Error('Không tải được marked.js'));
+    document.head.appendChild(s);
+  });
+}
+
+// ---------------------------------------------------------------
+// Tab switching
+// ---------------------------------------------------------------
+function switchTab(tab) {
+  const isPreview = tab === 'preview';
+
+  el.tabPreview.classList.toggle('active', isPreview);
+  el.tabConsole.classList.toggle('active', !isPreview);
+  el.tabPreview.setAttribute('aria-selected', isPreview);
+  el.tabConsole.setAttribute('aria-selected', !isPreview);
+
+  if (isPreview) {
+    if (currentLang === 'markdown') {
+      el.previewFrame.style.display = 'none';
+      el.mdPreview.classList.add('active');
+    } else {
+      el.previewFrame.style.display = 'block';
+      el.mdPreview.classList.remove('active');
+    }
+    el.console.classList.remove('active');
+  } else {
+    el.previewFrame.style.display = 'none';
+    el.mdPreview.classList.remove('active');
+    el.console.classList.add('active');
+  }
+}
+
+// ---------------------------------------------------------------
+// Console helpers
+// ---------------------------------------------------------------
+function clearOutput() {
+  el.previewFrame.srcdoc = '';
+  el.mdPreview.innerHTML = '';
+  clearConsoleSilent();
+}
+
+function clearConsoleSilent() {
+  el.console.innerHTML = '';
+  el.consoleEmpty = null;
+}
+
+function appendConsole(type, text) {
+  // Remove empty state
+  const emp = el.console.querySelector('.cp-output-empty');
+  if (emp) emp.remove();
+
+  const div = document.createElement('div');
+  div.className = `cp-console-line line-${type}`;
+
+  const prefix = document.createElement('span');
+  prefix.className = 'cp-console-prefix';
+  prefix.textContent = type === 'error' ? '✗' : type === 'success' ? '✓' : type === 'info' ? '»' : ' ';
+
+  const content = document.createElement('span');
+  content.className = 'cp-console-text';
+  content.textContent = text;
+
+  div.appendChild(prefix);
+  div.appendChild(content);
+  el.console.appendChild(div);
+  el.console.scrollTop = el.console.scrollHeight;
+}
+
+// ---------------------------------------------------------------
+// Spinner
+// ---------------------------------------------------------------
+function showSpinner(show, text = 'Đang xử lý...') {
+  el.spinner.classList.toggle('visible', show);
+  el.spinnerText.textContent = text;
+}
+
+// ---------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------
+function setStatus(state, text) {
+  el.statusText.textContent = text;
+  el.statusDot.className = 'cp-status-dot';
+  if (state === 'running') el.statusDot.classList.add('dot-running');
+  else if (state === 'success') el.statusDot.classList.add('dot-success');
+  else if (state === 'error') el.statusDot.classList.add('dot-error');
+}
+
+// ---------------------------------------------------------------
+// Reset code
+// ---------------------------------------------------------------
+function resetCode() {
+  const def = DEFAULT_CODE[currentLang] || '';
+  setCode(def);
+  codeStorage[currentLang] = def;
+  persistCodes();
+  if (['html', 'css', 'javascript', 'markdown'].includes(currentLang)) {
+    scheduleAutoRun();
+  }
+}
+
+// ---------------------------------------------------------------
+// Copy code
+// ---------------------------------------------------------------
+async function copyCode() {
+  const code = getCode();
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch(e) {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.cssText = 'position:fixed;top:-999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  showCopyToast();
+}
+
+function showCopyToast() {
+  el.copyToast.classList.add('show');
+  setTimeout(() => el.copyToast.classList.remove('show'), 2000);
+}
+
+// ---------------------------------------------------------------
+// Theme toggle
+// ---------------------------------------------------------------
+function toggleTheme() {
+  isDarkTheme = !isDarkTheme;
+  el.root.classList.toggle('cp-light', !isDarkTheme);
+  el.themeIcon.textContent = isDarkTheme ? 'dark_mode' : 'light_mode';
+  localStorage.setItem('cp_theme', isDarkTheme ? 'dark' : 'light');
+
+  // Rebuild CM to apply theme
+  if (isCmLoaded && cmView) {
+    const code = getCode();
+    createCmView(code, currentLang);
+  }
+}
+
+// ---------------------------------------------------------------
+// Fullscreen toggle
+// ---------------------------------------------------------------
+function toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  el.root.classList.toggle('cp-fullscreen', isFullscreen);
+  el.fsIcon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
+  el.fsBtn.classList.toggle('active', isFullscreen);
+}
+
+// ---------------------------------------------------------------
+// Resizer drag
+// ---------------------------------------------------------------
+function setupResizer() {
+  let dragging = false;
+  let startX = 0;
+  let startEditorW = 0;
+
+  el.resizer.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startEditorW = el.editorPanel.offsetWidth;
+    el.resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const split = document.getElementById('cpSplit');
+    const totalW = split.offsetWidth;
+    const delta = e.clientX - startX;
+    const newEditorW = Math.max(200, Math.min(totalW - 200, startEditorW + delta));
+    el.editorPanel.style.width = newEditorW + 'px';
+    el.editorPanel.style.flex = 'none';
+    el.outputPanel.style.flex = '1';
+    el.outputPanel.style.width = '';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragging) {
+      dragging = false;
+      el.resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+
+  // Touch support
+  el.resizer.addEventListener('touchstart', (e) => {
+    dragging = true;
+    startX = e.touches[0].clientX;
+    startEditorW = el.editorPanel.offsetWidth;
+    el.resizer.classList.add('dragging');
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    const split = document.getElementById('cpSplit');
+    const totalW = split.offsetWidth;
+    const delta = e.touches[0].clientX - startX;
+    const newEditorW = Math.max(150, Math.min(totalW - 150, startEditorW + delta));
+    el.editorPanel.style.width = newEditorW + 'px';
+    el.editorPanel.style.flex = 'none';
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    dragging = false;
+    el.resizer.classList.remove('dragging');
+  });
+}
+
+// ---------------------------------------------------------------
+// Hook into page lifecycle (showPage system)
+// ---------------------------------------------------------------
+let cpInitialized = false;
+
+function onPageShow() {
+  if (!cpInitialized) {
+    cpInitialized = true;
+    cpInit();
+  }
+}
+
+// Fire on immediate DOM ready check
+if (document.readyState !== 'loading') {
+  // Check if this page is currently visible
+  const pg = document.getElementById('page-code-playground');
+  if (pg && pg.style.display !== 'none') onPageShow();
+} else {
+  document.addEventListener('DOMContentLoaded', () => {
+    const pg = document.getElementById('page-code-playground');
+    if (pg && pg.style.display !== 'none') onPageShow();
+  });
+}
+
+// Hook into global showPage
+const _cpOrigShowPage = window.showPage;
+window.showPage = function(pageId, ...args) {
+  if (typeof _cpOrigShowPage === 'function') _cpOrigShowPage(pageId, ...args);
+  if (pageId === 'page-code-playground') onPageShow();
+};
+
+// Export for potential external use
+window.CodePlayground = { init: cpInit, run: runCode };
+</script>
