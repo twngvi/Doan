@@ -1,12 +1,5 @@
 <!-- Code Playground Content -->
-<!-- Dependencies: CodeMirror 6, marked.js, sql.js -->
-
-<!-- CodeMirror 6 from CDN -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" crossorigin="anonymous"/>
-<script>
-  /* Lazy-load CodeMirror 6 via ESM CDN */
-  window._cpCDN = 'https://cdn.jsdelivr.net/npm/';
-</script>
+<!-- Dependencies: CodeMirror 5 (loaded in scripts), marked.js, sql.js -->
 
 <div class="cp-root" id="cpRoot">
 
@@ -27,23 +20,22 @@
     <div class="cp-lang-wrapper">
       <select id="cpLangSelect" class="cp-lang-select" title="Chọn ngôn ngữ lập trình" aria-label="Chọn ngôn ngữ">
         <optgroup label="Web">
-          <option value="html"       data-mode="html"       data-engine="iframe">HTML</option>
-          <option value="css"        data-mode="css"        data-engine="iframe">CSS</option>
-          <option value="javascript" data-mode="javascript" data-engine="iframe">JavaScript</option>
+          <option value="html">HTML</option>
+          <option value="css">CSS</option>
+          <option value="javascript">JavaScript</option>
         </optgroup>
         <optgroup label="Backend (via API)">
-          <option value="python"  data-mode="python"  data-engine="piston">Python</option>
-          <option value="c"       data-mode="c"       data-engine="piston">C</option>
-          <option value="cpp"     data-mode="cpp"     data-engine="piston">C++</option>
-          <option value="java"    data-mode="java"    data-engine="piston">Java</option>
+          <option value="python">Python</option>
+          <option value="c">C</option>
+          <option value="cpp">C++</option>
+          <option value="java">Java</option>
         </optgroup>
         <optgroup label="Data &amp; Markup">
-          <option value="sql"      data-mode="sql"      data-engine="sqljs">SQL</option>
-          <option value="json"     data-mode="json"     data-engine="json">JSON</option>
-          <option value="markdown" data-mode="markdown" data-engine="markdown">Markdown</option>
+          <option value="sql">SQL</option>
+          <option value="json">JSON</option>
+          <option value="markdown">Markdown</option>
         </optgroup>
       </select>
-      <!-- Engine badge: shown dynamically -->
       <span class="cp-lang-badge badge-realtime" id="cpEngineBadge">preview</span>
     </div>
 
@@ -69,13 +61,8 @@
 
     <div class="cp-toolbar-spacer"></div>
 
-    <!-- Theme Toggle -->
-    <button class="cp-btn cp-btn-icon" id="cpThemeBtn" title="Chuyển giao diện sáng/tối" aria-label="Chuyển theme">
-      <span class="material-symbols-sharp" id="cpThemeIcon">dark_mode</span>
-    </button>
-
     <!-- Fullscreen Toggle -->
-    <button class="cp-btn cp-btn-icon" id="cpFullscreenBtn" title="Toàn màn hình (F11)" aria-label="Toàn màn hình">
+    <button class="cp-btn cp-btn-icon" id="cpFullscreenBtn" title="Toàn màn hình" aria-label="Toàn màn hình">
       <span class="material-symbols-sharp" id="cpFsIcon">fullscreen</span>
     </button>
   </div>
@@ -96,10 +83,9 @@
         <span class="cp-panel-info" id="cpEditorInfo">Ctrl+Enter để chạy</span>
       </div>
 
-      <!-- CodeMirror editor mounts here -->
+      <!-- CodeMirror 5 editor mounts here via textarea -->
       <div class="cp-editor-wrap" id="cpEditorWrap">
-        <!-- Fallback textarea (hidden when CM loads) -->
-        <textarea id="cpFallbackTextarea" style="width:100%;height:100%;border:none;outline:none;resize:none;padding:1rem;font-family:monospace;font-size:13px;background:#0f172a;color:#e2e8f0;box-sizing:border-box;display:none;"></textarea>
+        <textarea id="cpCodeTextarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
       </div>
     </div>
 
@@ -117,10 +103,9 @@
         </button>
         <button class="cp-output-tab" id="cpTabConsole" role="tab" aria-selected="false" data-tab="console">
           <span class="material-symbols-sharp">terminal</span>
-          Output
+          Terminal (Input/Output)
         </button>
         <span class="cp-output-tab-spacer"></span>
-        <!-- Clear output button -->
         <button class="cp-btn cp-btn-icon" id="cpClearBtn" title="Xóa output" aria-label="Xóa output" style="font-size:0.75rem;">
           <span class="material-symbols-sharp" style="font-size:0.95rem">delete_sweep</span>
         </button>
@@ -129,50 +114,52 @@
       <!-- Output body -->
       <div class="cp-output-body" id="cpOutputBody">
 
-        <!-- Spinner overlay -->
-        <div class="cp-spinner-overlay" id="cpSpinner" aria-live="polite">
-          <div class="cp-spinner"></div>
-          <span class="cp-spinner-text" id="cpSpinnerText">Đang chạy code...</span>
+        <!-- Tab 1: Preview (HTML/JS/Markdown) -->
+        <div class="cp-preview-container" id="cpPreviewContainer">
+          <iframe
+            id="cpPreviewFrame"
+            class="cp-preview-iframe"
+            sandbox="allow-scripts allow-modals"
+            title="Code preview"
+          ></iframe>
+          <div class="cp-markdown-preview" id="cpMarkdownPreview"></div>
         </div>
 
-        <!-- Preview: iframe (HTML/CSS/JS) -->
-        <iframe
-          id="cpPreviewFrame"
-          class="cp-preview-iframe"
-          sandbox="allow-scripts allow-modals"
-          title="Code preview"
-          aria-label="Kết quả preview"
-        ></iframe>
-
-        <!-- Console: text output (Python/C/Java/SQL/JSON) -->
-        <div class="cp-console" id="cpConsole" role="log" aria-live="polite" aria-label="Output console">
-          <div class="cp-output-empty" id="cpConsoleEmpty">
-            <span class="material-symbols-sharp">terminal</span>
-            <p>Nhấn <strong>Run</strong> để xem kết quả</p>
+        <!-- Tab 2: Terminal (Input & Output combined) -->
+        <div class="cp-terminal-wrapper" id="cpTerminalWrapper">
+          
+          <!-- Section 1: Standard Input -->
+          <div class="cp-terminal-section cp-terminal-stdin">
+            <div class="cp-terminal-header">
+              <span class="material-symbols-sharp">keyboard</span>
+              Standard Input (Dữ liệu vào)
+            </div>
+            <textarea id="cpStdin" placeholder="Nhập dữ liệu vào tại đây... (Ví dụ: 10 20)" spellcheck="false"></textarea>
           </div>
+
+          <!-- Section 2: Standard Output -->
+          <div class="cp-terminal-section cp-terminal-stdout">
+            <div class="cp-terminal-header">
+              <span class="material-symbols-sharp">output</span>
+              Standard Output (Kết quả)
+            </div>
+            <div class="cp-console" id="cpConsole" role="log" aria-live="polite">
+              <div class="cp-output-empty">
+                <span class="material-symbols-sharp">terminal</span>
+                <p>Nhấn <strong>Run</strong> để xem kết quả</p>
+              </div>
+            </div>
+          </div>
+
         </div>
+
+        <!-- Spinner overlay -->
+        <div class="cp-spinner-overlay" id="cpSpinner">
 
         <!-- Markdown preview -->
         <div class="cp-markdown-preview" id="cpMarkdownPreview" role="region" aria-label="Markdown preview"></div>
       </div>
     </div>
-  </div>
-
-  <!-- ============================================================
-       STATUS BAR
-       ============================================================ -->
-  <div class="cp-status-bar" id="cpStatusBar" role="status" aria-live="polite">
-    <div class="cp-status-item">
-      <span class="cp-status-dot" id="cpStatusDot"></span>
-      <span id="cpStatusText">Sẵn sàng</span>
-    </div>
-    <div class="cp-status-item">
-      <span class="material-symbols-sharp">schedule</span>
-      <span id="cpStatusTime">—</span>
-    </div>
-    <div class="cp-status-spacer"></div>
-    <div class="cp-status-item" id="cpCursorPos">Ln 1, Col 1</div>
-    <div class="cp-status-item" id="cpCharCount">0 chars</div>
   </div>
 </div>
 

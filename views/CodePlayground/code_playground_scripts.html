@@ -1,1310 +1,840 @@
-<script type="module">
-/* =============================================================
-   CODE PLAYGROUND – Main Script (ES Module)
-   Uses CodeMirror 6 via CDN, Piston API, sql.js, marked.js
-   ============================================================= */
-
-// ---------------------------------------------------------------
-// CDN Imports (CodeMirror 6 via esm.sh for reliability)
-// ---------------------------------------------------------------
-const CDN = 'https://esm.sh/';
-
-async function importCM() {
-  const [
-    { EditorState },
-    { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection },
-    { defaultKeymap, history, historyKeymap, indentWithTab },
-    { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter },
-    { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap },
-    { html },
-    { css },
-    { javascript },
-    { python },
-    { sql },
-    { json },
-    { markdown },
-  ] = await Promise.all([
-    import(`${CDN}@codemirror/state`),
-    import(`${CDN}@codemirror/view`),
-    import(`${CDN}@codemirror/commands`),
-    import(`${CDN}@codemirror/language`),
-    import(`${CDN}@codemirror/autocomplete`),
-    import(`${CDN}@codemirror/lang-html`),
-    import(`${CDN}@codemirror/lang-css`),
-    import(`${CDN}@codemirror/lang-javascript`),
-    import(`${CDN}@codemirror/lang-python`),
-    import(`${CDN}@codemirror/lang-sql`),
-    import(`${CDN}@codemirror/lang-json`),
-    import(`${CDN}@codemirror/lang-markdown`),
-  ]);
-
-  return {
-    EditorState, EditorView, keymap, lineNumbers, highlightActiveLine,
-    highlightActiveLineGutter, drawSelection,
-    defaultKeymap, history, historyKeymap, indentWithTab,
-    syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
-    autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
-    langHtml: html, langCss: css, langJs: javascript,
-    langPython: python, langSql: sql, langJson: json, langMarkdown: markdown,
-  };
-}
-
-// ---------------------------------------------------------------
-// Default code templates per language
-// ---------------------------------------------------------------
-const DEFAULT_CODE = {
-  html: `<!DOCTYPE html>
-<html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <title>Hello World</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .card {
-      background: white;
-      border-radius: 16px;
-      padding: 2rem;
-      text-align: center;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-    }
-    h1 { color: #4f46e5; margin: 0 0 0.5rem; }
-    p  { color: #6b7280; }
-    button {
-      margin-top: 1rem;
-      padding: 0.6rem 1.5rem;
-      background: #4f46e5;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1rem;
-      transition: transform 0.2s;
-    }
-    button:hover { transform: scale(1.05); }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>🚀 Hello, World!</h1>
-    <p>Chào mừng đến Code Playground</p>
-    <button onclick="this.textContent='✨ Clicked!'">Click me</button>
-  </div>
-</body>
-</html>`,
-
-  css: `/* CSS Preview – nội dung mẫu */
-body {
-  margin: 0;
-  font-family: 'Segoe UI', sans-serif;
-  background: #f0f4ff;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-}
-
-.box {
-  width: 200px;
-  height: 200px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 1.5rem;
-  font-weight: bold;
-  animation: rotate 3s ease-in-out infinite;
-  box-shadow: 0 10px 40px rgba(102,126,234,0.4);
-}
-
-@keyframes rotate {
-  0%   { transform: rotate(0deg) scale(1); }
-  50%  { transform: rotate(180deg) scale(1.1); }
-  100% { transform: rotate(360deg) scale(1); }
-}`,
-
-  javascript: `// JavaScript Playground
-
-// Fibonacci với memoization
-function fibonacci(n, memo = {}) {
-  if (n in memo) return memo[n];
-  if (n <= 1) return n;
-  memo[n] = fibonacci(n - 1, memo) + fibonacci(n - 2, memo);
-  return memo[n];
-}
-
-console.log('🔢 Fibonacci sequence:');
-for (let i = 0; i <= 10; i++) {
-  console.log(\`F(\${i}) = \${fibonacci(i)}\`);
-}
-
-// Async example
-async function fetchJoke() {
-  try {
-    console.log('\\n🤣 Fetching a joke...');
-    const res = await fetch('https://official-joke-api.appspot.com/random_joke');
-    const joke = await res.json();
-    console.log(\`Setup: \${joke.setup}\`);
-    console.log(\`Punchline: \${joke.punchline}\`);
-  } catch (e) {
-    console.log('Could not fetch joke (no network in sandbox)');
-  }
-}
-
-fetchJoke();`,
-
-  python: `# Python Playground
-
-def fibonacci(n):
-    """Tính dãy Fibonacci"""
-    a, b = 0, 1
-    result = []
-    for _ in range(n):
-        result.append(a)
-        a, b = b, a + b
-    return result
-
-print("🔢 Fibonacci(10):", fibonacci(10))
-
-# List comprehension
-squares = [x**2 for x in range(1, 11)]
-print("📐 Squares:", squares)
-
-# Dictionary
-student = {
-    "name": "Nguyễn Văn A",
-    "score": 95,
-    "grade": "A"
-}
-for key, value in student.items():
-    print(f"  {key}: {value}")
-
-# Class example
-class Circle:
-    def __init__(self, radius):
-        self.radius = radius
-    
-    def area(self):
-        import math
-        return round(math.pi * self.radius ** 2, 2)
-    
-    def __repr__(self):
-        return f"Circle(r={self.radius}, area={self.area()})"
-
-print("\\n⭕", Circle(5))
-print("⭕", Circle(10))`,
-
-  c: `#include <stdio.h>
-#include <string.h>
-
-// Sắp xếp nổi bọt (Bubble Sort)
-void bubbleSort(int arr[], int n) {
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = 0; j < n - i - 1; j++) {
-            if (arr[j] > arr[j + 1]) {
-                int temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
-            }
-        }
-    }
-}
-
-int main() {
-    printf("=== C Playground ===\\n\\n");
-    
-    int arr[] = {64, 34, 25, 12, 22, 11, 90};
-    int n = sizeof(arr) / sizeof(arr[0]);
-    
-    printf("Before sort: ");
-    for (int i = 0; i < n; i++) printf("%d ", arr[i]);
-    printf("\\n");
-    
-    bubbleSort(arr, n);
-    
-    printf("After sort:  ");
-    for (int i = 0; i < n; i++) printf("%d ", arr[i]);
-    printf("\\n");
-    
-    // String operations
-    char greeting[] = "Hello, Code Playground!";
-    printf("\\nString: %s\\n", greeting);
-    printf("Length: %lu chars\\n", strlen(greeting));
-    
-    return 0;
-}`,
-
-  cpp: `#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <string>
-using namespace std;
-
-// Template function
-template<typename T>
-void printVector(const vector<T>& v, const string& label = "") {
-    if (!label.empty()) cout << label << ": ";
-    for (const auto& x : v) cout << x << " ";
-    cout << endl;
-}
-
-// Class with operator overloading
-class Vector2D {
-public:
-    double x, y;
-    Vector2D(double x, double y) : x(x), y(y) {}
-    
-    Vector2D operator+(const Vector2D& other) const {
-        return Vector2D(x + other.x, y + other.y);
-    }
-    
-    double magnitude() const {
-        return sqrt(x*x + y*y);
-    }
-    
-    friend ostream& operator<<(ostream& os, const Vector2D& v) {
-        return os << "(" << v.x << ", " << v.y << ")";
-    }
-};
-
-int main() {
-    cout << "=== C++ Playground ===" << endl << endl;
-    
-    // STL vector + sort
-    vector<int> nums = {5, 2, 8, 1, 9, 3, 7, 4, 6};
-    printVector(nums, "Original");
-    sort(nums.begin(), nums.end());
-    printVector(nums, "Sorted  ");
-    
-    // Lambda
-    auto isEven = [](int n) { return n % 2 == 0; };
-    vector<int> evens;
-    copy_if(nums.begin(), nums.end(), back_inserter(evens), isEven);
-    printVector(evens, "Evens   ");
-    
-    // Custom class
-    Vector2D v1(3, 4), v2(1, 2);
-    cout << "\\nv1 = " << v1 << ", |v1| = " << v1.magnitude() << endl;
-    cout << "v2 = " << v2 << endl;
-    cout << "v1 + v2 = " << (v1 + v2) << endl;
-    
-    return 0;
-}`,
-
-  java: `public class Main {
-    // Fibonacci với đệ quy + memoization
-    static long[] memo = new long[50];
-    
-    static long fibonacci(int n) {
-        if (n <= 1) return n;
-        if (memo[n] != 0) return memo[n];
-        memo[n] = fibonacci(n - 1) + fibonacci(n - 2);
-        return memo[n];
-    }
-    
-    // Generic Stack implementation
-    static class Stack<T> {
-        private Object[] data;
-        private int size;
-        
-        public Stack(int capacity) {
-            data = new Object[capacity];
-            size = 0;
-        }
-        
-        public void push(T item) {
-            if (size < data.length) data[size++] = item;
-        }
-        
-        @SuppressWarnings("unchecked")
-        public T pop() {
-            return size > 0 ? (T) data[--size] : null;
-        }
-        
-        public boolean isEmpty() { return size == 0; }
-        public int size() { return size; }
-    }
-    
-    public static void main(String[] args) {
-        System.out.println("=== Java Playground ===\\n");
-        
-        // Fibonacci
-        System.out.print("Fibonacci: ");
-        for (int i = 0; i < 10; i++) {
-            System.out.print(fibonacci(i) + " ");
-        }
-        System.out.println();
-        
-        // Stack usage
-        Stack<String> stack = new Stack<>(10);
-        stack.push("Hello");
-        stack.push("World");
-        stack.push("Java");
-        
-        System.out.println("\\nStack pop order:");
-        while (!stack.isEmpty()) {
-            System.out.println("  → " + stack.pop());
-        }
-        
-        // String manipulation
-        String text = "Code Playground";
-        System.out.println("\\nString: " + text);
-        System.out.println("Upper:  " + text.toUpperCase());
-        System.out.println("Chars:  " + text.length());
-    }
-}`,
-
-  sql: `-- SQL Playground (SQLite)
-
--- Tạo bảng
-CREATE TABLE IF NOT EXISTS students (
-  id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  name    TEXT    NOT NULL,
-  score   INTEGER NOT NULL,
-  subject TEXT    NOT NULL
-);
-
--- Chèn dữ liệu
-INSERT INTO students (name, score, subject) VALUES
-  ('Nguyễn Văn A', 95, 'Math'),
-  ('Trần Thị B',   88, 'Science'),
-  ('Lê Văn C',     76, 'Math'),
-  ('Phạm Thị D',   92, 'Science'),
-  ('Hoàng Văn E',  84, 'Math');
-
--- Truy vấn cơ bản
-SELECT * FROM students ORDER BY score DESC;
-
--- Tổng hợp theo môn học
-SELECT 
-  subject,
-  COUNT(*) AS total,
-  ROUND(AVG(score), 1) AS avg_score,
-  MAX(score) AS max_score,
-  MIN(score) AS min_score
-FROM students
-GROUP BY subject;`,
-
-  json: `{
-  "name": "Code Playground",
-  "version": "1.0.0",
-  "description": "Online code editor với syntax highlighting",
-  "features": [
-    "Syntax highlighting",
-    "Multiple languages",
-    "Real-time preview",
-    "API sandbox execution"
-  ],
-  "languages": {
-    "frontend": ["HTML", "CSS", "JavaScript"],
-    "backend": ["Python", "C", "C++", "Java"],
-    "data": ["SQL", "JSON", "Markdown"]
-  },
-  "settings": {
-    "theme": "dark",
-    "fontSize": 13,
-    "tabSize": 2,
-    "autoSave": true,
-    "lineNumbers": true
-  },
-  "author": {
-    "name": "Developer",
-    "year": 2025
-  }
-}`,
-
-  markdown: `# Code Playground 🚀
-
-Chào mừng đến với **Code Playground** – trình soạn thảo code online!
-
-## Tính năng chính
-
-- ✅ **Syntax highlighting** với CodeMirror 6
-- ✅ **10 ngôn ngữ** được hỗ trợ
-- ✅ **Preview real-time** cho HTML/CSS/JS
-- ✅ **API sandbox** cho Python, C, C++, Java
-- ✅ **SQL** chạy bằng WebAssembly (sql.js)
-- ✅ **Light/Dark theme** có thể chuyển đổi
-- ✅ **Fullscreen mode**
-- ✅ **Copy & Reset** code nhanh chóng
-
-## Hướng dẫn sử dụng
-
-1. Chọn **ngôn ngữ** từ dropdown bên trên
-2. Nhập hoặc chỉnh sửa code trong **editor bên trái**
-3. Nhấn **▶ Run** hoặc `Ctrl+Enter` để chạy
-4. Kết quả hiển thị trong **panel bên phải**
-
-## Ví dụ code Python
-
-\`\`\`python
-def greet(name):
-    return f"Hello, {name}!"
-
-print(greet("World"))
-\`\`\`
-
-## Bảng so sánh
-
-| Ngôn ngữ | Engine | Realtime |
-|---------|--------|----------|
-| HTML/CSS/JS | iframe | ✅ |
-| Python/Java | Piston API | ❌ |
-| SQL | sql.js | ❌ |
-| Markdown | marked.js | ✅ |
-
-> 💡 **Tip:** Kéo thanh phân chia giữa để thay đổi kích thước editor!
-`
-};
-
-// ---------------------------------------------------------------
-// Language metadata
-// ---------------------------------------------------------------
-const LANG_META = {
-  html:       { title: 'index.html',   engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
-  css:        { title: 'style.css',    engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
-  javascript: { title: 'script.js',    engine: 'iframe',    badge: 'preview',  badgeClass: 'badge-realtime' },
-  python:     { title: 'main.py',      engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
-  c:          { title: 'main.c',       engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
-  cpp:        { title: 'main.cpp',     engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
-  java:       { title: 'Main.java',    engine: 'piston',    badge: 'API exec', badgeClass: 'badge-compiled' },
-  sql:        { title: 'query.sql',    engine: 'sqljs',     badge: 'SQLite',   badgeClass: 'badge-compiled' },
-  json:       { title: 'data.json',    engine: 'json',      badge: 'validate', badgeClass: 'badge-realtime' },
-  markdown:   { title: 'README.md',    engine: 'markdown',  badge: 'preview',  badgeClass: 'badge-realtime' },
-};
-
-// Piston API language/version mapping
-const PISTON_LANGS = {
-  python: { language: 'python',  version: '3.10.0' },
-  c:      { language: 'c',       version: '10.2.0' },
-  cpp:    { language: 'c++',     version: '10.2.0' },
-  java:   { language: 'java',    version: '15.0.2' },
-};
-
-// ---------------------------------------------------------------
-// State
-// ---------------------------------------------------------------
-let cmView = null;
-let cmModules = null;
-let currentLang = 'html';
-let isDarkTheme = true;
-let isFullscreen = false;
-let runTimeout = null;
-let sqlDb = null;
-let markedLoaded = false;
-let codeStorage = {};   // lang -> code (auto-save)
-let isCmLoaded = false;
-
-// DOM refs (populated on init)
-let el = {};
-
-// ---------------------------------------------------------------
-// Init on page show
-// ---------------------------------------------------------------
-function cpInit() {
-  el = {
-    root:           document.getElementById('cpRoot'),
-    langSelect:     document.getElementById('cpLangSelect'),
-    engineBadge:    document.getElementById('cpEngineBadge'),
-    runBtn:         document.getElementById('cpRunBtn'),
-    resetBtn:       document.getElementById('cpResetBtn'),
-    copyBtn:        document.getElementById('cpCopyBtn'),
-    themeBtn:       document.getElementById('cpThemeBtn'),
-    themeIcon:      document.getElementById('cpThemeIcon'),
-    fsBtn:          document.getElementById('cpFullscreenBtn'),
-    fsIcon:         document.getElementById('cpFsIcon'),
-    clearBtn:       document.getElementById('cpClearBtn'),
-    editorWrap:     document.getElementById('cpEditorWrap'),
-    editorTitle:    document.getElementById('cpEditorTitle'),
-    editorInfo:     document.getElementById('cpEditorInfo'),
-    fallbackTA:     document.getElementById('cpFallbackTextarea'),
-    resizer:        document.getElementById('cpResizer'),
-    editorPanel:    document.getElementById('cpEditorPanel'),
-    outputPanel:    document.getElementById('cpOutputPanel'),
-    outputBody:     document.getElementById('cpOutputBody'),
-    spinner:        document.getElementById('cpSpinner'),
-    spinnerText:    document.getElementById('cpSpinnerText'),
-    previewFrame:   document.getElementById('cpPreviewFrame'),
-    console:        document.getElementById('cpConsole'),
-    consoleEmpty:   document.getElementById('cpConsoleEmpty'),
-    mdPreview:      document.getElementById('cpMarkdownPreview'),
-    tabPreview:     document.getElementById('cpTabPreview'),
-    tabConsole:     document.getElementById('cpTabConsole'),
-    statusDot:      document.getElementById('cpStatusDot'),
-    statusText:     document.getElementById('cpStatusText'),
-    statusTime:     document.getElementById('cpStatusTime'),
-    cursorPos:      document.getElementById('cpCursorPos'),
-    charCount:      document.getElementById('cpCharCount'),
-    copyToast:      document.getElementById('cpCopyToast'),
-  };
-
-  // Restore saved theme
-  const savedTheme = localStorage.getItem('cp_theme');
-  if (savedTheme === 'light') { isDarkTheme = false; el.root.classList.add('cp-light'); el.themeIcon.textContent = 'light_mode'; }
-
-  // Restore saved language
-  const savedLang = localStorage.getItem('cp_lang') || 'html';
-  el.langSelect.value = savedLang;
-
-  // Load auto-saved codes
-  try { codeStorage = JSON.parse(localStorage.getItem('cp_codes') || '{}'); } catch(e) { codeStorage = {}; }
-
-  // Event listeners
-  el.langSelect.addEventListener('change', () => switchLanguage(el.langSelect.value));
-  el.runBtn.addEventListener('click', runCode);
-  el.resetBtn.addEventListener('click', resetCode);
-  el.copyBtn.addEventListener('click', copyCode);
-  el.themeBtn.addEventListener('click', toggleTheme);
-  el.fsBtn.addEventListener('click', toggleFullscreen);
-  el.clearBtn.addEventListener('click', clearOutput);
-  el.tabPreview.addEventListener('click', () => switchTab('preview'));
-  el.tabConsole.addEventListener('click', () => switchTab('console'));
-
-  // Resizer drag
-  setupResizer();
-
-  // Keyboard shortcut: Ctrl+Enter = Run
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runCode(); }
-    if (e.key === 'F11' && el.root.contains(document.activeElement)) {
-      e.preventDefault(); toggleFullscreen();
-    }
-  });
-
-  // Load CodeMirror then set language
-  loadCodeMirror().then(() => {
-    switchLanguage(savedLang, true);
-  });
-}
-
-// ---------------------------------------------------------------
-// CodeMirror 6 loader
-// ---------------------------------------------------------------
-async function loadCodeMirror() {
-  setStatus('loading', 'Đang tải editor...');
-  try {
-    cmModules = await importCM();
-    isCmLoaded = true;
-    setStatus('ready', 'Sẵn sàng');
-  } catch (err) {
-    console.warn('[CP] CodeMirror failed to load, using fallback textarea:', err);
-    isCmLoaded = false;
-    el.fallbackTA.style.display = 'block';
-    el.fallbackTA.value = DEFAULT_CODE[currentLang] || '';
-    setStatus('ready', 'Editor (basic mode)');
-  }
-}
-
-function getLangExtension(lang) {
-  const { langHtml, langCss, langJs, langPython, langSql, langJson, langMarkdown } = cmModules;
-  const map = {
-    html: langHtml(),
-    css: langCss(),
-    javascript: langJs(),
-    python: langPython(),
-    c: langJs(),         // no C mode in CM6 free tier – use JS highlighter as fallback
-    cpp: langJs(),
-    java: langJs(),
-    sql: langSql(),
-    json: langJson(),
-    markdown: langMarkdown(),
-  };
-  return map[lang] || langHtml();
-}
-
-function buildCmExtensions(lang) {
-  const {
-    EditorView, keymap, lineNumbers, highlightActiveLine,
-    highlightActiveLineGutter, drawSelection,
-    defaultKeymap, history, historyKeymap, indentWithTab,
-    syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
-    autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
-  } = cmModules;
-
-  const baseTheme = EditorView.baseTheme({
-    '&': { height: '100%', fontSize: '13.5px' },
-    '.cm-scroller': { overflow: 'auto', fontFamily: "'JetBrains Mono','Fira Code',monospace" },
-  });
-
-  return [
-    lineNumbers(),
-    highlightActiveLine(),
-    highlightActiveLineGutter(),
-    history(),
-    drawSelection(),
-    bracketMatching(),
-    closeBrackets(),
-    autocompletion(),
-    foldGutter(),
-    syntaxHighlighting(defaultHighlightStyle),
-    getLangExtension(lang),
-    keymap.of([
-      ...closeBracketsKeymap,
-      ...defaultKeymap,
-      ...historyKeymap,
-      ...completionKeymap,
-      indentWithTab,
-      { key: 'Ctrl-Enter', run: () => { runCode(); return true; } },
-    ]),
-    baseTheme,
-    EditorView.updateListener.of((v) => {
-      if (v.docChanged) onEditorChange(v.state.doc.toString());
-      if (v.selectionSet) updateCursorPos(v.state);
-    }),
-    EditorView.theme({}, { dark: isDarkTheme }),
-  ];
-}
-
-function createCmView(code, lang) {
-  const { EditorState, EditorView } = cmModules;
-
-  if (cmView) {
-    cmView.destroy();
-    cmView = null;
-  }
-
-  const state = EditorState.create({
-    doc: code,
-    extensions: buildCmExtensions(lang),
-  });
-
-  cmView = new EditorView({ state, parent: el.editorWrap });
-}
-
-// ---------------------------------------------------------------
-// Language switching
-// ---------------------------------------------------------------
-function switchLanguage(lang, skipSave = false) {
-  if (!skipSave && currentLang) {
-    codeStorage[currentLang] = getCode();
-    persistCodes();
-  }
-
-  currentLang = lang;
-  localStorage.setItem('cp_lang', lang);
-
-  const meta = LANG_META[lang] || LANG_META.html;
-  el.editorTitle.textContent = meta.title;
-  el.engineBadge.textContent = meta.badge;
-  el.engineBadge.className = `cp-lang-badge ${meta.badgeClass}`;
-
-  // Restore saved code or use default
-  const code = codeStorage[lang] !== undefined ? codeStorage[lang] : DEFAULT_CODE[lang] || '';
-
-  if (isCmLoaded) {
-    createCmView(code, lang);
-  } else {
-    el.fallbackTA.value = code;
-  }
-
-  updateCharCount(code);
-
-  // Auto-switch output tab based on engine
-  if (['html', 'css', 'javascript', 'markdown'].includes(lang)) {
-    switchTab('preview');
-    // Auto-run preview languages
-    if (['html', 'css', 'javascript', 'markdown'].includes(lang)) {
-      scheduleAutoRun();
-    }
-  } else {
-    switchTab('console');
-    clearOutput();
-  }
-
-  setStatus('ready', 'Sẵn sàng');
-}
-
-// ---------------------------------------------------------------
-// Editor helpers
-// ---------------------------------------------------------------
-function getCode() {
-  if (isCmLoaded && cmView) return cmView.state.doc.toString();
-  return el.fallbackTA.value;
-}
-
-function setCode(code) {
-  if (isCmLoaded && cmView) {
-    const { EditorState } = cmModules;
-    cmView.setState(EditorState.create({
-      doc: code,
-      extensions: buildCmExtensions(currentLang),
-    }));
-  } else {
-    el.fallbackTA.value = code;
-  }
-  updateCharCount(code);
-}
-
-function onEditorChange(code) {
-  codeStorage[currentLang] = code;
-  persistCodes();
-  updateCharCount(code);
-  if (['html', 'css', 'javascript', 'markdown'].includes(currentLang)) {
-    scheduleAutoRun();
-  }
-}
-
-let autoRunTimer = null;
-function scheduleAutoRun() {
-  clearTimeout(autoRunTimer);
-  autoRunTimer = setTimeout(() => runCode(true), 800);
-}
-
-function updateCharCount(code) {
-  if (el.charCount) el.charCount.textContent = `${code.length} chars`;
-}
-
-function updateCursorPos(state) {
-  const pos = state.selection.main.head;
-  const line = state.doc.lineAt(pos);
-  const col = pos - line.from + 1;
-  if (el.cursorPos) el.cursorPos.textContent = `Ln ${line.number}, Col ${col}`;
-}
-
-function persistCodes() {
-  try { localStorage.setItem('cp_codes', JSON.stringify(codeStorage)); } catch(e) {}
-}
-
-// ---------------------------------------------------------------
-// Run Code dispatcher
-// ---------------------------------------------------------------
-async function runCode(isAutoRun = false) {
-  const code = getCode().trim();
-  if (!code && !isAutoRun) return;
-
-  const meta = LANG_META[currentLang];
-  const t0 = performance.now();
-
-  if (!isAutoRun) {
-    el.runBtn.disabled = true;
-    el.runBtn.classList.add('running');
-    el.runBtn.querySelector('.btn-label').textContent = 'Running...';
-  }
-
-  setStatus('running', 'Đang chạy...');
-
-  try {
-    switch (meta.engine) {
-      case 'iframe':    await runIframe(code);   break;
-      case 'piston':    await runPiston(code);   break;
-      case 'sqljs':     await runSqlJs(code);    break;
-      case 'json':      runJson(code);           break;
-      case 'markdown':  runMarkdown(code);       break;
-    }
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-    el.statusTime.textContent = `${elapsed}s`;
-    setStatus('success', 'Hoàn thành');
-  } catch (err) {
-    setStatus('error', err.message || 'Lỗi không xác định');
-    appendConsole('error', '❌ Error: ' + (err.message || err));
-    if (!isAutoRun) switchTab('console');
-  } finally {
-    if (!isAutoRun) {
-      el.runBtn.disabled = false;
-      el.runBtn.classList.remove('running');
-      el.runBtn.querySelector('.btn-label').textContent = 'Run';
-    }
-  }
-}
-
-// ---------------------------------------------------------------
-// Engine: iframe (HTML / CSS / JS)
-// ---------------------------------------------------------------
-async function runIframe(code) {
-  let src = '';
-  if (currentLang === 'html') {
-    src = code;
-  } else if (currentLang === 'css') {
-    src = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<style>body{margin:0;padding:1rem;font-family:sans-serif}</style>
-<style>${code}</style></head>
-<body>
-<div class="box">CSS Preview</div>
-<p>Đây là đoạn văn bản mẫu để xem CSS của bạn.</p>
-<a href="#">Link mẫu</a>
-<button>Button mẫu</button>
-</body></html>`;
-  } else if (currentLang === 'javascript') {
-    src = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<style>
-  body { margin:0; padding:1rem; font-family:'Segoe UI',sans-serif; background:#0f172a; color:#e2e8f0; }
-  #output { white-space:pre-wrap; font-family:monospace; font-size:13px; }
-  .line { margin:0.1em 0; }
-  .err { color:#f87171; }
-</style></head>
-<body>
-<div id="output"></div>
 <script>
-(function() {
-  const out = document.getElementById('output');
-  const origLog = console.log;
-  const origErr = console.error;
-  const origWarn = console.warn;
-  function appendLine(text, cls='') {
-    const d = document.createElement('div');
-    d.className = 'line' + (cls ? ' ' + cls : '');
-    d.textContent = text;
-    out.appendChild(d);
+/* ================================================================
+   CODE PLAYGROUND – Main Script
+   Uses CodeMirror 5 (UMD, loaded via <script> tags from cdnjs)
+   No ESM imports – works correctly inside Google Apps Script
+   ================================================================ */
+(function () {
+  'use strict';
+
+  /* ---- CDN base ---- */
+  var CM_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/';
+
+  /* ----------------------------------------------------------------
+     DEFAULT CODE TEMPLATES
+     ---------------------------------------------------------------- */
+  var DEFAULT_CODE = {
+    html: '<!DOCTYPE html>\n<html lang="vi">\n<head>\n  <meta charset="UTF-8">\n  <title>Hello World</title>\n  <style>\n    body {\n      font-family: \'Segoe UI\', sans-serif;\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      min-height: 100vh;\n      margin: 0;\n      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n    }\n    .card {\n      background: white;\n      border-radius: 16px;\n      padding: 2rem;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0,0,0,0.2);\n    }\n    h1 { color: #4f46e5; margin: 0 0 0.5rem; }\n    p  { color: #6b7280; }\n    button {\n      margin-top: 1rem;\n      padding: 0.6rem 1.5rem;\n      background: #4f46e5;\n      color: white;\n      border: none;\n      border-radius: 8px;\n      cursor: pointer;\n      font-size: 1rem;\n      transition: transform 0.2s;\n    }\n    button:hover { transform: scale(1.05); }\n  </style>\n</head>\n<body>\n  <div class="card">\n    <h1>\uD83D\uDE80 Hello, World!</h1>\n    <p>Ch\xE0o m\u1EEFng \u0111\u1EBFn Code Playground</p>\n    <button onclick="this.textContent=\'\u2728 Clicked!\'">Click me</button>\n  </div>\n</body>\n</html>',
+
+    css: '/* CSS Preview */\nbody {\n  margin: 0;\n  font-family: \'Segoe UI\', sans-serif;\n  background: #f0f4ff;\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  min-height: 100vh;\n  gap: 1rem;\n  flex-wrap: wrap;\n  padding: 1rem;\n}\n\n.box {\n  width: 150px;\n  height: 150px;\n  background: linear-gradient(135deg, #667eea, #764ba2);\n  border-radius: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: white;\n  font-size: 2rem;\n  animation: spin 3s ease-in-out infinite;\n  box-shadow: 0 10px 30px rgba(102,126,234,0.4);\n}\n\n@keyframes spin {\n  0%   { transform: rotate(0deg) scale(1); }\n  50%  { transform: rotate(180deg) scale(1.1); }\n  100% { transform: rotate(360deg) scale(1); }\n}',
+
+    javascript: '// JavaScript Playground\nconsole.log("\uD83D\uDD22 Fibonacci sequence:");\n\nfunction fib(n, memo) {\n  memo = memo || {};\n  if (n in memo) return memo[n];\n  if (n <= 1) return n;\n  memo[n] = fib(n-1, memo) + fib(n-2, memo);\n  return memo[n];\n}\n\nfor (var i = 0; i <= 10; i++) {\n  console.log("F(" + i + ") = " + fib(i));\n}\n\n// Array methods\nvar nums = [5,2,8,1,9,3,7,4,6];\nconsole.log("\n\uD83D\uDDC2\uFE0F Original:", nums.join(", "));\nconsole.log("\u2B06\uFE0F Sorted:", nums.slice().sort(function(a,b){return a-b;}).join(", "));\nconsole.log("\u26AA Evens:", nums.filter(function(x){return x%2===0;}).join(", "));\nconsole.log("\u2211 Sum:", nums.reduce(function(a,b){return a+b;}, 0));',
+
+    python: '# Python Playground\n\ndef fibonacci(n):\n    """T\xEDnh d\u00E3y Fibonacci"""\n    a, b = 0, 1\n    result = []\n    for _ in range(n):\n        result.append(a)\n        a, b = b, a + b\n    return result\n\nprint("\uD83D\uDD22 Fibonacci(10):", fibonacci(10))\n\n# List comprehension\nsquares = [x**2 for x in range(1, 11)]\nprint("\uD83D\uDCCF Squares:", squares)\n\n# Dictionary\nstudent = {"name": "Nguy\u1EC5n V\u0103n A", "score": 95, "grade": "A"}\nfor key, value in student.items():\n    print(f"  {key}: {value}")\n\n# Class\nclass Circle:\n    def __init__(self, r):\n        self.r = r\n    def area(self):\n        import math\n        return round(math.pi * self.r ** 2, 2)\n    def __repr__(self):\n        return f"Circle(r={self.r}, area={self.area()})"\n\nprint("\\n\u26AA", Circle(5))\nprint("\u26AA", Circle(10))',
+
+    c: '#include <stdio.h>\n#include <string.h>\n\nvoid bubbleSort(int arr[], int n) {\n    for (int i = 0; i < n-1; i++)\n        for (int j = 0; j < n-i-1; j++)\n            if (arr[j] > arr[j+1]) {\n                int t = arr[j]; arr[j] = arr[j+1]; arr[j+1] = t;\n            }\n}\n\nint main() {\n    printf("=== C Playground ===\\n\\n");\n    int arr[] = {64, 34, 25, 12, 22, 11, 90};\n    int n = sizeof(arr) / sizeof(arr[0]);\n\n    printf("Before: ");\n    for (int i = 0; i < n; i++) printf("%d ", arr[i]);\n\n    bubbleSort(arr, n);\n    printf("\\nAfter:  ");\n    for (int i = 0; i < n; i++) printf("%d ", arr[i]);\n\n    char s[] = "Hello, Code Playground!";\n    printf("\\n\\nString: %s\\nLength: %lu\\n", s, strlen(s));\n    return 0;\n}',
+
+    cpp: '#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\ntemplate<typename T>\nvoid print(const vector<T>& v, const string& label="") {\n    if (!label.empty()) cout << label << ": ";\n    for (const auto& x : v) cout << x << " ";\n    cout << endl;\n}\n\nint main() {\n    cout << "=== C++ Playground ===" << endl << endl;\n\n    vector<int> nums = {5, 2, 8, 1, 9, 3, 7, 4, 6};\n    print(nums, "Original");\n    sort(nums.begin(), nums.end());\n    print(nums, "Sorted  ");\n\n    auto evens = [](int n){ return n % 2 == 0; };\n    vector<int> ev;\n    copy_if(nums.begin(), nums.end(), back_inserter(ev), evens);\n    print(ev, "Evens   ");\n\n    cout << "\\nSum: ";\n    int sum = 0;\n    for (auto x : nums) sum += x;\n    cout << sum << endl;\n    return 0;\n}',
+
+    java: 'public class Main {\n    static long fib(int n) {\n        if (n <= 1) return n;\n        long a = 0, b = 1;\n        for (int i = 2; i <= n; i++) {\n            long c = a + b; a = b; b = c;\n        }\n        return b;\n    }\n\n    public static void main(String[] args) {\n        System.out.println("=== Java Playground ===\\n");\n\n        System.out.print("Fibonacci: ");\n        for (int i = 0; i < 10; i++)\n            System.out.print(fib(i) + " ");\n        System.out.println();\n\n        // String operations\n        String text = "Code Playground";\n        System.out.println("\\nString: " + text);\n        System.out.println("Upper:  " + text.toUpperCase());\n        System.out.println("Length: " + text.length());\n        System.out.println("Reverse: " + new StringBuilder(text).reverse());\n    }\n}',
+
+    sql: '-- SQL Playground (SQLite)\nCREATE TABLE IF NOT EXISTS students (\n  id      INTEGER PRIMARY KEY AUTOINCREMENT,\n  name    TEXT    NOT NULL,\n  score   INTEGER NOT NULL,\n  subject TEXT    NOT NULL\n);\n\nINSERT INTO students (name, score, subject) VALUES\n  (\'Nguy\u1EC5n V\u0103n A\', 95, \'Math\'),\n  (\'Tr\u1EA7n Th\u1ECB B\',   88, \'Science\'),\n  (\'L\xEA V\u0103n C\',     76, \'Math\'),\n  (\'Ph\u1EA1m Th\u1ECB D\',   92, \'Science\'),\n  (\'Ho\xE0ng V\u0103n E\',  84, \'Math\');\n\nSELECT * FROM students ORDER BY score DESC;\n\nSELECT subject,\n       COUNT(*) AS total,\n       ROUND(AVG(score), 1) AS avg_score,\n       MAX(score) AS max_score\nFROM students\nGROUP BY subject;',
+
+    json: '{\n  "name": "Code Playground",\n  "version": "2.0.0",\n  "features": [\n    "Syntax highlighting",\n    "10 languages",\n    "Real-time preview",\n    "API sandbox execution"\n  ],\n  "languages": {\n    "frontend": ["HTML", "CSS", "JavaScript"],\n    "backend": ["Python", "C", "C++", "Java"],\n    "data": ["SQL", "JSON", "Markdown"]\n  },\n  "settings": {\n    "theme": "dark",\n    "fontSize": 13,\n    "lineNumbers": true\n  }\n}',
+
+    markdown: '# Code Playground \uD83D\uDE80\n\nCh\xE0o m\u1EEFng \u0111\u1EBFn v\u1EDBi **Code Playground** \u2013 tr\xECnh so\u1EA1n th\u1EA3o code online!\n\n## T\xEDnh n\u0103ng ch\xEDnh\n\n- \u2705 **Syntax highlighting** v\u1EDBi CodeMirror 5\n- \u2705 **10 ng\xF4n ng\u1EEF** \u0111\u01B0\u1EE3c h\u1ED7 tr\u1EE3\n- \u2705 **Preview real-time** cho HTML/CSS/JS\n- \u2705 **API sandbox** cho Python, C, C++, Java\n- \u2705 **SQL** ch\u1EA1y b\u1EB1ng WebAssembly (sql.js)\n- \u2705 **Light/Dark theme**\n\n## H\u01B0\u1EDBng d\u1EABn\n\n1. Ch\u1ECDn **ng\xF4n ng\u1EEF** t\u1EEB dropdown\n2. Nh\u1EADp code v\xE0o **editor b\xEAn tr\xE1i**\n3. Nh\u1EA5n **\u25B6 Run** ho\u1EB7c `Ctrl+Enter`\n4. Xem k\u1EBFt qu\u1EA3 **b\xEAn ph\u1EA3i**\n\n## V\xED d\u1EE5\n\n```python\ndef greet(name):\n    return f"Hello, {name}!"\n\nprint(greet("World"))\n```\n\n| Ng\xF4n ng\u1EEF | Engine | Realtime |\n|---------|--------|-----------|\n| HTML/CSS/JS | iframe | \u2705 |\n| Python/Java | Piston API | \u274C |\n| SQL | sql.js | \u274C |\n| Markdown | marked.js | \u2705 |\n'
+  };
+
+  /* ---- CM5 mode mapping ---- */
+  var CM5_MODES = {
+    html:       'htmlmixed',
+    css:        'css',
+    javascript: 'javascript',
+    python:     'python',
+    c:          'text/x-csrc',
+    cpp:        'text/x-c++src',
+    java:       'text/x-java',
+    sql:        'sql',
+    json:       'application/json',
+    markdown:   'markdown'
+  };
+
+  /* ---- Language metadata ---- */
+  var LANG_META = {
+    html:       { title: 'index.html',  badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
+    css:        { title: 'style.css',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
+    javascript: { title: 'script.js',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
+    python:     { title: 'main.py',     badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
+    c:          { title: 'main.c',      badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
+    cpp:        { title: 'main.cpp',    badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
+    java:       { title: 'Main.java',   badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
+    sql:        { title: 'query.sql',   badge: 'SQLite',   badgeClass: 'badge-compiled', engine: 'sqljs' },
+    json:       { title: 'data.json',   badge: 'validate', badgeClass: 'badge-realtime', engine: 'json' },
+    markdown:   { title: 'README.md',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'markdown' }
+  };
+
+  /* ---- Wandbox API config (free, no auth) ---- */
+  /* Docs: https://wandbox.org/api/list.json for available compilers */
+  var WANDBOX_CONFIGS = {
+    python: { compiler: 'cpython-3.12.5',  rawOptions: '' },
+    c:      { compiler: 'gcc-13.2.0',       rawOptions: '-x c -std=c17' },
+    cpp:    { compiler: 'gcc-13.2.0',       rawOptions: '-std=c++17' },
+    java:   { compiler: 'openjdk-jdk-21+35', rawOptions: '' }
+  };
+
+  /* ---- State ---- */
+  var cmEditor    = null;
+  var cmLoaded    = false;
+  var currentLang = 'html';
+  var isDark      = true;
+  var isFullscreen = false;
+  var codeStore   = {};
+  var sqlDb       = null;
+  var markedReady = false;
+  var autoTimer   = null;
+  var el          = {};
+
+  /* ================================================================
+     SCRIPT / CSS LOADER
+     ================================================================ */
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      // Skip if already loaded
+      if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('Failed: ' + src)); };
+      document.head.appendChild(s);
+    });
   }
-  console.log = function(...a) { origLog(...a); appendLine(a.map(x=>typeof x==='object'?JSON.stringify(x,null,2):String(x)).join(' ')); };
-  console.error = function(...a) { origErr(...a); appendLine('❌ ' + a.join(' '), 'err'); };
-  console.warn = function(...a) { origWarn(...a); appendLine('⚠️ ' + a.join(' ')); };
-  window.onerror = function(msg) { appendLine('❌ ' + msg, 'err'); };
-  try {
-    ${code}
-  } catch(e) { appendLine('❌ ' + e.message, 'err'); }
-})();
-<\/script>
-</body></html>`;
+
+  function loadCss(href) {
+    return new Promise(function (resolve) {
+      if (document.querySelector('link[href="' + href + '"]')) { resolve(); return; }
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = href;
+      l.onload = resolve; l.onerror = resolve; // non-blocking
+      document.head.appendChild(l);
+    });
   }
 
-  switchTab('preview');
-  showSpinner(false);
-  el.previewFrame.srcdoc = src;
-}
-
-// ---------------------------------------------------------------
-// Engine: Piston API (Python / C / C++ / Java)
-// ---------------------------------------------------------------
-const PISTON_API = 'https://emkc.org/api/v2/piston/execute';
-
-async function runPiston(code) {
-  switchTab('console');
-  showSpinner(true, 'Đang biên dịch & chạy...');
-  clearConsoleSilent();
-
-  const cfg = PISTON_LANGS[currentLang];
-  if (!cfg) throw new Error('Ngôn ngữ chưa được hỗ trợ');
-
-  const meta = LANG_META[currentLang];
-  const filename = meta.title;
-
-  const response = await fetch(PISTON_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      language: cfg.language,
-      version: cfg.version,
-      files: [{ name: filename, content: code }],
-      stdin: '',
-      args: [],
-      compile_timeout: 10000,
-      run_timeout: 5000,
-      compile_memory_limit: -1,
-      run_memory_limit: -1,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Piston API error: ${response.status} ${response.statusText}`);
+  /* ================================================================
+     CODEMIRROR 5 LOADER
+     ================================================================ */
+  function loadCM5() {
+    return loadCss(CM_CDN + 'codemirror.min.css')
+      .then(function () { return loadCss(CM_CDN + 'theme/dracula.min.css'); })
+      .then(function () { return loadCss(CM_CDN + 'theme/default.min.css'); })
+      .then(function () { return loadScript(CM_CDN + 'codemirror.min.js'); })
+      // base modes
+      .then(function () { return loadScript(CM_CDN + 'mode/xml/xml.min.js'); })
+      .then(function () { return loadScript(CM_CDN + 'mode/css/css.min.js'); })
+      .then(function () { return loadScript(CM_CDN + 'mode/javascript/javascript.min.js'); })
+      // htmlmixed depends on xml + css + javascript
+      .then(function () { return loadScript(CM_CDN + 'mode/htmlmixed/htmlmixed.min.js'); })
+      // other modes (parallel)
+      .then(function () {
+        return Promise.all([
+          loadScript(CM_CDN + 'mode/python/python.min.js'),
+          loadScript(CM_CDN + 'mode/clike/clike.min.js'),
+          loadScript(CM_CDN + 'mode/sql/sql.min.js'),
+          loadScript(CM_CDN + 'mode/markdown/markdown.min.js')
+        ]);
+      })
+      // addons
+      .then(function () {
+        return Promise.all([
+          loadScript(CM_CDN + 'addon/edit/matchbrackets.min.js'),
+          loadScript(CM_CDN + 'addon/edit/closebrackets.min.js')
+        ]);
+      });
   }
 
-  const result = await response.json();
-  showSpinner(false);
+  /* ================================================================
+     CREATE / UPDATE EDITOR
+     ================================================================ */
+  function createEditor(code, lang) {
+    var wrap = el.editorWrap;
+    if (!wrap) return;
 
-  const run = result.run || {};
-  const compile = result.compile || {};
-
-  // Show compile errors if any
-  if (compile.stderr) {
-    compile.stderr.trim().split('\n').forEach(line => appendConsole('error', line));
-  }
-  if (compile.stdout) {
-    compile.stdout.trim().split('\n').forEach(line => appendConsole('info', line));
-  }
-
-  // Show run output
-  if (run.stdout && run.stdout.trim()) {
-    run.stdout.trim().split('\n').forEach(line => appendConsole('output', line));
-  }
-  if (run.stderr && run.stderr.trim()) {
-    run.stderr.trim().split('\n').forEach(line => appendConsole('error', line));
-  }
-
-  if (!run.stdout && !run.stderr && !compile.stderr) {
-    appendConsole('info', '(Không có output)');
-  }
-
-  if (run.code !== 0) {
-    appendConsole('error', `Exit code: ${run.code}`);
-  } else {
-    appendConsole('success', `✓ Chạy thành công (exit 0)`);
-  }
-}
-
-// ---------------------------------------------------------------
-// Engine: sql.js (WebAssembly SQLite)
-// ---------------------------------------------------------------
-async function runSqlJs(code) {
-  switchTab('console');
-  showSpinner(true, 'Khởi tạo SQLite...');
-  clearConsoleSilent();
-
-  try {
-    // Lazy-load sql.js
-    if (!sqlDb) {
-      await loadSqlJs();
+    // Destroy previous instance
+    if (cmEditor) {
+      cmEditor.toTextArea();
+      cmEditor = null;
     }
+    // Clear wrap
+    wrap.innerHTML = '';
+    var ta = document.createElement('textarea');
+    ta.id = 'cpCodeTextarea';
+    wrap.appendChild(ta);
 
-    showSpinner(false);
-
-    // Split into individual statements (by semicolon)
-    const statements = code
-      .split(/;(?=(?:[^']*'[^']*')*[^']*$)/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-
-    let hasOutput = false;
-
-    for (const stmt of statements) {
-      try {
-        appendConsole('info', `▶ ${stmt.substring(0, 80)}${stmt.length > 80 ? '...' : ''}`);
-        const results = sqlDb.exec(stmt);
-
-        if (results && results.length > 0) {
-          hasOutput = true;
-          for (const r of results) {
-            // Header
-            appendConsole('output', r.columns.join(' | '));
-            appendConsole('output', r.columns.map(c => '-'.repeat(c.length + 2)).join('-|-'));
-            // Rows
-            for (const row of r.values) {
-              appendConsole('output', row.map(v => v === null ? 'NULL' : String(v)).join(' | '));
-            }
-            appendConsole('success', `(${r.values.length} row${r.values.length !== 1 ? 's' : ''})`);
-          }
-        } else {
-          appendConsole('success', 'OK');
-        }
-      } catch (e) {
-        appendConsole('error', '❌ ' + e.message);
+    var mode = CM5_MODES[lang] || 'htmlmixed';
+    cmEditor = window.CodeMirror.fromTextArea(ta, {
+      value:           code,
+      mode:            mode,
+      theme:           isDark ? 'dracula' : 'default',
+      lineNumbers:     true,
+      tabSize:         2,
+      indentUnit:      2,
+      indentWithTabs:  false,
+      lineWrapping:    false,
+      matchBrackets:   true,
+      autoCloseBrackets: true,
+      extraKeys: {
+        'Ctrl-Enter': function () { runCode(false); return true; },
+        'Tab': function (cm) { cm.execCommand('insertSoftTab'); }
       }
-      appendConsole('output', '');
-    }
+    });
 
-  } catch (e) {
-    showSpinner(false);
-    throw e;
+    // Set initial value explicitly (textarea.value not always picked up)
+    cmEditor.setValue(code);
+
+    // Refresh after layout settle (important for correct rendering)
+    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 100);
+
+    cmEditor.on('change', function (cm) {
+      var v = cm.getValue();
+      codeStore[currentLang] = v;
+      persistCodes();
+      updateCharCount(v.length);
+      if (['html','css','javascript','markdown'].indexOf(currentLang) !== -1) {
+        scheduleAutoRun();
+      }
+    });
+
+    cmEditor.on('cursorActivity', function (cm) {
+      var c = cm.getCursor();
+      if (el.cursorPos) el.cursorPos.textContent = 'Ln ' + (c.line + 1) + ', Col ' + (c.ch + 1);
+    });
   }
-}
 
-async function loadSqlJs() {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js';
-    script.onload = async () => {
-      try {
-        const SQL = await window.initSqlJs({
-          locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${file}`
-        });
-        sqlDb = new SQL.Database();
-        resolve();
-      } catch (e) { reject(e); }
+  /* ================================================================
+     INIT
+     ================================================================ */
+  function cpInit() {
+    el = {
+      root:        document.getElementById('cpRoot'),
+      langSelect:  document.getElementById('cpLangSelect'),
+      badge:       document.getElementById('cpEngineBadge'),
+      runBtn:      document.getElementById('cpRunBtn'),
+      resetBtn:    document.getElementById('cpResetBtn'),
+      copyBtn:     document.getElementById('cpCopyBtn'),
+      fsBtn:       document.getElementById('cpFullscreenBtn'),
+      fsIcon:      document.getElementById('cpFsIcon'),
+      clearBtn:    document.getElementById('cpClearBtn'),
+      editorWrap:  document.getElementById('cpEditorWrap'),
+      editorTitle: document.getElementById('cpEditorTitle'),
+      resizer:     document.getElementById('cpResizer'),
+      editorPanel: document.getElementById('cpEditorPanel'),
+      outputPanel: document.getElementById('cpOutputPanel'),
+      spinner:     document.getElementById('cpSpinner'),
+      spinnerText: document.getElementById('cpSpinnerText'),
+      previewFrame:document.getElementById('cpPreviewFrame'),
+      console:     document.getElementById('cpConsole'),
+      mdPreview:   document.getElementById('cpMarkdownPreview'),
+      tabPreview:  document.getElementById('cpTabPreview'),
+      tabConsole:  document.getElementById('cpTabConsole'),
+      previewContainer: document.getElementById('cpPreviewContainer'),
+      terminalWrapper:  document.getElementById('cpTerminalWrapper'),
+      stdin:       document.getElementById('cpStdin'),
+      statusDot:   document.getElementById('cpStatusDot'),
+      statusText:  document.getElementById('cpStatusText'),
+      statusTime:  document.getElementById('cpStatusTime'),
+      cursorPos:   document.getElementById('cpCursorPos'),
+      charCount:   document.getElementById('cpCharCount'),
+      copyToast:   document.getElementById('cpCopyToast')
     };
-    script.onerror = () => reject(new Error('Không tải được sql.js'));
-    document.head.appendChild(script);
-  });
-}
 
-// ---------------------------------------------------------------
-// Engine: JSON validate & format
-// ---------------------------------------------------------------
-function runJson(code) {
-  switchTab('console');
-  clearConsoleSilent();
-  try {
-    const parsed = JSON.parse(code);
-    const formatted = JSON.stringify(parsed, null, 2);
-    const lines = formatted.split('\n');
-    appendConsole('success', `✓ JSON hợp lệ (${lines.length} dòng, ${code.length} chars)`);
-    appendConsole('output', '');
-    lines.forEach(line => appendConsole('output', line));
-  } catch (e) {
-    appendConsole('error', '❌ JSON không hợp lệ: ' + e.message);
+    // Restore preferences
+    try { codeStore = JSON.parse(localStorage.getItem('cp_codes') || '{}'); } catch(e) { codeStore = {}; }
+
+    // Sync with global theme instead of local storage
+    syncSystemTheme();
+    
+    // Check for future theme changes
+    var observer = new MutationObserver(syncSystemTheme);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    var savedLang = localStorage.getItem('cp_lang') || 'html';
+    if (el.langSelect) el.langSelect.value = savedLang;
+
+    // Events
+    if (el.langSelect)  el.langSelect.addEventListener('change', function () { switchLanguage(el.langSelect.value); });
+    if (el.runBtn)      el.runBtn.addEventListener('click', function () { runCode(false); });
+    if (el.resetBtn)    el.resetBtn.addEventListener('click', resetCode);
+    if (el.copyBtn)     el.copyBtn.addEventListener('click', copyCode);
+    if (el.fsBtn)       el.fsBtn.addEventListener('click', toggleFullscreen);
+    if (el.clearBtn)    el.clearBtn.addEventListener('click', clearOutput);
+    if (el.tabPreview)  el.tabPreview.addEventListener('click', function () { switchTab('preview'); });
+    if (el.tabConsole)  el.tabConsole.addEventListener('click', function () { switchTab('console'); });
+
+    // Global keyboard shortcut
+    document.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runCode(false); }
+    });
+
+    setupResizer();
+    setStatus('loading', 'Đang tải editor...');
+
+    // Load CM5 then init language
+    loadCM5().then(function () {
+      cmLoaded = true;
+      setStatus('ready', 'Sẵn sàng');
+      switchLanguage(savedLang, true);
+    }).catch(function (err) {
+      setStatus('error', 'Không tải được editor');
+      console.error('[CP] CM5 load error:', err);
+      // Fallback: show plain textarea
+      if (el.editorWrap) {
+        el.editorWrap.innerHTML = '';
+        var ta = document.createElement('textarea');
+        ta.id = 'cpCodeTextarea';
+        ta.style.cssText = 'width:100%;height:100%;border:none;outline:none;resize:none;padding:1rem;font-family:monospace;font-size:13px;background:#0f172a;color:#e2e8f0;box-sizing:border-box;';
+        ta.value = codeStore[savedLang] !== undefined ? codeStore[savedLang] : (DEFAULT_CODE[savedLang] || '');
+        el.editorWrap.appendChild(ta);
+      }
+      switchLanguage(savedLang, true);
+    });
   }
-}
 
-// ---------------------------------------------------------------
-// Engine: Markdown preview
-// ---------------------------------------------------------------
-async function runMarkdown(code) {
-  switchTab('preview');
-  showSpinner(false);
-
-  if (!markedLoaded) {
-    await loadMarked();
-  }
-
-  try {
-    const html = window.marked.parse(code, { breaks: true, gfm: true });
-    el.mdPreview.innerHTML = html;
-    el.mdPreview.classList.add('active');
-    el.previewFrame.style.display = 'none';
-  } catch(e) {
-    appendConsole('error', '❌ Markdown error: ' + e.message);
-  }
-}
-
-async function loadMarked() {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js';
-    s.onload = () => { markedLoaded = true; resolve(); };
-    s.onerror = () => reject(new Error('Không tải được marked.js'));
-    document.head.appendChild(s);
-  });
-}
-
-// ---------------------------------------------------------------
-// Tab switching
-// ---------------------------------------------------------------
-function switchTab(tab) {
-  const isPreview = tab === 'preview';
-
-  el.tabPreview.classList.toggle('active', isPreview);
-  el.tabConsole.classList.toggle('active', !isPreview);
-  el.tabPreview.setAttribute('aria-selected', isPreview);
-  el.tabConsole.setAttribute('aria-selected', !isPreview);
-
-  if (isPreview) {
-    if (currentLang === 'markdown') {
-      el.previewFrame.style.display = 'none';
-      el.mdPreview.classList.add('active');
-    } else {
-      el.previewFrame.style.display = 'block';
-      el.mdPreview.classList.remove('active');
+  /* ================================================================
+     LANGUAGE SWITCH
+     ================================================================ */
+  function switchLanguage(lang, skipSave) {
+    if (!skipSave && currentLang) {
+      codeStore[currentLang] = getCode();
+      persistCodes();
     }
-    el.console.classList.remove('active');
-  } else {
-    el.previewFrame.style.display = 'none';
-    el.mdPreview.classList.remove('active');
-    el.console.classList.add('active');
+    currentLang = lang;
+    localStorage.setItem('cp_lang', lang);
+
+    var meta = LANG_META[lang] || LANG_META.html;
+    if (el.editorTitle) el.editorTitle.textContent = meta.title;
+    if (el.badge) {
+      el.badge.textContent = meta.badge;
+      el.badge.className = 'cp-lang-badge ' + meta.badgeClass;
+    }
+
+    var code = codeStore[lang] !== undefined ? codeStore[lang] : (DEFAULT_CODE[lang] || '');
+
+    if (cmLoaded && window.CodeMirror) {
+      createEditor(code, lang);
+    } else {
+      var ta = document.getElementById('cpCodeTextarea');
+      if (ta) ta.value = code;
+    }
+
+    updateCharCount((code || '').length);
+
+    if (['html','css','javascript','markdown'].indexOf(lang) !== -1) {
+      switchTab('preview');
+      scheduleAutoRun();
+    } else {
+      switchTab('console');
+      clearOutputSilent();
+    }
+
+    setStatus('ready', 'Sẵn sàng');
   }
-}
 
-// ---------------------------------------------------------------
-// Console helpers
-// ---------------------------------------------------------------
-function clearOutput() {
-  el.previewFrame.srcdoc = '';
-  el.mdPreview.innerHTML = '';
-  clearConsoleSilent();
-}
-
-function clearConsoleSilent() {
-  el.console.innerHTML = '';
-  el.consoleEmpty = null;
-}
-
-function appendConsole(type, text) {
-  // Remove empty state
-  const emp = el.console.querySelector('.cp-output-empty');
-  if (emp) emp.remove();
-
-  const div = document.createElement('div');
-  div.className = `cp-console-line line-${type}`;
-
-  const prefix = document.createElement('span');
-  prefix.className = 'cp-console-prefix';
-  prefix.textContent = type === 'error' ? '✗' : type === 'success' ? '✓' : type === 'info' ? '»' : ' ';
-
-  const content = document.createElement('span');
-  content.className = 'cp-console-text';
-  content.textContent = text;
-
-  div.appendChild(prefix);
-  div.appendChild(content);
-  el.console.appendChild(div);
-  el.console.scrollTop = el.console.scrollHeight;
-}
-
-// ---------------------------------------------------------------
-// Spinner
-// ---------------------------------------------------------------
-function showSpinner(show, text = 'Đang xử lý...') {
-  el.spinner.classList.toggle('visible', show);
-  el.spinnerText.textContent = text;
-}
-
-// ---------------------------------------------------------------
-// Status bar
-// ---------------------------------------------------------------
-function setStatus(state, text) {
-  el.statusText.textContent = text;
-  el.statusDot.className = 'cp-status-dot';
-  if (state === 'running') el.statusDot.classList.add('dot-running');
-  else if (state === 'success') el.statusDot.classList.add('dot-success');
-  else if (state === 'error') el.statusDot.classList.add('dot-error');
-}
-
-// ---------------------------------------------------------------
-// Reset code
-// ---------------------------------------------------------------
-function resetCode() {
-  const def = DEFAULT_CODE[currentLang] || '';
-  setCode(def);
-  codeStorage[currentLang] = def;
-  persistCodes();
-  if (['html', 'css', 'javascript', 'markdown'].includes(currentLang)) {
-    scheduleAutoRun();
+  /* ================================================================
+     EDITOR HELPERS
+     ================================================================ */
+  function getCode() {
+    if (cmLoaded && cmEditor) return cmEditor.getValue();
+    var ta = document.getElementById('cpCodeTextarea');
+    return ta ? ta.value : '';
   }
-}
 
-// ---------------------------------------------------------------
-// Copy code
-// ---------------------------------------------------------------
-async function copyCode() {
-  const code = getCode();
-  try {
-    await navigator.clipboard.writeText(code);
-  } catch(e) {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = code;
+  function setCode(code) {
+    if (cmLoaded && cmEditor) {
+      cmEditor.setValue(code);
+    } else {
+      var ta = document.getElementById('cpCodeTextarea');
+      if (ta) ta.value = code;
+    }
+    updateCharCount((code || '').length);
+  }
+
+  function updateCharCount(n) {
+    if (el.charCount) el.charCount.textContent = n + ' chars';
+  }
+
+  function scheduleAutoRun() {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function () { runCode(true); }, 800);
+  }
+
+  function persistCodes() {
+    try { localStorage.setItem('cp_codes', JSON.stringify(codeStore)); } catch(e) {}
+  }
+
+  /* ================================================================
+     RUN CODE
+     ================================================================ */
+  function runCode(isAuto) {
+    var code = getCode();
+    if (!code && !isAuto) return;
+
+    var meta  = LANG_META[currentLang] || LANG_META.html;
+    var t0    = performance.now();
+
+    if (!isAuto) {
+      if (el.runBtn) { el.runBtn.disabled = true; el.runBtn.classList.add('running'); }
+      var lbl = el.runBtn && el.runBtn.querySelector('.btn-label');
+      if (lbl) lbl.textContent = 'Running...';
+    }
+
+    setStatus('running', 'Đang chạy...');
+
+    var done = function (ok, msg) {
+      var elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      if (el.statusTime) el.statusTime.textContent = elapsed + 's';
+      setStatus(ok ? 'success' : 'error', msg || (ok ? 'Hoàn thành' : 'Lỗi'));
+      if (!isAuto) {
+        if (el.runBtn) { el.runBtn.disabled = false; el.runBtn.classList.remove('running'); }
+        if (lbl) lbl.textContent = 'Run';
+      }
+    };
+
+    try {
+      switch (meta.engine) {
+        case 'iframe':   runIframe(code, done);   break;
+        case 'wandbox':  runWandbox(code, done);  break;
+        case 'sqljs':    runSqlJs(code, done);    break;
+        case 'json':     runJson(code, done);     break;
+        case 'markdown': runMarkdown(code, done); break;
+        default: done(true);
+      }
+    } catch (err) {
+      appendConsole('error', '\u274C ' + (err.message || err));
+      done(false, err.message);
+    }
+  }
+
+  /* ================================================================
+     ENGINE: iframe (HTML / CSS / JS)
+     ================================================================ */
+  function runIframe(code, done) {
+    var src;
+    if (currentLang === 'html') {
+      src = code;
+    } else if (currentLang === 'css') {
+      src = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+            '<style>body{margin:0;padding:1rem;font-family:sans-serif;}</style>' +
+            '<style>' + code + '</style></head><body>' +
+            '<div class="box">CSS Preview</div>' +
+            '<p>Đây là đoạn văn bản mẫu để xem CSS của bạn.</p>' +
+            '<a href="#">Link mẫu</a>' +
+            '</body></html>';
+    } else {
+      // JavaScript: wrap in console interceptor
+      src = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+            '<style>body{margin:0;padding:1rem;font-family:\'Segoe UI\',sans-serif;background:#0f172a;color:#e2e8f0;}' +
+            '#out{white-space:pre-wrap;font-family:monospace;font-size:13px;line-height:1.6;}' +
+            '.e{color:#f87171;}.w{color:#fbbf24;}</style></head><body>' +
+            '<div id="out"></div><script>' +
+            '(function(){var out=document.getElementById("out");' +
+            'function ln(t,c){var d=document.createElement("div");if(c)d.className=c;' +
+            'd.textContent=t;out.appendChild(d);}' +
+            'var ol=console.log,oe=console.error,ow=console.warn;' +
+            'console.log=function(){ol.apply(console,arguments);ln(Array.from(arguments).map(function(x){return typeof x==="object"?JSON.stringify(x,null,2):String(x);}).join(" "));};' +
+            'console.error=function(){oe.apply(console,arguments);ln(Array.from(arguments).join(" "),"e");};' +
+            'console.warn=function(){ow.apply(console,arguments);ln(Array.from(arguments).join(" "),"w");};' +
+            'window.onerror=function(m){ln("Error: "+m,"e");return true;};' +
+            'try{' + code + '}catch(e){ln("Error: "+e.message,"e");}' +
+            '})();<\/script></body></html>';
+    }
+    switchTab('preview');
+    showSpinner(false);
+    if (el.previewFrame) el.previewFrame.srcdoc = src;
+    done(true);
+  }
+
+  /* ================================================================
+     ENGINE: Wandbox API (free, no auth needed)
+     https://wandbox.org/
+     ================================================================ */
+  function runWandbox(code, done) {
+    switchTab('console');
+    showSpinner(true, 'Đang biên dịch & chạy...');
+    clearOutputSilent();
+
+    var cfg = WANDBOX_CONFIGS[currentLang];
+    if (!cfg) { done(false, 'Unsupported language'); return; }
+
+    var payload = {
+      compiler:              cfg.compiler,
+      code:                  code,
+      options:               '',
+      stdin:                 el.stdin ? el.stdin.value : '',
+      'compiler-option-raw': cfg.rawOptions || '',
+      'runtime-option-raw':  ''
+    };
+
+    fetch('https://wandbox.org/api/compile.json', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Wandbox API ' + res.status);
+      return res.json();
+    }).then(function (r) {
+      showSpinner(false);
+
+      // Compiler messages
+      if (r.compiler_error && r.compiler_error.trim()) {
+        r.compiler_error.trim().split('\n').forEach(function (l) { appendConsole('error', l); });
+      }
+      if (r.compiler_output && r.compiler_output.trim()) {
+        r.compiler_output.trim().split('\n').forEach(function (l) { appendConsole('info', l); });
+      }
+      // Program output
+      if (r.program_output && r.program_output.trim()) {
+        r.program_output.trim().split('\n').forEach(function (l) { appendConsole('output', l); });
+      }
+      // Runtime errors
+      if (r.program_error && r.program_error.trim()) {
+        r.program_error.trim().split('\n').forEach(function (l) { appendConsole('error', l); });
+      }
+
+      if (!r.program_output && !r.program_error && !r.compiler_error) {
+        appendConsole('info', '(Không có output)');
+      }
+
+      // status is returned as a string "0" for success
+      var ok = String(r.status) === '0';
+      appendConsole(ok ? 'success' : 'error', ok ? '\u2713 Completed (exit 0)' : 'Exit code: ' + r.status);
+      done(ok);
+    }).catch(function (err) {
+      showSpinner(false);
+      // If Wandbox is down, show helpful message
+      appendConsole('error', '\u274C ' + err.message);
+      if (err.message.indexOf('Failed to fetch') !== -1 || err.message.indexOf('NetworkError') !== -1) {
+        appendConsole('info', 'Không thể kết nối tới Wandbox API. Vui lòng kiểm tra kết nối mạng.');
+      }
+      done(false, err.message);
+    });
+  }
+
+  /* ================================================================
+     ENGINE: sql.js (SQLite WebAssembly)
+     ================================================================ */
+  function runSqlJs(code, done) {
+    switchTab('console');
+    showSpinner(true, 'Khởi tạo SQLite...');
+    clearOutputSilent();
+
+    var doRun = function () {
+      showSpinner(false);
+      var stmts = code.split(/;(?=(?:[^']*'[^']*')*[^']*$)/g)
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+
+      var ok = true;
+      stmts.forEach(function (stmt) {
+        try {
+          appendConsole('info', '\u25B6 ' + stmt.substring(0, 80) + (stmt.length > 80 ? '...' : ''));
+          var results = sqlDb.exec(stmt);
+          if (results && results.length > 0) {
+            results.forEach(function (r) {
+              appendConsole('output', r.columns.join(' | '));
+              appendConsole('output', r.columns.map(function (c) { return '-'.repeat(c.length + 2); }).join('-|-'));
+              r.values.forEach(function (row) {
+                appendConsole('output', row.map(function (v) { return v === null ? 'NULL' : String(v); }).join(' | '));
+              });
+              appendConsole('success', '(' + r.values.length + ' rows)');
+            });
+          } else {
+            appendConsole('success', 'OK');
+          }
+        } catch (e) {
+          appendConsole('error', '\u274C ' + e.message);
+          ok = false;
+        }
+        appendConsole('output', '');
+      });
+      done(ok);
+    };
+
+    if (sqlDb) { doRun(); return; }
+
+    loadScript('https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js')
+      .then(function () {
+        return window.initSqlJs({
+          locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/' + f; }
+        });
+      })
+      .then(function (SQL) {
+        sqlDb = new SQL.Database();
+        doRun();
+      })
+      .catch(function (err) {
+        showSpinner(false);
+        appendConsole('error', '\u274C Không tải được sql.js: ' + err.message);
+        done(false, err.message);
+      });
+  }
+
+  /* ================================================================
+     ENGINE: JSON validate
+     ================================================================ */
+  function runJson(code, done) {
+    switchTab('console');
+    clearOutputSilent();
+    try {
+      var parsed = JSON.parse(code);
+      var fmt    = JSON.stringify(parsed, null, 2);
+      appendConsole('success', '\u2713 JSON hợp lệ (' + fmt.split('\n').length + ' dòng)');
+      appendConsole('output', '');
+      fmt.split('\n').forEach(function (l) { appendConsole('output', l); });
+      done(true);
+    } catch (e) {
+      appendConsole('error', '\u274C JSON không hợp lệ: ' + e.message);
+      done(false, e.message);
+    }
+  }
+
+  /* ================================================================
+     ENGINE: Markdown
+     ================================================================ */
+  function runMarkdown(code, done) {
+    switchTab('preview');
+    showSpinner(false);
+    if (el.previewFrame) el.previewFrame.style.display = 'none';
+    if (el.mdPreview)    el.mdPreview.classList.add('active');
+
+    var render = function () {
+      try {
+        if (el.mdPreview) el.mdPreview.innerHTML = window.marked.parse(code, { breaks: true, gfm: true });
+        done(true);
+      } catch (e) {
+        done(false, e.message);
+      }
+    };
+
+    if (markedReady) { render(); return; }
+    loadScript('https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js')
+      .then(function () { markedReady = true; render(); })
+      .catch(function (e) { done(false, e.message); });
+  }
+
+  /* ================================================================
+     OUTPUT HELPERS
+     ================================================================ */
+  function switchTab(tab) {
+    var isPreview = (tab === 'preview');
+    var isConsole = (tab === 'console');
+
+    if (el.tabPreview) { el.tabPreview.classList.toggle('active', isPreview); el.tabPreview.setAttribute('aria-selected', isPreview); }
+    if (el.tabConsole) { el.tabConsole.classList.toggle('active', isConsole); el.tabConsole.setAttribute('aria-selected', isConsole); }
+
+    // Hide all containers
+    if (el.previewContainer) el.previewContainer.style.display = 'none';
+    if (el.terminalWrapper)  el.terminalWrapper.classList.remove('active');
+
+    if (isPreview) {
+      if (el.previewContainer) el.previewContainer.style.display = 'block';
+      // Toggle sub-elements based on language
+      if (currentLang === 'markdown') {
+        if (el.previewFrame) el.previewFrame.style.display = 'none';
+        if (el.mdPreview)    el.mdPreview.classList.add('active');
+      } else {
+        if (el.previewFrame) el.previewFrame.style.display = 'block';
+        if (el.mdPreview)    el.mdPreview.classList.remove('active');
+      }
+    } else if (isConsole) {
+      if (el.terminalWrapper) el.terminalWrapper.classList.add('active');
+    }
+  }
+
+  function clearOutput() {
+    if (el.previewFrame) el.previewFrame.srcdoc = '';
+    if (el.mdPreview)    el.mdPreview.innerHTML = '';
+    clearOutputSilent();
+  }
+
+  function clearOutputSilent() {
+    if (!el.console) return;
+    el.console.innerHTML = '';
+    var empty = document.createElement('div');
+    empty.className = 'cp-output-empty';
+    empty.innerHTML = '<span class="material-symbols-sharp">terminal</span><p>Nhấn <strong>Run</strong> để xem kết quả</p>';
+    el.console.appendChild(empty);
+  }
+
+  function appendConsole(type, text) {
+    if (!el.console) return;
+    var emp = el.console.querySelector('.cp-output-empty');
+    if (emp) emp.remove();
+
+    var row = document.createElement('div');
+    row.className = 'cp-console-line line-' + type;
+
+    var pre = document.createElement('span');
+    pre.className = 'cp-console-prefix';
+    pre.textContent = type === 'error' ? '\u2715' : type === 'success' ? '\u2713' : type === 'info' ? '\u00BB' : ' ';
+
+    var txt = document.createElement('span');
+    txt.className = 'cp-console-text';
+    txt.textContent = text;
+
+    row.appendChild(pre);
+    row.appendChild(txt);
+    el.console.appendChild(row);
+    el.console.scrollTop = el.console.scrollHeight;
+  }
+
+  function showSpinner(show, text) {
+    if (!el.spinner) return;
+    el.spinner.classList.toggle('visible', show);
+    if (text && el.spinnerText) el.spinnerText.textContent = text;
+  }
+
+  function setStatus(state, text) {
+    if (el.statusText) el.statusText.textContent = text;
+    if (el.statusDot) {
+      el.statusDot.className = 'cp-status-dot';
+      if (state === 'running') el.statusDot.classList.add('dot-running');
+      else if (state === 'success') el.statusDot.classList.add('dot-success');
+      else if (state === 'error')   el.statusDot.classList.add('dot-error');
+    }
+  }
+
+  /* ================================================================
+     RESET / COPY / THEME / FULLSCREEN
+     ================================================================ */
+  function resetCode() {
+    var def = DEFAULT_CODE[currentLang] || '';
+    setCode(def);
+    codeStore[currentLang] = def;
+    persistCodes();
+    if (['html','css','javascript','markdown'].indexOf(currentLang) !== -1) scheduleAutoRun();
+  }
+
+  function copyCode() {
+    var code = getCode();
+    var success = function () {
+      if (el.copyToast) { el.copyToast.classList.add('show'); setTimeout(function () { el.copyToast.classList.remove('show'); }, 2000); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(success).catch(function () { fallbackCopy(code, success); });
+    } else {
+      fallbackCopy(code, success);
+    }
+  }
+
+  function fallbackCopy(text, cb) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
     ta.style.cssText = 'position:fixed;top:-999px;opacity:0';
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    try { document.execCommand('copy'); cb(); } catch(e) {}
     document.body.removeChild(ta);
   }
-  showCopyToast();
-}
 
-function showCopyToast() {
-  el.copyToast.classList.add('show');
-  setTimeout(() => el.copyToast.classList.remove('show'), 2000);
-}
+  /* =====================================================
+     THEME SYNC (System Integration)
+     ===================================================== */
+  function syncSystemTheme() {
+    // Check global ACTIVE_THEME or body class
+    var activeTheme = window.ACTIVE_THEME || 'default';
+    var isForest = (activeTheme === 'forest' || document.body.classList.contains('theme-forest'));
+    
+    // Toggle CP-light class for specific override logic in CSS
+    if (el.root) {
+      if (isForest) el.root.classList.add('cp-light');
+      else el.root.classList.remove('cp-light');
+    }
 
-// ---------------------------------------------------------------
-// Theme toggle
-// ---------------------------------------------------------------
-function toggleTheme() {
-  isDarkTheme = !isDarkTheme;
-  el.root.classList.toggle('cp-light', !isDarkTheme);
-  el.themeIcon.textContent = isDarkTheme ? 'dark_mode' : 'light_mode';
-  localStorage.setItem('cp_theme', isDarkTheme ? 'dark' : 'light');
-
-  // Rebuild CM to apply theme
-  if (isCmLoaded && cmView) {
-    const code = getCode();
-    createCmView(code, currentLang);
+    // Update CodeMirror Theme (Galaxy: dracula, Forest: default)
+    if (cmEditor) {
+      var cmTheme = isForest ? 'default' : 'dracula';
+      cmEditor.setOption('theme', cmTheme);
+      setTimeout(function() { if (cmEditor) cmEditor.refresh(); }, 100);
+    }
+    
+    isDark = !isForest;
   }
-}
 
-// ---------------------------------------------------------------
-// Fullscreen toggle
-// ---------------------------------------------------------------
-function toggleFullscreen() {
-  isFullscreen = !isFullscreen;
-  el.root.classList.toggle('cp-fullscreen', isFullscreen);
-  el.fsIcon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
-  el.fsBtn.classList.toggle('active', isFullscreen);
-}
+  function toggleFullscreen() {
+    isFullscreen = !isFullscreen;
+    if (el.root) el.root.classList.toggle('cp-fullscreen', isFullscreen);
+    if (el.fsIcon) el.fsIcon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
+    if (el.fsBtn) el.fsBtn.classList.toggle('active', isFullscreen);
+    // Refresh editor after layout change
+    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 50);
+  }
 
-// ---------------------------------------------------------------
-// Resizer drag
-// ---------------------------------------------------------------
-function setupResizer() {
-  let dragging = false;
-  let startX = 0;
-  let startEditorW = 0;
+  /* ================================================================
+     RESIZER
+     ================================================================ */
+  function setupResizer() {
+    if (!el.resizer || !el.editorPanel || !el.outputPanel) return;
+    var dragging = false, startX = 0, startW = 0;
 
-  el.resizer.addEventListener('mousedown', (e) => {
-    dragging = true;
-    startX = e.clientX;
-    startEditorW = el.editorPanel.offsetWidth;
-    el.resizer.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const split = document.getElementById('cpSplit');
-    const totalW = split.offsetWidth;
-    const delta = e.clientX - startX;
-    const newEditorW = Math.max(200, Math.min(totalW - 200, startEditorW + delta));
-    el.editorPanel.style.width = newEditorW + 'px';
-    el.editorPanel.style.flex = 'none';
-    el.outputPanel.style.flex = '1';
-    el.outputPanel.style.width = '';
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (dragging) {
+    el.resizer.addEventListener('mousedown', function (e) {
+      dragging = true; startX = e.clientX; startW = el.editorPanel.offsetWidth;
+      el.resizer.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', function (e) {
+      if (!dragging) return;
+      var split = document.getElementById('cpSplit');
+      var total = split ? split.offsetWidth : window.innerWidth;
+      var newW  = Math.max(180, Math.min(total - 180, startW + e.clientX - startX));
+      el.editorPanel.style.width = newW + 'px';
+      el.editorPanel.style.flex  = 'none';
+      el.outputPanel.style.flex  = '1';
+      if (cmEditor) cmEditor.refresh();
+    });
+    document.addEventListener('mouseup', function () {
+      if (!dragging) return;
       dragging = false;
       el.resizer.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      if (cmEditor) cmEditor.refresh();
+    });
+  }
+
+  /* ================================================================
+     PAGE LIFECYCLE HOOK
+     ================================================================ */
+  var cpInitialized = false;
+
+  function onPageShow() {
+    if (cpInitialized) {
+      // Already initialized – just refresh editor if visible
+      if (cmEditor) setTimeout(function () { cmEditor.refresh(); }, 50);
+      return;
     }
-  });
-
-  // Touch support
-  el.resizer.addEventListener('touchstart', (e) => {
-    dragging = true;
-    startX = e.touches[0].clientX;
-    startEditorW = el.editorPanel.offsetWidth;
-    el.resizer.classList.add('dragging');
-  }, { passive: true });
-
-  document.addEventListener('touchmove', (e) => {
-    if (!dragging) return;
-    const split = document.getElementById('cpSplit');
-    const totalW = split.offsetWidth;
-    const delta = e.touches[0].clientX - startX;
-    const newEditorW = Math.max(150, Math.min(totalW - 150, startEditorW + delta));
-    el.editorPanel.style.width = newEditorW + 'px';
-    el.editorPanel.style.flex = 'none';
-  }, { passive: true });
-
-  document.addEventListener('touchend', () => {
-    dragging = false;
-    el.resizer.classList.remove('dragging');
-  });
-}
-
-// ---------------------------------------------------------------
-// Hook into page lifecycle (showPage system)
-// ---------------------------------------------------------------
-let cpInitialized = false;
-
-function onPageShow() {
-  if (!cpInitialized) {
     cpInitialized = true;
     cpInit();
   }
-}
 
-// Fire on immediate DOM ready check
-if (document.readyState !== 'loading') {
-  // Check if this page is currently visible
-  const pg = document.getElementById('page-code-playground');
-  if (pg && pg.style.display !== 'none') onPageShow();
-} else {
-  document.addEventListener('DOMContentLoaded', () => {
-    const pg = document.getElementById('page-code-playground');
+  // Hook into the app's showPage system
+  // Use a polling approach to safely wrap showPage after all scripts load
+  function hookShowPage() {
+    var prev = window.showPage;
+    window.showPage = function (pageId) {
+      var args = Array.prototype.slice.call(arguments);
+      if (typeof prev === 'function') prev.apply(window, args);
+      if (pageId === 'page-code-playground') {
+        setTimeout(onPageShow, 50);
+      }
+    };
+  }
+
+  // Run when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      hookShowPage();
+      // Check if page is immediately visible
+      var pg = document.getElementById('page-code-playground');
+      if (pg && pg.style.display !== 'none') onPageShow();
+    });
+  } else {
+    hookShowPage();
+    var pg = document.getElementById('page-code-playground');
     if (pg && pg.style.display !== 'none') onPageShow();
-  });
-}
+  }
 
-// Hook into global showPage
-const _cpOrigShowPage = window.showPage;
-window.showPage = function(pageId, ...args) {
-  if (typeof _cpOrigShowPage === 'function') _cpOrigShowPage(pageId, ...args);
-  if (pageId === 'page-code-playground') onPageShow();
-};
+  // Expose globally for debugging
+  window.CodePlayground = { init: cpInit, run: function () { runCode(false); } };
 
-// Export for potential external use
-window.CodePlayground = { init: cpInit, run: runCode };
+})();
 </script>
