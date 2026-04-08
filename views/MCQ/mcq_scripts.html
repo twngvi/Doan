@@ -2182,17 +2182,29 @@
 
     document.getElementById("quiz-loading").style.display = "none";
     document.getElementById("quiz-error").style.display = "none";
-    document.getElementById("quiz-stats").style.display = "flex";
-    document.getElementById("quiz-progress-bar").style.display = "none";
+    
     startTimer();
     
     if (quizState.gameMode === "review") {
+      document.getElementById("quiz-stats").style.display = "none";
+      document.getElementById("quiz-progress-bar").style.display = "none";
       document.getElementById("quiz-section").style.display = "none";
       document.getElementById("review-questions-list").style.display = "block";
       renderAllQuestionsForReview();
+      
+      // Update header subtitle
+      const subtitleEl = document.querySelector(".mcq-game-subtitle");
+      if (subtitleEl) subtitleEl.innerHTML = 'Ôn tập: Trả lời toàn bộ câu hỏi và nộp bài <span id="quiz-mode-indicator" class="quiz-mode-indicator review">REVIEW</span>';
     } else {
+      document.getElementById("quiz-stats").style.display = "flex";
+      document.getElementById("quiz-progress-bar").style.display = "block";
       document.getElementById("quiz-section").style.display = "block";
       document.getElementById("review-questions-list").style.display = "none";
+      
+      // Update header subtitle
+      const subtitleEl = document.querySelector(".mcq-game-subtitle");
+      if (subtitleEl) subtitleEl.innerHTML = 'Làm quiz theo chủ đề <span id="quiz-mode-indicator" class="quiz-mode-indicator">INSTANT</span>';
+      
       displayQuestion();
     }
   }
@@ -2268,11 +2280,16 @@
    */
   function renderAllQuestionsForReview() {
     const container = document.getElementById("review-questions-list");
+    if (!container) return;
+    
     container.innerHTML = "";
+    
+    // Create a scroll-to-top indicator or just a fresh start
+    window.scrollTo({ top: 0, behavior: "smooth" });
     
     quizState.questions.forEach((question, qIdx) => {
       const qCard = document.createElement("div");
-      qCard.className = "review-question-card mcq-question-card mb-4";
+      qCard.className = "review-question-card";
       qCard.id = `review-q-${qIdx}`;
       
       let optionsHtml = "";
@@ -2280,20 +2297,23 @@
       
       if (question.questionType === "fill-blank") {
         optionsHtml = `
-          <div class="fill-blank-question mt-3">
+          <div class="fill-blank-question mt-4">
             <input type="text" 
                    class="fill-blank-input" 
-                   placeholder="Nhập đáp án..." 
-                   oninput="quizState.userAnswers[${qIdx}] = this.value"
+                   placeholder="Nhập đáp án của bạn..." 
+                   value="${quizState.userAnswers[qIdx] || ""}"
+                   oninput="handleReviewFillInput(${qIdx}, this.value)"
                    autocomplete="off">
           </div>
         `;
       } else {
-        optionsHtml = '<div class="answer-options mt-3">';
+        optionsHtml = '<div class="answer-options">';
         question.options.forEach((opt, oIdx) => {
+          const isSelected = quizState.userAnswers[qIdx] === oIdx;
+          const selectedClass = isSelected ? "selected" : "";
           optionsHtml += `
-            <button class="answer-option" onclick="handleReviewAnswerClick(${qIdx}, ${oIdx}, this)">
-              <span class="option-label">${labels[oIdx]}</span>
+            <button class="answer-option ${selectedClass}" onclick="handleReviewAnswerClick(${qIdx}, ${oIdx}, this)">
+              <div class="option-letter">${labels[oIdx]}</div>
               <span class="option-text">${opt}</span>
             </button>
           `;
@@ -2316,13 +2336,16 @@
     
     // Add Submit Button at the bottom
     const submitBtnDiv = document.createElement("div");
-    submitBtnDiv.className = "review-submit-container text-center mt-4 mb-5";
+    submitBtnDiv.className = "review-submit-container";
     submitBtnDiv.innerHTML = `
-      <button class="btn-primary btn-success btn-lg px-5 py-3" onclick="submitQuiz()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="me-2">
+      <div id="review-warning" class="review-unanswered-warning">
+        Bạn vẫn còn một số câu hỏi chưa hoàn thành!
+      </div>
+      <button class="btn-review-submit" onclick="submitQuiz()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
-        Nộp bài & Xem kết quả
+        Nộp bài ngay
       </button>
     `;
     container.appendChild(submitBtnDiv);
@@ -2337,9 +2360,26 @@
     
     // Update UI within this card
     const card = document.getElementById(`review-q-${qIdx}`);
-    const buttons = card.querySelectorAll(".answer-option");
-    buttons.forEach(b => b.classList.remove("selected"));
-    btn.classList.add("selected");
+    if (card) {
+      const buttons = card.querySelectorAll(".answer-option");
+      buttons.forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+    }
+
+    // Hide warning if visible
+    const warning = document.getElementById("review-warning");
+    if (warning) warning.classList.remove("show");
+  };
+
+  /**
+   * Handle fill-blank input in Review Mode
+   */
+  window.handleReviewFillInput = function(qIdx, value) {
+    quizState.userAnswers[qIdx] = value.trim();
+    
+    // Hide warning if visible
+    const warning = document.getElementById("review-warning");
+    if (warning) warning.classList.remove("show");
   };
 
   /**
@@ -2929,16 +2969,32 @@
     // If in review mode, calculate the final score from userAnswers now
     if (quizState.gameMode === "review") {
       let finalReviewScore = 0;
+      let unansweredIndices = [];
+      
       quizState.questions.forEach((question, index) => {
         const userAnswer = quizState.userAnswers[index];
-        if (userAnswer !== null) {
+        if (userAnswer === null || userAnswer === "") {
+          unansweredIndices.push(index + 1);
+        } else {
           const isCorrect = question.questionType === "fill-blank"
             ? checkFillBlankAnswer(userAnswer, question.correctAnswer)
             : userAnswer === question.correctAnswer;
           if (isCorrect) finalReviewScore++;
         }
       });
+      
       quizState.score = finalReviewScore;
+      
+      // Validation for review mode
+      if (unansweredIndices.length > 0) {
+        const warning = document.getElementById("review-warning");
+        if (warning) {
+          warning.textContent = `Bạn còn ${unansweredIndices.length} câu chưa trả lời (Câu: ${unansweredIndices.join(", ")}).`;
+          warning.classList.add("show");
+          warning.scrollIntoView({ behavior: "smooth", block: "center" });
+          return; // Don't submit yet
+        }
+      }
     }
 
     const unansweredCount = quizState.userAnswers.filter(
@@ -3019,6 +3075,7 @@
     }
 
     document.getElementById("quiz-section").style.display = "none";
+    document.getElementById("review-questions-list").style.display = "none";
     document.getElementById("quiz-stats").style.display = "none";
     document.getElementById("quiz-progress-bar").style.display = "none";
     document.getElementById("quiz-results").style.display = "block";
@@ -3083,7 +3140,9 @@
 
     quizState.questions.forEach((question, index) => {
       const userAnswer = quizState.userAnswers[index];
-      const isCorrect = userAnswer === question.correctAnswer;
+      const isCorrect = question.questionType === "fill-blank"
+        ? checkFillBlankAnswer(userAnswer, question.correctAnswer)
+        : userAnswer === question.correctAnswer;
 
       const reviewItem = document.createElement("div");
       reviewItem.className = `review-item ${
