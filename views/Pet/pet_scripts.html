@@ -54,7 +54,7 @@
     const DEFAULT_PET_NAME = "NAMEPET";
     const PET_NAME_MAX_LENGTH = 24;
     const NO_ACCESSORY_VALUE = "";
-    const MAX_ACCESSORIES_PER_PET = 3;
+    const MAX_ACCESSORIES_PER_PET = 2;
     const STAGE_BACKGROUNDS = [
       { id: "bg1", name: "Nền 1", fileName: "bg-1.webp" },
       { id: "bg2", name: "Nền 2", fileName: "bg-2.webp" },
@@ -622,11 +622,11 @@
       const rule = getAccessoryRule(fileName);
       const finalPosition = resolveAccessoryPosition(fileName, desiredPosition);
 
-      const baseTop = 12;
+      const baseTop = 20;
       const baseLeftMap = {
-        left: 35,
+        left: 40,
         center: 50,
-        right: 65,
+        right: 60,
       };
 
       const topValue =
@@ -637,7 +637,7 @@
         typeof rule.leftOverride === "number"
           ? rule.leftOverride
           : baseLeftMap[finalPosition] || 50;
-      const rotValue = finalPosition === "left" ? -14 : finalPosition === "right" ? 14 : 0;
+      const rotValue = finalPosition === "left" ? -12 : finalPosition === "right" ? 12 : 0;
       const scaleValue = rule.scale || 1;
 
       accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
@@ -796,8 +796,13 @@
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       applySrcAsync(previewImageEl, imageName);
       if (errorEl) errorEl.style.display = "none";
-      renderEyes();
-      renderAccessory();
+      
+      // Force render eyes and accessories after main image
+      setTimeout(() => {
+        renderEyes();
+        renderAccessory();
+      }, 50);
+
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
 
@@ -995,7 +1000,7 @@
 
           if (state.selectedAccessories.length >= MAX_ACCESSORIES_PER_PET) {
             if (typeof showToast === "function") {
-              showToast("Mỗi pet chỉ gắn tối đa 3 phụ kiện");
+              showToast("Mỗi pet chỉ gắn tối đa 2 phụ kiện");
             }
             return;
           }
