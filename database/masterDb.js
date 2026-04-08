@@ -265,8 +265,8 @@ function processGoogleUserLogin(googleProfile) {
   let existingUser = null;
   const headers = data[0] || [];
   const themeColIndex = headers.indexOf("theme");
-  // Cột progressSheetId nằm ở index 24 (theo schemas.js)
-  const PROGRESS_SHEET_COL_INDEX = 24;
+  // Cột progressSheetId nằm ở index 25 (theo schemas.js mới sau khi thêm totalXQP)
+  const PROGRESS_SHEET_COL_INDEX = 25;
 
   // 1. Tìm User
   for (let i = 1; i < data.length; i++) {
@@ -369,22 +369,23 @@ function processGoogleUserLogin(googleProfile) {
       1, // 9: aiLevel
       0, // 10: totalPoints
       0, // 11: totalXP
-      0, // 12: currentStreak
-      0, // 13: longestStreak
-      now, // 14: lastActiveDate
-      now, // 15: lastLogin
-      now, // 16: createdAt
-      true, // 17: isActive
-      0, // 18: mountainPosition
-      1, // 19: mountainStage
-      0, // 20: mountainProgress
-      0, // 21: totalQuizAnswered
-      0, // 22: totalPuzzleSolved
-      0, // 23: totalChallengeCompleted
-      progressSheetId, // 24: ⭐ LƯU ID SHEET CÁ NHÂN VỪA TẠO
-      true, // 25: emailVerified
-      "", // 26: verificationToken
-      "", // 27: verificationExpires
+      0, // 12: totalXQP (NEW)
+      0, // 13: currentStreak
+      0, // 14: longestStreak
+      now, // 15: lastActiveDate
+      now, // 16: lastLogin
+      now, // 17: createdAt
+      true, // 18: isActive
+      0, // 19: mountainPosition
+      1, // 20: mountainStage
+      0, // 21: mountainProgress
+      0, // 22: totalQuizAnswered
+      0, // 23: totalPuzzleSolved
+      0, // 24: totalChallengeCompleted
+      progressSheetId, // 25: ⭐ LƯU ID SHEET CÁ NHÂN VỪA TẠO
+      true, // 26: emailVerified
+      "", // 27: verificationToken
+      "", // 28: verificationExpires
     ];
 
     userSheet.appendRow(newRow);

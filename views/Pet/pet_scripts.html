@@ -129,6 +129,7 @@
       petDisplayName: DEFAULT_PET_NAME,
       petNameLoadedUserId: "",
       petNameLoading: false,
+      totalXQP: 0,
     };
 
     let petMeteorInterval = null;
@@ -1280,6 +1281,22 @@
         }
     }
 
+    function updateXQPUI() {
+      const xqpDisplay = document.getElementById("petXQPBalance");
+      if (!xqpDisplay) return;
+
+      // Priority 1: Current state
+      let balance = state.totalXQP;
+
+      // Priority 2: window.currentUser if state is 0
+      if (balance === 0 && window.currentUser && typeof window.currentUser.totalXQP !== 'undefined') {
+        balance = window.currentUser.totalXQP;
+        state.totalXQP = balance;
+      }
+
+      xqpDisplay.textContent = Number(balance).toLocaleString();
+    }
+
     function initPetPage() {
       if (!state.initialized) {
         bindPetNameEditor();
@@ -1304,6 +1321,7 @@
       setupPetHeaderMouseEffect();
       loadPetNameFromServer();
       loadPetConfigFromServer();
+      updateXQPUI();
       renderPet();
     }
 

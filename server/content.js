@@ -1471,29 +1471,77 @@ function addXPToUserTotalByEmail(userEmail, xpDelta) {
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0];
     const emailCol = headers.indexOf("email");
-    const xpCol = headers.indexOf("totalXP");
+      const xpCol = headers.indexOf("totalXP");
+      const xqpCol = headers.indexOf("totalXQP");
 
-    if (emailCol < 0 || xpCol < 0) return null;
+      if (emailCol < 0 || xpCol < 0) return null;
+
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][emailCol]).trim() !== String(userEmail).trim()) {
+          continue;
+        }
+
+        const currentXP = parseInt(data[i][xpCol]) || 0;
+        const currentXQP = xqpCol >= 0 ? parseInt(data[i][xqpCol]) || 0 : 0;
+        const amount = parseInt(xpDelta, 10) || 0;
+        
+        const newTotalXP = currentXP + amount;
+        const newTotalXQP = currentXQP + amount;
+
+        // Update XP and XQP
+        usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+        if (xqpCol >= 0) {
+          usersSheet.getRange(i + 1, xqpCol + 1).setValue(newTotalXQP);
+        }
+
+        return newTotalXP;
+      }
+
+    return null;
+  } catch (error) {
+    Logger.log("❌ Error updating totalXP: " + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Deduct XQP from user's total balance.
+ * XP balance remains unchanged.
+ */
+function deductXQPFromUserTotalByEmail(userEmail, amountToDeduct) {
+  try {
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailCol = headers.indexOf("email");
+    const xqpCol = headers.indexOf("totalXQP");
+
+    if (emailCol < 0 || xqpCol < 0) return { success: false, message: "System error: XQP column not found" };
 
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][emailCol]).trim() !== String(userEmail).trim()) {
         continue;
       }
 
-      const currentXP = parseInt(data[i][xpCol]) || 0;
-      const amount = parseInt(xpDelta, 10) || 0;
-      const newTotalXP = currentXP + amount;
+      const currentXQP = parseInt(data[i][xqpCol]) || 0;
+      const amount = parseInt(amountToDeduct, 10) || 0;
+      
+      if (currentXQP < amount) {
+        return { success: false, message: "Không đủ XQP" };
+      }
 
-      // Update XP
-      usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
+      const newTotalXQP = currentXQP - amount;
+      usersSheet.getRange(i + 1, xqpCol + 1).setValue(newTotalXQP);
 
-      return newTotalXP;
+      return { success: true, newTotalXQP: newTotalXQP };
     }
 
-    return null;
+    return { success: false, message: "User not found" };
   } catch (error) {
-    Logger.log("❌ Error updating totalXP: " + error.toString());
-    return null;
+    Logger.log("❌ Error deducting XQP: " + error.toString());
+    return { success: false, message: error.toString() };
   }
 }
 
@@ -1567,19 +1615,110 @@ function awardTopicXPByEvent(userEmail, config) {
       meta,
     ]);
 
-    const newTotalXP = addXPToUserTotalByEmail(userEmail, xpAmount);
+    const newTotals = syncUserPointsAcrossDBs(userEmail, xpAmount);
 
     return {
       success: true,
       awarded: true,
       xpAwarded: xpAmount,
-      newTotalXP: newTotalXP,
+      newTotalXP: newTotals.totalXP,
+      newTotalXQP: newTotals.totalXQP,
       eventId: eventId,
-      message: "+" + xpAmount + " XP",
+      message: "+" + xpAmount + " XP/XQP",
     };
   } catch (error) {
     Logger.log("❌ Error awarding topic XP: " + error.toString());
     return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Unified synchronization of XP and XQP across Master DB and Personal DB.
+ */
+function syncUserPointsAcrossDBs(userEmail, xpDelta) {
+  const result = { totalXP: 0, totalXQP: 0 };
+  try {
+    // 1. Update MASTER DB
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailCol = headers.indexOf("email");
+    const xpCol = headers.indexOf("totalXP");
+    const xqpCol = headers.indexOf("totalXQP");
+
+    let progressSheetId = "";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][emailCol]).trim() === String(userEmail).trim()) {
+        const currentXP = parseInt(data[i][xpCol]) || 0;
+        const currentXQP = xqpCol >= 0 ? parseInt(data[i][xqpCol]) || 0 : 0;
+        
+        result.totalXP = currentXP + xpDelta;
+        result.totalXQP = currentXQP + xpDelta;
+        progressSheetId = data[i][headers.indexOf("progressSheetId")];
+
+        usersSheet.getRange(i + 1, xpCol + 1).setValue(result.totalXP);
+        if (xqpCol >= 0) {
+          usersSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
+        }
+        break;
+      }
+    }
+
+    // 2. Update PERSONAL DB
+    if (progressSheetId) {
+      updatePersonalProfilePoints(progressSheetId, result.totalXP, result.totalXQP);
+    }
+
+    return result;
+  } catch (error) {
+    Logger.log("❌ Error in syncUserPointsAcrossDBs: " + error.toString());
+    return result;
+  }
+}
+
+/**
+ * Update Profile sheet in User's Personal Spreadsheet
+ */
+function updatePersonalProfilePoints(progressSheetId, totalXP, totalXQP) {
+  try {
+    const userSS = SpreadsheetApp.openById(progressSheetId);
+    let profileSheet = userSS.getSheetByName("Profile");
+    
+    if (!profileSheet) {
+      // Create Profile sheet if missing (shouldn't happen for active users)
+      profileSheet = userSS.insertSheet("Profile");
+      const headers = ["userId", "username", "level", "totalXP", "totalXQP", "aiLevel", "mountainStage", "currentStreak", "bestStreak", "totalTimeSpent", "joinedAt", "lastActive"];
+      profileSheet.appendRow(headers);
+    }
+
+    const data = profileSheet.getDataRange().getValues();
+    const headers = data[0];
+    const xpCol = headers.indexOf("totalXP");
+    let xqpCol = headers.indexOf("totalXQP");
+
+    // Ensure totalXQP column exists in Personal Sheet
+    if (xqpCol === -1) {
+      profileSheet.getRange(1, headers.length + 1).setValue("totalXQP");
+      xqpCol = headers.length;
+    }
+
+    if (data.length > 1) {
+      // Update row 2 (assuming single profile row)
+      profileSheet.getRange(2, xpCol + 1).setValue(totalXP);
+      profileSheet.getRange(2, xqpCol + 1).setValue(totalXQP);
+      profileSheet.getRange(2, headers.indexOf("lastActive") + 1).setValue(new Date());
+    } else {
+      // Edge case: No data row, create one (should have been handled by login)
+      const emptyRow = new Array(headers.length).fill("");
+      emptyRow[xpCol] = totalXP;
+      emptyRow[xqpCol] = totalXQP;
+      profileSheet.appendRow(emptyRow);
+    }
+  } catch (e) {
+    Logger.log("❌ Error updating Personal Profile Points: " + e.toString());
   }
 }
 
@@ -2248,6 +2387,7 @@ function getDashboardData(userContext) {
     }
 
     const totalXP = userRow ? parseInt(userRow[col["totalXP"]]) || 0 : 0;
+    const totalXQP = userRow ? parseInt(userRow[col["totalXQP"]]) || 0 : 0;
     const totalQuizAnswered = userRow
       ? parseInt(userRow[col["totalQuizAnswered"]]) || 0
       : 0;
@@ -2591,6 +2731,7 @@ function getDashboardData(userContext) {
       success: true,
       quickStats: {
         totalXP: totalXP,
+        totalXQP: totalXQP,
         avgAccuracy: avgAccuracy,
         badges: badges,
         rankTitle: rankTitle,
@@ -2738,34 +2879,16 @@ function completeQuestAndAwardXP(questId, userContext) {
     ]);
     Logger.log("✅ XP logged: " + quest.xp + " for quest " + questId);
 
-    // Update totalXP in master DB
-    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
-    const ss = SpreadsheetApp.openById(masterDbId);
-    const usersSheet = ss.getSheetByName("Users");
-    const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
-    const emailCol = headers.indexOf("email");
-    const xpCol = headers.indexOf("totalXP");
-
-    let newTotalXP = 0;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][emailCol] === userEmail) {
-        const currentXP = parseInt(data[i][xpCol]) || 0;
-        newTotalXP = currentXP + quest.xp;
-
-        // Update XP
-        usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
-        Logger.log("✅ Updated totalXP for " + userEmail + ": XP=" + newTotalXP);
-        break;
-      }
-    }
+    // Update totalXP and totalXQP across all DBs
+    const newTotals = syncUserPointsAcrossDBs(userEmail, quest.xp);
 
     return {
       success: true,
       xpAwarded: quest.xp,
-      newTotalXP: newTotalXP,
+      newTotalXP: newTotals.totalXP,
+      newTotalXQP: newTotals.totalXQP,
       questId: questId,
-      message: "+" + quest.xp + " XP!",
+      message: "+" + quest.xp + " XP/XQP!",
     };
   } catch (error) {
     Logger.log("❌ Error in completeQuestAndAwardXP: " + error.toString());

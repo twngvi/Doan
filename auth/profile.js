@@ -63,7 +63,8 @@ function updateUserProfile(profileData) {
             role: data[i][7],
             level: data[i][8],
             totalXP: data[i][11],
-            progressSheetId: data[i][24],
+            totalXQP: data[i][12],
+            progressSheetId: data[i][25],
           },
         };
       }

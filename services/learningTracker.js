@@ -645,6 +645,7 @@ function dailyCheckin(userContext) {
       serverToday: today,
       xpAwarded: xpResult.success ? xpResult.xpAwarded || 0 : 0,
       newTotalXP: xpResult.newTotalXP || 0,
+      newTotalXQP: xpResult.newTotalXQP || 0,
       message: "Điểm danh thành công!",
     };
   } catch (error) {

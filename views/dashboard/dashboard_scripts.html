@@ -759,15 +759,31 @@
             btnEl.outerHTML = `<div class="quest-xp quest-xp-claimed">✓ +${result.xpAwarded} XP</div>`;
           }
 
-          // Update XP display
+          // Update XP and XQP display
           const xpEl = document.getElementById("qs-xp");
           if (xpEl) xpEl.textContent = result.newTotalXP.toLocaleString();
+          
+          // Update XQP balance in state and any visible counters
+          if (result.newTotalXQP !== undefined) {
+            if (window.currentUser) {
+              window.currentUser.totalXP = result.newTotalXP;
+              window.currentUser.totalXQP = result.newTotalXQP;
+              
+              // Persist to storage
+              const storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+              window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+            }
+
+            // Update Pet XQP counter if it exists (for SPA synchronization)
+            const xqpEl = document.getElementById("petXQPBalance");
+            if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
+          }
 
           // Show XP animation
           showXPAnimation(result.xpAwarded);
 
           if (typeof showToast === "function") {
-            showToast("+" + result.xpAwarded + " XP! 🌟", "success");
+            showToast("+" + result.xpAwarded + " XP/XQP! 🌟", "success");
           }
 
           // Check if bonus quest is now claimable (refresh quests + leaderboard)
@@ -1084,12 +1100,29 @@
           saveStreakData(streakData);
           updateStreakUI(streakData);
 
-          // Update XP display immediately if XP was awarded
+          // Update XP and XQP display immediately if XP was awarded
           if (result.xpAwarded) {
             const xpEl = document.getElementById("qs-xp");
             if (xpEl && result.newTotalXP) {
               xpEl.textContent = result.newTotalXP.toLocaleString();
             }
+
+            // Update XQP balance in state and storage
+            if (result.newTotalXQP !== undefined) {
+              if (window.currentUser) {
+                window.currentUser.totalXP = result.newTotalXP;
+                window.currentUser.totalXQP = result.newTotalXQP;
+                
+                // Persist
+                const storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+                window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+              }
+
+              // Update Pet XQP counter if it exists (for SPA synchronization)
+              const xqpEl = document.getElementById("petXQPBalance");
+              if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
+            }
+
             showXPAnimation(result.xpAwarded);
           }
 
@@ -1098,7 +1131,7 @@
               "Điểm danh thành công! 🔥 Chuỗi: " +
                 streakData.currentStreak +
                 " ngày" +
-                (result.xpAwarded ? " (+" + result.xpAwarded + " XP)" : ""),
+                (result.xpAwarded ? " (+" + result.xpAwarded + " XP/XQP)" : ""),
               "success",
             );
           }
