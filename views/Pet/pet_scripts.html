@@ -459,6 +459,56 @@
         .getPetName(userId);
     }
 
+    function savePetConfigToServer() {
+      const userId = window.currentUser?.userId;
+      if (!userId || typeof google === "undefined" || !google.script?.run) return;
+
+      const config = {
+        currentIndex: state.currentIndex,
+        isLevelTwo: state.isLevelTwo,
+        selectedAccessories: state.selectedAccessories,
+        selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+      };
+
+      const saveBtn = document.getElementById("petSaveConfigBtn");
+      if (saveBtn) saveBtn.classList.add("loading");
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (saveBtn) saveBtn.classList.remove("loading");
+          if (result && result.success) {
+            if (typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
+          } else {
+            if (typeof showToast === "function") showToast("Lỗi lưu cấu hình: " + (result?.message || "Unknown"), "error");
+          }
+        })
+        .withFailureHandler(function(err) {
+           if (saveBtn) saveBtn.classList.remove("loading");
+           if (typeof showToast === "function") showToast("Lỗi kết nối server: " + err, "error");
+        })
+        .savePetConfig(userId, config);
+    }
+
+    function loadPetConfigFromServer() {
+      const userId = window.currentUser?.userId;
+      if (!userId || typeof google === "undefined" || !google.script?.run) return;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.config) {
+            const config = result.config;
+            state.currentIndex = typeof config.currentIndex === 'number' ? config.currentIndex : state.currentIndex;
+            state.isLevelTwo = !!config.isLevelTwo;
+            state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
+            state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
+            
+            // Re-render pet with loaded state
+            renderPet();
+          }
+        })
+        .getPetConfig(userId);
+    }
+
     function updateAccessoryPanelVisibility() {
       const panelEl = document.getElementById("petAccessoryPanel");
       const mainLayoutEl = document.getElementById("petMainLayout");
@@ -1148,6 +1198,13 @@
           renderPet();
         });
       }
+
+      const saveConfigBtn = document.getElementById("petSaveConfigBtn");
+      if (saveConfigBtn) {
+        saveConfigBtn.addEventListener("click", function () {
+          savePetConfigToServer();
+        });
+      }
     }
 
     function startPetHeaderMeteors() {
@@ -1246,6 +1303,7 @@
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
       loadPetNameFromServer();
+      loadPetConfigFromServer();
       renderPet();
     }
 

@@ -158,6 +158,14 @@ function savePetName(payload) {
   return saveUserPetName(payload);
 }
 
+function getPetConfig(userId) {
+  return getUserPetConfig(userId);
+}
+
+function savePetConfig(userId, config) {
+  return saveUserPetConfig(userId, config);
+}
+
 // getPetAssetUrls removed as per PET refactor plan (using CDN + Manifest)
 
 // ⭐ Wrapper for clearing all learning data - forwards to content.js function

@@ -477,3 +477,108 @@ function saveUserPetName(payload) {
     };
   }
 }
+
+/**
+ * Get user's pet configuration (color, level, accessories, background)
+ */
+function getUserPetConfig(userId) {
+  try {
+    if (!userId) return { success: false, message: "User ID is required" };
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) return { success: false, message: "Users sheet not found" };
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    let configIdx = headers.indexOf("petConfig");
+    let userRow = -1;
+
+    for (let i = 1; i < data.length; i++) {
+        if (data[i][0] === userId) {
+            userRow = i;
+            break;
+        }
+    }
+
+    if (userRow === -1) return { success: false, message: "User not found" };
+
+    if (configIdx === -1) {
+        usersSheet.getRange(1, headers.length + 1).setValue("petConfig");
+        configIdx = headers.length;
+    }
+
+    const configValue = usersSheet.getRange(userRow + 1, configIdx + 1).getValue();
+    if (!configValue) return { success: true, config: null };
+
+    return { success: true, config: JSON.parse(configValue) };
+  } catch (error) {
+    Logger.log("Error in getUserPetConfig: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Save user's pet configuration
+ */
+function saveUserPetConfig(userId, config) {
+  try {
+    if (!userId) return { success: false, message: "User ID is required" };
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) return { success: false, message: "Users sheet not found" };
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    let configIdx = headers.indexOf("petConfig");
+    const progressIdx = headers.indexOf("progressSheetId");
+    let userRow = -1;
+
+    for (let i = 1; i < data.length; i++) {
+        if (data[i][0] === userId) {
+            userRow = i;
+            break;
+        }
+    }
+
+    if (userRow === -1) return { success: false, message: "User not found" };
+
+    if (configIdx === -1) {
+        usersSheet.getRange(1, headers.length + 1).setValue("petConfig");
+        configIdx = headers.length;
+    }
+
+    const configString = JSON.stringify(config);
+    usersSheet.getRange(userRow + 1, configIdx + 1).setValue(configString);
+
+    // Sync to personal spreadsheet if possible
+    const progressSheetId = progressIdx !== -1 ? String(data[userRow][progressIdx] || "").trim() : "";
+    if (progressSheetId) {
+       try {
+         const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+         let profileSheet = userSpreadsheet.getSheetByName("Profile");
+         if (!profileSheet) profileSheet = userSpreadsheet.insertSheet("Profile");
+         
+         const profileHeaders = profileSheet.getRange(1, 1, 1, Math.max(1, profileSheet.getLastColumn())).getValues()[0] || [];
+         let profileConfigIdx = profileHeaders.indexOf("petConfig");
+         if (profileConfigIdx === -1) {
+           profileSheet.getRange(1, profileHeaders.length + 1).setValue("petConfig");
+           profileConfigIdx = profileHeaders.length;
+         }
+         profileSheet.getRange(2, profileConfigIdx + 1).setValue(configString);
+       } catch (e) {
+         Logger.log("Personal sheet sync failed: " + e.toString());
+       }
+    }
+
+    logActivity({
+        level: "INFO",
+        category: "USER",
+        userId: userId,
+        action: "UPDATE_PET_CONFIG",
+        details: "Updated pet configuration",
+    });
+
+    return { success: true, message: "Đã lưu cấu hình PET" };
+  } catch (error) {
+    Logger.log("Error in saveUserPetConfig: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
