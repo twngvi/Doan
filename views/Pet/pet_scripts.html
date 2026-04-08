@@ -163,44 +163,82 @@
       }
     }
 
+    const blobUrlCache = {};
+
     async function fetchAssetUrl(fileName) {
       if (!fileName) return "";
+      if (blobUrlCache[fileName]) return blobUrlCache[fileName];
+
       const url = PET_ASSET_BASE_URL + fileName;
       
-      // If Service Worker is active, it handles caching automatically.
-      // We can still use Cache API here as a fallback or for manual preloading.
+      // If Cache API is not supported, return direct CDN URL
       if (!window.caches) return url;
       
       try {
         const cache = await caches.open(PET_CACHE_NAME);
         let response = await cache.match(url);
+        
         if (!response) {
           response = await fetch(url);
           if (response.ok) {
+            // Store a clone in cache as per Cache API rules
             cache.put(url, response.clone());
           } else {
-            // Fallback for missing assets
             console.warn("Asset not found on CDN:", fileName);
             return ""; 
           }
         }
+        
         const blob = await response.blob();
-        return URL.createObjectURL(blob);
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlCache[fileName] = blobUrl;
+        return blobUrl;
       } catch (error) {
-        console.warn("Error loading asset:", fileName, error);
-        return url;
+        console.warn("Manual cache fetch failed for:", fileName, error);
+        return url; // Fallback to direct URL if anything fails
       }
     }
 
     async function applySrcAsync(imgEl, fileName) {
-      if (!imgEl || !fileName) {
-        if (imgEl) { imgEl.style.display = "none"; imgEl.src = ""; }
+      if (!imgEl) return;
+      
+      if (!fileName) {
+        imgEl.style.display = "none"; 
+        imgEl.src = "";
+        imgEl.removeAttribute('data-original-file');
         return;
       }
+
       const url = await fetchAssetUrl(fileName);
-      imgEl.onload = function() { imgEl.style.display = "block"; };
-      imgEl.onerror = function() { console.error("Không tải được URL:", url); };
+      if (!url) {
+        imgEl.style.display = "none";
+        return;
+      }
+
+      // Check if current src is already the same or matches via original file attribute
+      if (imgEl.src === url || (url.startsWith('blob:') && imgEl.getAttribute('data-original-file') === fileName)) {
+        imgEl.style.display = "block";
+        return;
+      }
+
+      const onImageLoad = function() {
+        imgEl.style.display = "block";
+        imgEl.removeEventListener("load", onImageLoad);
+      };
+
+      imgEl.addEventListener("load", onImageLoad);
+      imgEl.onerror = function() { 
+        console.error("Failed to load pet asset:", fileName, "at", url);
+        imgEl.style.display = "none";
+      };
+      
+      imgEl.setAttribute('data-original-file', fileName);
       imgEl.src = url;
+
+      // Handle cases where image is already cached in browser memory
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        onImageLoad();
+      }
     }
 
     async function applyBgAsync(stageEl, fileName) {
@@ -614,6 +652,7 @@
       if (!accessoryImageEl) return;
       accessoryImageEl.style.display = "none";
       accessoryImageEl.src = "";
+      accessoryImageEl.removeAttribute('data-original-file');
     }
 
     function updateAccessoryPositionClasses(accessoryImageEl, fileName, desiredPosition) {
