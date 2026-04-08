@@ -123,7 +123,6 @@
       selectedAccessories: [],
       accessoryPosition: "center",
       accessoryPanelOpen: true,
-      panelControlsDropdownOpen: false,
       settingsPanelOpen: false,
       backgroundPanelOpen: false,
       selectedStageBackgroundIndex: 0,
@@ -437,26 +436,11 @@
       }
     }
 
-    function updatePanelControlsDropdownVisibility() {
-      const dropdownEl = document.getElementById("petPanelControlsDropdown");
-      const toggleBtn = document.getElementById("petPanelControlsToggleBtn");
-
-      if (toggleBtn) {
-        toggleBtn.setAttribute(
-          "aria-expanded",
-          state.panelControlsDropdownOpen ? "true" : "false",
-        );
-      }
-
-      if (dropdownEl) {
-        dropdownEl.classList.toggle("is-hidden", !state.panelControlsDropdownOpen);
-      }
-    }
 
     function updateSettingsPanelVisibility() {
       const panelEl = document.getElementById("petSettingsPopover");
       const toggleBtn = document.getElementById("petSettingsToggleBtn");
-      const isVisible = state.panelControlsDropdownOpen && state.settingsPanelOpen;
+      const isVisible = state.settingsPanelOpen;
 
       if (panelEl) {
         panelEl.classList.toggle("is-hidden", !isVisible);
@@ -474,7 +458,7 @@
     function updateBackgroundPanelVisibility() {
       const panelEl = document.getElementById("petBackgroundPopover");
       const toggleBtn = document.getElementById("petBackgroundToggleBtn");
-      const isVisible = state.panelControlsDropdownOpen && state.backgroundPanelOpen;
+      const isVisible = state.backgroundPanelOpen;
 
       if (panelEl) {
         panelEl.classList.toggle("is-hidden", !isVisible);
@@ -491,15 +475,12 @@
 
     function bindSettingsPanelToggle() {
       const toggleBtn = document.getElementById("petSettingsToggleBtn");
-      const controlsRoot = document.getElementById("petPanelControls");
-      if (!toggleBtn || !controlsRoot) return;
+      if (!toggleBtn) return;
 
       toggleBtn.addEventListener("click", function (event) {
         event.stopPropagation();
-        state.panelControlsDropdownOpen = true;
         state.backgroundPanelOpen = false;
         state.settingsPanelOpen = !state.settingsPanelOpen;
-        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
       });
@@ -511,38 +492,19 @@
 
       toggleBtn.addEventListener("click", function (event) {
         event.stopPropagation();
-        state.panelControlsDropdownOpen = true;
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = !state.backgroundPanelOpen;
-        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
       });
     }
 
-    function bindPanelControlsDropdown() {
-      const toggleBtn = document.getElementById("petPanelControlsToggleBtn");
+    function bindPanelControlsClick() {
       const controlsRoot = document.getElementById("petPanelControls");
-      if (!toggleBtn || !controlsRoot) return;
-
-      toggleBtn.addEventListener("click", function (event) {
-        event.stopPropagation();
-        if (state.panelControlsDropdownOpen) {
-          state.panelControlsDropdownOpen = false;
-          state.settingsPanelOpen = false;
-          state.backgroundPanelOpen = false;
-        } else {
-          state.panelControlsDropdownOpen = true;
-        }
-
-        updatePanelControlsDropdownVisibility();
-        updateSettingsPanelVisibility();
-        updateBackgroundPanelVisibility();
-      });
+      if (!controlsRoot) return;
 
       document.addEventListener("click", function (event) {
         if (
-          !state.panelControlsDropdownOpen &&
           !state.settingsPanelOpen &&
           !state.backgroundPanelOpen
         ) {
@@ -550,34 +512,23 @@
         }
         if (controlsRoot.contains(event.target)) return;
 
-        state.panelControlsDropdownOpen = false;
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
 
-        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
       });
 
       document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") return;
-        if (!state.panelControlsDropdownOpen) return;
-
-        state.panelControlsDropdownOpen = false;
+        
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
 
-        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
       });
 
-      if (!state.panelControlsDropdownOpen) {
-        state.settingsPanelOpen = false;
-        state.backgroundPanelOpen = false;
-      }
-
-      updatePanelControlsDropdownVisibility();
       updateSettingsPanelVisibility();
       updateBackgroundPanelVisibility();
     }
@@ -849,6 +800,9 @@
       renderAccessory();
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
+
+      updateSettingsPanelVisibility();
+      updateBackgroundPanelVisibility();
 
       updateColorButtons(state.currentIndex);
       updateBackgroundButtons(state.selectedStageBackgroundIndex);
@@ -1236,9 +1190,8 @@
         bindAccessoryControls();
         bindSettingsPanelToggle();
         bindBackgroundPanelToggle();
-        bindPanelControlsDropdown();
+        bindPanelControlsClick();
         startBlinkLoop();
-        updatePanelControlsDropdownVisibility();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
