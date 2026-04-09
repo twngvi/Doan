@@ -464,9 +464,17 @@
   function updateBodyPageClass(pageId) {
     if (!document.body) return;
 
+    // Remove every previous page marker class to avoid style leakage between pages.
+    Array.from(document.body.classList).forEach((cls) => {
+      if (cls.indexOf("page-") === 0) {
+        document.body.classList.remove(cls);
+      }
+    });
+
     document.body.classList.remove(
       "page-dashboard",
       "page-topics",
+      "page-code-playground",
       "page-lesson",
       "page-mcq",
       "page-matching",
@@ -672,11 +680,21 @@
           window.initMatchingPage();
         if (pageId === "page-pet" && typeof window.initPetPage === "function")
           window.initPetPage();
-        if (
-          pageId === "page-profile" &&
-          typeof window.initProfilePage === "function"
-        )
-          setTimeout(() => window.initProfilePage(), 100);
+        if (pageId === "page-profile") {
+          const runProfileInit = () => {
+            if (typeof window.initProfilePage === "function") {
+              window.initProfilePage();
+              return true;
+            }
+            return false;
+          };
+
+          // Retry init a few times in case showPage wrappers are attached asynchronously.
+          if (!runProfileInit()) {
+            setTimeout(runProfileInit, 200);
+            setTimeout(runProfileInit, 500);
+          }
+        }
       } catch (subPageError) {
         console.error("Error initializing sub-page:", subPageError);
       }

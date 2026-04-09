@@ -573,16 +573,49 @@
   let profileSubmitGuardBound = false;
   let profileEventsBound = false;
 
+  function forceProfilePageVisibility() {
+    const page = document.getElementById("page-profile");
+    if (!page) return;
+
+    page.style.display = "block";
+    page.style.visibility = "visible";
+    page.style.opacity = "1";
+
+    const profilePage = page.querySelector(".profile-page");
+    if (profilePage) {
+      profilePage.style.display = "block";
+      profilePage.style.visibility = "visible";
+      profilePage.style.opacity = "1";
+      profilePage.style.marginLeft = "0";
+      profilePage.style.width = "100%";
+      profilePage.style.minHeight = "100vh";
+    }
+
+    const container = page.querySelector(".profile-container-pro");
+    if (container) {
+      container.style.display = "flex";
+      container.style.visibility = "visible";
+      container.style.opacity = "1";
+    }
+  }
+
   function initProfilePage() {
     console.log("Initializing Profile...");
-    bindProfileSubmitGuard();
-    setupEventListeners();
-    ensureProfileSectionsVisible();
-    loadProfileData();
-    // Start meteor shower effect (every 5 seconds)
-    startProfileMeteorShower();
-    // Load theme selection state
-    loadUserTheme();
+    forceProfilePageVisibility();
+    try {
+      bindProfileSubmitGuard();
+      setupEventListeners();
+      ensureProfileSectionsVisible();
+      loadProfileData();
+      // Start meteor shower effect (every 5 seconds)
+      startProfileMeteorShower();
+      // Load theme selection state
+      loadUserTheme();
+    } catch (error) {
+      console.error("Profile init error:", error);
+      ensureProfileSectionsVisible();
+      forceProfilePageVisibility();
+    }
   }
 
   function ensureProfileSectionsVisible() {
