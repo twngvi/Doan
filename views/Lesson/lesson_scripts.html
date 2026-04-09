@@ -4773,6 +4773,26 @@ sys.stderr = sys.__stderr__
   // ========================================
 
   let topicSwitcherOpen = false;
+  let topicSwitcherOutsideClickBound = false;
+
+  function extractGoogleDocId(input) {
+    const raw = String(input || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return match && match[1] ? match[1] : "";
+  }
+
+  function resolveTopicContentDocId(topic) {
+    const direct = String(topic?.contentDocId || "").trim();
+    if (direct && direct !== "undefined" && direct !== "null") {
+      return direct;
+    }
+
+    const fromUrl = extractGoogleDocId(topic?.contentDocUrl);
+    if (fromUrl) return fromUrl;
+
+    return "";
+  }
 
   /**
    * Initialize topic switcher: load topics from global cache
@@ -4797,6 +4817,10 @@ sys.stderr = sys.__stderr__
       google.script.run
         .withSuccessHandler(function (result) {
           if (result && result.topics) {
+            if (window.globalTopicsCache) {
+              window.globalTopicsCache.data = result.topics;
+              window.globalTopicsCache.lastLoadTime = Date.now();
+            }
             renderTopicSwitcherList(result.topics);
           } else {
             listEl.innerHTML =
@@ -4811,12 +4835,15 @@ sys.stderr = sys.__stderr__
     }
 
     // Close dropdown when clicking outside
-    document.addEventListener("click", function (e) {
-      const bar = document.querySelector(".topic-switcher-bar");
-      if (bar && !bar.contains(e.target) && topicSwitcherOpen) {
-        closeTopicSwitcher();
-      }
-    });
+    if (!topicSwitcherOutsideClickBound) {
+      topicSwitcherOutsideClickBound = true;
+      document.addEventListener("click", function (e) {
+        const bar = document.querySelector(".topic-switcher-bar");
+        if (bar && !bar.contains(e.target) && topicSwitcherOpen) {
+          closeTopicSwitcher();
+        }
+      });
+    }
   }
 
   /**
@@ -4834,11 +4861,8 @@ sys.stderr = sys.__stderr__
     let html = "";
     sorted.forEach(function (topic, index) {
       const isActive = topic.topicId === currentTopicId;
-      const hasContent =
-        topic.contentDocId &&
-        topic.contentDocId.trim() !== "" &&
-        topic.contentDocId !== "undefined" &&
-        topic.contentDocId !== "null";
+      const contentDocId = resolveTopicContentDocId(topic);
+      const hasContent = !!contentDocId;
 
       let statusIcon = "";
       if (isActive) {
@@ -4860,30 +4884,44 @@ sys.stderr = sys.__stderr__
         "topic-switcher-item" +
         (isActive ? " active" : "") +
         (!hasContent ? " no-content" : "");
-      const clickHandler =
-        hasContent && !isActive
-          ? "switchToTopic('" +
-            topic.topicId +
-            "', '" +
-            encodeURIComponent(topic.title) +
-            "', '" +
-            (topic.contentDocId || "") +
-            "')"
-          : "";
+      const canSwitch = hasContent && !isActive;
+      const safeTopicId = escapeHtml(String(topic.topicId || ""));
+      const safeTopicTitle = escapeHtml(String(topic.title || "Chủ đề"));
+      const safeDocId = escapeHtml(contentDocId);
 
       html +=
         '<div class="' +
         itemClass +
+        '" data-topic-id="' +
+        safeTopicId +
+        '" data-topic-title="' +
+        safeTopicTitle +
+        '" data-content-doc-id="' +
+        safeDocId +
+        '" data-switchable="' +
+        (canSwitch ? "1" : "0") +
         '"' +
-        (clickHandler ? ' onclick="' + clickHandler + '"' : "") +
         ">";
       html += '<span class="topic-item-order">' + (index + 1) + "</span>";
-      html += '<span class="topic-item-title">' + topic.title + "</span>";
+      html += '<span class="topic-item-title">' + safeTopicTitle + "</span>";
       html += '<span class="topic-item-status">' + statusIcon + "</span>";
       html += "</div>";
     });
 
     listEl.innerHTML = html;
+
+    // Bind click handlers safely (avoid fragile inline onclick HTML strings).
+    listEl
+      .querySelectorAll('.topic-switcher-item[data-switchable="1"]')
+      .forEach(function (item) {
+        item.addEventListener("click", function () {
+          switchToTopic(
+            this.getAttribute("data-topic-id"),
+            this.getAttribute("data-topic-title"),
+            this.getAttribute("data-content-doc-id"),
+          );
+        });
+      });
 
     // Scroll active item into view
     setTimeout(function () {
@@ -4920,16 +4958,33 @@ sys.stderr = sys.__stderr__
    * Switch to a different topic
    */
   function switchToTopic(topicId, encodedTitle, contentDocId) {
-    const topicTitle = decodeURIComponent(encodedTitle);
-    console.log("🔄 Switching to topic:", topicId, topicTitle);
+    const safeTopicId = String(topicId || "").trim();
+    const topicTitle = String(encodedTitle || "").trim() || "Chủ đề";
+    const safeContentDocId = String(contentDocId || "").trim();
+
+    if (!safeTopicId) {
+      showToast("Không tìm thấy Topic ID", "error");
+      return;
+    }
+
+    if (
+      !safeContentDocId ||
+      safeContentDocId === "undefined" ||
+      safeContentDocId === "null"
+    ) {
+      showToast("Topic này chưa có nội dung bài học", "warning");
+      return;
+    }
+
+    console.log("🔄 Switching to topic:", safeTopicId, topicTitle);
 
     closeTopicSwitcher();
 
     // Navigate to the new topic via showPage
     showPage("page-lesson", {
-      topicId: topicId,
+      topicId: safeTopicId,
       topicTitle: topicTitle,
-      contentDocId: contentDocId.trim(),
+      contentDocId: safeContentDocId,
     });
   }
 
