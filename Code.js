@@ -166,6 +166,10 @@ function savePetConfig(userId, config) {
   return saveUserPetConfig(userId, config);
 }
 
+function updateUserXQP(userEmail, amount, source) {
+  return updateUserPoints(userEmail, amount, source);
+}
+
 // getPetAssetUrls removed as per PET refactor plan (using CDN + Manifest)
 
 // ⭐ Wrapper for clearing all learning data - forwards to content.js function

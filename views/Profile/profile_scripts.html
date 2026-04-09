@@ -1,5 +1,29 @@
 <!-- Profile Page Scripts -->
 <script>
+  // ⭐ EXPORT FUNCTIONS (Moved to top for reliability)
+  window.initProfilePage = initProfilePage;
+  window.openAvatarModal = openAvatarModal;
+  window.closeAvatarModal = closeAvatarModal;
+  window.selectAvatar = selectAvatar;
+  window.updateAllAvatars = updateAllAvatars;
+  window.updateAllUserNames = updateAllUserNames;
+  window.startProfileMeteorShower = startProfileMeteorShower;
+  window.setupProfileHeaderMouseEffect = setupProfileHeaderMouseEffect;
+  window.selectTheme = selectTheme;
+  window.applyTheme = applyTheme;
+  window.loadUserTheme = loadUserTheme;
+  window.openProfileSection = openProfileSection;
+  window.triggerProfileSearchAction = triggerProfileSearchAction;
+  window.handleClearAllLearningData = handleClearAllLearningData;
+  window.toggleCollapsible = toggleCollapsible;
+  window.handleProfileUpdate = handleProfileUpdate;
+  window.handlePasswordChange = handlePasswordChange;
+  window.handleGeminiKeySave = handleGeminiKeySave;
+  window.handleGeminiKeyDelete = handleGeminiKeyDelete;
+  window.openResetDataConfirmation = openResetDataConfirmation;
+  window.closeResetDataConfirmation = closeResetDataConfirmation;
+  window.confirmResetAllData = confirmResetAllData;
+
   console.log("🎨 Profile scripts loading...");
 
   // ⭐ COLLAPSIBLE TOGGLE FUNCTION
@@ -547,81 +571,83 @@
   // ⭐ PROFILE PAGE INITIALIZATION
   let profileData = null;
   let profileSubmitGuardBound = false;
+  let profileEventsBound = false;
 
   function initProfilePage() {
     console.log("Initializing Profile...");
     bindProfileSubmitGuard();
-    loadProfileData();
     setupEventListeners();
+    ensureProfileSectionsVisible();
+    loadProfileData();
     // Start meteor shower effect (every 5 seconds)
     startProfileMeteorShower();
     // Load theme selection state
     loadUserTheme();
   }
 
+  function ensureProfileSectionsVisible() {
+    const list = document.querySelector(".profile-settings-list");
+    if (!list) return;
+
+    const opened = list.querySelector(".collapsible-section.open");
+    if (opened) return;
+
+    const firstSection = list.querySelector(".collapsible-section");
+    if (firstSection) {
+      firstSection.classList.add("open");
+    }
+  }
+
   function loadProfileData() {
     // Kiểm tra user từ nhiều nguồn
     let user = null;
 
-    console.log("🔍 DEBUG: Checking user sources...");
-    console.log("  - typeof currentUser:", typeof currentUser);
-    console.log("  - currentUser value:", currentUser);
-    console.log("  - window.currentUser:", window.currentUser);
-    console.log(
-      "  - sessionStorage currentUser:",
-      sessionStorage.getItem("currentUser") ? "EXISTS" : "NULL",
-    );
+    console.log("🔍 Profile: Loading user data...");
 
-    // 1. Kiểm tra biến currentUser trong scope (ưu tiên cao nhất)
-    if (typeof currentUser !== "undefined" && currentUser) {
-      user = currentUser;
-      console.log("✅ Found user from scope variable:", user.email);
-    }
-    // 2. Kiểm tra window.currentUser
-    else if (window.currentUser) {
+    // 1. Kiểm tra window.currentUser (ưu tiên cao nhất - đã được client_js sync)
+    if (window.currentUser) {
       user = window.currentUser;
-      console.log("✅ Found user from window.currentUser:", user.email);
     }
-    // 3. Kiểm tra sessionStorage (fallback cuối cùng)
+    // 2. Kiểm tra currentUser (biến var từ client_js)
+    else if (typeof currentUser !== "undefined" && currentUser) {
+      user = currentUser;
+      window.currentUser = user; // Sync to window
+    }
+    // 3. Kiểm tra sessionStorage (fallback)
     else {
-      const saved = sessionStorage.getItem("currentUser");
+      const saved = sessionStorage.getItem("currentUser") || localStorage.getItem("currentUser");
       if (saved) {
         try {
           user = JSON.parse(saved);
           window.currentUser = user; // Sync to global
-          currentUser = user; // ⭐ QUAN TRỌNG: Đồng bộ vào biến global
-          console.log("✅ Found user from sessionStorage:", user.email);
+          console.log("✅ Profile: Recovered session from storage");
         } catch (e) {
-          console.error("❌ Error parsing user data:", e);
+          console.error("❌ Profile: Error parsing user data:", e);
         }
       }
     }
 
     // Nếu không tìm thấy user -> Redirect login
     if (!user) {
-      console.warn("⚠️ No user found, redirecting to login");
-      console.error("❌ ALL SOURCES FAILED:");
-      console.error("  - currentUser:", typeof currentUser, currentUser);
-      console.error("  - window.currentUser:", window.currentUser);
-      console.error(
-        "  - sessionStorage:",
-        sessionStorage.getItem("currentUser"),
-      );
-      showToast("Vui lòng đăng nhập", "error");
-      setTimeout(() => showPage("page-login"), 1500);
+      console.warn("⚠️ Profile: No user found, redirecting to login");
+      showToast("Vui lòng đăng nhập để xem hồ sơ", "error");
+      setTimeout(() => {
+        if (typeof showPage === "function") showPage("page-login");
+        else window.location.reload();
+      }, 1500);
       return;
     }
 
     // Load profile với user data
     try {
-      console.log("✅ User loaded:", user);
-      profileData = user; // Lưu vào biến global
+      profileData = user;
       updateProfileHeader(user);
       updateProfileForm(user);
       loadGeminiKeyStatus();
+      console.log("✅ Profile: Initialized for", user.email);
     } catch (e) {
-      console.error("❌ Load profile error:", e);
-      showToast("Lỗi tải profile", "error");
+      console.error("❌ Profile: Load error:", e);
+      showToast("Lỗi hiển thị thông tin hồ sơ", "error");
     }
   }
 
@@ -632,16 +658,23 @@
     const email = document.getElementById("profile-email");
 
     if (fullname) {
-      // ⭐ CHỈ lấy displayName từ cột displayName trong database
-      const name = user.displayName || "";
-      fullname.textContent = name;
-      console.log("Fullname updated:", name);
+      fullname.textContent = user.displayName || user.username || "User";
     }
 
     if (email) {
       email.textContent = user.email || "N/A";
-      console.log("Email updated:", user.email);
     }
+
+    // ⭐ Cập nhật các chỉ số stats mới
+    const levelEl = document.getElementById("profile-level");
+    const xpEl = document.getElementById("profile-xp");
+    const mountainEl = document.getElementById("profile-mountain-stage");
+
+    if (levelEl) levelEl.textContent = user.level || "1";
+    if (xpEl) xpEl.textContent = user.xp || "0";
+    if (mountainEl)
+      mountainEl.textContent =
+        user.mountainStage || user.currentMountain || "1";
 
     const avatar = document.getElementById("profile-avatar");
     if (avatar) {
@@ -678,6 +711,85 @@
   }
 
   function setupEventListeners() {
+    if (profileEventsBound) return;
+    profileEventsBound = true;
+
+    // Bind collapsible headers by JS so page still works if inline handlers are blocked.
+    document.querySelectorAll(".collapsible-header").forEach((header) => {
+      header.removeAttribute("onclick");
+      header.addEventListener("click", function () {
+        toggleCollapsible(this);
+      });
+    });
+
+    const avatarEditBtn = document.querySelector(".avatar-edit-btn");
+    if (avatarEditBtn) {
+      avatarEditBtn.removeAttribute("onclick");
+      avatarEditBtn.addEventListener("click", openAvatarModal);
+    }
+
+    const avatarModal = document.getElementById("avatarSelectionModal");
+    if (avatarModal) {
+      avatarModal.removeAttribute("onclick");
+      avatarModal.addEventListener("click", closeAvatarModal);
+
+      const avatarCloseBtn = avatarModal.querySelector(".modal-close-pro");
+      if (avatarCloseBtn) {
+        avatarCloseBtn.removeAttribute("onclick");
+        avatarCloseBtn.addEventListener("click", function () {
+          closeAvatarModal();
+        });
+      }
+    }
+
+    const resetEntryBtn = document.getElementById("confirmResetDataEntryBtn");
+    if (resetEntryBtn) {
+      resetEntryBtn.removeAttribute("onclick");
+      resetEntryBtn.addEventListener("click", openResetDataConfirmation);
+    }
+
+    const resetModal = document.getElementById("resetDataConfirmationModal");
+    if (resetModal) {
+      resetModal.removeAttribute("onclick");
+      resetModal.addEventListener("click", closeResetDataConfirmation);
+
+      const resetCloseBtn = resetModal.querySelector(".modal-close-pro");
+      if (resetCloseBtn) {
+        resetCloseBtn.removeAttribute("onclick");
+        resetCloseBtn.addEventListener("click", function () {
+          closeResetDataConfirmation();
+        });
+      }
+
+      const resetCancelBtn = resetModal.querySelector(".btn-secondary-pro");
+      if (resetCancelBtn) {
+        resetCancelBtn.removeAttribute("onclick");
+        resetCancelBtn.addEventListener("click", function () {
+          closeResetDataConfirmation();
+        });
+      }
+    }
+
+    const confirmResetBtn = document.getElementById("confirmResetDataBtn");
+    if (confirmResetBtn) {
+      confirmResetBtn.removeAttribute("onclick");
+      confirmResetBtn.addEventListener("click", confirmResetAllData);
+    }
+
+    const deleteGeminiBtn = document.getElementById("btnDeleteGeminiKey");
+    if (deleteGeminiBtn) {
+      deleteGeminiBtn.removeAttribute("onclick");
+      deleteGeminiBtn.addEventListener("click", handleGeminiKeyDelete);
+    }
+
+    document.querySelectorAll(".theme-card[data-theme]").forEach((card) => {
+      const themeName = card.getAttribute("data-theme");
+      card.removeAttribute("onclick");
+      card.addEventListener("click", function () {
+        selectTheme(themeName);
+      });
+    });
+
     // Password toggle - Updated for new HTML structure
     document.querySelectorAll(".password-toggle-btn").forEach((toggle) => {
       toggle.addEventListener("click", function () {
@@ -1388,29 +1500,5 @@
     return theme;
   }
 
-  // ⭐ EXPORT FUNCTIONS
-  window.initProfilePage = initProfilePage;
-  window.openAvatarModal = openAvatarModal;
-  window.closeAvatarModal = closeAvatarModal;
-  window.filterAvatars = filterAvatars;
-  window.selectAvatar = selectAvatar;
-  window.updateAllAvatars = updateAllAvatars;
-  window.updateAllUserNames = updateAllUserNames;
-  window.startProfileMeteorShower = startProfileMeteorShower;
-  window.setupProfileHeaderMouseEffect = setupProfileHeaderMouseEffect;
-  window.selectTheme = selectTheme;
-  window.applyTheme = applyTheme;
-  window.loadUserTheme = loadUserTheme;
-  window.openProfileSection = openProfileSection;
-  window.triggerProfileSearchAction = triggerProfileSearchAction;
-  window.handleClearAllLearningData = handleClearAllLearningData;
-  window.toggleCollapsible = toggleCollapsible;
-  window.handleProfileUpdate = handleProfileUpdate;
-  window.handlePasswordChange = handlePasswordChange;
-  window.handleGeminiKeySave = handleGeminiKeySave;
-  window.handleGeminiKeyDelete = handleGeminiKeyDelete;
-
-  console.log("✅ Profile scripts loaded");
-  console.log("✅ initProfilePage:", typeof window.initProfilePage);
-  console.log("✅ openAvatarModal:", typeof window.openAvatarModal);
+  console.log("✅ Profile scripts loaded and exported.");
 </script>

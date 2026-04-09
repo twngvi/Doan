@@ -1421,6 +1421,7 @@ function getOrCreateXPLogSheet(spreadsheet) {
     "questId",
     "questTitle",
     "xpAmount",
+    "xqpAmount",
     "source",
     "topicId",
     "eventId",
@@ -1488,17 +1489,12 @@ function addXPToUserTotalByEmail(userEmail, xpDelta) {
         const newTotalXP = currentXP + amount;
         const newTotalXQP = currentXQP + amount;
 
-        // Update XP and XQP
-        usersSheet.getRange(i + 1, xpCol + 1).setValue(newTotalXP);
-        if (xqpCol >= 0) {
-          usersSheet.getRange(i + 1, xqpCol + 1).setValue(newTotalXQP);
-        }
-
-        return newTotalXP;
+        // Update XP and XQP via unified sync
+        return syncUserPointsAcrossDBs(userEmail, amount).totalXP;
       }
 
-    return null;
-  } catch (error) {
+      return null;
+    } catch (error) {
     Logger.log("❌ Error updating totalXP: " + error.toString());
     return null;
   }
@@ -1534,6 +1530,14 @@ function deductXQPFromUserTotalByEmail(userEmail, amountToDeduct) {
 
       const newTotalXQP = currentXQP - amount;
       usersSheet.getRange(i + 1, xqpCol + 1).setValue(newTotalXQP);
+
+      // Sync to Personal DB
+      const progressSheetId = data[i][headers.indexOf("progressSheetId")];
+      if (progressSheetId) {
+        // Fetch current XP to maintain consistency in updatePersonalProfilePoints
+        const currentXP = parseInt(data[i][headers.indexOf("totalXP")]) || 0;
+        updatePersonalProfilePoints(progressSheetId, currentXP, newTotalXQP);
+      }
 
       return { success: true, newTotalXQP: newTotalXQP };
     }
@@ -1609,6 +1613,7 @@ function awardTopicXPByEvent(userEmail, config) {
       eventId,
       title,
       xpAmount,
+      xpAmount, // xqpAmount matched 1:1 with xpAmount for topic awards
       source,
       topicId,
       eventId,
@@ -1676,6 +1681,64 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
   } catch (error) {
     Logger.log("❌ Error in syncUserPointsAcrossDBs: " + error.toString());
     return result;
+  }
+}
+
+/**
+ * Unified function to add or deduct XQP/XP for a user.
+ * Exposes functionality to the frontend via google.script.run.
+ */
+function updateUserPoints(userEmail, amount, source, isXQPOnly) {
+  try {
+    if (!userEmail) return { success: false, message: "User email is required" };
+    
+    if (amount >= 0) {
+      // Awarding points
+      const result = syncUserPointsAcrossDBs(userEmail, amount);
+      logXQPTransaction(userEmail, amount, amount, source || "manual_award");
+      return { success: true, newTotalXP: result.totalXP, newTotalXQP: result.totalXQP, message: "Awarded " + amount + " points" };
+    } else {
+      // Deducting points (usually XQP only)
+      const deductionResult = deductXQPFromUserTotalByEmail(userEmail, Math.abs(amount));
+      if (deductionResult.success) {
+        logXQPTransaction(userEmail, 0, amount, source || "purchase");
+      }
+      return deductionResult;
+    }
+  } catch (error) {
+    Logger.log("❌ Error in updateUserPoints: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Log a point transaction in the user's personal XP_Log.
+ */
+function logXQPTransaction(userEmail, xpAmount, xqpAmount, source) {
+  try {
+    const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+    if (!progressSheetId) return;
+
+    const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+    const xpSheet = getOrCreateXPLogSheet(userSpreadsheet);
+    
+    const today = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+    const nowIso = new Date().toISOString();
+    
+    xpSheet.appendRow([
+      today,
+      nowIso,
+      "TXN_" + Date.now(),
+      (xqpAmount > 0 ? "Nhận " : "Sử dụng ") + Math.abs(xqpAmount) + " XQP/XP",
+      xpAmount,
+      xqpAmount,
+      source || "transaction",
+      "", 
+      "", 
+      "" 
+    ]);
+  } catch (e) {
+    Logger.log("❌ Error logging XQP transaction: " + e.toString());
   }
 }
 
