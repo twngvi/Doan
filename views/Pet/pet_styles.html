@@ -80,18 +80,18 @@
 
   .pet-main-layout .pet-card,
   .pet-main-layout.with-accessory-panel .pet-card {
-    min-height: 560px;
+    min-height: 554px;
   }
 
   .pet-main-layout .pet-stage,
   .pet-main-layout.with-accessory-panel .pet-stage {
-    min-height: 336px;
+    min-height: 332px;
   }
 
   .pet-main-layout .pet-accessory-panel,
   .pet-main-layout.with-accessory-panel .pet-accessory-panel {
     margin-top: 0;
-    height: 100%;
+    height: 20%;
     align-self: stretch;
   }
 
@@ -681,16 +681,37 @@
     animation: petRollFromLeft 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 
-  .pet-animator.anim-level2-drop {
-    animation: petDropFromTop 0.95s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  .pet-mover {
+    position: absolute;
+    inset: 0;
+    transform: translate(var(--pet-pos-x, 0), var(--pet-pos-y, 0)) scaleX(var(--pet-flip, 1));
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    will-change: transform;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
   }
 
   .pet-visual {
-    position: absolute;
-    inset: 0;
-    transform-origin: center 72%;
-    transform: rotate(0deg) scaleX(1) scaleY(1) skewX(0deg);
-    transition: transform 0.17s ease;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-origin: center bottom;
+    transition: transform 0.2s ease;
+    cursor: pointer;
+  }
+
+  .pet-visual.is-jumping {
+    animation: petJumpCycle 0.6s cubic-bezier(0.45, 0, 0.55, 1) forwards;
+  }
+
+  @keyframes petJumpCycle {
+    0% { transform: translateY(0) scale(1, 1); }
+    20% { transform: translateY(0) scale(1.2, 0.8); }
+    50% { transform: translateY(-65px) scale(0.9, 1.1); }
+    80% { transform: translateY(0) scale(1.2, 0.82); }
+    100% { transform: translateY(0) scale(1, 1); }
   }
 
   .pet-visual.level1-tilt-left {
@@ -1009,11 +1030,26 @@
   .pet-panel-controls .pet-header-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #petSaveConfigBtn.is-dirty {
+    background: #ef4444 !important;
+    color: white !important;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.45);
+    border-color: #dc2626 !important;
+  }
+  #petSaveConfigBtn.is-dirty .material-symbols-sharp {
+     animation: petSavePulse 2s infinite;
+  }
+  @keyframes petSavePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
   }
 
   .pet-panel-controls .pet-header-settings-popover {
     position: absolute;
-    bottom: calc(100% + 14px);
+    top: calc(100% + 8px);
     left: 0;
     right: 0;
     width: auto;
@@ -1026,22 +1062,22 @@
     box-shadow: 
       0 12px 30px rgba(0, 0, 0, 0.15),
       0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-    padding: 14px;
+    padding: 10px;
     z-index: 50;
     animation: petPopoverPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-    transform-origin: bottom center;
+    transform-origin: top center;
   }
 
   .pet-panel-controls .pet-header-background-popover {
-    bottom: calc(100% + 14px);
-    top: auto;
+    top: calc(100% + 8px);
+    bottom: auto;
     min-width: 0;
   }
 
   @keyframes petPopoverPop {
     0% {
       opacity: 0;
-      transform: translateY(10px) scale(0.95);
+      transform: translateY(-10px) scale(0.95);
     }
     100% {
       opacity: 1;
@@ -1063,27 +1099,27 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
 
   .pet-accessory-title {
     margin: 0;
-    font-size: 0.98rem;
+    font-size: 0.88rem;
     color: var(--pet-text);
   }
 
   .pet-accessory-hint {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--pet-text-muted);
   }
 
   .pet-accessory-position {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: 6px;
+    margin-bottom: 8px;
   }
 
   .pet-pill-btn {
@@ -1110,22 +1146,22 @@
 
   .pet-accessory-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
   }
 
   .pet-accessory-btn {
     border: 1px solid var(--pet-card-border);
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--pet-soft-surface);
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    min-height: 0;
-    padding: 6px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.16s ease;
   }
 
   .pet-accessory-btn.no-accessory {
@@ -1133,8 +1169,8 @@
   }
 
   .pet-accessory-thumb {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     object-fit: contain;
     display: block;
   }

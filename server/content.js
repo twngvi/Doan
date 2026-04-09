@@ -2930,15 +2930,19 @@ function completeQuestAndAwardXP(questId, userContext) {
       return { success: false, message: "Nhiệm vụ chưa hoàn thành" };
     }
 
-    // Save XP to XP_Log
+    // Save XP and XQP to XP_Log (10 columns schema)
     const now = new Date();
     xpSheet.appendRow([
       today,
       now.toISOString(),
       questId,
       quest.title,
-      quest.xp,
+      quest.xp,    // xpAmount
+      quest.xp,    // xqpAmount (1:1 award)
       quest.source,
+      "",          // topicId
+      questId,     // eventId
+      ""           // meta
     ]);
     Logger.log("✅ XP logged: " + quest.xp + " for quest " + questId);
 

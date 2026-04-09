@@ -84,7 +84,7 @@
         allowedPositions: ["center"],
         forcedPosition: "center",
         scale: 1.654,
-        topOverride: 57,
+        topOverride: 54,
         leftOverride: 50,
       },
       "accessory-14.svg": { scale: 1.15, topOffset: 0 },
@@ -130,6 +130,12 @@
       petNameLoadedUserId: "",
       petNameLoading: false,
       totalXQP: 0,
+      posBaseX: 0,
+      posBaseY: 0,
+      jumpIntervalId: null,
+      lastSavedConfig: null,
+      isPaused: false,
+      pauseTimeout: null,
     };
 
     let petMeteorInterval = null;
@@ -453,34 +459,65 @@
         .getPetName(userId);
     }
 
-    function savePetConfigToServer() {
-      const userId = window.currentUser?.userId;
-      if (!userId || typeof google === "undefined" || !google.script?.run) return;
-
-      const config = {
+    function isDirty() {
+      if (!state.lastSavedConfig) return false;
+      
+      const current = {
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
         selectedAccessories: state.selectedAccessories,
         selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
       };
+      
+      return JSON.stringify(current) !== JSON.stringify(state.lastSavedConfig);
+    }
 
+    function updateSaveButtonUI() {
       const saveBtn = document.getElementById("petSaveConfigBtn");
-      if (saveBtn) saveBtn.classList.add("loading");
+      if (!saveBtn) return;
+      
+      const dirty = isDirty();
+      saveBtn.classList.toggle("is-dirty", dirty);
+    }
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (saveBtn) saveBtn.classList.remove("loading");
-          if (result && result.success) {
-            if (typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
-          } else {
-            if (typeof showToast === "function") showToast("Lỗi lưu cấu hình: " + (result?.message || "Unknown"), "error");
-          }
-        })
-        .withFailureHandler(function(err) {
-           if (saveBtn) saveBtn.classList.remove("loading");
-           if (typeof showToast === "function") showToast("Lỗi kết nối server: " + err, "error");
-        })
-        .savePetConfig(userId, config);
+    function savePetConfigToServer() {
+      return new Promise((resolve) => {
+        const userId = window.currentUser?.userId;
+        if (!userId || typeof google === "undefined" || !google.script?.run) {
+           resolve({ success: false, message: "No auth" });
+           return;
+        }
+
+        const config = {
+          currentIndex: state.currentIndex,
+          isLevelTwo: state.isLevelTwo,
+          selectedAccessories: state.selectedAccessories,
+          selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+        };
+
+        const saveBtn = document.getElementById("petSaveConfigBtn");
+        if (saveBtn) saveBtn.classList.add("loading");
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (saveBtn) saveBtn.classList.remove("loading");
+            if (result && result.success) {
+              state.lastSavedConfig = JSON.parse(JSON.stringify(config));
+              updateSaveButtonUI();
+              if (typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
+              resolve(result);
+            } else {
+              if (typeof showToast === "function") showToast("Lỗi lưu cấu hình: " + (result?.message || "Unknown"), "error");
+              resolve(result || { success: false });
+            }
+          })
+          .withFailureHandler(function(err) {
+            if (saveBtn) saveBtn.classList.remove("loading");
+            if (typeof showToast === "function") showToast("Lỗi kết nối server: " + err, "error");
+            resolve({ success: false, message: err });
+          })
+          .savePetConfig(userId, config);
+      });
     }
 
     function loadPetConfigFromServer() {
@@ -496,6 +533,9 @@
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
             
+            state.lastSavedConfig = JSON.parse(JSON.stringify(config));
+            updateSaveButtonUI();
+
             // Re-render pet with loaded state
             renderPet();
           }
@@ -503,44 +543,33 @@
         .getPetConfig(userId);
     }
 
-    function updateAccessoryPanelVisibility() {
-      const panelEl = document.getElementById("petAccessoryPanel");
-      const mainLayoutEl = document.getElementById("petMainLayout");
-
-      state.accessoryPanelOpen = true;
-
-      if (panelEl) {
-        panelEl.classList.remove("is-hidden");
-      }
-
-      if (mainLayoutEl) {
-        mainLayoutEl.classList.add("with-accessory-panel");
-      }
-    }
-
-
     function updateSettingsPanelVisibility() {
       const panelEl = document.getElementById("petSettingsPopover");
       const toggleBtn = document.getElementById("petSettingsToggleBtn");
-      const isVisible = state.settingsPanelOpen;
-
-      if (panelEl) {
-        panelEl.classList.toggle("is-hidden", !isVisible);
-      }
-
+      const isVisible = !!state.settingsPanelOpen;
+      if (panelEl) panelEl.classList.toggle("is-hidden", !isVisible);
       if (toggleBtn) {
         toggleBtn.classList.toggle("active", isVisible);
-        toggleBtn.setAttribute(
-          "aria-expanded",
-          isVisible ? "true" : "false",
-        );
+        toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
       }
     }
 
     function updateBackgroundPanelVisibility() {
       const panelEl = document.getElementById("petBackgroundPopover");
       const toggleBtn = document.getElementById("petBackgroundToggleBtn");
-      const isVisible = state.backgroundPanelOpen;
+      const isVisible = !!state.backgroundPanelOpen;
+      if (panelEl) panelEl.classList.toggle("is-hidden", !isVisible);
+      if (toggleBtn) {
+        toggleBtn.classList.toggle("active", isVisible);
+        toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
+      }
+    }
+
+    function updateAccessoryPanelVisibility() {
+      const panelEl = document.getElementById("petAccessoryPopover");
+      const toggleBtn = document.getElementById("petAccessoryToggleBtn");
+      
+      const isVisible = state.accessoryPanelOpen;
 
       if (panelEl) {
         panelEl.classList.toggle("is-hidden", !isVisible);
@@ -548,37 +577,53 @@
 
       if (toggleBtn) {
         toggleBtn.classList.toggle("active", isVisible);
-        toggleBtn.setAttribute(
-          "aria-expanded",
-          isVisible ? "true" : "false",
-        );
+        toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
       }
     }
 
     function bindSettingsPanelToggle() {
-      const toggleBtn = document.getElementById("petSettingsToggleBtn");
-      if (!toggleBtn) return;
-
-      toggleBtn.addEventListener("click", function (event) {
-        event.stopPropagation();
-        state.backgroundPanelOpen = false;
-        state.settingsPanelOpen = !state.settingsPanelOpen;
-        updateSettingsPanelVisibility();
-        updateBackgroundPanelVisibility();
-      });
+      const settingsBtn = document.getElementById("petSettingsToggleBtn");
+      if (settingsBtn) {
+        settingsBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
+          state.backgroundPanelOpen = false;
+          state.accessoryPanelOpen = false;
+          state.settingsPanelOpen = !state.settingsPanelOpen;
+          updateSettingsPanelVisibility();
+          updateBackgroundPanelVisibility();
+          updateAccessoryPanelVisibility();
+        });
+      }
     }
 
     function bindBackgroundPanelToggle() {
-      const toggleBtn = document.getElementById("petBackgroundToggleBtn");
-      if (!toggleBtn) return;
+      const bgBtn = document.getElementById("petBackgroundToggleBtn");
+      if (bgBtn) {
+        bgBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
+          state.settingsPanelOpen = false;
+          state.accessoryPanelOpen = false;
+          state.backgroundPanelOpen = !state.backgroundPanelOpen;
+          updateSettingsPanelVisibility();
+          updateBackgroundPanelVisibility();
+          updateAccessoryPanelVisibility();
+        });
+      }
+    }
 
-      toggleBtn.addEventListener("click", function (event) {
-        event.stopPropagation();
-        state.settingsPanelOpen = false;
-        state.backgroundPanelOpen = !state.backgroundPanelOpen;
-        updateSettingsPanelVisibility();
-        updateBackgroundPanelVisibility();
-      });
+    function bindAccessoryPanelToggle() {
+      const accBtn = document.getElementById("petAccessoryToggleBtn");
+      if (accBtn) {
+        accBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
+          state.settingsPanelOpen = false;
+          state.backgroundPanelOpen = false;
+          state.accessoryPanelOpen = !state.accessoryPanelOpen;
+          updateSettingsPanelVisibility();
+          updateBackgroundPanelVisibility();
+          updateAccessoryPanelVisibility();
+        });
+      }
     }
 
     function bindPanelControlsClick() {
@@ -588,7 +633,8 @@
       document.addEventListener("click", function (event) {
         if (
           !state.settingsPanelOpen &&
-          !state.backgroundPanelOpen
+          !state.backgroundPanelOpen &&
+          !state.accessoryPanelOpen
         ) {
           return;
         }
@@ -596,9 +642,11 @@
 
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
+        state.accessoryPanelOpen = false;
 
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
+        updateAccessoryPanelVisibility();
       });
 
       document.addEventListener("keydown", function (event) {
@@ -606,9 +654,11 @@
         
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
+        state.accessoryPanelOpen = false;
 
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
+        updateAccessoryPanelVisibility();
       });
 
       updateSettingsPanelVisibility();
@@ -827,6 +877,7 @@
 
         applySrcAsync(accessoryImageEl, selected.fileName);
       });
+      updateSaveButtonUI();
     }
 
     function renderPet() {
@@ -896,6 +947,7 @@
       updateBackgroundButtons(state.selectedStageBackgroundIndex);
       updateAccessoryButtons();
       updateAccessoryPositionButtons();
+      updateSaveButtonUI();
     }
 
     function triggerBlink() {
@@ -1035,7 +1087,7 @@
             }
           }
         });
-      }, { root: document.getElementById("petAccessoryPanel"), rootMargin: "50px" });
+      }, { root: document.getElementById("petAccessoryPopover"), rootMargin: "50px" });
 
       ACCESSORY_FILES.forEach(function (fileName, index) {
         const btn = document.createElement("button");
@@ -1201,6 +1253,114 @@
       }
     }
 
+    function performJump(targetX, targetY) {
+      if (state.isPaused) return;
+
+      const mover = document.getElementById("petMover");
+      const visual = document.getElementById("petVisual");
+      if (!mover || !visual) return;
+
+      // Trigger jump animation
+      visual.classList.remove("is-jumping");
+      void visual.offsetWidth; 
+      visual.classList.add("is-jumping");
+
+      // Update internal state
+      state.posBaseX = targetX;
+      state.posBaseY = targetY;
+
+      // Move the element
+      mover.style.setProperty("--pet-pos-x", targetX + "px");
+      mover.style.setProperty("--pet-pos-y", targetY + "px");
+    }
+
+    function startJumpingRoutine() {
+      if (state.jumpIntervalId) return;
+
+      let hopCount = 0;
+      
+      const routine = function() {
+        const stage = document.getElementById("petStage");
+        if (!stage) return;
+
+        const stageWidth = stage.clientWidth;
+        const stageHeight = stage.clientHeight;
+        
+        hopCount++;
+
+        // Every 6 hops, do a big random relocation leap
+        if (hopCount >= 6) {
+          hopCount = 0;
+          const maxX = (stageWidth - 320) * 0.4;
+          const maxY = (stageHeight - 280) * 0.3;
+          const targetX = (Math.random() - 0.5) * maxX * 2;
+          const targetY = (Math.random() - 0.5) * maxY * 2;
+          performJump(targetX, targetY);
+        } else {
+          // Normal small hop back and forth
+          const dir = Math.sin(Date.now() / 1500) > 0 ? 1 : -1;
+          const smallHopX = state.posBaseX + (dir * 40);
+          const smallHopY = state.posBaseY + (Math.random() - 0.5) * 10;
+          
+          // Constrain within stage
+          const boundX = (stageWidth - 320) * 0.45;
+          const safeX = Math.max(-boundX, Math.min(boundX, smallHopX));
+          
+          performJump(safeX, smallHopY);
+        }
+        
+        // Schedule next hop with random delay
+        const nextDelay = 1800 + Math.random() * 1500;
+        state.jumpIntervalId = setTimeout(routine, nextDelay);
+      };
+
+      // Initial kick-off
+      state.jumpIntervalId = setTimeout(routine, 1000);
+    }
+
+    function bindNavigationGuard() {
+      window.onBeforeNavigate = function(pageId, params, addToHistory) {
+        const petPage = document.getElementById("page-pet");
+        if (!petPage || petPage.style.display === "none") return false;
+
+        if (isDirty()) {
+          if (typeof window.showAppConfirm === "function") {
+            (async () => {
+              const confirmed = await window.showAppConfirm(
+                "Hệ thống: Bạn có thay đổi chưa lưu cho PET. Bạn có muốn LƯU lại trước khi thoát không?",
+                {
+                  title: "Cảnh báo hệ thống",
+                  confirmText: "Lưu và Thoát",
+                  cancelText: "Thoát không lưu"
+                }
+              );
+
+              if (confirmed !== null) {
+                if (confirmed === true) {
+                  await savePetConfigToServer();
+                }
+                // Release guard and proceed
+                window.onBeforeNavigate = null;
+                if (typeof showPage === "function") {
+                  showPage(pageId, params, addToHistory);
+                }
+              }
+            })();
+            return true; // Intercept sync navigation
+          } else {
+            // Fallback to confirm if modal missing
+            const msg = "Bạn có thay đổi chưa lưu. Lưu trước khi thoát?";
+            if (confirm(msg)) {
+              savePetConfigToServer();
+            }
+            window.onBeforeNavigate = null;
+            return false;
+          }
+        }
+        return false;
+      };
+    }
+
     function startPetHeaderMeteors() {
       const container = document.getElementById("petMeteorContainer");
       if (!container) return;
@@ -1301,14 +1461,29 @@
         bindAccessoryControls();
         bindSettingsPanelToggle();
         bindBackgroundPanelToggle();
+        bindAccessoryPanelToggle();
         bindPanelControlsClick();
+        bindNavigationGuard();
         startBlinkLoop();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
+        startJumpingRoutine();
         state.initialized = true;
+
+        // Initialize lastSavedConfig as a copy of initial state if empty
+        if (!state.lastSavedConfig) {
+          state.lastSavedConfig = {
+            currentIndex: state.currentIndex,
+            isLevelTwo: state.isLevelTwo,
+            selectedAccessories: JSON.parse(JSON.stringify(state.selectedAccessories)),
+            selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+          };
+        }
+        updateSaveButtonUI();
         registerPetServiceWorker();
         preloadMainAssets();
+        bindPetClickPause();
       }
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
@@ -1316,6 +1491,22 @@
       loadPetConfigFromServer();
       updateXQPUI();
       renderPet();
+    }
+
+    function bindPetClickPause() {
+      const visual = document.getElementById("petVisual");
+      if (!visual) return;
+
+      visual.addEventListener("click", function() {
+        state.isPaused = true;
+        if (state.pauseTimeout) clearTimeout(state.pauseTimeout);
+        state.pauseTimeout = setTimeout(() => {
+          state.isPaused = false;
+        }, 10000);
+        visual.classList.remove("is-jumping");
+        void visual.offsetWidth; 
+        visual.classList.add("is-jumping");
+      });
     }
 
     window.initPetPage = initPetPage;
