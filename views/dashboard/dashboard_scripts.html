@@ -431,6 +431,32 @@
     renderSkillProgress(data.skillProgress);
     renderLeaderboard(data.leaderboard);
     renderSuggestion(data.suggestion);
+
+    // Sync authoritative XP/XQP from server into window.currentUser
+    // so Pet page and other modules always read the latest values.
+    if (data.quickStats && window.currentUser) {
+      var changed = false;
+      if (typeof data.quickStats.totalXP === 'number') {
+        window.currentUser.totalXP = data.quickStats.totalXP;
+        changed = true;
+      }
+      if (typeof data.quickStats.totalXQP === 'number') {
+        window.currentUser.totalXQP = data.quickStats.totalXQP;
+        changed = true;
+      }
+      if (changed) {
+        try {
+          var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+          window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+        } catch (e) {
+          console.warn("Failed to persist XQP sync:", e);
+        }
+
+        // Also update Pet XQP counter immediately if visible
+        var xqpEl = document.getElementById("petXQPBalance");
+        if (xqpEl) xqpEl.textContent = Number(data.quickStats.totalXQP).toLocaleString();
+      }
+    }
   }
 
   /**
@@ -1107,23 +1133,23 @@
               xpEl.textContent = result.newTotalXP.toLocaleString();
             }
 
-            // Update XQP balance in state and storage
-            if (result.newTotalXQP !== undefined) {
-              if (window.currentUser) {
-                window.currentUser.totalXP = result.newTotalXP;
-                window.currentUser.totalXQP = result.newTotalXQP;
-                
-                // Persist
-                const storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-                window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
-              }
+            showXPAnimation(result.xpAwarded);
+          }
 
-              // Update Pet XQP counter if it exists (for SPA synchronization)
-              const xqpEl = document.getElementById("petXQPBalance");
-              if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
+          // Always sync XQP/XP totals from server response (even if no XP awarded this time)
+          if (result.newTotalXQP !== undefined && result.newTotalXQP > 0) {
+            if (window.currentUser) {
+              window.currentUser.totalXP = result.newTotalXP;
+              window.currentUser.totalXQP = result.newTotalXQP;
+              
+              // Persist
+              const storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+              window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
             }
 
-            showXPAnimation(result.xpAwarded);
+            // Update Pet XQP counter if it exists (for SPA synchronization)
+            const xqpEl = document.getElementById("petXQPBalance");
+            if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
           }
 
           if (typeof showToast === "function") {

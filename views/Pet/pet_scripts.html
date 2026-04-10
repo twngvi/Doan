@@ -56,10 +56,9 @@
     const NO_ACCESSORY_VALUE = "";
     const MAX_ACCESSORIES_PER_PET = 2;
     const STAGE_BACKGROUNDS = [
-      { id: "bg1", name: "Nền 1", fileName: "bg-1.webp" },
-      { id: "bg2", name: "Nền 2", fileName: "bg-2.webp" },
-      { id: "bg3", name: "Nền 3", fileName: "bg-3.webp" },
-      { id: "bg4", name: "Nền 4", fileName: "bg-4.webp" },
+      { id: "bg1", name: "Nền 1", fileName: "bg-1.svg" },
+      { id: "bg2", name: "Nền 2", fileName: "bg-2.svg" },
+      { id: "bg3", name: "Nền 3", fileName: "bg-3.svg" },
     ];
     const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
       const idx = (index + 1).toString().padStart(2, '0');
@@ -125,7 +124,7 @@
       selectedAccessory: "",
       selectedAccessories: [],
       accessoryPosition: "center",
-      accessoryPanelOpen: true,
+      accessoryPanelOpen: false,
       foodPanelOpen: false,
       settingsPanelOpen: false,
       backgroundPanelOpen: false,
@@ -977,8 +976,6 @@
       const levelText = state.isLevelTwo ? "Level 2" : "Level 1";
       if (levelBadgeEl) {
         levelBadgeEl.textContent = levelText;
-        levelBadgeEl.style.borderColor = variant.tone;
-        levelBadgeEl.style.color = variant.tone;
       }
 
       updatePetLevelProgressUI();
@@ -1581,15 +1578,44 @@
       const xqpDisplay = document.getElementById("petXQPBalance");
       if (!xqpDisplay) return;
 
-      // Always prefer window.currentUser.totalXQP as the authoritative source.
-      // It is updated by dashboard XP awards, quest claims, and check-ins,
-      // and persisted to localStorage/sessionStorage so it survives page navigation.
+      // 1. Immediately display from window.currentUser (fast, may be stale)
       if (window.currentUser && typeof window.currentUser.totalXQP !== 'undefined') {
         const userBalance = parseInt(window.currentUser.totalXQP) || 0;
         state.totalXQP = userBalance;
       }
-
       xqpDisplay.textContent = Number(state.totalXQP).toLocaleString();
+
+      // 2. Fetch authoritative value from server to ensure accuracy
+      const user = window.currentUser;
+      if (user && user.userId && typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result && result.status === 'success' && result.user) {
+              const serverXQP = parseInt(result.user.totalXQP) || 0;
+              state.totalXQP = serverXQP;
+
+              // Sync back to window.currentUser and storage
+              if (window.currentUser) {
+                window.currentUser.totalXQP = serverXQP;
+                if (typeof result.user.totalXP !== 'undefined') {
+                  window.currentUser.totalXP = result.user.totalXP;
+                }
+                try {
+                  var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+                  window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+                } catch (e) {}
+              }
+
+              // Update display with server value
+              const el = document.getElementById("petXQPBalance");
+              if (el) el.textContent = Number(serverXQP).toLocaleString();
+            }
+          })
+          .withFailureHandler(function(err) {
+            console.warn("Pet XQP fetch failed:", err);
+          })
+          .getUserSession(user.userId);
+      }
     }
 
     function initPetPage() {

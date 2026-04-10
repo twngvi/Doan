@@ -1391,17 +1391,10 @@
   }
 
   function formatMatchingModeLabel(rawModeKey) {
-    var normalized = String(rawModeKey || "").toLowerCase();
-    if (normalized === "wire-10pair") return "Có dây · 10 cặp";
-    if (normalized === "nowire-10pair") return "Không dây · 10 cặp";
-    if (normalized === "wire") return "Có dây";
-    if (normalized === "nowire") return "Không dây";
-    return "Chế độ không xác định";
+    return "Có dây · 10 cặp";
   }
 
   function getMatchingModeToken(rawModeKey) {
-    var normalized = String(rawModeKey || "").toLowerCase();
-    if (normalized.indexOf("nowire") !== -1) return "wireless";
     return "wired";
   }
 
@@ -1723,22 +1716,16 @@
     matchingState.loadingPairs = true;
     matchingState.pairsError = null;
 
-    var showLines =
-      !matchingState.settings ||
-      matchingState.settings.showConnectionLines !== false;
     matchingState.interactionMode = "click";
-    matchingState.showConnectionLines = showLines;
-    matchingState.selectedModeKey =
-      showLines ? "wire-10pair" : "nowire-10pair";
+    matchingState.showConnectionLines = true;
+    matchingState.selectedModeKey = "wire-10pair";
     matchingState.pairLimit = MATCHING_DEFAULT_PAIR_COUNT;
 
     var gameSubtitleEl = document.querySelector(
       "#matchingGameWrapper .matching-game-subtitle",
     );
     if (gameSubtitleEl) {
-      gameSubtitleEl.textContent =
-        "Ghép nhanh 10 cặp - " +
-        (matchingState.showConnectionLines ? "Có dây" : "Không dây");
+      gameSubtitleEl.textContent = "Ghép nhanh 10 cặp";
     }
 
     renderMatchingInteractionHint();
@@ -1755,7 +1742,7 @@
       "🎮 Starting matching game:",
       topic.title,
       "| Line mode:",
-      matchingState.showConnectionLines ? "wired" : "wireless",
+      "wired",
       "| Pairs:",
       pairLimit,
     );
@@ -1945,11 +1932,6 @@
     if (!board) return;
 
     renderMatchingInteractionHint();
-
-    if (matchingState.showConnectionLines === false) {
-      renderMatchingBoardWireless(board);
-      return;
-    }
 
     renderMatchingBoardClick(board);
   }
@@ -2367,14 +2349,8 @@
       return;
     }
 
-    if (matchingState.showConnectionLines) {
-      hintEl.textContent =
-        "Chế độ có dây: chọn 1 thẻ Thuật ngữ và 1 thẻ Định nghĩa để ghép cặp.";
-    } else {
-      hintEl.textContent = isLikelyTouchDevice()
-        ? "Chế độ không dây (mobile): chạm 1 ô bên trái, rồi chạm 1 ô bên phải để ghép. Các thẻ vuông được trộn ngẫu nhiên."
-        : "Chế độ không dây (desktop): bấm 1 ô bên trái, rồi bấm 1 ô bên phải để ghép. Các thẻ vuông được trộn ngẫu nhiên.";
-    }
+    hintEl.textContent =
+      "Chọn 1 thẻ Thuật ngữ và 1 thẻ Định nghĩa để ghép cặp.";
     hintEl.style.display = "block";
   }
 

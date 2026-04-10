@@ -638,14 +638,44 @@ function dailyCheckin(userContext) {
 
     // Return updated streak
     const streakResult = calculateStreakFromCheckinHistory(spreadsheet);
+
+    // Build response with accurate XQP totals
+    var xpAwarded = xpResult.success ? xpResult.xpAwarded || 0 : 0;
+    var responseNewTotalXP = xpResult.newTotalXP;
+    var responseNewTotalXQP = xpResult.newTotalXQP;
+
+    // If XP wasn't awarded (already claimed), fetch current totals from master DB
+    // so client doesn't get stale/zero values.
+    if (!xpResult.success || !responseNewTotalXQP) {
+      try {
+        const masterDbId = DB_CONFIG.SPREADSHEET_ID || "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+        const masterSS = SpreadsheetApp.openById(masterDbId);
+        const usersSheet = masterSS.getSheetByName("Users");
+        const usersData = usersSheet.getDataRange().getValues();
+        const usersHeaders = usersData[0];
+        const emailCol = usersHeaders.indexOf("email");
+        const xpCol = usersHeaders.indexOf("totalXP");
+        const xqpCol = usersHeaders.indexOf("totalXQP");
+        for (var i = 1; i < usersData.length; i++) {
+          if (String(usersData[i][emailCol]).trim() === String(userEmail).trim()) {
+            responseNewTotalXP = parseInt(usersData[i][xpCol]) || 0;
+            responseNewTotalXQP = xqpCol >= 0 ? (parseInt(usersData[i][xqpCol]) || 0) : 0;
+            break;
+          }
+        }
+      } catch (fetchErr) {
+        Logger.log("⚠️ Could not fetch current XQP for checkin response: " + fetchErr.toString());
+      }
+    }
+
     return {
       success: true,
       currentStreak: streakResult.currentStreak,
       longestStreak: streakResult.longestStreak,
       serverToday: today,
-      xpAwarded: xpResult.success ? xpResult.xpAwarded || 0 : 0,
-      newTotalXP: xpResult.newTotalXP || 0,
-      newTotalXQP: xpResult.newTotalXQP || 0,
+      xpAwarded: xpAwarded,
+      newTotalXP: responseNewTotalXP || 0,
+      newTotalXQP: responseNewTotalXQP || 0,
       message: "Điểm danh thành công!",
     };
   } catch (error) {
