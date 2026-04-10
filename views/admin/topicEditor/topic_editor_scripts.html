@@ -1149,10 +1149,20 @@ function populateEditForm(data) {
   var editor = document.getElementById('contentEditor');
   if (content) {
     editor.innerHTML = content;
+    // Neutralize legacy callout classes from imported HTML to avoid persistent left colored borders.
+    neutralizeLegacyCalloutStyles(editor);
+    // Force-remove all legacy left-edge artifacts on normal loaded content
+    hardResetLoadedContentLeftEdge(editor);
     // Parse text markers into visual blocks
     parseMarkersToVisualBlocks(editor);
+    // Heal accidental over-capture where following headings are swallowed into a block
+    normalizeVisualBlockBoundaries(editor);
     // Ensure loaded Doc content is readable in editor (always black text)
     normalizeLoadedDocTextColors(editor);
+    // Final guard: remove any remaining effective left border/indent from normal text nodes
+    forceNormalizeComputedLeftEdge(editor);
+    // Strict guard: ensure color text after heading always starts on a new line
+    enforceHeadingColorLineBreak(editor);
   }
 
   editor.focus();
@@ -1172,7 +1182,7 @@ function normalizeLoadedDocTextColors(editor) {
   for (var n = 0; n < normalNodes.length; n++) {
     var normalNode = normalNodes[n];
     if (normalNode.closest(
-      '.visual-terminal-block, .visual-code-block, .visual-code-content, .visual-terminal-content, pre, code, .code-block, .visual-color-block'
+      '.visual-terminal-block, .visual-code-block, .visual-code-content, .visual-terminal-content, pre, code, .code-block'
     )) {
       continue;
     }
@@ -1180,13 +1190,15 @@ function normalizeLoadedDocTextColors(editor) {
     normalNode.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
   }
 
-  // Phase 2: normalize explicit inline color values from imported Doc HTML.
+  // Phase 2: normalize explicit inline styles from imported Doc HTML.
+  // In edit mode, Google Doc export can bring left border/indent styles that create
+  // a vertical colored column on the left. Strip those to match create mode layout.
   var nodes = editor.querySelectorAll('[style], font[color]');
   for (var i = 0; i < nodes.length; i++) {
     var node = nodes[i];
 
-    // Keep intentional code/terminal/color-marker styling
-    if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block, .visual-color-block')) {
+    // Keep intentional code/terminal styling
+    if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block')) {
       continue;
     }
 
@@ -1199,6 +1211,31 @@ function normalizeLoadedDocTextColors(editor) {
       }
       if (hasTextFillColor) {
         node.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
+      }
+
+      // Remove imported layout/typography artifacts that often leak from Google Doc HTML.
+      var stripProps = [
+        'border-left',
+        'padding-left',
+        'margin-left',
+        'text-indent',
+        'background',
+        'background-color',
+        'font-family',
+        'font-size',
+        'line-height',
+        'white-space',
+        'display'
+      ];
+      for (var sp = 0; sp < stripProps.length; sp++) {
+        if (node.style.getPropertyValue(stripProps[sp])) {
+          node.style.removeProperty(stripProps[sp]);
+        }
+      }
+
+      // Cleanup empty style attribute after normalization
+      if (!node.style.cssText || !node.style.cssText.trim()) {
+        node.removeAttribute('style');
       }
     }
 
@@ -1222,6 +1259,178 @@ function normalizeLoadedDocTextColors(editor) {
   for (var c = 0; c < codeContentNodes.length; c++) {
     codeContentNodes[c].style.setProperty('color', '#d4d4d4', 'important');
     codeContentNodes[c].style.setProperty('-webkit-text-fill-color', '#d4d4d4', 'important');
+  }
+
+  // Safety net: ensure normal headings/paragraphs never keep legacy left border.
+  var normalTextBlocks = editor.querySelectorAll('h1, h2, h3, h4, h5, h6, p');
+  for (var b = 0; b < normalTextBlocks.length; b++) {
+    var blockNode = normalTextBlocks[b];
+    if (blockNode.closest('.visual-block, .callout, .visual-color-block')) continue;
+    blockNode.style.removeProperty('border-left');
+    blockNode.style.removeProperty('padding-left');
+    blockNode.style.removeProperty('margin-left');
+    blockNode.style.removeProperty('text-indent');
+  }
+}
+
+/**
+ * Remove legacy callout visual classes from loaded content in edit mode.
+ * Old content may include .callout-info/.callout-* wrappers that keep a blue left border.
+ */
+function neutralizeLegacyCalloutStyles(editor) {
+  if (!editor) return;
+
+  var legacyCallouts = editor.querySelectorAll('.callout, .callout-note, .callout-warning, .callout-info, .callout-danger');
+  for (var i = 0; i < legacyCallouts.length; i++) {
+    var node = legacyCallouts[i];
+    node.classList.remove('callout', 'callout-note', 'callout-warning', 'callout-info', 'callout-danger');
+    node.style.removeProperty('border-left');
+    node.style.removeProperty('padding-left');
+    node.style.removeProperty('margin-left');
+    node.style.removeProperty('background');
+    node.style.removeProperty('background-color');
+  }
+}
+
+/**
+ * Hard reset left-edge artifacts from imported HTML so edit mode matches create mode.
+ * Keeps intentional block styles because those are re-applied by visual block classes.
+ */
+function hardResetLoadedContentLeftEdge(editor) {
+  if (!editor) return;
+
+  var targets = editor.querySelectorAll('*');
+  for (var i = 0; i < targets.length; i++) {
+    var node = targets[i];
+    if (node.closest('.visual-code-block, .visual-terminal-block, .visual-grid-block, .visual-figure-block, .visual-block')) {
+      continue;
+    }
+
+    if (node.tagName && node.tagName.toLowerCase() === 'blockquote') {
+      // Unwrap blockquote to plain flow content (blockquote often exports with left border).
+      var frag = document.createDocumentFragment();
+      while (node.firstChild) frag.appendChild(node.firstChild);
+      node.parentNode.replaceChild(frag, node);
+      continue;
+    }
+
+    if (node.style) {
+      node.style.removeProperty('border-left');
+      node.style.removeProperty('padding-left');
+      node.style.removeProperty('margin-left');
+      node.style.removeProperty('text-indent');
+      node.style.removeProperty('border');
+      node.style.removeProperty('outline');
+      if (!node.style.cssText || !node.style.cssText.trim()) {
+        node.removeAttribute('style');
+      }
+    }
+  }
+}
+
+/**
+ * Final guard using computed style (catches class-based borders, not just inline style).
+ */
+function forceNormalizeComputedLeftEdge(editor) {
+  if (!editor || typeof window.getComputedStyle !== 'function') return;
+
+  var nodes = editor.querySelectorAll('*');
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    if (node.closest('.visual-block, .visual-code-block, .visual-terminal-block, .visual-grid-block, .visual-figure-block, .visual-color-block')) {
+      continue;
+    }
+
+    var cs = window.getComputedStyle(node);
+    var borderLeft = parseFloat(cs.borderLeftWidth || '0') || 0;
+    var marginLeft = parseFloat(cs.marginLeft || '0') || 0;
+    var paddingLeft = parseFloat(cs.paddingLeft || '0') || 0;
+    var textIndent = parseFloat(cs.textIndent || '0') || 0;
+
+    if (borderLeft > 0 || marginLeft > 0 || paddingLeft > 0 || textIndent !== 0) {
+      node.style.setProperty('border-left', 'none', 'important');
+      node.style.setProperty('margin-left', '0', 'important');
+      node.style.setProperty('padding-left', '0', 'important');
+      node.style.setProperty('text-indent', '0', 'important');
+      node.style.setProperty('border', 'none', 'important');
+      node.style.setProperty('outline', 'none', 'important');
+    }
+  }
+}
+
+/**
+ * Ensure any color marker immediately after heading is block-separated.
+ */
+function enforceHeadingColorLineBreak(editor) {
+  if (!editor) return;
+
+  var headings = editor.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  for (var i = 0; i < headings.length; i++) {
+    var heading = headings[i];
+    var next = heading.nextElementSibling;
+    if (!next) continue;
+    if (!next.classList || !next.classList.contains('visual-color-block')) continue;
+
+    next.classList.add('visual-color-block-section');
+    next.style.setProperty('display', 'block', 'important');
+    next.style.setProperty('margin-top', '8px', 'important');
+  }
+}
+
+/**
+ * Prevent block wrappers from swallowing subsequent headings when imported marker boundaries are imperfect.
+ * If a callout-like visual block contains H1-H6, move that heading and following nodes outside the block.
+ */
+function normalizeVisualBlockBoundaries(editor) {
+  if (!editor) return;
+
+  var blockContents = editor.querySelectorAll('.visual-block .visual-block-content');
+  for (var i = 0; i < blockContents.length; i++) {
+    var contentEl = blockContents[i];
+    var parentBlock = contentEl.closest('.visual-block');
+    if (!parentBlock) continue;
+
+    var headingNode = contentEl.querySelector('h1, h2, h3, h4, h5, h6');
+    if (!headingNode) continue;
+
+    var overflowFragment = document.createDocumentFragment();
+    var cursor = headingNode;
+    while (cursor) {
+      var next = cursor.nextSibling;
+      overflowFragment.appendChild(cursor);
+      cursor = next;
+    }
+
+    // Keep a clean line break between block and moved content
+    var spacer = document.createElement('p');
+    spacer.innerHTML = '<br>';
+    parentBlock.parentNode.insertBefore(spacer, parentBlock.nextSibling);
+    parentBlock.parentNode.insertBefore(overflowFragment, spacer.nextSibling);
+  }
+
+  // Legacy callout blocks (insertCallout) can also wrap following headings when pasted/imported.
+  // Split them the same way to avoid left blue border bleeding into subsequent content.
+  var legacyCallouts = editor.querySelectorAll('.callout .callout-content');
+  for (var j = 0; j < legacyCallouts.length; j++) {
+    var calloutContent = legacyCallouts[j];
+    var parentCallout = calloutContent.closest('.callout');
+    if (!parentCallout) continue;
+
+    var calloutHeading = calloutContent.querySelector('h1, h2, h3, h4, h5, h6');
+    if (!calloutHeading) continue;
+
+    var calloutOverflow = document.createDocumentFragment();
+    var cursor2 = calloutHeading;
+    while (cursor2) {
+      var next2 = cursor2.nextSibling;
+      calloutOverflow.appendChild(cursor2);
+      cursor2 = next2;
+    }
+
+    var spacer2 = document.createElement('p');
+    spacer2.innerHTML = '<br>';
+    parentCallout.parentNode.insertBefore(spacer2, parentCallout.nextSibling);
+    parentCallout.parentNode.insertBefore(calloutOverflow, spacer2.nextSibling);
   }
 }
 
@@ -1371,7 +1580,8 @@ function parseMarkersToVisualBlocks(container) {
     // COLOR blocks
     if (tagType === 'COLOR') {
       var color = tagInfo.split(':')[1] || 'BLUE';
-      return '<span class="visual-color-block visual-color-' + color.toLowerCase() + '" data-color-type="' + color + '">' + cleanContent + '</span>';
+      var sectionContent = cleanContent.replace(/\n/g, '<br>');
+      return '<div class="visual-color-block visual-color-block-section visual-color-' + color.toLowerCase() + '" data-color-type="' + color + '">' + sectionContent + '</div>';
     }
 
     // Callout blocks (NOTE, TIP, WARNING, HIGHLIGHT, EXAMPLE, CHECKPOINT, TASK, QA, RESOURCES)
@@ -1516,10 +1726,18 @@ async function updateTopic() {
 
         setTimeout(function() {
           try {
+            var docInfoText = '';
+            if (result.docOperation === 'created' && result.contentDocId) {
+              docInfoText =
+                '\n\n📄 Đã tạo Google Doc mới cho topic này.' +
+                '\nDoc ID: ' + result.contentDocId +
+                (result.contentDocUrl ? ('\nLink: ' + result.contentDocUrl) : '');
+            }
+
             if (typeof window.showAppAlert === 'function') {
               window.showAppAlert(
-                '\u2705 B\u00e0i h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng!\n\nTopic: ' + title,
-                { title: 'C\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng', confirmText: '\u0110\u00e3 hi\u1ec3u' }
+                '✅ Bài học đã được cập nhật thành công!\n\nTopic: ' + title + docInfoText,
+                { title: 'Cập nhật thành công', confirmText: 'Đã hiểu' }
               ).then(function() {
                 resetForm();
                 goBackToAdmin();
@@ -1528,7 +1746,7 @@ async function updateTopic() {
                 goBackToAdmin();
               });
             } else {
-              alert('\u2705 B\u00e0i h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt th\u00e0nh c\u00f4ng!');
+              alert('✅ Bài học đã được cập nhật thành công!' + docInfoText);
               resetForm();
               goBackToAdmin();
             }

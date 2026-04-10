@@ -1381,6 +1381,9 @@ function convertHtmlToDocContent(html, body) {
     content = content.replace(/&gt;/g, '>');
     content = content.replace(/&quot;/g, '"');
 
+    // Ensure CODE markers are normalized and never left unclosed before parsing blocks
+    content = normalizeCodeMarkersInHtml(content);
+
     // Process block elements
     const blocks = parseHtmlBlocks(content);
 
@@ -1535,6 +1538,7 @@ function convertHtmlToDocContent(html, body) {
       }
     }
 
+    ensureCodeMarkersClosedInDoc(body);
     ensureDocEndsWithHetMarker(body);
     Logger.log("✅ HTML converted successfully");
     return true;
@@ -1542,8 +1546,101 @@ function convertHtmlToDocContent(html, body) {
     Logger.log("Error converting HTML to Doc: " + error.toString());
     // Fallback: just add plain text
     body.appendParagraph(html.replace(/<[^>]*>/g, ''));
+    ensureCodeMarkersClosedInDoc(body);
     ensureDocEndsWithHetMarker(body);
     return false;
+  }
+}
+
+/**
+ * Normalize CODE markers and auto-repair missing [[/CODE]] closures.
+ * Applies to both create topic and update topic flows because both use convertHtmlToDocContent.
+ * @param {string} html
+ * @returns {string}
+ */
+function normalizeCodeMarkersInHtml(html) {
+  var normalized = String(html || "");
+
+  // Repair bracket markers when editor/export wraps parts with tags
+  // Example: [<span>[</span><span>CODE:PYTHON</span><span>]</span><span>]</span>
+  normalized = normalized.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, "[");
+  normalized = normalized.replace(/(<[^>]*>)*\](<[^>]*>)*/g, "]");
+  normalized = normalized.replace(/\[\[([^\[\]]*?)\]\]/g, function (match, inner) {
+    var cleanInner = String(inner || "").replace(/<[^>]*>/g, "").trim();
+    return "[[" + cleanInner + "]]";
+  });
+
+  // Normalize opening CODE markers, keep language token if provided.
+  normalized = normalized.replace(
+    /\[\[\s*CODE\s*(?::\s*([^\]\s]+)\s*)?\]\]/gi,
+    function (match, language) {
+      var lang = String(language || "TEXT").trim().toUpperCase();
+      return "[[CODE:" + lang + "]]";
+    },
+  );
+
+  // Normalize closing CODE marker variants
+  normalized = normalized.replace(/\[\[\s*\/\s*CODE\s*\]\]/gi, "[[/CODE]]");
+
+  var openingCount = (normalized.match(/\[\[CODE(?::[^\]]+)?\]\]/gi) || []).length;
+  var closingCount = (normalized.match(/\[\[\/CODE\]\]/gi) || []).length;
+
+  if (closingCount < openingCount) {
+    var missingClosings = openingCount - closingCount;
+    Logger.log(
+      "⚠️ Detected missing [[/CODE]] markers: " +
+        missingClosings +
+        " (open=" +
+        openingCount +
+        ", close=" +
+        closingCount +
+        ")",
+    );
+    for (var i = 0; i < missingClosings; i++) {
+      normalized += "<p>[[/CODE]]</p>";
+    }
+  }
+
+  return normalized;
+}
+
+/**
+ * Ensure CODE markers are balanced in final Google Doc body.
+ * If there are more [[CODE:...]] than [[/CODE]], append missing closures.
+ * @param {Body} body
+ */
+function ensureCodeMarkersClosedInDoc(body) {
+  if (!body) return;
+
+  var textChunks = [];
+  for (var i = 0; i < body.getNumChildren(); i++) {
+    var child = body.getChild(i);
+    var childType = child.getType();
+    if (childType === DocumentApp.ElementType.PARAGRAPH) {
+      textChunks.push(child.asParagraph().getText());
+    } else if (childType === DocumentApp.ElementType.LIST_ITEM) {
+      textChunks.push(child.asListItem().getText());
+    }
+  }
+
+  var allText = textChunks.join("\n");
+  var openingCount = (allText.match(/\[\[CODE(?::[^\]]+)?\]\]/gi) || []).length;
+  var closingCount = (allText.match(/\[\[\/CODE\]\]/gi) || []).length;
+
+  if (closingCount < openingCount) {
+    var missingClosings = openingCount - closingCount;
+    Logger.log(
+      "⚠️ Repairing Doc CODE markers: append " +
+        missingClosings +
+        " missing [[/CODE]] (open=" +
+        openingCount +
+        ", close=" +
+        closingCount +
+        ")",
+    );
+    for (var j = 0; j < missingClosings; j++) {
+      body.appendParagraph("[[/CODE]]");
+    }
   }
 }
 
@@ -2359,11 +2456,13 @@ function updateTopicWithContent(topicId, topicData) {
     var headers = data[0];
     var topicRowIndex = -1;
     var contentDocId = "";
+    var contentDocUrl = "";
 
     for (var i = 1; i < data.length; i++) {
       if (data[i][headers.indexOf("topicId")] === topicId) {
         topicRowIndex = i;
         contentDocId = data[i][headers.indexOf("contentDocId")] || "";
+        contentDocUrl = data[i][headers.indexOf("contentDocUrl")] || "";
         break;
       }
     }
@@ -2379,6 +2478,8 @@ function updateTopicWithContent(topicId, topicData) {
     var categoryCol = headers.indexOf("category");
     var orderCol = headers.indexOf("order");
     var updatedAtCol = headers.indexOf("updatedAt");
+    var contentDocIdCol = headers.indexOf("contentDocId");
+    var contentDocUrlCol = headers.indexOf("contentDocUrl");
 
     var rowNum = topicRowIndex + 1; // 1-indexed for sheet
 
@@ -2401,6 +2502,7 @@ function updateTopicWithContent(topicId, topicData) {
     Logger.log("✅ Metadata updated in MasterDB");
 
     // 2. Cập nhật nội dung Google Doc
+    var docOperation = "none";
     if (contentDocId && topicData.content) {
       try {
         var doc = DocumentApp.openById(contentDocId);
@@ -2411,6 +2513,7 @@ function updateTopicWithContent(topicId, topicData) {
 
         doc.saveAndClose();
         Logger.log("✅ Google Doc updated: " + contentDocId);
+        docOperation = "updated";
       } catch (docError) {
         Logger.log("❌ Error updating Doc: " + docError.toString());
         return {
@@ -2419,7 +2522,28 @@ function updateTopicWithContent(topicId, topicData) {
         };
       }
     } else if (!contentDocId && topicData.content) {
-      Logger.log("⚠️ No contentDocId found, skipping Doc update");
+      Logger.log("⚠️ Missing contentDocId, creating a new Google Doc for this topic");
+      var docCreateResult = createTopicDocument(topicData.title || ("Topic " + topicId), topicData.content);
+      if (!docCreateResult || !docCreateResult.success) {
+        return {
+          success: false,
+          message:
+            "Đã cập nhật metadata nhưng lỗi khi tạo Google Doc mới: " +
+            ((docCreateResult && docCreateResult.message) || "Unknown error")
+        };
+      }
+
+      contentDocId = docCreateResult.docId || "";
+      contentDocUrl = docCreateResult.docUrl || "";
+
+      if (contentDocIdCol >= 0) {
+        sheet.getRange(rowNum, contentDocIdCol + 1).setValue(contentDocId);
+      }
+      if (contentDocUrlCol >= 0) {
+        sheet.getRange(rowNum, contentDocUrlCol + 1).setValue(contentDocUrl);
+      }
+      Logger.log("✅ Created & linked new Google Doc: " + contentDocId);
+      docOperation = "created";
     }
 
     // Clear cache để data mới hiện ngay
@@ -2433,7 +2557,10 @@ function updateTopicWithContent(topicId, topicData) {
 
     return {
       success: true,
-      message: "Đã cập nhật bài học thành công!"
+      message: "Đã cập nhật bài học thành công!",
+      docOperation: docOperation,
+      contentDocId: contentDocId,
+      contentDocUrl: contentDocUrl
     };
   } catch (error) {
     Logger.log("❌ Error updating topic: " + error.toString());
