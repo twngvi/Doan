@@ -6,17 +6,62 @@
 const GOOGLE_AUTH_CONFIG = {
   CLIENT_ID:
     "781599898111-ookle9f5ejrr545k5hpcoshjv86rk5pr.apps.googleusercontent.com",
-  CLIENT_SECRET: "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",
+  CLIENT_ID_PROPERTY: "GOOGLE_OAUTH_CLIENT_ID",
+  CLIENT_SECRET_PROPERTY: "GOOGLE_OAUTH_CLIENT_SECRET",
+  REDIRECT_URI_PROPERTY: "GOOGLE_OAUTH_REDIRECT_URI",
   REDIRECT_URI: ScriptApp.getService().getUrl(), // Tự động lấy URL hiện tại
   AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
   TOKEN_URL: "https://oauth2.googleapis.com/token",
   USER_INFO_URL: "https://www.googleapis.com/oauth2/v2/userinfo",
 };
 
+function getGoogleOAuthRuntimeConfig() {
+  const props = PropertiesService.getScriptProperties();
+
+  const clientId = String(
+    props.getProperty(GOOGLE_AUTH_CONFIG.CLIENT_ID_PROPERTY) ||
+      GOOGLE_AUTH_CONFIG.CLIENT_ID ||
+      "",
+  ).trim();
+  const clientSecret = String(
+    props.getProperty(GOOGLE_AUTH_CONFIG.CLIENT_SECRET_PROPERTY) || "",
+  ).trim();
+  const redirectUri = String(
+    props.getProperty(GOOGLE_AUTH_CONFIG.REDIRECT_URI_PROPERTY) ||
+      GOOGLE_AUTH_CONFIG.REDIRECT_URI ||
+      "",
+  ).trim();
+
+  if (!clientId) {
+    throw new Error(
+      "Missing OAuth client id. Set Script Property: " +
+        GOOGLE_AUTH_CONFIG.CLIENT_ID_PROPERTY,
+    );
+  }
+
+  if (!clientSecret) {
+    throw new Error(
+      "Missing OAuth client secret. Set Script Property: " +
+        GOOGLE_AUTH_CONFIG.CLIENT_SECRET_PROPERTY,
+    );
+  }
+
+  if (!redirectUri) {
+    throw new Error("Missing OAuth redirect URI");
+  }
+
+  return {
+    clientId: clientId,
+    clientSecret: clientSecret,
+    redirectUri: redirectUri,
+  };
+}
+
 function getGoogleAuthUrl() {
+  const oauthConfig = getGoogleOAuthRuntimeConfig();
   const params = {
-    client_id: GOOGLE_AUTH_CONFIG.CLIENT_ID,
-    redirect_uri: GOOGLE_AUTH_CONFIG.REDIRECT_URI,
+    client_id: oauthConfig.clientId,
+    redirect_uri: oauthConfig.redirectUri,
     response_type: "code",
     scope: "email profile",
     access_type: "online",
@@ -33,12 +78,14 @@ function getGoogleAuthUrl() {
 
 function handleGoogleCallback(authCode) {
   try {
+    const oauthConfig = getGoogleOAuthRuntimeConfig();
+
     // 1. Đổi Code lấy Access Token
     const payload = {
       code: authCode,
-      client_id: GOOGLE_AUTH_CONFIG.CLIENT_ID,
-      client_secret: GOOGLE_AUTH_CONFIG.CLIENT_SECRET,
-      redirect_uri: GOOGLE_AUTH_CONFIG.REDIRECT_URI,
+      client_id: oauthConfig.clientId,
+      client_secret: oauthConfig.clientSecret,
+      redirect_uri: oauthConfig.redirectUri,
       grant_type: "authorization_code",
     };
 

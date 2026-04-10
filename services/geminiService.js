@@ -822,7 +822,6 @@ const GeminiService = {
     return {
       userId: user.userId,
       email: user.email,
-      apiKey: apiKey,
     };
   },
 
@@ -964,19 +963,25 @@ function ADMIN_testReadGoogleDoc() {
 }
 
 function getUserGeminiKeyStatus(userId) {
-  return GeminiService.getUserApiKeyStatus({ userId: userId });
+  const userContext =
+    userId && typeof userId === "object" ? userId : { userId: userId };
+  return GeminiService.getUserApiKeyStatus(userContext);
 }
 
 function validateUserGeminiApiKey(userId, apiKey) {
-  return GeminiService.validateUserApiKey({ userId: userId }, apiKey);
+  const userContext =
+    userId && typeof userId === "object" ? userId : { userId: userId };
+  return GeminiService.validateUserApiKey(userContext, apiKey);
 }
 
 function upsertUserGeminiApiKey(userId, apiKey) {
   try {
-    const success = GeminiService.setupApiKey(apiKey, { userId: userId });
+    const userContext =
+      userId && typeof userId === "object" ? userId : { userId: userId };
+    const success = GeminiService.setupApiKey(apiKey, userContext);
     if (!success) {
       const validated = GeminiService.validateUserApiKey(
-        { userId: userId },
+        userContext,
         apiKey,
       );
 
@@ -992,7 +997,7 @@ function upsertUserGeminiApiKey(userId, apiKey) {
       };
     }
 
-    const status = GeminiService.getUserApiKeyStatus({ userId: userId });
+    const status = GeminiService.getUserApiKeyStatus(userContext);
     return {
       success: true,
       message: "Đã lưu API key cá nhân thành công",
@@ -1007,7 +1012,9 @@ function upsertUserGeminiApiKey(userId, apiKey) {
 }
 
 function deleteUserGeminiApiKey(userId) {
-  return GeminiService.deleteUserApiKey({ userId: userId });
+  const userContext =
+    userId && typeof userId === "object" ? userId : { userId: userId };
+  return GeminiService.deleteUserApiKey(userContext);
 }
 
 /**
