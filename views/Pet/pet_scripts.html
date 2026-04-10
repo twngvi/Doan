@@ -60,56 +60,61 @@
       { id: "bg2", name: "Nền 2", fileName: "bg-2.svg" },
       { id: "bg3", name: "Nền 3", fileName: "bg-3.svg" },
     ];
-    const ACCESSORY_FILES = Array.from({ length: 20 }, function (_, index) {
+    const ACCESSORY_FILES = Array.from({ length: 25 }, function (_, index) {
       const idx = (index + 1).toString().padStart(2, '0');
-      return "accessory-" + idx + ".svg";
+      return "Accessories/accessory-" + idx + ".svg";
     });
     const FOOD_FILES = Array.from({ length: 15 }, function (_, index) {
       return "Food/food-" + (index + 31) + ".svg";
     });
 
     const ACCESSORY_RULES = {
-      "accessory-01.svg": { allowedPositions: ["left", "right"], scale: 0.5625 },
-      "accessory-02.svg": {
+      "Accessories/accessory-01.svg": { allowedPositions: ["left", "right"], scale: 0.5625 },
+      "Accessories/accessory-02.svg": {
         allowedPositions: ["left", "right"],
         scale: 0.5625,
         topOffset: -3,
       },
-      "accessory-03.svg": { scale: 0.75, topOffset: -5 },
-      "accessory-06.svg": { scale: 0.75 },
-      "accessory-07.svg": { scale: 0.75 },
-      "accessory-08.svg": {},
-      "accessory-09.svg": {},
-      "accessory-10.svg": { scale: 1.21, topOffset: -10 },
-      "accessory-11.svg": { scale: 1.656, topOffset: 4 },
-      "accessory-12.svg": {
+      "Accessories/accessory-03.svg": { scale: 0.75, topOffset: -5 },
+      "Accessories/accessory-06.svg": { scale: 0.75 },
+      "Accessories/accessory-07.svg": { scale: 0.75 },
+      "Accessories/accessory-08.svg": {},
+      "Accessories/accessory-09.svg": {},
+      "Accessories/accessory-10.svg": { scale: 1.21, topOffset: -10 },
+      "Accessories/accessory-11.svg": { scale: 1.656, topOffset: 4 },
+      "Accessories/accessory-12.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
         scale: 1.654,
         topOverride: 54,
         leftOverride: 50,
       },
-      "accessory-14.svg": { scale: 1.15, topOffset: 0 },
-      "accessory-15.svg": { topOffset: -5 },
-      "accessory-16.svg": { scale: 0.81, topOffset: 5 },
-      "accessory-17.svg": {
+      "Accessories/accessory-14.svg": { scale: 1.15, topOffset: 0 },
+      "Accessories/accessory-15.svg": { topOffset: -5 },
+      "Accessories/accessory-16.svg": { scale: 0.81, topOffset: 5 },
+      "Accessories/accessory-17.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
         scale: 1.5015,
         topOffset: 12,
       },
-      "accessory-18.svg": {
+      "Accessories/accessory-18.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
         scale: 1.365,
       },
-      "accessory-19.svg": {
+      "Accessories/accessory-19.svg": {
         allowedPositions: ["center"],
         forcedPosition: "center",
         scale: 1.5015,
         topOffset: 12,
       },
-      "accessory-20.svg": { topOffset: -2 },
+      "Accessories/accessory-20.svg": { topOffset: -2 },
+      "Accessories/accessory-21.svg": {},
+      "Accessories/accessory-22.svg": {},
+      "Accessories/accessory-23.svg": {},
+      "Accessories/accessory-24.svg": {},
+      "Accessories/accessory-25.svg": {},
     };
 
     const state = {
@@ -145,8 +150,6 @@
     let petHeaderMouseEffectBound = false;
 
     const INTERACTION_CLASSES = [
-      "level1-tilt-left",
-      "level1-tilt-right",
       "level2-press-left",
       "level2-press-right",
       "level2-press-center",
@@ -306,20 +309,35 @@
       });
     }
 
-    function applyLevel1TiltByPointer(clientX) {
+    function applyLevel1TiltByPointer(clientX, clientY) {
       if (state.isLevelTwo || state.isPressing) return;
 
       const visualEl = document.getElementById("petVisual");
       if (!visualEl) return;
 
-      const rect = visualEl.getBoundingClientRect();
-      const halfX = rect.left + rect.width / 2;
+      const stageEl = document.getElementById("petStage");
+      if (!stageEl) return;
 
-      visualEl.classList.remove("level1-tilt-left", "level1-tilt-right");
-      if (clientX < halfX) {
-        visualEl.classList.add("level1-tilt-right");
-      } else {
-        visualEl.classList.add("level1-tilt-left");
+      const stageRect = stageEl.getBoundingClientRect();
+      // Calculate mouse position relative to stage center (-0.5 to 0.5)
+      const relX = (clientX - stageRect.left) / stageRect.width - 0.5;
+      const relY = clientY !== undefined ? (clientY - stageRect.top) / stageRect.height - 0.5 : 0;
+
+      // Apply smooth rotation and slight skew based on mouse position
+      const rotateAngle = relX * -18; // max ±9 degrees tilt
+      const skewAngle = relX * 4;     // subtle skew
+      const scaleX = 1 + Math.abs(relX) * 0.04; // very subtle stretch
+
+      visualEl.style.transform = 
+        'rotate(' + rotateAngle.toFixed(2) + 'deg) ' +
+        'skewY(' + skewAngle.toFixed(2) + 'deg) ' +
+        'scaleX(' + scaleX.toFixed(3) + ')';
+    }
+
+    function clearLevel1Tilt() {
+      const visualEl = document.getElementById("petVisual");
+      if (visualEl) {
+        visualEl.style.transform = '';
       }
     }
 
@@ -769,7 +787,7 @@
 
         const nextName = sanitizePetName(input);
         state.petDisplayName = nextName;
-        updatePetNameTagUI();
+         updatePetNameTagUI();
         savePetNameToServer(nextName);
       });
     }
@@ -1335,11 +1353,14 @@
 
       stageEl.addEventListener("mousemove", function (event) {
         if (state.isLevelTwo || state.isPressing) return;
-        applyLevel1TiltByPointer(event.clientX);
+        applyLevel1TiltByPointer(event.clientX, event.clientY);
       });
 
       stageEl.addEventListener("mouseleave", function () {
-        if (!state.isLevelTwo) clearInteractionClasses();
+        if (!state.isLevelTwo) {
+          clearInteractionClasses();
+          clearLevel1Tilt();
+        }
       });
 
       stageEl.addEventListener("mousedown", function (event) {
@@ -1420,6 +1441,12 @@
       let hopCount = 0;
       
       const routine = function() {
+        // Only jump at level 2
+        if (!state.isLevelTwo) {
+          state.jumpIntervalId = setTimeout(routine, 2000);
+          return;
+        }
+
         const stage = document.getElementById("petStage");
         if (!stage) return;
 
@@ -1431,8 +1458,8 @@
         // Every 6 hops, do a big random relocation leap
         if (hopCount >= 6) {
           hopCount = 0;
-          const maxX = (stageWidth - 320) * 0.4;
-          const maxY = (stageHeight - 280) * 0.3;
+          const maxX = (stageWidth - 230) * 0.4;
+          const maxY = (stageHeight - 202) * 0.3;
           const targetX = (Math.random() - 0.5) * maxX * 2;
           const targetY = (Math.random() - 0.5) * maxY * 2;
           performJump(targetX, targetY);
@@ -1443,7 +1470,7 @@
           const smallHopY = state.posBaseY + (Math.random() - 0.5) * 10;
           
           // Constrain within stage
-          const boundX = (stageWidth - 320) * 0.45;
+          const boundX = (stageWidth - 230) * 0.45;
           const safeX = Math.max(-boundX, Math.min(boundX, smallHopX));
           
           performJump(safeX, smallHopY);
