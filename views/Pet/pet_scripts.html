@@ -65,6 +65,9 @@
       const idx = (index + 1).toString().padStart(2, '0');
       return "accessory-" + idx + ".svg";
     });
+    const FOOD_FILES = Array.from({ length: 15 }, function (_, index) {
+      return "Food/food-" + (index + 31) + ".svg";
+    });
 
     const ACCESSORY_RULES = {
       "accessory-01.svg": { allowedPositions: ["left", "right"], scale: 0.5625 },
@@ -123,6 +126,7 @@
       selectedAccessories: [],
       accessoryPosition: "center",
       accessoryPanelOpen: true,
+      foodPanelOpen: false,
       settingsPanelOpen: false,
       backgroundPanelOpen: false,
       selectedStageBackgroundIndex: 0,
@@ -149,8 +153,12 @@
       "level2-press-center",
     ];
 
-    const PET_ASSET_BASE_URL = "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/"; // Adjusted to root Image/ folder if needed, or Image/Pet/ if you move them there.
+    const PET_ASSET_BASE_URLS = [
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/",
+      "https://raw.githubusercontent.com/twngvi/Doan/main/Image/",
+    ];
     const PET_CACHE_NAME = "pet-assets-v1";
+    let foodLoadWarningShown = false;
 
     /**
      * Register Service Worker for PET assets
@@ -174,35 +182,64 @@
 
     async function fetchAssetUrl(fileName) {
       if (!fileName) return "";
-      if (blobUrlCache[fileName]) return blobUrlCache[fileName];
+      if (Object.prototype.hasOwnProperty.call(blobUrlCache, fileName)) {
+        return blobUrlCache[fileName];
+      }
 
-      const url = PET_ASSET_BASE_URL + fileName;
+      const normalizedFile = String(fileName).replace(/^\/+/, "");
+      const candidateUrls = PET_ASSET_BASE_URLS.map(function (baseUrl) {
+        return baseUrl + normalizedFile;
+      });
       
-      // If Cache API is not supported, return direct CDN URL
-      if (!window.caches) return url;
+      // If Cache API is not supported, fallback to first available network URL.
+      if (!window.caches) {
+        for (let i = 0; i < candidateUrls.length; i++) {
+          try {
+            const response = await fetch(candidateUrls[i]);
+            if (response.ok) {
+              blobUrlCache[fileName] = candidateUrls[i];
+              return candidateUrls[i];
+            }
+          } catch (error) {
+          }
+        }
+        blobUrlCache[fileName] = "";
+        return "";
+      }
       
       try {
         const cache = await caches.open(PET_CACHE_NAME);
-        let response = await cache.match(url);
-        
-        if (!response) {
-          response = await fetch(url);
-          if (response.ok) {
-            // Store a clone in cache as per Cache API rules
-            cache.put(url, response.clone());
-          } else {
-            console.warn("Asset not found on CDN:", fileName);
-            return ""; 
+
+        for (let i = 0; i < candidateUrls.length; i++) {
+          const candidateUrl = candidateUrls[i];
+          let response = await cache.match(candidateUrl);
+
+          if (!response) {
+            try {
+              response = await fetch(candidateUrl);
+              if (response && response.ok) {
+                cache.put(candidateUrl, response.clone());
+              }
+            } catch (fetchError) {
+              response = null;
+            }
+          }
+
+          if (response && response.ok) {
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            blobUrlCache[fileName] = blobUrl;
+            return blobUrl;
           }
         }
-        
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        blobUrlCache[fileName] = blobUrl;
-        return blobUrl;
+
+        console.warn("Asset not found on all configured hosts:", fileName, candidateUrls);
+        blobUrlCache[fileName] = "";
+        return "";
       } catch (error) {
         console.warn("Manual cache fetch failed for:", fileName, error);
-        return url; // Fallback to direct URL if anything fails
+        blobUrlCache[fileName] = "";
+        return "";
       }
     }
 
@@ -581,6 +618,21 @@
       }
     }
 
+    function updateFoodPanelVisibility() {
+      const panelEl = document.getElementById("petFoodPopover");
+      const toggleBtn = document.getElementById("petFoodToggleBtn");
+      const isVisible = !!state.foodPanelOpen;
+
+      if (panelEl) {
+        panelEl.classList.toggle("is-hidden", !isVisible);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.classList.toggle("active", isVisible);
+        toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
+      }
+    }
+
     function bindSettingsPanelToggle() {
       const settingsBtn = document.getElementById("petSettingsToggleBtn");
       if (settingsBtn) {
@@ -588,10 +640,12 @@
           event.stopPropagation();
           state.backgroundPanelOpen = false;
           state.accessoryPanelOpen = false;
+          state.foodPanelOpen = false;
           state.settingsPanelOpen = !state.settingsPanelOpen;
           updateSettingsPanelVisibility();
           updateBackgroundPanelVisibility();
           updateAccessoryPanelVisibility();
+          updateFoodPanelVisibility();
         });
       }
     }
@@ -603,10 +657,12 @@
           event.stopPropagation();
           state.settingsPanelOpen = false;
           state.accessoryPanelOpen = false;
+          state.foodPanelOpen = false;
           state.backgroundPanelOpen = !state.backgroundPanelOpen;
           updateSettingsPanelVisibility();
           updateBackgroundPanelVisibility();
           updateAccessoryPanelVisibility();
+          updateFoodPanelVisibility();
         });
       }
     }
@@ -618,10 +674,29 @@
           event.stopPropagation();
           state.settingsPanelOpen = false;
           state.backgroundPanelOpen = false;
+          state.foodPanelOpen = false;
           state.accessoryPanelOpen = !state.accessoryPanelOpen;
           updateSettingsPanelVisibility();
           updateBackgroundPanelVisibility();
           updateAccessoryPanelVisibility();
+          updateFoodPanelVisibility();
+        });
+      }
+    }
+
+    function bindFoodPanelToggle() {
+      const foodBtn = document.getElementById("petFoodToggleBtn");
+      if (foodBtn) {
+        foodBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
+          state.settingsPanelOpen = false;
+          state.backgroundPanelOpen = false;
+          state.accessoryPanelOpen = false;
+          state.foodPanelOpen = !state.foodPanelOpen;
+          updateSettingsPanelVisibility();
+          updateBackgroundPanelVisibility();
+          updateAccessoryPanelVisibility();
+          updateFoodPanelVisibility();
         });
       }
     }
@@ -634,7 +709,8 @@
         if (
           !state.settingsPanelOpen &&
           !state.backgroundPanelOpen &&
-          !state.accessoryPanelOpen
+          !state.accessoryPanelOpen &&
+          !state.foodPanelOpen
         ) {
           return;
         }
@@ -643,10 +719,12 @@
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
         state.accessoryPanelOpen = false;
+        state.foodPanelOpen = false;
 
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
+        updateFoodPanelVisibility();
       });
 
       document.addEventListener("keydown", function (event) {
@@ -655,14 +733,18 @@
         state.settingsPanelOpen = false;
         state.backgroundPanelOpen = false;
         state.accessoryPanelOpen = false;
+        state.foodPanelOpen = false;
 
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
+        updateFoodPanelVisibility();
       });
 
       updateSettingsPanelVisibility();
       updateBackgroundPanelVisibility();
+      updateAccessoryPanelVisibility();
+      updateFoodPanelVisibility();
     }
 
     function bindPetNameEditor() {
@@ -1156,6 +1238,67 @@
       });
     }
 
+    function buildFoodButtons() {
+      const gridEl = document.getElementById("petFoodGrid");
+      if (!gridEl) return;
+
+      gridEl.innerHTML = "";
+
+      const observer = new IntersectionObserver((entries, obs) => {
+        entries.forEach(function(entry) {
+          if (!entry.isIntersecting) return;
+          const img = entry.target;
+          const parent = img.closest(".pet-food-item");
+          const missingLabel = parent ? parent.querySelector(".pet-food-missing") : null;
+          const fileName = img.getAttribute("data-lazy-src");
+          if (!fileName) return;
+
+          fetchAssetUrl(fileName).then(function(url) {
+            if (url) {
+              img.src = url;
+              img.style.visibility = "visible";
+              if (missingLabel) missingLabel.style.display = "none";
+              return;
+            }
+
+            img.style.display = "none";
+            if (missingLabel) missingLabel.style.display = "inline-flex";
+            if (!foodLoadWarningShown && typeof showToast === "function") {
+              foodLoadWarningShown = true;
+              showToast("Food image chua co tren CDN. Hay push Image/Food len GitHub de hien thi.", "warning");
+            }
+          });
+
+          obs.unobserve(img);
+        });
+      }, { root: document.getElementById("petFoodPopover"), rootMargin: "50px" });
+
+      FOOD_FILES.forEach(function (fileName, index) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "pet-food-item";
+        item.title = "Food " + (index + 1);
+        item.setAttribute("aria-label", "Food " + (index + 1));
+
+        const img = document.createElement("img");
+        img.className = "pet-food-thumb";
+        img.alt = "Food " + (index + 1);
+        img.loading = "lazy";
+        img.style.visibility = "hidden";
+        img.setAttribute("data-lazy-src", fileName);
+        observer.observe(img);
+
+        const missingLabel = document.createElement("span");
+        missingLabel.className = "pet-food-missing";
+        missingLabel.textContent = "No image";
+        missingLabel.style.display = "none";
+
+        item.appendChild(img);
+        item.appendChild(missingLabel);
+        gridEl.appendChild(item);
+      });
+    }
+
     function bindAccessoryControls() {
       const positionContainer = document.getElementById("petAccessoryPosition");
       if (!positionContainer) return;
@@ -1457,16 +1600,19 @@
         buildColorButtons();
         buildBackgroundButtons();
         buildAccessoryButtons();
+        buildFoodButtons();
         bindAccessoryControls();
         bindSettingsPanelToggle();
         bindBackgroundPanelToggle();
         bindAccessoryPanelToggle();
+        bindFoodPanelToggle();
         bindPanelControlsClick();
         bindNavigationGuard();
         startBlinkLoop();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
+        updateFoodPanelVisibility();
         startJumpingRoutine();
         state.initialized = true;
 
