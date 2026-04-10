@@ -38,6 +38,7 @@ function loginWithEmail(credentials) {
     const roleIndex = headers.indexOf("role");
     const levelIndex = headers.indexOf("level");
     const totalXPIndex = headers.indexOf("totalXP");
+    const totalXQPIndex = headers.indexOf("totalXQP");
     const progressSheetIdIndex = headers.indexOf("progressSheetId");
     const themeIndex = headers.indexOf("theme");
     const verifiedIndex = headers.indexOf("emailVerified");
@@ -138,6 +139,7 @@ function loginWithEmail(credentials) {
             role: data[i][roleIndex],
             level: data[i][levelIndex],
             totalXP: data[i][totalXPIndex],
+            totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             progressSheetId: data[i][progressSheetIdIndex],
             theme:
               themeIndex >= 0 && data[i][themeIndex]
@@ -175,6 +177,7 @@ function getUserSession(userId) {
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0] || [];
     const themeIndex = headers.indexOf("theme");
+    const totalXQPIndex = headers.indexOf("totalXQP");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
@@ -192,6 +195,7 @@ function getUserSession(userId) {
             role: data[i][7],
             level: data[i][8],
             totalXP: data[i][11],
+            totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             lastLogin: data[i][15],
             isActive: data[i][17],
             theme:

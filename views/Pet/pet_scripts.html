@@ -1438,16 +1438,15 @@
       const xqpDisplay = document.getElementById("petXQPBalance");
       if (!xqpDisplay) return;
 
-      // Priority 1: Current state
-      let balance = state.totalXQP;
-
-      // Priority 2: window.currentUser if state is 0
-      if (balance === 0 && window.currentUser && typeof window.currentUser.totalXQP !== 'undefined') {
-        balance = window.currentUser.totalXQP;
-        state.totalXQP = balance;
+      // Always prefer window.currentUser.totalXQP as the authoritative source.
+      // It is updated by dashboard XP awards, quest claims, and check-ins,
+      // and persisted to localStorage/sessionStorage so it survives page navigation.
+      if (window.currentUser && typeof window.currentUser.totalXQP !== 'undefined') {
+        const userBalance = parseInt(window.currentUser.totalXQP) || 0;
+        state.totalXQP = userBalance;
       }
 
-      xqpDisplay.textContent = Number(balance).toLocaleString();
+      xqpDisplay.textContent = Number(state.totalXQP).toLocaleString();
     }
 
     function initPetPage() {

@@ -336,6 +336,9 @@ function processGoogleUserLogin(googleProfile) {
         .setValue(progressSheetId);
     }
 
+    const totalXQPCol = headers.indexOf("totalXQP");
+    const totalXPCol = headers.indexOf("totalXP");
+
     return {
       userId: existingUser[0],
       email: existingUser[2],
@@ -343,6 +346,8 @@ function processGoogleUserLogin(googleProfile) {
       avatarUrl: finalAvatar, // ⭐ Trả về avatar đúng (custom hoặc Google)
       role: existingUser[7],
       level: existingUser[8],
+      totalXP: totalXPCol >= 0 ? (parseInt(existingUser[totalXPCol]) || 0) : 0,
+      totalXQP: totalXQPCol >= 0 ? (parseInt(existingUser[totalXQPCol]) || 0) : 0,
       progressSheetId: progressSheetId, // Trả về ID sheet
       theme:
         themeColIndex >= 0 && existingUser[themeColIndex]
@@ -416,6 +421,8 @@ function processGoogleUserLogin(googleProfile) {
       avatarUrl: avatar,
       role: "USER",
       level: 1,
+      totalXP: 0,
+      totalXQP: 0,
       progressSheetId: progressSheetId,
       theme: "default",
       status: "success",
