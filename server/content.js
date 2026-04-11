@@ -1651,23 +1651,26 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
     const headers = data[0];
     const emailCol = headers.indexOf("email");
     const xpCol = headers.indexOf("totalXP");
-    const xqpCol = headers.indexOf("totalXQP");
+    let xqpCol = headers.indexOf("totalXQP");
+
+    if (xqpCol === -1) {
+      usersSheet.getRange(1, headers.length + 1).setValue("totalXQP");
+      xqpCol = headers.length;
+    }
 
     let progressSheetId = "";
 
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][emailCol]).trim() === String(userEmail).trim()) {
         const currentXP = parseInt(data[i][xpCol]) || 0;
-        const currentXQP = xqpCol >= 0 ? parseInt(data[i][xqpCol]) || 0 : 0;
+        const currentXQP = xqpCol < data[i].length ? parseInt(data[i][xqpCol]) || 0 : 0;
         
         result.totalXP = currentXP + xpDelta;
         result.totalXQP = currentXQP + xpDelta;
         progressSheetId = data[i][headers.indexOf("progressSheetId")];
 
         usersSheet.getRange(i + 1, xpCol + 1).setValue(result.totalXP);
-        if (xqpCol >= 0) {
-          usersSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
-        }
+        usersSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
         break;
       }
     }
