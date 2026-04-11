@@ -2471,6 +2471,14 @@ function updateTopicWithContent(topicId, topicData) {
       return { success: false, message: "Không tìm thấy topic: " + topicId };
     }
 
+    var hasContentInPayload = Object.prototype.hasOwnProperty.call(topicData, "content");
+    if (hasContentInPayload && !contentDocId) {
+      return {
+        success: false,
+        message: "Topic chưa có Google Doc để cập nhật nội dung. Vui lòng tạo lại topic có liên kết Doc."
+      };
+    }
+
     // 1. Cập nhật metadata trong sheet Topics
     var now = new Date().toISOString();
     var titleCol = headers.indexOf("title");
@@ -2503,13 +2511,14 @@ function updateTopicWithContent(topicId, topicData) {
 
     // 2. Cập nhật nội dung Google Doc
     var docOperation = "none";
-    if (contentDocId && topicData.content) {
+    if (contentDocId && hasContentInPayload) {
       try {
         var doc = DocumentApp.openById(contentDocId);
         var body = doc.getBody();
 
-        // Clear và ghi nội dung mới
-        convertHtmlToDocContent(topicData.content, body);
+        // Xóa toàn bộ nội dung cũ trước khi đẩy nội dung mới
+        body.clear();
+        convertHtmlToDocContent(topicData.content || "", body);
 
         doc.saveAndClose();
         Logger.log("✅ Google Doc updated: " + contentDocId);
@@ -2521,29 +2530,6 @@ function updateTopicWithContent(topicId, topicData) {
           message: "Đã cập nhật metadata nhưng lỗi khi cập nhật Doc: " + docError.toString()
         };
       }
-    } else if (!contentDocId && topicData.content) {
-      Logger.log("⚠️ Missing contentDocId, creating a new Google Doc for this topic");
-      var docCreateResult = createTopicDocument(topicData.title || ("Topic " + topicId), topicData.content);
-      if (!docCreateResult || !docCreateResult.success) {
-        return {
-          success: false,
-          message:
-            "Đã cập nhật metadata nhưng lỗi khi tạo Google Doc mới: " +
-            ((docCreateResult && docCreateResult.message) || "Unknown error")
-        };
-      }
-
-      contentDocId = docCreateResult.docId || "";
-      contentDocUrl = docCreateResult.docUrl || "";
-
-      if (contentDocIdCol >= 0) {
-        sheet.getRange(rowNum, contentDocIdCol + 1).setValue(contentDocId);
-      }
-      if (contentDocUrlCol >= 0) {
-        sheet.getRange(rowNum, contentDocUrlCol + 1).setValue(contentDocUrl);
-      }
-      Logger.log("✅ Created & linked new Google Doc: " + contentDocId);
-      docOperation = "created";
     }
 
     // Clear cache để data mới hiện ngay
