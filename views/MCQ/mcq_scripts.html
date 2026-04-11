@@ -1947,13 +1947,25 @@
       var elapsed = Math.round((Date.now() - loadStartTime) / 1000);
       var hint = document.querySelector("#quiz-loading .quiz-loading-hint");
       if (hint) {
-        if (elapsed < 10) {
-          hint.textContent = "Đang kiểm tra cache...";
-        } else if (elapsed < 30) {
-          hint.textContent = "AI đang tạo câu hỏi... (" + elapsed + "s)";
+        if (elapsed < 5) {
+          hint.textContent = "Đang kiểm tra dữ liệu cache...";
+        } else if (elapsed < 12) {
+          hint.textContent = "Đang đọc tài liệu bài học...";
+        } else if (elapsed < 20) {
+          hint.textContent = "AI đang phân tích nội dung học thuật... (" + elapsed + "s)";
+        } else if (elapsed < 35) {
+          hint.textContent = "Đang soạn thảo bộ câu hỏi trắc nghiệm... (" + elapsed + "s)";
+        } else if (elapsed < 60) {
+          hint.textContent = "Đang kiểm soát chất lượng câu hỏi... (" + elapsed + "s)";
         } else {
-          hint.textContent = "Đang xử lý, vui lòng đợi... (" + elapsed + "s)";
+          hint.textContent = "Quá trình hoàn tất chậm hơn dự kiến, vui lòng đợi thêm chút... (" + elapsed + "s)";
         }
+      }
+
+      // ⭐ GLOBAL TIMEOUT: 120s
+      if (elapsed > 120) {
+         clearInterval(loadingInterval);
+         handleLoadError("Quá trình tạo câu hỏi quá lâu (hơn 2 phút). Vui lòng thử lại sau hoặc kiểm tra kết nối mạng.");
       }
     }, 1000);
 
@@ -1969,15 +1981,30 @@
       processQuestionsWithMastered(questionsResult, masteredIds);
     }
 
-    // PARALLEL 1: Load mastered question IDs
+    // PARALLEL 1: Load mastered question IDs (with TIMEOUT)
+    var masteredTimeout = setTimeout(function() {
+      if (!masteredLoaded) {
+        console.warn("⚠️ Mastered IDs load timeout - proceeding without filters");
+        masteredIds = [];
+        masteredLoaded = true;
+        tryProcessResults();
+      }
+    }, 8000); // Wait max 8s for mastered IDs
+
     google.script.run
       .withSuccessHandler(function (ids) {
+        clearTimeout(masteredTimeout);
+        if (masteredLoaded && masteredIds.length === 0) {
+           // Đã bị timeout trước đó, không ghi đè lại nếu đã xử lý
+           return;
+        }
         masteredIds = ids || [];
         console.log("📋 Mastered IDs loaded:", masteredIds.length);
         masteredLoaded = true;
         tryProcessResults();
       })
       .withFailureHandler(function () {
+        clearTimeout(masteredTimeout);
         masteredIds = [];
         masteredLoaded = true;
         tryProcessResults();

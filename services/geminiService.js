@@ -477,16 +477,16 @@ const GeminiService = {
     let response = UrlFetchApp.fetch(url, options);
     let responseCode = response.getResponseCode();
 
-    // Xử lý lỗi 429 (Quota exceeded) - đợi và thử lại (tối đa 2 lần, giảm thời gian chờ)
+    // Xử lý lỗi 429 (Quota exceeded) - đợi và thử lại (giảm thời gian chờ để tránh timeout)
     if (responseCode === 429) {
-      Logger.log("⚠️ Quota exceeded (429). Đang đợi 15 giây...");
-      Utilities.sleep(15000);
+      Logger.log("⚠️ Quota exceeded (429). Đang đợi 5 giây...");
+      Utilities.sleep(5000);
       response = UrlFetchApp.fetch(url, options);
       responseCode = response.getResponseCode();
 
       if (responseCode === 429) {
-        Logger.log("⚠️ Vẫn bị quota. Đang đợi thêm 20 giây...");
-        Utilities.sleep(20000);
+        Logger.log("⚠️ Vẫn bị quota. Đang đợi thêm 10 giây...");
+        Utilities.sleep(10000);
         response = UrlFetchApp.fetch(url, options);
         responseCode = response.getResponseCode();
       }
@@ -637,19 +637,15 @@ const GeminiService = {
 
         Logger.log("🔄 Retry " + (i + 1) + "/" + maxRetries + ": " + errorStr);
 
-        // Nếu là rate limit (429), đợi ngắn hơn vì _callAPI đã retry nội bộ
+        // Nếu là rate limit (429), _callAPI đã retry 2 lần. Bỏ qua retry ở đây để tránh đợi quá lâu.
         if (
           errorStr.includes("429") ||
           errorStr.includes("quota") ||
           errorStr.includes("RESOURCE_EXHAUSTED")
         ) {
-          const waitTime = 10000 * (i + 1); // 10s, 20s
-          Logger.log(
-            "⏳ Rate limit detected. Waiting " + waitTime / 1000 + "s...",
-          );
-          Utilities.sleep(waitTime);
+          throw error; // Ngắt ngang để tránh chờ đợi vô ích
         } else {
-          Utilities.sleep(2000 * (i + 1)); // 2s, 4s cho lỗi khác
+          Utilities.sleep(1500 * (i + 1)); // 1.5s, 3s cho lỗi mạng khác
         }
       }
     }
