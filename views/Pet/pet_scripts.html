@@ -137,7 +137,9 @@
       lastSavedConfig: null,
       isPaused: false,
       pauseTimeout: null,
-      originalPetName: "" // Track the name separately if needed for dirty check
+      originalPetName: "",
+      progressionXP: 0, // Total accumulated XP
+      isRolling: false,
     };
 
     let petMeteorInterval = null;
@@ -417,8 +419,9 @@
     }
 
     function updatePetLevelProgressUI() {
-      const level = state.isLevelTwo ? 2 : 1;
-      const progressPercent = state.isLevelTwo ? 100 : 50;
+      const xp = state.progressionXP || 0;
+      const level = Math.floor(xp / 100) + 1;
+      const currentXPProgress = xp % 100;
 
       const levelTextEl = document.getElementById("petHeaderLevelText");
       if (levelTextEl) {
@@ -427,13 +430,30 @@
 
       const progressFillEl = document.getElementById("petLevelProgressFill");
       if (progressFillEl) {
-        progressFillEl.style.width = progressPercent + "%";
+        progressFillEl.style.width = currentXPProgress + "%";
       }
 
       const progressValueEl = document.getElementById("petLevelProgressValue");
       if (progressValueEl) {
-        progressValueEl.textContent = progressPercent + "%";
+        progressValueEl.textContent = currentXPProgress + "/100 XP";
       }
+    }
+
+    function feedPet() {
+      state.progressionXP = (state.progressionXP || 0) + 20;
+      
+      // Level up feedback
+      const currentLevel = Math.floor(state.progressionXP / 100) + 1;
+      const prevLevel = Math.floor((state.progressionXP - 20) / 100) + 1;
+      
+      if (currentLevel > prevLevel) {
+        if (typeof showToast === "function") {
+          showToast("PET đã lên Level " + currentLevel + "!", "success");
+        }
+      }
+
+      renderPet();
+      updateSaveButtonUI();
     }
 
     function savePetNameToServer(newPetName) {
@@ -524,12 +544,14 @@
         isLevelTwo: state.isLevelTwo,
         selectedAccessories: state.selectedAccessories,
         selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
-        petDisplayName: state.petDisplayName
+        petDisplayName: state.petDisplayName,
+        progressionXP: state.progressionXP || 0
       };
       
       const saved = {
         ...state.lastSavedConfig,
-        petDisplayName: state.originalPetName // Compare with original name
+        petDisplayName: state.originalPetName,
+        progressionXP: state.lastSavedConfig.progressionXP || 0
       };
       
       return JSON.stringify(current) !== JSON.stringify(saved);
@@ -555,7 +577,8 @@
           currentIndex: state.currentIndex,
           isLevelTwo: state.isLevelTwo,
           selectedAccessories: state.selectedAccessories,
-          selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+          selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
+          progressionXP: state.progressionXP
         };
 
         const saveBtn = document.getElementById("petSaveConfigBtn");
@@ -595,7 +618,8 @@
             state.isLevelTwo = !!config.isLevelTwo;
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
-            
+            state.progressionXP = typeof config.progressionXP === 'number' ? config.progressionXP : (state.progressionXP || 0);
+
             state.lastSavedConfig = JSON.parse(JSON.stringify(config));
             updateSaveButtonUI();
 
@@ -990,6 +1014,12 @@
     }
 
     function renderPet() {
+      const xp = state.progressionXP || 0;
+      const progressionLevel = Math.floor(xp / 100) + 1;
+      
+      // Update visual level state: Progression Level 3+ is Mature (Level 2 visuals)
+      state.isLevelTwo = (progressionLevel >= 3);
+
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
 
@@ -1001,7 +1031,7 @@
 
       updatePetNameTagUI();
 
-      const levelText = state.isLevelTwo ? "Level 2" : "Level 1";
+      const levelText = "Level " + progressionLevel;
       if (levelBadgeEl) {
         levelBadgeEl.textContent = levelText;
       }
@@ -1016,20 +1046,11 @@
       }
 
       if (levelBtn) {
-        const nextActionLabel = state.isLevelTwo
-          ? "Chuyển về Level 1"
-          : "Nâng lên Level 2";
-        levelBtn.setAttribute("aria-label", nextActionLabel);
-        levelBtn.setAttribute("title", nextActionLabel);
-
-        const levelIconEl = document.getElementById("petToggleLevelIcon");
-        if (levelIconEl) {
-          levelIconEl.textContent = state.isLevelTwo ? "arrow_downward" : "arrow_upward";
-        }
+        levelBtn.style.display = "none"; // Hide explicit level toggle as it's now XP-based
       }
 
       clearInteractionClasses();
-      if (!state.isLevelTwo) {
+      if (progressionLevel < 2) {
         state.isPressing = false;
         state.pressZone = null;
       }
@@ -1320,6 +1341,9 @@
 
         item.appendChild(img);
         item.appendChild(missingLabel);
+        item.addEventListener("click", function() {
+          feedPet();
+        });
         gridEl.appendChild(item);
       });
     }
@@ -1359,35 +1383,73 @@
 
     function bindStageInteractions() {
       const stageEl = document.getElementById("petStage");
-      if (!stageEl) return;
+      const animatorEl = document.getElementById("petAnimator");
+      if (!stageEl || !animatorEl) return;
 
       stageEl.addEventListener("mousemove", function (event) {
-        if (state.isLevelTwo || state.isPressing) return;
-        applyLevel1TiltByPointer(event.clientX, event.clientY);
-      });
-
-      stageEl.addEventListener("mouseleave", function () {
-        if (!state.isLevelTwo) {
-          clearInteractionClasses();
-          clearLevel1Tilt();
+        const xp = state.progressionXP || 0;
+        const progressionLevel = Math.floor(xp / 100) + 1;
+        
+        // Level 1: Tilt only
+        if (progressionLevel === 1 && !state.isPressing) {
+            applyLevel1TiltByPointer(event.clientX, event.clientY);
         }
       });
 
-      stageEl.addEventListener("mousedown", function (event) {
-        if (!state.isLevelTwo) return;
-
-        const zone = resolvePressZone(event.clientX);
-        state.isPressing = true;
-        state.pressZone = zone;
-
+      stageEl.addEventListener("mouseleave", function () {
         clearInteractionClasses();
-        applyPressShape(zone);
-        renderEyes();
+        clearLevel1Tilt();
+      });
+
+      stageEl.addEventListener("mousedown", function (event) {
+        const xp = state.progressionXP || 0;
+        const progressionLevel = Math.floor(xp / 100) + 1;
+
+        // Level 2: Roll away
+        if (progressionLevel === 2) {
+          if (state.isRolling) return;
+          state.isRolling = true;
+          
+          const mover = document.getElementById("petMover");
+          if (mover) {
+            mover.classList.add("pet-rolling-out");
+            
+            setTimeout(() => {
+              mover.classList.remove("pet-rolling-out");
+              mover.classList.add("pet-rolling-in");
+              
+              setTimeout(() => {
+                mover.classList.remove("pet-rolling-in");
+                state.isRolling = false;
+              }, 600);
+            }, 600);
+          }
+        } 
+        // Level 3: Squash and hold
+        else if (progressionLevel >= 3) {
+          const zone = resolvePressZone(event.clientX);
+          state.isPressing = true;
+          state.pressZone = zone;
+          state.isPaused = true; // Pause jumping
+
+          clearInteractionClasses();
+          applyPressShape(zone);
+          renderEyes();
+        }
 
         event.preventDefault();
       });
 
-      document.addEventListener("mouseup", releasePressState);
+      document.addEventListener("mouseup", function() {
+        if (state.isPressing) {
+          state.isPressing = false;
+          state.pressZone = null;
+          state.isPaused = false; // Resume jumping
+          
+          clearInteractionClasses();
+          renderEyes();
+        }
+      });
     }
 
     function bindControls() {
@@ -1451,9 +1513,12 @@
       let hopCount = 0;
       
       const routine = function() {
-        // Only jump at level 2
-        if (!state.isLevelTwo) {
-          state.jumpIntervalId = setTimeout(routine, 2000);
+        const xp = state.progressionXP || 0;
+        const progressionLevel = Math.floor(xp / 100) + 1;
+
+        // Only jump if level >= 2 and not paused
+        if (progressionLevel < 2 || state.isPaused || state.isRolling) {
+          state.jumpIntervalId = setTimeout(routine, 1500);
           return;
         }
 
@@ -1695,7 +1760,8 @@
             currentIndex: state.currentIndex,
             isLevelTwo: state.isLevelTwo,
             selectedAccessories: JSON.parse(JSON.stringify(state.selectedAccessories)),
-            selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+            selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
+            progressionXP: state.progressionXP
           };
         }
         updateSaveButtonUI();
