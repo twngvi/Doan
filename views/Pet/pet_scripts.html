@@ -140,6 +140,7 @@
       originalPetName: "",
       progressionXP: 0, // Total accumulated XP
       isRolling: false,
+      autoSaveTimeoutId: null,
     };
 
     let petMeteorInterval = null;
@@ -454,6 +455,35 @@
 
       renderPet();
       updateSaveButtonUI();
+      queuePetConfigAutoSave();
+    }
+
+    function resetPetProgression() {
+      state.progressionXP = 0;
+      state.currentIndex = 0;
+      state.selectedAccessories = [];
+      state.selectedStageBackgroundIndex = 0;
+      
+      if (typeof showToast === "function") {
+        showToast("Đã đưa PET về trạng thái ban đầu (Level 1)", "info");
+      }
+      
+      renderPet();
+      updateSaveButtonUI();
+      queuePetConfigAutoSave();
+    }
+
+    function buildPersistedConfig() {
+      const progressionXP = state.progressionXP || 0;
+      return {
+        currentIndex: state.currentIndex,
+        isLevelTwo: state.isLevelTwo,
+        selectedAccessories: state.selectedAccessories,
+        selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
+        progressionXP: progressionXP,
+        progressionLevel: Math.floor(progressionXP / 100) + 1,
+        progressionXPProgress: progressionXP % 100,
+      };
     }
 
     function savePetNameToServer(newPetName) {
@@ -565,21 +595,17 @@
       saveBtn.classList.toggle("is-dirty", dirty);
     }
 
-    function savePetConfigToServer() {
+    function savePetConfigToServer(options) {
       return new Promise((resolve) => {
+        const opts = options || {};
+        const silent = !!opts.silent;
         const userId = window.currentUser?.userId;
         if (!userId || typeof google === "undefined" || !google.script?.run) {
            resolve({ success: false, message: "No auth" });
            return;
         }
 
-        const config = {
-          currentIndex: state.currentIndex,
-          isLevelTwo: state.isLevelTwo,
-          selectedAccessories: state.selectedAccessories,
-          selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
-          progressionXP: state.progressionXP
-        };
+        const config = buildPersistedConfig();
 
         const saveBtn = document.getElementById("petSaveConfigBtn");
         if (saveBtn) saveBtn.classList.add("loading");
@@ -590,20 +616,31 @@
             if (result && result.success) {
               state.lastSavedConfig = JSON.parse(JSON.stringify(config));
               updateSaveButtonUI();
-              if (typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
+              if (!silent && typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
               resolve(result);
             } else {
-              if (typeof showToast === "function") showToast("Lỗi lưu cấu hình: " + (result?.message || "Unknown"), "error");
+              if (!silent && typeof showToast === "function") showToast("Lỗi lưu cấu hình: " + (result?.message || "Unknown"), "error");
               resolve(result || { success: false });
             }
           })
           .withFailureHandler(function(err) {
             if (saveBtn) saveBtn.classList.remove("loading");
-            if (typeof showToast === "function") showToast("Lỗi kết nối server: " + err, "error");
+            if (!silent && typeof showToast === "function") showToast("Lỗi kết nối server: " + err, "error");
             resolve({ success: false, message: err });
           })
           .savePetConfig(userId, config);
       });
+    }
+
+    function queuePetConfigAutoSave() {
+      if (!window.currentUser?.userId) return;
+      if (state.autoSaveTimeoutId) {
+        clearTimeout(state.autoSaveTimeoutId);
+      }
+      state.autoSaveTimeoutId = setTimeout(function () {
+        state.autoSaveTimeoutId = null;
+        savePetConfigToServer({ silent: true });
+      }, 500);
     }
 
     function loadPetConfigFromServer() {
@@ -618,9 +655,23 @@
             state.isLevelTwo = !!config.isLevelTwo;
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
-            state.progressionXP = typeof config.progressionXP === 'number' ? config.progressionXP : (state.progressionXP || 0);
+            if (typeof config.progressionXP === 'number') {
+              state.progressionXP = config.progressionXP;
+            } else {
+              const loadedLevel = parseInt(config.progressionLevel, 10);
+              const loadedProgress = parseInt(config.progressionXPProgress, 10);
+              if (Number.isFinite(loadedLevel)) {
+                const safeLevel = Math.max(1, loadedLevel);
+                const safeProgress = Number.isFinite(loadedProgress)
+                  ? Math.max(0, Math.min(99, loadedProgress))
+                  : 0;
+                state.progressionXP = (safeLevel - 1) * 100 + safeProgress;
+              } else {
+                state.progressionXP = state.progressionXP || 0;
+              }
+            }
 
-            state.lastSavedConfig = JSON.parse(JSON.stringify(config));
+            state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
             updateSaveButtonUI();
 
             // Re-render pet with loaded state
@@ -1404,6 +1455,7 @@
       stageEl.addEventListener("mousedown", function (event) {
         const xp = state.progressionXP || 0;
         const progressionLevel = Math.floor(xp / 100) + 1;
+        const visualEl = document.getElementById("petVisual");
 
         // Level 2: Roll away
         if (progressionLevel === 2) {
@@ -1426,14 +1478,13 @@
           }
         } 
         // Level 3: Squash and hold
-        else if (progressionLevel >= 3) {
-          const zone = resolvePressZone(event.clientX);
+        else if (progressionLevel >= 3 && visualEl) {
           state.isPressing = true;
-          state.pressZone = zone;
           state.isPaused = true; // Pause jumping
 
-          clearInteractionClasses();
-          applyPressShape(zone);
+          visualEl.classList.remove("is-jumping");
+          visualEl.classList.add("is-pressed");
+          
           renderEyes();
         }
 
@@ -1443,10 +1494,13 @@
       document.addEventListener("mouseup", function() {
         if (state.isPressing) {
           state.isPressing = false;
-          state.pressZone = null;
           state.isPaused = false; // Resume jumping
           
-          clearInteractionClasses();
+          const visualEl = document.getElementById("petVisual");
+          if (visualEl) {
+            visualEl.classList.remove("is-pressed");
+          }
+          
           renderEyes();
         }
       });
@@ -1482,6 +1536,13 @@
       if (saveConfigBtn) {
         saveConfigBtn.addEventListener("click", function () {
           savePetConfigToServer();
+        });
+      }
+
+      const resetBtn = document.getElementById("petResetBtn");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", function () {
+          resetPetProgression();
         });
       }
     }
@@ -1756,18 +1817,11 @@
 
         // Initialize lastSavedConfig as a copy of initial state if empty
         if (!state.lastSavedConfig) {
-          state.lastSavedConfig = {
-            currentIndex: state.currentIndex,
-            isLevelTwo: state.isLevelTwo,
-            selectedAccessories: JSON.parse(JSON.stringify(state.selectedAccessories)),
-            selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
-            progressionXP: state.progressionXP
-          };
+          state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
         }
         updateSaveButtonUI();
         registerPetServiceWorker();
         preloadMainAssets();
-        bindPetClickPause();
       }
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
@@ -1777,30 +1831,6 @@
       renderPet();
     }
 
-    function bindPetClickPause() {
-      const visual = document.getElementById("petVisual");
-      if (!visual) return;
-
-      visual.addEventListener("click", function() {
-        // Stop current jumping
-        visual.classList.remove("is-jumping");
-        
-        // Add squash effect
-        visual.classList.add("is-pressed");
-        
-        // Pause jump routine for 10s
-        state.isPaused = true;
-        if (state.pauseTimeout) clearTimeout(state.pauseTimeout);
-        state.pauseTimeout = setTimeout(() => {
-          state.isPaused = false;
-        }, 10000);
-
-        // Remove squash effect after a short delay
-        setTimeout(() => {
-          visual.classList.remove("is-pressed");
-        }, 300);
-      });
-    }
 
     window.initPetPage = initPetPage;
   })();

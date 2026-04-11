@@ -510,7 +510,29 @@ function getUserPetConfig(userId) {
     const configValue = usersSheet.getRange(userRow + 1, configIdx + 1).getValue();
     if (!configValue) return { success: true, config: null };
 
-    return { success: true, config: JSON.parse(configValue) };
+    let parsedConfig = JSON.parse(configValue);
+    const progressionXP = parseInt(parsedConfig.progressionXP, 10);
+    const legacyLevel = parseInt(parsedConfig.progressionLevel, 10);
+    const legacyProgress = parseInt(parsedConfig.progressionXPProgress, 10);
+    let normalizedXP = Number.isFinite(progressionXP) ? progressionXP : 0;
+
+    // Backward compatibility: reconstruct XP if only level/progress were saved.
+    if (!Number.isFinite(progressionXP) && Number.isFinite(legacyLevel)) {
+      const safeLevel = Math.max(1, legacyLevel);
+      const safeProgress = Number.isFinite(legacyProgress)
+        ? Math.max(0, Math.min(99, legacyProgress))
+        : 0;
+      normalizedXP = (safeLevel - 1) * 100 + safeProgress;
+    }
+
+    const normalizedLevel = Math.floor(normalizedXP / 100) + 1;
+    const normalizedProgress = normalizedXP % 100;
+
+    parsedConfig.progressionXP = normalizedXP;
+    parsedConfig.progressionLevel = normalizedLevel;
+    parsedConfig.progressionXPProgress = normalizedProgress;
+
+    return { success: true, config: parsedConfig };
   } catch (error) {
     Logger.log("Error in getUserPetConfig: " + error.toString());
     return { success: false, message: error.toString() };
@@ -546,7 +568,19 @@ function saveUserPetConfig(userId, config) {
         configIdx = headers.length;
     }
 
-    const configString = JSON.stringify(config);
+    const safeConfig = config && typeof config === "object" ? config : {};
+    const progressionXP = parseInt(safeConfig.progressionXP, 10);
+    const normalizedXP = Number.isFinite(progressionXP) ? progressionXP : 0;
+    const normalizedLevel = Math.floor(normalizedXP / 100) + 1;
+    const normalizedProgress = normalizedXP % 100;
+
+    const normalizedConfig = Object.assign({}, safeConfig, {
+      progressionXP: normalizedXP,
+      progressionLevel: normalizedLevel,
+      progressionXPProgress: normalizedProgress,
+    });
+
+    const configString = JSON.stringify(normalizedConfig);
     usersSheet.getRange(userRow + 1, configIdx + 1).setValue(configString);
 
     // Sync to personal spreadsheet if possible
