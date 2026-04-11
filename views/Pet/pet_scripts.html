@@ -69,9 +69,8 @@
     });
 
     const ACCESSORY_RULES = {
-      "Accessories/accessory-01.svg": { allowedPositions: ["left", "right"], scale: 0.5625 },
+      "Accessories/accessory-01.svg": { scale: 0.5625 },
       "Accessories/accessory-02.svg": {
-        allowedPositions: ["left", "right"],
         scale: 0.5625,
         topOffset: -3,
       },
@@ -93,19 +92,13 @@
       "Accessories/accessory-15.svg": { topOffset: -5 },
       "Accessories/accessory-16.svg": { scale: 0.81, topOffset: 5 },
       "Accessories/accessory-17.svg": {
-        allowedPositions: ["center"],
-        forcedPosition: "center",
         scale: 1.5015,
         topOffset: 12,
       },
       "Accessories/accessory-18.svg": {
-        allowedPositions: ["center"],
-        forcedPosition: "center",
         scale: 1.365,
       },
       "Accessories/accessory-19.svg": {
-        allowedPositions: ["center"],
-        forcedPosition: "center",
         scale: 1.5015,
         topOffset: 12,
       },
@@ -249,6 +242,7 @@
       if (!imgEl) return;
       
       if (!fileName) {
+        imgEl.classList.remove("is-visible");
         imgEl.style.display = "none"; 
         imgEl.src = "";
         imgEl.removeAttribute('data-original-file');
@@ -257,24 +251,26 @@
 
       const url = await fetchAssetUrl(fileName);
       if (!url) {
+        imgEl.classList.remove("is-visible");
         imgEl.style.display = "none";
         return;
       }
 
       // Check if current src is already the same or matches via original file attribute
       if (imgEl.src === url || (url.startsWith('blob:') && imgEl.getAttribute('data-original-file') === fileName)) {
-        imgEl.style.display = "block";
+        imgEl.classList.add("is-visible");
         return;
       }
 
       const onImageLoad = function() {
-        imgEl.style.display = "block";
+        imgEl.classList.add("is-visible");
         imgEl.removeEventListener("load", onImageLoad);
       };
 
       imgEl.addEventListener("load", onImageLoad);
       imgEl.onerror = function() { 
         console.error("Failed to load pet asset:", fileName, "at", url);
+        imgEl.classList.remove("is-visible");
         imgEl.style.display = "none";
       };
       
@@ -843,6 +839,7 @@
 
     function clearAccessoryImage(accessoryImageEl) {
       if (!accessoryImageEl) return;
+      accessoryImageEl.classList.remove("is-visible");
       accessoryImageEl.style.display = "none";
       accessoryImageEl.src = "";
       accessoryImageEl.removeAttribute('data-original-file');
