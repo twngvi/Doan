@@ -137,6 +137,7 @@
       lastSavedConfig: null,
       isPaused: false,
       pauseTimeout: null,
+      originalPetName: "" // Track the name separately if needed for dirty check
     };
 
     let petMeteorInterval = null;
@@ -411,6 +412,8 @@
       if (headerNameEl) {
         headerNameEl.textContent = safeName;
       }
+      
+      updateSaveButtonUI(); // Check if name change makes it dirty
     }
 
     function updatePetLevelProgressUI() {
@@ -452,6 +455,7 @@
           }
 
           state.petDisplayName = sanitizePetName(result.petName || newPetName);
+          state.originalPetName = state.petDisplayName; // Update original name on successful save
           updatePetNameTagUI();
 
           if (typeof showToast === "function") {
@@ -499,6 +503,7 @@
         .withSuccessHandler(function (result) {
           if (result && result.success && result.petName) {
             state.petDisplayName = sanitizePetName(result.petName);
+            state.originalPetName = state.petDisplayName; // Store original name
           }
           state.petNameLoadedUserId = userId;
           state.petNameLoading = false;
@@ -518,10 +523,16 @@
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
         selectedAccessories: state.selectedAccessories,
-        selectedStageBackgroundIndex: state.selectedStageBackgroundIndex
+        selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
+        petDisplayName: state.petDisplayName
       };
       
-      return JSON.stringify(current) !== JSON.stringify(state.lastSavedConfig);
+      const saved = {
+        ...state.lastSavedConfig,
+        petDisplayName: state.originalPetName // Compare with original name
+      };
+      
+      return JSON.stringify(current) !== JSON.stringify(saved);
     }
 
     function updateSaveButtonUI() {
@@ -1485,6 +1496,16 @@
     }
 
     function bindNavigationGuard() {
+      // Browser navigation/refresh/close guard
+      window.addEventListener('beforeunload', function(e) {
+        if (isDirty()) {
+          e.preventDefault();
+          e.returnValue = ''; // Required for modern browsers
+          return '';
+        }
+      });
+
+      // Internal app navigation guard
       window.onBeforeNavigate = function(pageId, params, addToHistory) {
         const petPage = document.getElementById("page-pet");
         if (!petPage || petPage.style.display === "none") return false;
@@ -1493,10 +1514,10 @@
           if (typeof window.showAppConfirm === "function") {
             (async () => {
               const confirmed = await window.showAppConfirm(
-                "Hệ thống: Bạn có thay đổi chưa lưu cho PET. Bạn có muốn LƯU lại trước khi thoát không?",
+                "Bạn có thay đổi chưa lưu cho PET. Bạn có muốn LƯU lại trước khi rời đi không?",
                 {
-                  title: "Cảnh báo hệ thống",
-                  confirmText: "Lưu và Thoát",
+                  title: "Nhắc nhở lưu PET",
+                  confirmText: "Lưu và Tiếp tục",
                   cancelText: "Thoát không lưu"
                 }
               );
@@ -1515,7 +1536,7 @@
             return true; // Intercept sync navigation
           } else {
             // Fallback to confirm if modal missing
-            const msg = "Bạn có thay đổi chưa lưu. Lưu trước khi thoát?";
+            const msg = "Bạn có thay đổi chưa lưu trên PET. Lưu trước khi thoát?";
             if (confirm(msg)) {
               savePetConfigToServer();
             }
