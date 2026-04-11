@@ -378,11 +378,40 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
 
     // 4.5: Phải tạo Analysis trước (QUAN TRỌNG!)
     Logger.log("🔍 Analyzing document first...");
-    const analysis = ContentGenerator.analyzeDocument(
-      docResult.content,
-      resolvedUser,
-      { topicId: topicId },
-    );
+    let analysis = null;
+
+    try {
+      const cachedAnalysis = AIContentCache.get(topicId, "document_analysis");
+      if (cachedAnalysis && cachedAnalysis.content) {
+        analysis = cachedAnalysis.content;
+        Logger.log("✅ Using cached document analysis");
+      }
+    } catch (e) {
+      Logger.log("⚠️ Failed to load analysis from cache: " + e.toString());
+    }
+
+    if (!analysis) {
+      analysis = ContentGenerator.analyzeDocument(
+        docResult.content,
+        resolvedUser,
+        { topicId: topicId },
+      );
+      
+      if (analysis && !analysis.error) {
+        try {
+          AIContentCache.save({
+            topicId: topicId,
+            contentDocId: topicInfo.contentDocId,
+            contentType: "document_analysis",
+            generatedContent: analysis,
+            docLastModified: docResult.lastModified || new Date()
+          });
+          Logger.log("✅ Document analysis cached successfully");
+        } catch (e) {
+          Logger.log("⚠️ Failed to cache document analysis: " + e.toString());
+        }
+      }
+    }
 
     if (!analysis || analysis.error) {
       return {
@@ -439,7 +468,7 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         generatedContent = ContentGenerator.generateQuestions(
           docResult.content,
           analysis,
-          { questionCount: 20 },
+          { questionCount: 10 },
           resolvedUser,
           { topicId: topicId },
         );

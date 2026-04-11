@@ -221,7 +221,7 @@ Các khái niệm cần tập trung: {focusConcepts}
 Trả về CHÍNH XÁC format JSON sau:
 {
   "quizTitle": "Tên bài quiz",
-  "totalQuestions": 20,
+  "totalQuestions": {questionCount},
   "questions": [
     {
       "id": "Q001",
@@ -836,7 +836,7 @@ const TopicContentOrchestrator = {
           results.questions = ContentGenerator.generateQuestions(
             docContent,
             analysis,
-            { questionCount: 20 },
+            { questionCount: 10 },
             userContext,
             { topicId: topicId },
           );
