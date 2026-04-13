@@ -45,6 +45,7 @@
 
     var editorEls = {};
     var eventsBound = false;
+    var isPersisting = false;
 
     function cloneItem(item) {
       return {
@@ -85,6 +86,122 @@
           };
         });
       }
+    }
+
+    function normalizeLoadedItems(items, type) {
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map(function (item, index) {
+          var safeItem = item || {};
+          var unlock = safeItem.unlockCondition || {};
+          var unlockType = unlock.type || 'level';
+          var unlockValue = unlock.value;
+
+          if (unlockType === 'level') {
+            unlockValue = Math.max(1, parseNonNegative(unlockValue, 1));
+          } else {
+            unlockValue = String(unlockValue || '');
+          }
+
+          var fallbackId =
+            type === 'food'
+              ? ('food-' + (31 + index))
+              : ('acc-' + (index + 1 < 10 ? '0' + (index + 1) : String(index + 1)));
+
+          var normalized = {
+            id: String(safeItem.id || fallbackId),
+            name: String(safeItem.name || ''),
+            file: String(safeItem.file || ''),
+            priceXqp: parseNonNegative(safeItem.priceXqp, 0),
+            unlockCondition: {
+              type: unlockType,
+              value: unlockValue,
+            },
+          };
+
+          if (type === 'food') {
+            normalized.petXpGain = parseNonNegative(safeItem.petXpGain, 0);
+          }
+
+          return normalized;
+        })
+        .filter(function (item) {
+          return !!item.id;
+        });
+    }
+
+    function buildPersistPayload() {
+      return {
+        accessories: state.accessories.map(function (item) {
+          return cloneItem(item);
+        }),
+        food: state.food.map(function (item) {
+          return cloneItem(item);
+        }),
+      };
+    }
+
+    function persistPetItemsToBackend(showNotice) {
+      if (!(window.google && google.script && google.script.run)) {
+        return;
+      }
+
+      if (isPersisting) {
+        return;
+      }
+
+      isPersisting = true;
+      var payloadJson = JSON.stringify(buildPersistPayload());
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          isPersisting = false;
+          if (!showNotice) return;
+
+          if (result && result.success && typeof window.showNotification === 'function') {
+            window.showNotification('Da luu danh muc PET', 'success');
+          }
+        })
+        .withFailureHandler(function () {
+          isPersisting = false;
+          if (typeof window.showNotification === 'function') {
+            window.showNotification('Khong the luu danh muc PET', 'error');
+          }
+        })
+        .savePetItemsForAdmin(payloadJson);
+    }
+
+    function loadPetItemsFromBackend() {
+      if (!(window.google && google.script && google.script.run)) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || result.success !== true) {
+            return;
+          }
+
+          var loadedAccessories = normalizeLoadedItems(result.accessories, 'accessories');
+          var loadedFood = normalizeLoadedItems(result.food, 'food');
+          var hasPersistedData = loadedAccessories.length > 0 || loadedFood.length > 0;
+
+          if (hasPersistedData) {
+            state.accessories = loadedAccessories;
+            state.food = loadedFood;
+            updateCounts();
+            renderAllPmItems();
+            return;
+          }
+
+          // First run with empty sheet: seed current defaults to backend.
+          persistPetItemsToBackend(false);
+        })
+        .withFailureHandler(function () {
+          // Keep local default list if backend load fails.
+        })
+        .getPetItemsForAdmin();
     }
 
     function cacheEditorElements() {
@@ -209,11 +326,15 @@
           : (isFood ? 'Chinh sua Food' : 'Chinh sua Phu kien');
       }
 
-      if (editorEls.name) editorEls.name.value = draft.name || '';
-      if (editorEls.image) editorEls.image.value = draft.file || '';
-      if (editorEls.price) editorEls.price.value = String(draft.priceXqp || 0);
-      if (editorEls.unlockType) editorEls.unlockType.value = draft.unlockCondition.type || 'level';
-      if (editorEls.unlockLevel) editorEls.unlockLevel.value = String(draft.unlockCondition.value || 1);
+      if (editorEls.name) editorEls.name.value = isNew ? '' : (draft.name || '');
+      if (editorEls.image) editorEls.image.value = isNew ? '' : (draft.file || '');
+      if (editorEls.price) editorEls.price.value = isNew ? '' : String(draft.priceXqp || 0);
+      if (editorEls.unlockType) {
+        editorEls.unlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
+      }
+      if (editorEls.unlockLevel) {
+        editorEls.unlockLevel.value = isNew ? '' : String(draft.unlockCondition.value || 1);
+      }
 
       populateTopicOptions();
       if (editorEls.unlockTopic && draft.unlockCondition.type !== 'level') {
@@ -221,7 +342,7 @@
       }
 
       if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
-      if (editorEls.foodXp) editorEls.foodXp.value = String(draft.petXpGain || 0);
+      if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
       if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
 
       syncUnlockFieldVisibility();
@@ -264,7 +385,6 @@
     function startCreateNewItem(type) {
       var defaultId = generateNextItemId(type);
       var isFood = type === 'food';
-      var suffix = defaultId.split('-').pop();
 
       state.editor = {
         type: type,
@@ -272,11 +392,11 @@
         isNew: true,
         draft: {
           id: defaultId,
-          name: isFood ? ('Food Item ' + suffix) : ('Accessory ' + suffix),
-          file: isFood ? 'Food/food-31.svg' : 'Accessories/accessory-01.svg',
-          priceXqp: isFood ? 120 : 300,
-          petXpGain: isFood ? 15 : 0,
-          unlockCondition: { type: 'level', value: 1 }
+          name: '',
+          file: '',
+          priceXqp: '',
+          petXpGain: isFood ? '' : 0,
+          unlockCondition: { type: 'level', value: '' }
         }
       };
 
@@ -356,6 +476,7 @@
       updateCounts();
       renderAllPmItems();
       closePmEditor();
+      persistPetItemsToBackend(true);
     }
 
     function performDelete() {
@@ -375,6 +496,7 @@
       updateCounts();
       renderAllPmItems();
       closePmEditor();
+      persistPetItemsToBackend(true);
     }
 
     function handleDeleteItem() {
@@ -485,6 +607,7 @@
       loadTopicsForConditions();
       updateCounts();
       renderAllPmItems();
+      loadPetItemsFromBackend();
       closePmEditor();
       window.togglePmSegment('accessories');
       state.initialized = true;

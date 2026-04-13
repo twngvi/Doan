@@ -1113,6 +1113,231 @@ function getContentManagementFullHtml() {
   }
 }
 
+// ========================================
+// PET MANAGEMENT DATA (GOOGLE SHEETS)
+// ========================================
+
+const PET_ITEMS_SHEET_NAME = "Pet_Items";
+const PET_ITEMS_HEADERS = [
+  "itemId",
+  "itemType",
+  "name",
+  "file",
+  "priceXqp",
+  "unlockType",
+  "unlockValue",
+  "petXpGain",
+  "orderIndex",
+  "updatedAt",
+];
+
+function ensurePetItemsSheet_() {
+  const ss = getOrCreateDatabase();
+  let sheet = ss.getSheetByName(PET_ITEMS_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(PET_ITEMS_SHEET_NAME);
+  }
+
+  const lastColumn = sheet.getLastColumn();
+  if (lastColumn === 0) {
+    sheet.getRange(1, 1, 1, PET_ITEMS_HEADERS.length).setValues([PET_ITEMS_HEADERS]);
+    sheet.getRange(1, 1, 1, PET_ITEMS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  if (headers.length < PET_ITEMS_HEADERS.length) {
+    sheet
+      .getRange(1, 1, 1, PET_ITEMS_HEADERS.length)
+      .setValues([PET_ITEMS_HEADERS]);
+  }
+
+  return sheet;
+}
+
+function toPetItemRow_(item, itemType, orderIndex) {
+  const safeItem = item || {};
+  const unlock = safeItem.unlockCondition || {};
+  const unlockType = unlock.type || "level";
+  let unlockValue = unlock.value;
+
+  if (unlockType === "level") {
+    unlockValue = parseInt(unlockValue, 10);
+    if (isNaN(unlockValue) || unlockValue < 1) unlockValue = 1;
+  } else {
+    unlockValue = String(unlockValue || "");
+  }
+
+  const normalizedType = itemType === "food" ? "food" : "accessories";
+
+  return [
+    String(safeItem.id || ""),
+    normalizedType,
+    String(safeItem.name || ""),
+    String(safeItem.file || ""),
+    parseInt(safeItem.priceXqp, 10) || 0,
+    unlockType,
+    unlockValue,
+    normalizedType === "food" ? parseInt(safeItem.petXpGain, 10) || 0 : 0,
+    parseInt(orderIndex, 10) || 0,
+    new Date(),
+  ];
+}
+
+function getPetItemsForAdmin() {
+  try {
+    const sheet = ensurePetItemsSheet_();
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length <= 1) {
+      return {
+        success: true,
+        accessories: [],
+        food: [],
+      };
+    }
+
+    const headers = data[0];
+    const idx = function (name) {
+      return headers.indexOf(name);
+    };
+
+    const itemIdIdx = idx("itemId");
+    const itemTypeIdx = idx("itemType");
+    const nameIdx = idx("name");
+    const fileIdx = idx("file");
+    const priceIdx = idx("priceXqp");
+    const unlockTypeIdx = idx("unlockType");
+    const unlockValueIdx = idx("unlockValue");
+    const petXpIdx = idx("petXpGain");
+    const orderIdx = idx("orderIndex");
+
+    const accessories = [];
+    const food = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const itemId = row[itemIdIdx];
+      if (!itemId) continue;
+
+      const typeRaw = String(row[itemTypeIdx] || "").toLowerCase();
+      const itemType = typeRaw === "food" ? "food" : "accessories";
+      const unlockType = String(row[unlockTypeIdx] || "level");
+      const rawUnlockValue = row[unlockValueIdx];
+
+      let unlockValue;
+      if (unlockType === "level") {
+        const parsedLevel = parseInt(rawUnlockValue, 10);
+        unlockValue = isNaN(parsedLevel) || parsedLevel < 1 ? 1 : parsedLevel;
+      } else {
+        unlockValue = String(rawUnlockValue || "");
+      }
+
+      const item = {
+        id: String(itemId),
+        name: String(row[nameIdx] || ""),
+        file: String(row[fileIdx] || ""),
+        priceXqp: parseInt(row[priceIdx], 10) || 0,
+        unlockCondition: {
+          type: unlockType,
+          value: unlockValue,
+        },
+        _orderIndex: parseInt(row[orderIdx], 10) || 0,
+      };
+
+      if (itemType === "food") {
+        item.petXpGain = parseInt(row[petXpIdx], 10) || 0;
+        food.push(item);
+      } else {
+        accessories.push(item);
+      }
+    }
+
+    const sortByOrder = function (a, b) {
+      return (a._orderIndex || 0) - (b._orderIndex || 0);
+    };
+
+    accessories.sort(sortByOrder);
+    food.sort(sortByOrder);
+
+    accessories.forEach(function (item) {
+      delete item._orderIndex;
+    });
+    food.forEach(function (item) {
+      delete item._orderIndex;
+    });
+
+    return {
+      success: true,
+      accessories: accessories,
+      food: food,
+    };
+  } catch (error) {
+    Logger.log("Error getting pet items for admin: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+      accessories: [],
+      food: [],
+    };
+  }
+}
+
+function savePetItemsForAdmin(payloadJson) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const payload =
+      typeof payloadJson === "string"
+        ? JSON.parse(payloadJson || "{}")
+        : payloadJson || {};
+
+    const accessories = Array.isArray(payload.accessories)
+      ? payload.accessories
+      : [];
+    const food = Array.isArray(payload.food) ? payload.food : [];
+
+    const rows = [];
+    accessories.forEach(function (item, index) {
+      rows.push(toPetItemRow_(item, "accessories", index));
+    });
+
+    food.forEach(function (item, index) {
+      rows.push(toPetItemRow_(item, "food", index));
+    });
+
+    const sheet = ensurePetItemsSheet_();
+    sheet.clearContents();
+
+    sheet
+      .getRange(1, 1, 1, PET_ITEMS_HEADERS.length)
+      .setValues([PET_ITEMS_HEADERS]);
+
+    if (rows.length > 0) {
+      sheet
+        .getRange(2, 1, rows.length, PET_ITEMS_HEADERS.length)
+        .setValues(rows);
+    }
+
+    return {
+      success: true,
+      message: "Đã lưu danh mục PET thành công",
+      totalItems: rows.length,
+    };
+  } catch (error) {
+    Logger.log("Error saving pet items for admin: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * Lấy HTML đầy đủ của Pet Management (styles + content + scripts)
  */

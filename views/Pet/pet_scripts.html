@@ -60,13 +60,24 @@
       { id: "bg2", name: "Nền 2", fileName: "bg-2.svg" },
       { id: "bg3", name: "Nền 3", fileName: "bg-3.svg" },
     ];
-    const ACCESSORY_FILES = Array.from({ length: 25 }, function (_, index) {
+    const DEFAULT_ACCESSORY_ITEMS = Array.from({ length: 25 }, function (_, index) {
       const idx = (index + 1).toString().padStart(2, '0');
-      return "Accessories/accessory-" + idx + ".svg";
+      return {
+        id: "acc-" + idx,
+        name: "Phụ kiện " + (index + 1),
+        file: "Accessories/accessory-" + idx + ".svg",
+      };
     });
-    const FOOD_FILES = Array.from({ length: 15 }, function (_, index) {
-      return "Food/food-" + (index + 31) + ".svg";
+    const DEFAULT_FOOD_ITEMS = Array.from({ length: 15 }, function (_, index) {
+      return {
+        id: "food-" + (index + 31),
+        name: "Food " + (index + 1),
+        file: "Food/food-" + (index + 31) + ".svg",
+        petXpGain: 20,
+      };
     });
+    let ACCESSORY_ITEMS = DEFAULT_ACCESSORY_ITEMS.slice();
+    let FOOD_ITEMS = DEFAULT_FOOD_ITEMS.slice();
 
     const ACCESSORY_RULES = {
       "Accessories/accessory-01.svg": { scale: 0.5625 },
@@ -158,6 +169,111 @@
     ];
     const PET_CACHE_NAME = "pet-assets-v1";
     let foodLoadWarningShown = false;
+
+    function toNonNegativeNumber(value, fallback) {
+      const parsed = parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+      return parsed;
+    }
+
+    function normalizePetItemCatalog(items, itemType) {
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map(function (item, index) {
+          const safe = item || {};
+          const fallback =
+            itemType === "food"
+              ? DEFAULT_FOOD_ITEMS[index]
+              : DEFAULT_ACCESSORY_ITEMS[index];
+
+          const normalized = {
+            id: String(safe.id || (fallback && fallback.id) || ""),
+            name: String(safe.name || (fallback && fallback.name) || ""),
+            file: String(safe.file || (fallback && fallback.file) || ""),
+          };
+
+          if (!normalized.id || !normalized.file) return null;
+
+          if (itemType === "food") {
+            normalized.petXpGain = toNonNegativeNumber(safe.petXpGain, (fallback && fallback.petXpGain) || 20);
+          }
+
+          return normalized;
+        })
+        .filter(Boolean);
+    }
+
+    function updatePetCatalogHints() {
+      const accessoryHint = document.querySelector("#petAccessoryPopover .pet-accessory-hint");
+      const foodHint = document.querySelector("#petFoodPopover .pet-accessory-hint");
+
+      if (accessoryHint) {
+        accessoryHint.textContent = "Tối đa 2 / " + ACCESSORY_ITEMS.length + " phụ kiện";
+      }
+      if (foodHint) {
+        foodHint.textContent = FOOD_ITEMS.length + " món";
+      }
+    }
+
+    function syncSelectedAccessoriesWithCatalog() {
+      const allowedFiles = new Set(
+        ACCESSORY_ITEMS.map(function (item) {
+          return item.file;
+        })
+      );
+
+      state.selectedAccessories = state.selectedAccessories.filter(function (item) {
+        return item && allowedFiles.has(item.fileName);
+      });
+
+      if (state.selectedAccessory && !allowedFiles.has(state.selectedAccessory)) {
+        state.selectedAccessory = state.selectedAccessories[0]
+          ? state.selectedAccessories[0].fileName
+          : "";
+      }
+    }
+
+    function loadPetItemCatalogFromServer() {
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        updatePetCatalogHints();
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || result.success !== true) {
+            updatePetCatalogHints();
+            return;
+          }
+
+          const loadedAccessories = normalizePetItemCatalog(result.accessories, "accessories");
+          const loadedFood = normalizePetItemCatalog(result.food, "food");
+          const hasAnyData = loadedAccessories.length > 0 || loadedFood.length > 0;
+
+          if (!hasAnyData) {
+            updatePetCatalogHints();
+            return;
+          }
+
+          ACCESSORY_ITEMS = loadedAccessories;
+          FOOD_ITEMS = loadedFood;
+          syncSelectedAccessoriesWithCatalog();
+          buildAccessoryButtons();
+          buildFoodButtons();
+          updateAccessoryButtons();
+          renderAccessory();
+          updatePetCatalogHints();
+        })
+        .withFailureHandler(function () {
+          updatePetCatalogHints();
+        })
+        .getPetItemsForAdmin();
+    }
 
     /**
      * Register Service Worker for PET assets
@@ -440,17 +556,22 @@
       }
     }
 
-    function feedPet() {
-      state.progressionXP = (state.progressionXP || 0) + 20;
-      
+    function feedPet(xpGain, foodName) {
+      const gainedXP = Math.max(0, toNonNegativeNumber(xpGain, 20));
+      const previousXP = state.progressionXP || 0;
+      state.progressionXP = previousXP + gainedXP;
+
       // Level up feedback
       const currentLevel = Math.floor(state.progressionXP / 100) + 1;
-      const prevLevel = Math.floor((state.progressionXP - 20) / 100) + 1;
+      const prevLevel = Math.floor(previousXP / 100) + 1;
       
       if (currentLevel > prevLevel) {
         if (typeof showToast === "function") {
           showToast("PET đã lên Level " + currentLevel + "!", "success");
         }
+      } else if (typeof showToast === "function") {
+        const safeFoodName = String(foodName || "Food");
+        showToast("PET ăn " + safeFoodName + " và nhận +" + gainedXP + " XP", "info");
       }
 
       renderPet();
@@ -1268,17 +1389,20 @@
         });
       }, { root: document.getElementById("petAccessoryPopover"), rootMargin: "50px" });
 
-      ACCESSORY_FILES.forEach(function (fileName, index) {
+      ACCESSORY_ITEMS.forEach(function (catalogItem, index) {
+        const fileName = catalogItem.file;
+        const displayName = String(catalogItem.name || ("Phụ kiện " + (index + 1)));
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "pet-accessory-btn";
-        btn.title = "PK " + (index + 1);
-        btn.setAttribute("aria-label", "Phụ kiện " + (index + 1));
+        btn.title = displayName;
+        btn.setAttribute("aria-label", displayName);
         btn.setAttribute("data-file", fileName);
 
         const thumb = document.createElement("img");
         thumb.className = "pet-accessory-thumb";
-        thumb.alt = "PK " + (index + 1);
+        thumb.alt = displayName;
         thumb.loading = "lazy";
         thumb.style.visibility = "hidden"; // Hide initially until loaded
         thumb.setAttribute("data-lazy-src", fileName);
@@ -1370,16 +1494,19 @@
         });
       }, { root: document.getElementById("petFoodPopover"), rootMargin: "50px" });
 
-      FOOD_FILES.forEach(function (fileName, index) {
+      FOOD_ITEMS.forEach(function (foodItem, index) {
+        const fileName = foodItem.file;
+        const displayName = String(foodItem.name || ("Food " + (index + 1)));
+
         const item = document.createElement("button");
         item.type = "button";
         item.className = "pet-food-item";
-        item.title = "Food " + (index + 1);
-        item.setAttribute("aria-label", "Food " + (index + 1));
+        item.title = displayName;
+        item.setAttribute("aria-label", displayName);
 
         const img = document.createElement("img");
         img.className = "pet-food-thumb";
-        img.alt = "Food " + (index + 1);
+        img.alt = displayName;
         img.loading = "lazy";
         img.style.visibility = "hidden";
         img.setAttribute("data-lazy-src", fileName);
@@ -1393,7 +1520,7 @@
         item.appendChild(img);
         item.appendChild(missingLabel);
         item.addEventListener("click", function() {
-          feedPet();
+          feedPet(foodItem.petXpGain, displayName);
         });
         gridEl.appendChild(item);
       });
@@ -1800,6 +1927,8 @@
         buildBackgroundButtons();
         buildAccessoryButtons();
         buildFoodButtons();
+        updatePetCatalogHints();
+        loadPetItemCatalogFromServer();
         bindAccessoryControls();
         bindSettingsPanelToggle();
         bindBackgroundPanelToggle();
