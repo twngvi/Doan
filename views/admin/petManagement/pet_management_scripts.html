@@ -1,93 +1,513 @@
 <script>
-  (function() {
+  (function () {
     "use strict";
 
-    const PET_ASSET_CDN = "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/";
-    
-    // Data definitions (Sync with Pet/pet_scripts.html)
-    const ACCESSORY_LIST = Array.from({ length: 25 }, (_, i) => {
-      const idx = (i + 1).toString().padStart(2, '0');
-      return {
-        id: `acc-${idx}`,
-        name: `Accessory ${idx}`,
-        file: `Accessories/accessory-${idx}.svg`
-      };
-    });
+    var PET_ASSET_CDN = "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/";
+    var TOPIC_FALLBACK = [
+      { id: "js_variables_01", label: "JavaScript Variables" },
+      { id: "js_functions_01", label: "JavaScript Functions" },
+      { id: "html_basics_01", label: "HTML Basics" }
+    ];
 
-    const FOOD_LIST = Array.from({ length: 15 }, (_, i) => {
-      const idx = i + 31;
-      return {
-        id: `food-${idx}`,
-        name: `Food Item ${idx}`,
-        file: `Food/food-${idx}.svg`
-      };
-    });
+    var ACCESSORY_LIST = [];
+    var FOOD_LIST = [];
+    var i;
 
-    /**
-     * Initialize Pet Management
-     */
-    window.initPetManagement = function() {
-      console.log("🐾 Admin Pet Management Initialized");
-      
-      // Update counts
-      const accCountEl = document.getElementById('accessory-count');
-      const foodCountEl = document.getElementById('food-count');
-      if (accCountEl) accCountEl.textContent = ACCESSORY_LIST.length;
-      if (foodCountEl) foodCountEl.textContent = FOOD_LIST.length;
+    for (i = 1; i <= 25; i++) {
+      var accIdx = i < 10 ? "0" + i : String(i);
+      ACCESSORY_LIST.push({
+        id: "acc-" + accIdx,
+        name: "Accessory " + accIdx,
+        file: "Accessories/accessory-" + accIdx + ".svg"
+      });
+    }
 
-      // Render items
-      renderPmItems('accessories-grid', ACCESSORY_LIST);
-      renderPmItems('food-grid', FOOD_LIST);
+    for (i = 31; i <= 45; i++) {
+      FOOD_LIST.push({
+        id: "food-" + i,
+        name: "Food Item " + i,
+        file: "Food/food-" + i + ".svg"
+      });
+    }
 
-      // Open first segment by default
-      togglePmSegment('accessories');
-    };
-
-    /**
-     * Toggle accordion segments
-     */
-    window.togglePmSegment = function(segmentId) {
-      const segments = document.querySelectorAll('.pm-segment');
-      const targetSegment = document.getElementById(`segment-${segmentId}`);
-
-      if (!targetSegment) return;
-
-      const isOpening = !targetSegment.classList.contains('active');
-
-      // Close all segments
-      segments.forEach(s => s.classList.remove('active'));
-
-      // If we were opening, then open target
-      if (isOpening) {
-        targetSegment.classList.add('active');
+    var state = {
+      accessories: [],
+      food: [],
+      topics: TOPIC_FALLBACK.slice(),
+      initialized: false,
+      editor: {
+        type: null,
+        index: -1,
+        isNew: false,
+        draft: null
       }
     };
 
-    /**
-     * Render items in grid
-     */
-    function renderPmItems(containerId, items) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
+    var editorEls = {};
+    var eventsBound = false;
 
-      const addButtonCard = `
-        <button type="button" class="pm-item-card pm-add-card" aria-label="Thêm mới">
-          +
-        </button>
-      `;
-
-      const itemCards = items.map(item => `
-        <div class="pm-item-card">
-          <div class="pm-item-badge"></div>
-          <div class="pm-item-image-box">
-            <img src="${PET_ASSET_CDN + item.file}" alt="${item.name}" loading="lazy" onerror="this.src='https://api.dicebear.com/9.x/shapes/svg?seed=${item.id}'">
-          </div>
-          <span class="pm-item-name">${item.name}</span>
-        </div>
-      `).join('');
-
-      container.innerHTML = addButtonCard + itemCards;
+    function cloneItem(item) {
+      return {
+        id: item.id,
+        name: item.name,
+        file: item.file,
+        priceXqp: item.priceXqp,
+        petXpGain: item.petXpGain,
+        unlockCondition: {
+          type: item.unlockCondition && item.unlockCondition.type ? item.unlockCondition.type : "level",
+          value: item.unlockCondition && item.unlockCondition.value ? item.unlockCondition.value : 1
+        }
+      };
     }
 
+    function initializeStateIfNeeded() {
+      if (state.accessories.length === 0) {
+        state.accessories = ACCESSORY_LIST.map(function (item) {
+          return {
+            id: item.id,
+            name: item.name,
+            file: item.file,
+            priceXqp: 300,
+            unlockCondition: { type: "level", value: 1 }
+          };
+        });
+      }
+
+      if (state.food.length === 0) {
+        state.food = FOOD_LIST.map(function (item) {
+          return {
+            id: item.id,
+            name: item.name,
+            file: item.file,
+            priceXqp: 120,
+            petXpGain: 15,
+            unlockCondition: { type: "level", value: 1 }
+          };
+        });
+      }
+    }
+
+    function cacheEditorElements() {
+      editorEls.page = document.querySelector('.pet-management-page');
+      editorEls.sidebar = document.getElementById('pm-editor-sidebar');
+      editorEls.title = document.getElementById('pm-editor-title');
+      editorEls.name = document.getElementById('pm-field-name');
+      editorEls.image = document.getElementById('pm-field-image');
+      editorEls.imagePreview = document.getElementById('pm-image-preview');
+      editorEls.price = document.getElementById('pm-field-price');
+      editorEls.unlockType = document.getElementById('pm-field-unlock-type');
+      editorEls.unlockLevelWrap = document.getElementById('pm-unlock-level-wrap');
+      editorEls.unlockLevel = document.getElementById('pm-field-unlock-level');
+      editorEls.unlockTopicWrap = document.getElementById('pm-unlock-topic-wrap');
+      editorEls.unlockTopicLabel = document.getElementById('pm-unlock-topic-label');
+      editorEls.unlockTopic = document.getElementById('pm-field-unlock-topic');
+      editorEls.foodXpWrap = document.getElementById('pm-food-xp-wrap');
+      editorEls.foodXp = document.getElementById('pm-field-food-xp');
+      editorEls.saveBtn = document.getElementById('pm-save-btn');
+      editorEls.deleteBtn = document.getElementById('pm-delete-btn');
+    }
+
+    function getItemsByType(type) {
+      return type === 'food' ? state.food : state.accessories;
+    }
+
+    function updateCounts() {
+      var accCountEl = document.getElementById('accessory-count');
+      var foodCountEl = document.getElementById('food-count');
+      if (accCountEl) accCountEl.textContent = String(state.accessories.length);
+      if (foodCountEl) foodCountEl.textContent = String(state.food.length);
+    }
+
+    function resolveAssetSrc(filePath) {
+      if (!filePath) {
+        return 'https://api.dicebear.com/9.x/shapes/svg?seed=pm-default';
+      }
+
+      var src = String(filePath).trim();
+      if (/^(https?:|data:|blob:)/i.test(src)) {
+        return src;
+      }
+
+      return PET_ASSET_CDN + src.replace(/^\/+/, '');
+    }
+
+    function renderPmItems(containerId, items, itemType) {
+      var container = document.getElementById(containerId);
+      if (!container) return;
+
+      var html = '';
+      html += '<button type="button" class="pm-item-card pm-add-card" data-item-type="' + itemType + '" aria-label="Them moi">+</button>';
+
+      items.forEach(function (item, index) {
+        var src = resolveAssetSrc(item.file);
+        html += '' +
+          '<div class="pm-item-card pm-data-card" data-item-type="' + itemType + '" data-item-index="' + index + '">' +
+          '  <div class="pm-item-badge"></div>' +
+          '  <div class="pm-item-image-box">' +
+          '    <img src="' + src + '" alt="' + item.name + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=' + item.id + '\'">' +
+          '  </div>' +
+          '  <span class="pm-item-name">' + item.name + '</span>' +
+          '</div>';
+      });
+
+      container.innerHTML = html;
+    }
+
+    function renderAllPmItems() {
+      renderPmItems('accessories-grid', state.accessories, 'accessories');
+      renderPmItems('food-grid', state.food, 'food');
+    }
+
+    function populateTopicOptions() {
+      if (!editorEls.unlockTopic) return;
+      var topics = state.topics.length ? state.topics : TOPIC_FALLBACK;
+      editorEls.unlockTopic.innerHTML = topics
+        .map(function (topic) {
+          return '<option value="' + topic.id + '">' + topic.label + '</option>';
+        })
+        .join('');
+    }
+
+    function syncUnlockFieldVisibility() {
+      if (!editorEls.unlockType || !editorEls.unlockLevelWrap || !editorEls.unlockTopicWrap) return;
+
+      var unlockType = editorEls.unlockType.value;
+      var isLevel = unlockType === 'level';
+
+      editorEls.unlockLevelWrap.style.display = isLevel ? 'flex' : 'none';
+      editorEls.unlockTopicWrap.style.display = isLevel ? 'none' : 'flex';
+
+      if (!editorEls.unlockTopicLabel) return;
+      if (unlockType === 'topic_quiz') {
+        editorEls.unlockTopicLabel.textContent = 'Chon topic Quiz can dat';
+      } else if (unlockType === 'topic_matching') {
+        editorEls.unlockTopicLabel.textContent = 'Chon topic Matching can dat';
+      } else {
+        editorEls.unlockTopicLabel.textContent = 'Chon topic can dat';
+      }
+    }
+
+    function updateEditorImagePreview() {
+      if (!editorEls.imagePreview || !editorEls.image) return;
+      editorEls.imagePreview.src = resolveAssetSrc(editorEls.image.value);
+      editorEls.imagePreview.onerror = function () {
+        this.src = 'https://api.dicebear.com/9.x/shapes/svg?seed=pm-preview';
+      };
+    }
+
+    function fillEditorForm() {
+      if (!state.editor.draft) return;
+
+      var type = state.editor.type;
+      var isNew = state.editor.isNew;
+      var draft = state.editor.draft;
+      var isFood = type === 'food';
+
+      if (editorEls.title) {
+        editorEls.title.textContent = isNew
+          ? (isFood ? 'Them Food moi' : 'Them Phu kien moi')
+          : (isFood ? 'Chinh sua Food' : 'Chinh sua Phu kien');
+      }
+
+      if (editorEls.name) editorEls.name.value = draft.name || '';
+      if (editorEls.image) editorEls.image.value = draft.file || '';
+      if (editorEls.price) editorEls.price.value = String(draft.priceXqp || 0);
+      if (editorEls.unlockType) editorEls.unlockType.value = draft.unlockCondition.type || 'level';
+      if (editorEls.unlockLevel) editorEls.unlockLevel.value = String(draft.unlockCondition.value || 1);
+
+      populateTopicOptions();
+      if (editorEls.unlockTopic && draft.unlockCondition.type !== 'level') {
+        editorEls.unlockTopic.value = String(draft.unlockCondition.value || '');
+      }
+
+      if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
+      if (editorEls.foodXp) editorEls.foodXp.value = String(draft.petXpGain || 0);
+      if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
+
+      syncUnlockFieldVisibility();
+      updateEditorImagePreview();
+    }
+
+    function openSidebar() {
+      if (!editorEls.page || !editorEls.sidebar) return;
+      editorEls.page.classList.add('pm-editor-open');
+      editorEls.sidebar.setAttribute('aria-hidden', 'false');
+    }
+
+    function closePmEditor() {
+      if (!editorEls.page || !editorEls.sidebar) return;
+      editorEls.page.classList.remove('pm-editor-open');
+      editorEls.sidebar.setAttribute('aria-hidden', 'true');
+      state.editor = {
+        type: null,
+        index: -1,
+        isNew: false,
+        draft: null
+      };
+    }
+
+    function generateNextItemId(type) {
+      var items = getItemsByType(type);
+      var maxNum = 0;
+      items.forEach(function (item) {
+        var matched = String(item.id || '').match(/(\d+)$/);
+        if (!matched) return;
+        var n = parseInt(matched[1], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      });
+
+      var next = maxNum + 1;
+      if (type === 'food') return 'food-' + next;
+      return 'acc-' + (next < 10 ? '0' + next : String(next));
+    }
+
+    function startCreateNewItem(type) {
+      var defaultId = generateNextItemId(type);
+      var isFood = type === 'food';
+      var suffix = defaultId.split('-').pop();
+
+      state.editor = {
+        type: type,
+        index: -1,
+        isNew: true,
+        draft: {
+          id: defaultId,
+          name: isFood ? ('Food Item ' + suffix) : ('Accessory ' + suffix),
+          file: isFood ? 'Food/food-31.svg' : 'Accessories/accessory-01.svg',
+          priceXqp: isFood ? 120 : 300,
+          petXpGain: isFood ? 15 : 0,
+          unlockCondition: { type: 'level', value: 1 }
+        }
+      };
+
+      fillEditorForm();
+      openSidebar();
+    }
+
+    function openPmEditor(type, index) {
+      var items = getItemsByType(type);
+      if (index < 0 || index >= items.length) return;
+
+      state.editor = {
+        type: type,
+        index: index,
+        isNew: false,
+        draft: cloneItem(items[index])
+      };
+
+      fillEditorForm();
+      openSidebar();
+    }
+
+    function parseNonNegative(value, fallback) {
+      var n = parseInt(String(value || ''), 10);
+      if (isNaN(n) || n < 0) return fallback;
+      return n;
+    }
+
+    function handleSaveEditor() {
+      if (!state.editor.draft || !state.editor.type) return;
+
+      var type = state.editor.type;
+      var index = state.editor.index;
+      var isNew = state.editor.isNew;
+
+      var name = editorEls.name ? editorEls.name.value.trim() : '';
+      var file = editorEls.image ? editorEls.image.value.trim() : '';
+      var priceXqp = parseNonNegative(editorEls.price ? editorEls.price.value : 0, 0);
+      var unlockType = editorEls.unlockType ? editorEls.unlockType.value : 'level';
+      var unlockValue;
+
+      if (!name) {
+        if (editorEls.name) editorEls.name.focus();
+        return;
+      }
+      if (!file) {
+        if (editorEls.image) editorEls.image.focus();
+        return;
+      }
+
+      if (unlockType === 'level') {
+        unlockValue = Math.max(1, parseNonNegative(editorEls.unlockLevel ? editorEls.unlockLevel.value : 1, 1));
+      } else {
+        unlockValue = editorEls.unlockTopic ? editorEls.unlockTopic.value : '';
+      }
+
+      var payload = cloneItem(state.editor.draft);
+      payload.name = name;
+      payload.file = file;
+      payload.priceXqp = priceXqp;
+      payload.unlockCondition = {
+        type: unlockType,
+        value: unlockValue
+      };
+
+      if (type === 'food') {
+        payload.petXpGain = parseNonNegative(editorEls.foodXp ? editorEls.foodXp.value : 0, 0);
+      }
+
+      var target = getItemsByType(type);
+      if (isNew) {
+        target.unshift(payload);
+      } else if (index >= 0 && index < target.length) {
+        target[index] = payload;
+      }
+
+      updateCounts();
+      renderAllPmItems();
+      closePmEditor();
+    }
+
+    function performDelete() {
+      var type = state.editor.type;
+      var index = state.editor.index;
+      if (!type) return;
+
+      if (state.editor.isNew) {
+        closePmEditor();
+        return;
+      }
+
+      var target = getItemsByType(type);
+      if (index < 0 || index >= target.length) return;
+
+      target.splice(index, 1);
+      updateCounts();
+      renderAllPmItems();
+      closePmEditor();
+    }
+
+    function handleDeleteItem() {
+      if (typeof window.showAppConfirm === 'function') {
+        try {
+          var result = window.showAppConfirm('Ban chac chan muon xoa item nay?', {
+            title: 'Xac nhan xoa',
+            confirmText: 'Xoa',
+            cancelText: 'Huy'
+          });
+
+          if (result && typeof result.then === 'function') {
+            result.then(function (ok) {
+              if (ok) performDelete();
+            }).catch(function () {});
+            return;
+          }
+
+          if (result) performDelete();
+          return;
+        } catch (e) {
+          // fall back to native confirm
+        }
+      }
+
+      if (window.confirm('Ban chac chan muon xoa item nay?')) {
+        performDelete();
+      }
+    }
+
+    function handleGridClick(event) {
+      var addCard = event.target.closest('.pm-add-card');
+      if (addCard) {
+        var addType = addCard.getAttribute('data-item-type');
+        if (addType) startCreateNewItem(addType);
+        return;
+      }
+
+      var dataCard = event.target.closest('.pm-data-card');
+      if (!dataCard) return;
+
+      var type = dataCard.getAttribute('data-item-type');
+      var index = parseInt(dataCard.getAttribute('data-item-index') || '-1', 10);
+      if (!type || isNaN(index) || index < 0) return;
+
+      openPmEditor(type, index);
+    }
+
+    function bindPmEvents() {
+      if (eventsBound) return;
+
+      var accessoriesGrid = document.getElementById('accessories-grid');
+      var foodGrid = document.getElementById('food-grid');
+
+      if (accessoriesGrid) accessoriesGrid.addEventListener('click', handleGridClick);
+      if (foodGrid) foodGrid.addEventListener('click', handleGridClick);
+
+      if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
+      if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
+      if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
+      if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
+
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closePmEditor();
+      });
+
+      eventsBound = true;
+    }
+
+    function loadTopicsForConditions() {
+      if (!(window.google && google.script && google.script.run)) {
+        populateTopicOptions();
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (topics) {
+          var parsed = (topics || []).map(function (topic) {
+            var id = String(topic.topicId || topic.id || '').trim();
+            var label = String(topic.title || topic.topicName || id).trim();
+            if (!id) return null;
+            return { id: id, label: label || id };
+          }).filter(function (item) {
+            return !!item;
+          });
+
+          if (parsed.length > 0) state.topics = parsed;
+          populateTopicOptions();
+        })
+        .withFailureHandler(function () {
+          populateTopicOptions();
+        })
+        .getAllTopicsForAdmin();
+    }
+
+    function autoInitPetManagement() {
+      var root = document.querySelector('.pet-management-page');
+      if (!root) return;
+      if (!state.initialized && typeof window.initPetManagement === 'function') {
+        window.initPetManagement();
+      }
+    }
+
+    window.initPetManagement = function () {
+      initializeStateIfNeeded();
+      cacheEditorElements();
+      bindPmEvents();
+      loadTopicsForConditions();
+      updateCounts();
+      renderAllPmItems();
+      closePmEditor();
+      window.togglePmSegment('accessories');
+      state.initialized = true;
+    };
+
+    window.togglePmSegment = function (segmentId) {
+      var segments = document.querySelectorAll('.pm-segment');
+      var targetSegment = document.getElementById('segment-' + segmentId);
+      if (!targetSegment) return;
+
+      var isOpening = !targetSegment.classList.contains('active');
+      segments.forEach(function (s) {
+        s.classList.remove('active');
+      });
+      if (isOpening) targetSegment.classList.add('active');
+    };
+
+    window.closePmEditor = closePmEditor;
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', autoInitPetManagement);
+    } else {
+      setTimeout(autoInitPetManagement, 0);
+    }
   })();
 </script>
