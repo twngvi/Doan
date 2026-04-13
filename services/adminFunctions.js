@@ -1101,14 +1101,31 @@ function getTopicEditorFullHtml() {
  */
 function getContentManagementFullHtml() {
   try {
+    const symbols = HtmlService.createHtmlOutput('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />').getContent();
     const styles = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_styles').getContent();
     const content = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_content').getContent();
     const scripts = HtmlService.createHtmlOutputFromFile('views/admin/contentManagement/content_management_scripts').getContent();
 
-    return styles + content + scripts;
+    return symbols + styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting content management full HTML: " + error.toString());
     return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý Nội dung: " + error.toString() + "</p>";
+  }
+}
+
+/**
+ * Lấy HTML đầy đủ của Pet Management (styles + content + scripts)
+ */
+function getPetManagementFullHtml() {
+  try {
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/petManagement/pet_management_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/petManagement/pet_management_content').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/petManagement/pet_management_scripts').getContent();
+
+    return styles + content + scripts;
+  } catch (error) {
+    Logger.log("Error getting pet management full HTML: " + error.toString());
+    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý PET: " + error.toString() + "</p>";
   }
 }
 

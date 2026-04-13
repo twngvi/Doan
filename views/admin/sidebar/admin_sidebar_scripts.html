@@ -579,4 +579,49 @@
       })
       .getContentManagementFullHtml();
   }
+
+  // ========================================
+  // PET MANAGEMENT DYNAMIC LOADER
+  // ========================================
+
+  let petManagementLoaded = false;
+
+  function initpetmanagement() {
+    if (petManagementLoaded) {
+      if (typeof initPetManagement === 'function') {
+        initPetManagement();
+      }
+      return;
+    }
+
+    loadPetManagementContent();
+  }
+
+  function loadPetManagementContent() {
+    const container = document.getElementById('pet-management-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        petManagementLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initPetManagement === 'function') {
+            initPetManagement();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý PET: ' + error.message + '</div>';
+      })
+      .getPetManagementFullHtml();
+  }
 </script>

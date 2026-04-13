@@ -1,0 +1,85 @@
+<script>
+  (function() {
+    "use strict";
+
+    const PET_ASSET_CDN = "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/";
+    
+    // Data definitions (Sync with Pet/pet_scripts.html)
+    const ACCESSORY_LIST = Array.from({ length: 25 }, (_, i) => {
+      const idx = (i + 1).toString().padStart(2, '0');
+      return {
+        id: `acc-${idx}`,
+        name: `Accessory ${idx}`,
+        file: `Accessories/accessory-${idx}.svg`
+      };
+    });
+
+    const FOOD_LIST = Array.from({ length: 15 }, (_, i) => {
+      const idx = i + 31;
+      return {
+        id: `food-${idx}`,
+        name: `Food Item ${idx}`,
+        file: `Food/food-${idx}.svg`
+      };
+    });
+
+    /**
+     * Initialize Pet Management
+     */
+    window.initPetManagement = function() {
+      console.log("🐾 Admin Pet Management Initialized");
+      
+      // Update counts
+      const accCountEl = document.getElementById('accessory-count');
+      const foodCountEl = document.getElementById('food-count');
+      if (accCountEl) accCountEl.textContent = ACCESSORY_LIST.length;
+      if (foodCountEl) foodCountEl.textContent = FOOD_LIST.length;
+
+      // Render items
+      renderPmItems('accessories-grid', ACCESSORY_LIST);
+      renderPmItems('food-grid', FOOD_LIST);
+
+      // Open first segment by default
+      togglePmSegment('accessories');
+    };
+
+    /**
+     * Toggle accordion segments
+     */
+    window.togglePmSegment = function(segmentId) {
+      const segments = document.querySelectorAll('.pm-segment');
+      const targetSegment = document.getElementById(`segment-${segmentId}`);
+
+      if (!targetSegment) return;
+
+      const isOpening = !targetSegment.classList.contains('active');
+
+      // Close all segments
+      segments.forEach(s => s.classList.remove('active'));
+
+      // If we were opening, then open target
+      if (isOpening) {
+        targetSegment.classList.add('active');
+      }
+    };
+
+    /**
+     * Render items in grid
+     */
+    function renderPmItems(containerId, items) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      container.innerHTML = items.map(item => `
+        <div class="pm-item-card">
+          <div class="pm-item-badge"></div>
+          <div class="pm-item-image-box">
+            <img src="${PET_ASSET_CDN + item.file}" alt="${item.name}" loading="lazy" onerror="this.src='https://api.dicebear.com/9.x/shapes/svg?seed=${item.id}'">
+          </div>
+          <span class="pm-item-name">${item.name}</span>
+        </div>
+      `).join('');
+    }
+
+  })();
+</script>
