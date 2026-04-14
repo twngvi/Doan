@@ -210,6 +210,14 @@ function insertBlockMarker(type) {
     insertTerminalBlock();
     return;
   }
+  if (type === 'OUTPUT') {
+    insertOutputBlock();
+    return;
+  }
+  if (type === 'CMD') {
+    insertCmdBlock();
+    return;
+  }
   if (type === 'GRID') {
     insertGridBlock();
     return;
@@ -242,6 +250,40 @@ function insertTerminalBlock() {
     <div class="visual-terminal-block" data-block-type="TERMINAL" contenteditable="false">
       <div class="visual-terminal-label">🖥️ Terminal Output</div>
       <div class="visual-terminal-content" contenteditable="true">${selectedText}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+function insertOutputBlock() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || 'Kết quả hiển thị ở đây...';
+
+  const html = `
+    <div class="visual-output-block" data-block-type="OUTPUT" contenteditable="false">
+      <div class="visual-output-label">📄 Output Block</div>
+      <div class="visual-output-content" contenteditable="true">${selectedText}</div>
+      <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
+    </div>
+    <p><br></p>
+  `;
+
+  document.execCommand('insertHTML', false, html);
+  document.getElementById('contentEditor').focus();
+}
+
+function insertCmdBlock() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim() || '$ python main.py';
+
+  const html = `
+    <div class="visual-cmd-block" data-block-type="CMD" contenteditable="false">
+      <div class="visual-cmd-label">⌨️ CMD Block</div>
+      <div class="visual-cmd-content" contenteditable="true">${selectedText}</div>
       <button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="Xóa block">✕</button>
     </div>
     <p><br></p>
@@ -603,7 +645,7 @@ function renderBlockMarkers(html) {
     'RESOURCES': { icon: '📚', title: 'Tài nguyên' }
   };
 
-  const allBlockTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES', 'CODE', 'TERMINAL', 'GRID', 'FIGURE', 'COLOR'];
+  const allBlockTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES', 'CODE', 'TERMINAL', 'OUTPUT', 'CMD', 'GRID', 'FIGURE', 'COLOR'];
 
   // Hàm tìm innermost block (block không chứa block khác bên trong)
   function findInnermostBlock(text) {
@@ -611,7 +653,7 @@ function renderBlockMarkers(html) {
     let bestIndex = -1;
 
     // Tìm tất cả các opening tags (match cả uppercase và lowercase)
-    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|OUTPUT|CMD|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
 
     // Tìm tất cả các cặp opening-closing và chọn cặp innermost
     let match;
@@ -630,7 +672,7 @@ function renderBlockMarkers(html) {
         const content = text.substring(openIndex + openTag.length, closeIndex);
 
         // Kiểm tra xem content có chứa opening tag khác không
-        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|OUTPUT|CMD|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
 
         if (!hasNestedBlock) {
           // Đây là innermost block
@@ -694,14 +736,15 @@ function renderBlockMarkers(html) {
       '</div>';
     }
 
-    // Xử lý TERMINAL blocks
-    if (tagType === 'TERMINAL') {
+    // Xử lý TERMINAL / OUTPUT / CMD blocks
+    if (tagType === 'TERMINAL' || tagType === 'OUTPUT' || tagType === 'CMD') {
+      let previewClass = 'preview-' + tagType.toLowerCase();
       let cleanContent = content
         .replace(/<\/?p[^>]*>/gi, '\n')
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/^\n+|\n+$/g, '')
         .trim();
-      return '<div class="preview-terminal"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
+      return '<div class="' + previewClass + '"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
     }
 
     // Xử lý GRID blocks
@@ -844,13 +887,13 @@ function convertVisualBlocksToMarkers(html) {
       return;
     }
 
-    // Terminal block
-    if (blockType === 'TERMINAL') {
-      const contentEl = block.querySelector('.visual-terminal-content');
+    // Terminal, Output, CMD blocks
+    if (['TERMINAL', 'OUTPUT', 'CMD'].includes(blockType)) {
+      const contentEl = block.querySelector('.visual-terminal-content, .visual-output-content, .visual-cmd-content');
       let content = contentEl ? contentEl.innerHTML : '';
 
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = `<p>[[TERMINAL]]</p><div>${content}</div><p>[[/TERMINAL]]</p>`;
+      wrapper.innerHTML = `<p>[[${blockType}]]</p><div>${content}</div><p>[[/${blockType}]]</p>`;
       block.replaceWith(wrapper);
       return;
     }
@@ -1197,8 +1240,8 @@ function normalizeLoadedDocTextColors(editor) {
   for (var i = 0; i < nodes.length; i++) {
     var node = nodes[i];
 
-    // Keep intentional code/terminal styling
-    if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block')) {
+    // Keep intentional code/terminal/output/cmd styling
+    if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block')) {
       continue;
     }
 
@@ -1249,10 +1292,41 @@ function normalizeLoadedDocTextColors(editor) {
   editor.style.setProperty('-webkit-text-fill-color', '#000000', 'important');
 
   // Restore intended dark-block text colors (must run after black normalization).
-  var terminalContentNodes = editor.querySelectorAll('.visual-terminal-block, .visual-terminal-content');
-  for (var t = 0; t < terminalContentNodes.length; t++) {
-    terminalContentNodes[t].style.setProperty('color', '#c9d1d9', 'important');
-    terminalContentNodes[t].style.setProperty('-webkit-text-fill-color', '#c9d1d9', 'important');
+  var terminalNodes = editor.querySelectorAll('.visual-terminal-block, .visual-terminal-block *, .visual-terminal-content');
+  for (var t = 0; t < terminalNodes.length; t++) {
+    var nodeT = terminalNodes[t];
+    // Label has its own grey color, the rest is white/light-grey
+    if (nodeT.classList.contains('visual-terminal-label')) {
+      nodeT.style.setProperty('color', '#8b949e', 'important');
+      nodeT.style.setProperty('-webkit-text-fill-color', '#8b949e', 'important');
+    } else {
+      nodeT.style.setProperty('color', '#c9d1d9', 'important');
+      nodeT.style.setProperty('-webkit-text-fill-color', '#c9d1d9', 'important');
+    }
+  }
+
+  var outputNodes = editor.querySelectorAll('.visual-output-block, .visual-output-block *, .visual-output-content');
+  for (var o = 0; o < outputNodes.length; o++) {
+    var nodeO = outputNodes[o];
+    if (nodeO.classList.contains('visual-output-label')) {
+      nodeO.style.setProperty('color', '#888888', 'important');
+      nodeO.style.setProperty('-webkit-text-fill-color', '#888888', 'important');
+    } else {
+      nodeO.style.setProperty('color', '#ffffff', 'important');
+      nodeO.style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
+    }
+  }
+
+  var cmdNodes = editor.querySelectorAll('.visual-cmd-block, .visual-cmd-block *, .visual-cmd-content');
+  for (var m = 0; m < cmdNodes.length; m++) {
+    var nodeM = cmdNodes[m];
+    if (nodeM.classList.contains('visual-cmd-label')) {
+      nodeM.style.setProperty('color', '#565f89', 'important');
+      nodeM.style.setProperty('-webkit-text-fill-color', '#565f89', 'important');
+    } else {
+      nodeM.style.setProperty('color', '#ffffff', 'important');
+      nodeM.style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
+    }
   }
 
   var codeContentNodes = editor.querySelectorAll('.visual-code-content, .visual-code-content *');
@@ -1546,9 +1620,16 @@ function parseMarkersToVisualBlocks(container) {
         '</div>';
     }
 
-    // TERMINAL blocks
-    if (tagType === 'TERMINAL') {
-      var termContent = cleanContent
+    // CMD / OUTPUT / TERMINAL blocks
+    if (tagType === 'TERMINAL' || tagType === 'CMD' || tagType === 'OUTPUT') {
+      var markerType = tagType;
+      var visualClass = 'visual-' + tagType.toLowerCase() + '-block';
+      var labelText = tagType === 'TERMINAL' ? '\ud83d\udda5\ufe0f Terminal Output' : 
+                      tagType === 'CMD' ? '\u2328\ufe0f CMD Block' : '\ud83d\udcc4 Output Block';
+      var labelClass = 'visual-' + tagType.toLowerCase() + '-label';
+      var contentClass = 'visual-' + tagType.toLowerCase() + '-content';
+
+      var monoContent = cleanContent
         .replace(/<\/p>/gi, '\n')
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<[^>]*>/g, '')
@@ -1557,9 +1638,10 @@ function parseMarkersToVisualBlocks(container) {
         .replace(/&gt;/g, '>')
         .replace(/&amp;/g, '&')
         .replace(/^\n+|\n+$/g, '');
-      return '<div class="visual-terminal-block" data-block-type="TERMINAL" contenteditable="false">' +
-        '<div class="visual-terminal-label">\ud83d\udda5\ufe0f Terminal Output</div>' +
-        '<div class="visual-terminal-content" contenteditable="true">' + escapeHtml(termContent) + '</div>' +
+
+      return '<div class="' + visualClass + '" data-block-type="' + markerType + '" contenteditable="false">' +
+        '<div class="' + labelClass + '">' + labelText + '</div>' +
+        '<div class="' + contentClass + '" contenteditable="true">' + escapeHtml(monoContent) + '</div>' +
         '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
         '</div>';
     }
@@ -1608,24 +1690,6 @@ function parseMarkersToVisualBlocks(container) {
       return '<div class="visual-block visual-block-' + tagType.toLowerCase() + '" data-block-type="' + tagType + '" contenteditable="false">' +
         '<span class="visual-block-icon">' + config.icon + '</span>' +
         '<div class="visual-block-content" contenteditable="true"><span class="visual-block-label">' + config.label + ':</span> ' + cleanContent + '</div>' +
-        '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
-        '</div>';
-    }
-
-    // CMD / OUTPUT blocks
-    if (tagType === 'CMD' || tagType === 'OUTPUT') {
-      var monoContent = cleanContent
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/^\n+|\n+$/g, '');
-      return '<div class="visual-terminal-block" data-block-type="' + tagType + '" contenteditable="false">' +
-        '<div class="visual-terminal-label">' + tagType + '</div>' +
-        '<div class="visual-terminal-content" contenteditable="true">' + escapeHtml(monoContent) + '</div>' +
         '<button class="visual-block-delete" onclick="deleteVisualBlock(this)" title="X\u00f3a block">\u2715</button>' +
         '</div>';
     }
