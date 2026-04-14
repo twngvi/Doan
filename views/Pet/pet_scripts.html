@@ -169,6 +169,60 @@
     ];
     const PET_CACHE_NAME = "pet-assets-v1";
     let foodLoadWarningShown = false;
+    let petTooltipEl = null;
+
+    function getPetTooltip() {
+      if (!petTooltipEl) {
+        petTooltipEl = document.createElement("div");
+        petTooltipEl.className = "pet-item-tooltip";
+        document.body.appendChild(petTooltipEl);
+      }
+      return petTooltipEl;
+    }
+
+    function showPetTooltip(e, itemData, itemType) {
+      const tooltip = getPetTooltip();
+      let html = `<div class="tooltip-img-wrap"><img /></div>`;
+      html += `<div class="tooltip-info-wrap"><h4>${itemData.name}</h4>`;
+      
+      if (itemData.priceXqp > 0) {
+        html += `<div class="tooltip-meta tooltip-price"><span>Giá mua:</span> <strong>${itemData.priceXqp} XQP</strong></div>`;
+      }
+      if (itemType === 'food' && itemData.petXpGain) {
+        html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${itemData.petXpGain} XP</strong></div>`;
+      }
+      if (itemData.unlockCondition && itemData.unlockCondition.value && itemData.unlockCondition.value > 0) {
+        let condText = "";
+        if (itemData.unlockCondition.type === 'level') condText = `Level PET ${itemData.unlockCondition.value}`;
+        else condText = `${itemData.unlockCondition.type} ${itemData.unlockCondition.value}`;
+        html += `<div class="tooltip-meta tooltip-unlock"><span>Mở khóa:</span> <strong>${condText}</strong></div>`;
+      }
+      html += `</div>`;
+      tooltip.innerHTML = html;
+      tooltip.classList.add("visible");
+      
+      const img = tooltip.querySelector("img");
+      if (img) {
+         fetchAssetUrl(itemData.file).then(u => { if(u) img.src = u; });
+      }
+
+      const rect = e.target.closest('button').getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      let top = rect.top - tooltipRect.height - 15;
+      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+      
+      if (top < 10) top = rect.bottom + 15;
+      if (left < 10) left = 10;
+      if (left + tooltipRect.width > window.innerWidth - 10) left = window.innerWidth - tooltipRect.width - 10;
+      
+      tooltip.style.top = top + "px";
+      tooltip.style.left = left + "px";
+    }
+
+    function hidePetTooltip() {
+      const tooltip = getPetTooltip();
+      tooltip.classList.remove("visible");
+    }
 
     function toNonNegativeNumber(value, fallback) {
       const parsed = parseInt(value, 10);
@@ -191,6 +245,8 @@
             id: String(safe.id || (fallback && fallback.id) || ""),
             name: String(safe.name || (fallback && fallback.name) || ""),
             file: String(safe.file || (fallback && fallback.file) || ""),
+            priceXqp: toNonNegativeNumber(safe.priceXqp, 0),
+            unlockCondition: safe.unlockCondition || { type: 'level', value: 1 }
           };
 
           if (!normalized.id || !normalized.file) return null;
@@ -442,8 +498,8 @@
       const relY = clientY !== undefined ? (clientY - stageRect.top) / stageRect.height - 0.5 : 0;
 
       // Apply smooth rotation and slight skew based on mouse position
-      const rotateAngle = relX * -18; // max ±9 degrees tilt
-      const skewAngle = relX * 4;     // subtle skew
+      const rotateAngle = relX * -45; // max ±22.5 degrees tilt
+      const skewAngle = relX * 10;     // subtle skew
       const scaleX = 1 + Math.abs(relX) * 0.04; // very subtle stretch
 
       visualEl.style.transform = 
@@ -690,22 +746,11 @@
     function isDirty() {
       if (!state.lastSavedConfig) return false;
       
-      const current = {
-        currentIndex: state.currentIndex,
-        isLevelTwo: state.isLevelTwo,
-        selectedAccessories: state.selectedAccessories,
-        selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
-        petDisplayName: state.petDisplayName,
-        progressionXP: state.progressionXP || 0
-      };
-      
-      const saved = {
-        ...state.lastSavedConfig,
-        petDisplayName: state.originalPetName,
-        progressionXP: state.lastSavedConfig.progressionXP || 0
-      };
-      
-      return JSON.stringify(current) !== JSON.stringify(saved);
+      return state.currentIndex !== state.lastSavedConfig.currentIndex ||
+             state.isLevelTwo !== state.lastSavedConfig.isLevelTwo ||
+             JSON.stringify(state.selectedAccessories) !== JSON.stringify(state.lastSavedConfig.selectedAccessories) ||
+             state.selectedStageBackgroundIndex !== state.lastSavedConfig.selectedStageBackgroundIndex ||
+             state.petDisplayName !== state.originalPetName;
     }
 
     function updateSaveButtonUI() {
@@ -1331,7 +1376,21 @@
         btn.className = "pet-bg-btn";
         btn.title = background.name;
         btn.setAttribute("aria-label", background.name);
-        btn.textContent = background.name;
+        
+        const img = document.createElement("img");
+        img.className = "pet-bg-thumb";
+        img.alt = background.name;
+        fetchAssetUrl(background.fileName).then(url => {
+            if(url) {
+                img.src = url;
+            } else {
+                img.style.display = 'none';
+                btn.textContent = background.name;
+            }
+        });
+        
+        btn.appendChild(img);
+        
         btn.addEventListener("click", function () {
           state.selectedStageBackgroundIndex = index;
           renderPet();
@@ -1393,12 +1452,23 @@
         const fileName = catalogItem.file;
         const displayName = String(catalogItem.name || ("Phụ kiện " + (index + 1)));
 
+        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
+        const isLocked = catalogItem.unlockCondition && catalogItem.unlockCondition.type === 'level' && catalogItem.unlockCondition.value > currentLevel;
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "pet-accessory-btn";
         btn.title = displayName;
         btn.setAttribute("aria-label", displayName);
         btn.setAttribute("data-file", fileName);
+
+        if (isLocked) {
+           btn.classList.add("is-locked");
+           const lockOverlay = document.createElement("div");
+           lockOverlay.className = "pet-item-lock-icon";
+           lockOverlay.innerHTML = `<span class="material-symbols-sharp">lock</span>`;
+           btn.appendChild(lockOverlay);
+        }
 
         const thumb = document.createElement("img");
         thumb.className = "pet-accessory-thumb";
@@ -1409,7 +1479,19 @@
         observer.observe(thumb);
 
         btn.appendChild(thumb);
+        
+        btn.addEventListener("mouseenter", function(e) {
+          showPetTooltip(e, catalogItem, 'accessory');
+        });
+        btn.addEventListener("mouseleave", hidePetTooltip);
+
         btn.addEventListener("click", function () {
+          if (isLocked) {
+            if (typeof showToast === "function") {
+              showToast("Vật phẩm yêu cầu Level " + catalogItem.unlockCondition.value, "warning");
+            }
+            return;
+          }
           if (!state.isLevelTwo) return;
 
           const selectedIndex = getSelectedAccessoryIndex(fileName);
@@ -1498,11 +1580,22 @@
         const fileName = foodItem.file;
         const displayName = String(foodItem.name || ("Food " + (index + 1)));
 
+        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
+        const isLocked = foodItem.unlockCondition && foodItem.unlockCondition.type === 'level' && foodItem.unlockCondition.value > currentLevel;
+
         const item = document.createElement("button");
         item.type = "button";
         item.className = "pet-food-item";
         item.title = displayName;
         item.setAttribute("aria-label", displayName);
+
+        if (isLocked) {
+           item.classList.add("is-locked");
+           const lockOverlay = document.createElement("div");
+           lockOverlay.className = "pet-item-lock-icon";
+           lockOverlay.innerHTML = `<span class="material-symbols-sharp">lock</span>`;
+           item.appendChild(lockOverlay);
+        }
 
         const img = document.createElement("img");
         img.className = "pet-food-thumb";
@@ -1519,7 +1612,19 @@
 
         item.appendChild(img);
         item.appendChild(missingLabel);
+        
+        item.addEventListener("mouseenter", function(e) {
+          showPetTooltip(e, foodItem, 'food');
+        });
+        item.addEventListener("mouseleave", hidePetTooltip);
+
         item.addEventListener("click", function() {
+          if (isLocked) {
+            if (typeof showToast === "function") {
+              showToast("Vật phẩm yêu cầu Level " + foodItem.unlockCondition.value, "warning");
+            }
+            return;
+          }
           feedPet(foodItem.petXpGain, displayName);
         });
         gridEl.appendChild(item);
@@ -1771,7 +1876,8 @@
                 {
                   title: "Nhắc nhở lưu PET",
                   confirmText: "Lưu và Tiếp tục",
-                  cancelText: "Thoát không lưu"
+                  cancelText: "Thoát không lưu",
+                  allowBackdropClose: false
                 }
               );
 
