@@ -508,14 +508,14 @@ function viewTopic(topicId) {
   document.getElementById('preview-topic-content').innerHTML = `
     <div class="cm-loading">
       <div class="cm-loading-spinner">
-        <div class="spinner-ring"></div>
-        <div class="spinner-ring"></div>
-        <div class="spinner-ring"></div>
+        <div class="spinner-ring" style="border-right-color: #6366f1;"></div>
+        <div class="spinner-ring" style="border-right-color: #8b5cf6;"></div>
+        <div class="spinner-ring" style="border-right-color: #4f46e5;"></div>
       </div>
-      <p>Đang tải nội dung bài học...</p>
+      <p style="margin-top: 20px; color: rgba(255,255,255,0.6);">Đang tải nội dung bài học...</p>
     </div>
   `;
-  document.getElementById('cm-preview-modal').style.display = 'flex';
+  document.getElementById('cm-preview-overlay').classList.add('active');
 
   // Check if topic has contentDocId
   if (!topic.contentDocId) {
@@ -541,44 +541,13 @@ function viewTopic(topicId) {
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success && response.content) {
-        const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
-        document.getElementById('preview-topic-content').innerHTML = `
-          <div class="cm-preview-wrapper">
-            <!-- Topic Info Header -->
-            <div class="cm-preview-header">
-              <div class="cm-preview-info">
-                <div class="cm-preview-icon">
-                  ${topic.iconUrl
-                    ? `<img src="${topic.iconUrl}" alt="${topic.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                       <span class="material-symbols-sharp" style="display: none;">article</span>`
-                    : '<span class="material-symbols-sharp">article</span>'
-                  }
-                </div>
-                <div class="cm-preview-meta">
-                  <span class="category-badge ${getCategoryClass(topic.category)}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
-                  <span class="status-badge ${isLocked ? 'locked' : 'active'}">${isLocked ? 'Đang ẩn' : 'Đang hiển thị'}</span>
-                  ${topic.estimatedTime ? `<span class="time-badge"><span class="material-symbols-sharp">schedule</span>${topic.estimatedTime}</span>` : ''}
-                </div>
-              </div>
-              ${topic.contentDocUrl ? `
-                <a href="${topic.contentDocUrl}" target="_blank" class="cm-btn cm-btn-secondary cm-btn-sm">
-                  <span class="material-symbols-sharp">edit_document</span>
-                  Chỉnh sửa Doc
-                </a>
-              ` : ''}
-            </div>
-
-            <!-- Doc Content -->
-            <div class="cm-preview-content lesson-content-styles">
-              ${response.content}
-            </div>
-          </div>
-        `;
-        // Parse content markers to render blocks
-        const contentContainer = document.querySelector('.cm-preview-content');
-        if (contentContainer) {
-          parseContentMarkersForPreview(contentContainer);
-        }
+        // CLEAN CONTENT: Strip inline styles from Google Doc HTML
+        const cleanHtml = stripInlineStyles(response.content);
+        
+        // RENDER: Convert markers to high-fidelity blocks
+        const finalHtml = renderBlockMarkersAsClient(cleanHtml);
+        
+        document.getElementById('preview-topic-content').innerHTML = finalHtml;
       } else {
         document.getElementById('preview-topic-content').innerHTML = `
           <div class="cm-preview-empty">
@@ -587,7 +556,7 @@ function viewTopic(topicId) {
             </div>
             <h4>Không thể tải nội dung</h4>
             <p>${response?.message || 'Đã xảy ra lỗi khi tải nội dung bài học.'}</p>
-            <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px;">
+            <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px; color: #fff; border-color: #fff;">
               <span class="material-symbols-sharp">refresh</span>
               Thử lại
             </button>
@@ -604,7 +573,7 @@ function viewTopic(topicId) {
           </div>
           <h4>Lỗi tải nội dung</h4>
           <p>${error?.message || 'Không thể kết nối với server.'}</p>
-          <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px;">
+          <button class="cm-btn cm-btn-secondary" onclick="viewTopic('${topicId}')" style="margin-top: 16px; color: #fff; border-color: #fff;">
             <span class="material-symbols-sharp">refresh</span>
             Thử lại
           </button>
@@ -615,7 +584,198 @@ function viewTopic(topicId) {
 }
 
 function closePreviewModal() {
-  document.getElementById('cm-preview-modal').style.display = 'none';
+  document.getElementById('cm-preview-overlay').classList.remove('active');
+}
+
+/**
+ * Strip inline styles from HTML (color, background, font-family)
+ * Prevents light theme styles from breaking dark theme preview
+ */
+function stripInlineStyles(html) {
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const elements = temp.querySelectorAll('[style]');
+  elements.forEach(el => {
+    el.style.color = '';
+    el.style.backgroundColor = '';
+    el.style.background = '';
+    el.style.fontFamily = '';
+  });
+  return temp.innerHTML;
+}
+
+/**
+ * Render block markers into client-matching HTML
+ * High-fidelity rendering matching the topic editor preview
+ */
+function renderBlockMarkersAsClient(html) {
+  let result = html;
+  
+  // Basic normalization
+  result = result.replace(/&#91;/g, '[').replace(/&#93;/g, ']');
+  result = result.replace(/&lbrack;/g, '[').replace(/&rbrack;/g, ']');
+  result = result.replace(/\[\[\s+/g, '[[').replace(/\s+\]\]/g, ']]');
+
+  function findInnermostBlock(text) {
+    let bestMatch = null;
+    let bestIndex = -1;
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
+    let match;
+    while ((match = openingRegex.exec(text)) !== null) {
+      const openTag = match[0];
+      const openIndex = match.index;
+      const tagInfo = match[1];
+      const tagType = tagInfo.split(':')[0].toUpperCase();
+      const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
+      closeRegex.lastIndex = openIndex + openTag.length;
+      const closeMatch = closeRegex.exec(text);
+      if (closeMatch) {
+        const closeIndex = closeMatch.index;
+        const content = text.substring(openIndex + openTag.length, closeIndex);
+        const hasNested = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+        if (!hasNested) {
+          if (bestMatch === null || openIndex < bestIndex) {
+            bestMatch = {
+              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
+              openTag, closeTag: closeMatch[0], tagInfo, tagType, content,
+              startIndex: openIndex, endIndex: closeIndex + closeMatch[0].length
+            };
+            bestIndex = openIndex;
+          }
+        }
+      }
+    }
+    return bestMatch;
+  }
+
+  function renderSingleBlock(blockInfo) {
+    const { tagType, tagInfo, content } = blockInfo;
+
+    if (tagType === 'COLOR') {
+      const color = tagInfo.split(':')[1] || 'BLUE';
+      const colorMap = {
+        ORANGE: 'lesson-section-orange', RED: 'lesson-section-red',
+        BLUE: 'lesson-section-blue', GREEN: 'lesson-section-green',
+        PURPLE: 'lesson-section-purple', CYAN: 'lesson-section-cyan'
+      };
+      const className = colorMap[color.toUpperCase()] || 'lesson-section-blue';
+      return '<div class="' + className + '">' + content + '</div>';
+    }
+
+    if (tagType === 'CODE') {
+      const lang = tagInfo.split(':')[1] || 'TEXT';
+      let cleanCode = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="code-block-wrapper">' +
+        '<div class="code-block-header">' +
+          '<span class="code-block-lang">' + lang.toUpperCase() + '</span>' +
+          '<div class="code-block-actions">' +
+            '<button class="btn-copy-code" onclick="copyPreviewCode(this)">📋 Copy</button>' +
+          '</div>' +
+        '</div>' +
+        '<pre><code class="language-' + lang.toLowerCase() + '">' + escapeHtml(cleanCode) + '</code></pre>' +
+      '</div>';
+    }
+
+    if (tagType === 'EXAMPLE') {
+      return '<div class="example-block">' + content + '</div>';
+    }
+
+    var calloutTypes = {
+      'NOTE': 'callout-note', 'TIP': 'callout-tip', 'WARNING': 'callout-warning',
+      'CHECKPOINT': 'callout-checkpoint', 'TASK': 'callout-task',
+      'QA': 'callout-qa', 'HIGHLIGHT': 'callout-highlight'
+    };
+    if (calloutTypes[tagType]) {
+      return '<div class="' + calloutTypes[tagType] + '">' + content + '</div>';
+    }
+
+    if (tagType === 'RESOURCES') {
+      return '<div class="resource-links">' + content + '</div>';
+    }
+
+    if (tagType === 'FIGURE') {
+      const caption = tagInfo.split(':').slice(1).join(':') || '';
+      return '<figure>' + content + '<figcaption>' + caption + '</figcaption></figure>';
+    }
+
+    if (tagType === 'GRID') {
+      return '<div class="grid-cards-section">' + content + '</div>';
+    }
+
+    if (tagType === 'TERMINAL') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="terminal-block">' +
+        '<div class="terminal-header">' +
+          '<div class="terminal-dots"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span><span class="terminal-dot green"></span></div>' +
+          '<span class="terminal-title">Terminal</span>' +
+        '</div>' +
+        '<pre class="terminal-body"><code>' + escapeHtml(cleanContent) + '</code></pre>' +
+      '</div>';
+    }
+
+    if (tagType === 'CMD') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="cmd-block"><pre class="cmd-body"><code>' + escapeHtml(cleanContent) + '</code></pre></div>';
+    }
+
+    if (tagType === 'OUTPUT') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="output-block"><pre class="output-body"><code>' + escapeHtml(cleanContent) + '</code></pre></div>';
+    }
+
+    return content;
+  }
+
+  let maxIterations = 200;
+  let iterations = 0;
+  while (iterations < maxIterations) {
+    const innermostBlock = findInnermostBlock(result);
+    if (!innermostBlock) break;
+    const renderedHtml = renderSingleBlock(innermostBlock);
+    result = result.substring(0, innermostBlock.startIndex) + renderedHtml + result.substring(innermostBlock.endIndex);
+    iterations++;
+  }
+
+  return result;
+}
+
+/**
+ * Copy code from preview block
+ */
+function copyPreviewCode(btn) {
+  const wrapper = btn.closest('.code-block-wrapper, .terminal-block');
+  const codeEl = wrapper.querySelector('code');
+  const text = codeEl.textContent;
+
+  navigator.clipboard.writeText(text).then(() => {
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '✅ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = originalContent;
+      btn.classList.remove('copied');
+    }, 2000);
+  });
 }
 
 // Edit topic
@@ -793,301 +953,11 @@ function markTopicsDataChanged() {
   }
 }
 
-// ===== Parse Content Markers for Preview =====
-// Converts [[CODE:X]], [[NOTE]], [[TIP]], [[WARNING]], etc. to HTML blocks
+// ===== Parse Content Markers for Preview (Legacy) =====
+// This logic is now handled by renderBlockMarkersAsClient but kept for safety if any direct calls exist
 function parseContentMarkersForPreview(container) {
-  let html = container.innerHTML;
-
-  console.log('[Preview] Original HTML length:', html.length);
-
-  // Step 1: Create a temporary div to get clean text
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = html;
-
-  // Step 2: Walk through text nodes and rebuild with markers preserved
-  // First, let's try a simpler approach: extract text, find markers, then work with that
-
-  // Decode HTML entities
-  html = html.replace(/&#91;/g, '[');
-  html = html.replace(/&#93;/g, ']');
-  html = html.replace(/&lbrack;/g, '[');
-  html = html.replace(/&rbrack;/g, ']');
-  html = html.replace(/&#x5B;/gi, '[');
-  html = html.replace(/&#x5D;/gi, ']');
-
-  // Handle Unicode bracket variants
-  html = html.replace(/[\u27E6\u301A\uFF3B]/g, '[');
-  html = html.replace(/[\u27E7\u301B\uFF3D]/g, ']');
-
-  // Remove zero-width characters
-  html = html.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
-
-  // KEY FIX: More aggressive cleaning - remove ALL tags between brackets
-  // This handles cases like: [<span>[</span><span>CODE:PYTHON</span><span>]</span><span>]</span>
-
-  // First, normalize by removing tags around individual brackets
-  html = html.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, '[');
-  html = html.replace(/(<[^>]*>)*\](<[^>]*>)*/g, ']');
-
-  // Now clean inside [[ and ]]
-  html = html.replace(/\[\[([^\[\]]*?)\]\]/g, function(match, inner) {
-    const cleanInner = inner.replace(/<[^>]*>/g, '').trim();
-    return '[[' + cleanInner + ']]';
-  });
-
-  // Normalize closing tags
-  html = html.replace(/\[\[\s*\/\s*(\w+)\s*\]\]/gi, '[[/$1]]');
-
-  // Normalize opening tags
-  html = html.replace(/\[\[\s*(\w+(?::\w+)?)\s*\]\]/gi, '[[$1]]');
-
-  // Debug
-  const markerMatches = html.match(/\[\[(\w+(?::\w+)?)\]\]/g);
-  console.log('[Preview] Found markers:', markerMatches);
-  const closeMarkerMatches = html.match(/\[\[\/\w+\]\]/g);
-  console.log('[Preview] Found closing markers:', closeMarkerMatches);
-
-  // Debug: Show a sample of the processed HTML (first 500 chars)
-  console.log('[Preview] Sample HTML after preprocessing:', html.substring(0, 500));
-
-  // Find innermost block (block không chứa block khác bên trong)
-  function findInnermostBlock(text) {
-    let bestMatch = null;
-    let bestIndex = -1;
-
-    // Updated regex: CODE can be [[CODE]] or [[CODE:LANG]]
-    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
-
-    let match;
-    while ((match = openingRegex.exec(text)) !== null) {
-      const openTag = match[0];
-      const openIndex = match.index;
-      const tagInfo = match[1];
-      const tagType = tagInfo.split(':')[0].toUpperCase();
-
-      const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
-      closeRegex.lastIndex = openIndex + openTag.length;
-
-      const closeMatch = closeRegex.exec(text);
-      if (closeMatch) {
-        const closeIndex = closeMatch.index;
-        const content = text.substring(openIndex + openTag.length, closeIndex);
-
-        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
-
-        if (!hasNestedBlock) {
-          if (bestMatch === null || openIndex < bestIndex) {
-            bestMatch = {
-              fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
-              openTag: openTag,
-              closeTag: closeMatch[0],
-              tagInfo: tagInfo,
-              tagType: tagType,
-              content: content,
-              startIndex: openIndex,
-              endIndex: closeIndex + closeMatch[0].length
-            };
-            bestIndex = openIndex;
-          }
-        }
-      }
-    }
-    return bestMatch;
-  }
-
-  // Render single block to HTML
-  function renderSingleBlock(blockInfo) {
-    const { tagType, tagInfo, content } = blockInfo;
-
-    // COLOR SECTIONS
-    if (tagType === 'COLOR') {
-      const color = tagInfo.split(':')[1] || 'BLUE';
-      const colorMap = {
-        ORANGE: "preview-section-orange",
-        RED: "preview-section-red",
-        BLUE: "preview-section-blue",
-        GREEN: "preview-section-green",
-        PURPLE: "preview-section-purple",
-        CYAN: "preview-section-cyan",
-      };
-      const className = colorMap[color.toUpperCase()] || "preview-section-blue";
-      return `<div class="${className}">${content}</div>`;
-    }
-
-    // CODE BLOCKS
-    if (tagType === 'CODE') {
-      const lang = tagInfo.split(':')[1] || 'TEXT';
-      const cleanCode = content
-        .trim()
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/div>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .replace(/^\n+|\n+$/g, "");
-      return `
-        <div class="preview-code-block">
-          <div class="preview-code-header">
-            <span class="preview-code-lang">${lang.toUpperCase()}</span>
-          </div>
-          <pre><code>${escapeHtml(cleanCode)}</code></pre>
-        </div>`;
-    }
-
-    // EXAMPLE BLOCKS
-    if (tagType === 'EXAMPLE') {
-      return `<div class="preview-example-block">${content}</div>`;
-    }
-
-    // CALLOUT BLOCKS
-    const calloutConfig = {
-      'NOTE': { icon: 'info', class: 'preview-callout-note', label: 'Lưu ý' },
-      'TIP': { icon: 'lightbulb', class: 'preview-callout-tip', label: 'Mẹo' },
-      'WARNING': { icon: 'warning', class: 'preview-callout-warning', label: 'Cảnh báo' },
-      'CHECKPOINT': { icon: 'flag', class: 'preview-callout-checkpoint', label: 'Checkpoint' },
-      'TASK': { icon: 'task_alt', class: 'preview-callout-task', label: 'Bài tập' },
-      'QA': { icon: 'help', class: 'preview-callout-qa', label: 'Hỏi đáp' },
-      'HIGHLIGHT': { icon: 'star', class: 'preview-callout-highlight', label: 'Nổi bật' }
-    };
-    if (calloutConfig[tagType]) {
-      const cfg = calloutConfig[tagType];
-      return `
-        <div class="${cfg.class}">
-          <div class="preview-callout-header">
-            <span class="material-symbols-sharp">${cfg.icon}</span>
-            <span>${cfg.label}</span>
-          </div>
-          <div class="preview-callout-content">${content}</div>
-        </div>`;
-    }
-
-    // RESOURCES
-    if (tagType === 'RESOURCES') {
-      return `<div class="preview-resources">${content}</div>`;
-    }
-
-    // FIGURE
-    if (tagType === 'FIGURE') {
-      const caption = tagInfo.split(':').slice(1).join(':') || '';
-      return `<figure class="preview-figure">${content}<figcaption>${caption}</figcaption></figure>`;
-    }
-
-    // GRID
-    if (tagType === 'GRID') {
-      return `<div class="preview-grid">${content}</div>`;
-    }
-
-    // TERMINAL
-    if (tagType === 'TERMINAL') {
-      const langPart = tagInfo.split(':')[1] || '';
-      const language = (langPart || "shell").toLowerCase();
-      const cleanContent = content
-        .trim()
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/div>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .replace(/^\n+|\n+$/g, "");
-      const langLabel = language === "shell" ? "Terminal" : language.charAt(0).toUpperCase() + language.slice(1) + " Console";
-      return `
-        <div class="preview-terminal-block">
-          <div class="preview-terminal-header">
-            <div class="preview-terminal-dots">
-              <span class="dot red"></span>
-              <span class="dot yellow"></span>
-              <span class="dot green"></span>
-            </div>
-            <span class="preview-terminal-title">${langLabel}</span>
-          </div>
-          <pre class="preview-terminal-body"><code>${escapeHtml(cleanContent)}</code></pre>
-        </div>`;
-    }
-
-    // CMD
-    if (tagType === 'CMD') {
-      const cleanContent = content
-        .trim()
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/div>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .replace(/^\n+|\n+$/g, "");
-      return `<div class="preview-cmd-block"><pre><code>${escapeHtml(cleanContent)}</code></pre></div>`;
-    }
-
-    // OUTPUT
-    if (tagType === 'OUTPUT') {
-      const cleanContent = content
-        .trim()
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/div>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .replace(/^\n+|\n+$/g, "");
-      return `<div class="preview-output-block"><pre><code>${escapeHtml(cleanContent)}</code></pre></div>`;
-    }
-
-    return content;
-  }
-
-  // Process blocks from innermost to outermost
-  let maxIterations = 200;
-  let iterations = 0;
-
-  while (iterations < maxIterations) {
-    const innermostBlock = findInnermostBlock(html);
-    if (!innermostBlock) break;
-
-    console.log('[Preview] Found block:', innermostBlock.tagType, '- content length:', innermostBlock.content.length);
-
-    const renderedHtml = renderSingleBlock(innermostBlock);
-    html = html.substring(0, innermostBlock.startIndex) +
-           renderedHtml +
-           html.substring(innermostBlock.endIndex);
-    iterations++;
-  }
-
-  console.log('[Preview] Total blocks processed:', iterations);
-
-  // Handle markdown code blocks ```lang ... ```
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
-    const language = lang || "plaintext";
-    const cleanCode = code
-      .trim()
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]*>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/^\n+|\n+$/g, "");
-    return `
-      <div class="preview-code-block">
-        <div class="preview-code-header">
-          <span class="preview-code-lang">${language.toUpperCase()}</span>
-        </div>
-        <pre><code>${escapeHtml(cleanCode)}</code></pre>
-      </div>`;
-  });
-
-  container.innerHTML = html;
+  const html = container.innerHTML;
+  container.innerHTML = renderBlockMarkersAsClient(html);
 }
 
 // ===== Auto-init when page shown =====
