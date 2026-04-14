@@ -590,25 +590,28 @@ function previewContent() {
   // Cleanup visual blocks for preview (remove delete buttons, contenteditable)
   content = cleanupVisualBlocksForPreview(content);
 
-  // Render old-style block markers thành HTML đẹp (backward compatibility)
-  content = renderBlockMarkers(content);
+  // Convert visual blocks to text markers first, then render as client view
+  content = convertVisualBlocksToMarkersForPreview(content);
 
-  const previewHtml = `
-    <div class="lesson-content-wrapper">
-      <h1 style="color: #1a73e8; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">${escapeHtml(title)}</h1>
-      ${content}
-    </div>
-  `;
+  // Render block markers into client-style HTML (matching lesson_scripts parseContentMarkers)
+  content = renderBlockMarkersAsClient(content);
 
-  document.getElementById('previewBody').innerHTML = previewHtml;
-  document.getElementById('previewModal').classList.add('active');
+  // Set preview title
+  document.getElementById('previewTitle').textContent = title;
+
+  // Set preview body content
+  document.getElementById('previewBody').innerHTML = content;
+
+  // Show fullscreen preview overlay
+  const overlay = document.getElementById('previewModal');
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
 }
 
 /**
- * Cleanup visual blocks for preview (remove delete buttons, contenteditable)
+ * Cleanup visual blocks for preview (remove delete buttons, contenteditable, inline colors)
  */
 function cleanupVisualBlocksForPreview(html) {
-  // Create a temporary container
   const temp = document.createElement('div');
   temp.innerHTML = html;
 
@@ -622,189 +625,319 @@ function cleanupVisualBlocksForPreview(html) {
     el.removeAttribute('contenteditable');
   });
 
+  // Strip inline color/background-color/font-family styles (editor uses black text on white bg)
+  // These would conflict with the dark-themed preview
+  temp.querySelectorAll('[style]').forEach(function(el) {
+    let style = el.getAttribute('style');
+    if (style) {
+      // Remove color, background-color, background, font-family inline styles
+      style = style.replace(/\bcolor\s*:\s*[^;]+;?/gi, '');
+      style = style.replace(/\bbackground-color\s*:\s*[^;]+;?/gi, '');
+      style = style.replace(/\bbackground\s*:\s*[^;]+;?/gi, '');
+      style = style.replace(/\bfont-family\s*:\s*[^;]+;?/gi, '');
+      style = style.trim();
+      if (style) {
+        el.setAttribute('style', style);
+      } else {
+        el.removeAttribute('style');
+      }
+    }
+  });
+
   return temp.innerHTML;
 }
 
 /**
- * Render block markers thành HTML đẹp cho preview
- * Xử lý nested blocks bằng cách render từ trong ra ngoài (innermost first)
+ * Convert visual blocks in preview HTML to text markers (for re-rendering as client view)
  */
-function renderBlockMarkers(html) {
+function convertVisualBlocksToMarkersForPreview(html) {
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  // Process iteratively - innermost first
+  let maxIter = 100;
+  let iter = 0;
+  while (iter < maxIter) {
+    const allBlocks = temp.querySelectorAll('[data-block-type], [data-color-type]');
+    let found = false;
+
+    for (const block of allBlocks) {
+      // Check for nested blocks
+      const nested = block.querySelectorAll('[data-block-type], [data-color-type]');
+      let hasNested = false;
+      for (const n of nested) {
+        if (n !== block && block.contains(n)) { hasNested = true; break; }
+      }
+      if (hasNested) continue;
+
+      const blockType = block.getAttribute('data-block-type');
+      const colorType = block.getAttribute('data-color-type');
+
+      if (colorType) {
+        const content = block.innerHTML;
+        const textNode = document.createTextNode('[[COLOR:' + colorType + ']]');
+        const endNode = document.createTextNode('[[/COLOR]]');
+        const wrapper = document.createElement('span');
+        wrapper.innerHTML = content;
+        block.replaceWith(textNode);
+        textNode.parentNode.insertBefore(wrapper, textNode.nextSibling);
+        wrapper.parentNode.insertBefore(endNode, wrapper.nextSibling);
+        found = true;
+        break;
+      }
+
+      if (!blockType) continue;
+
+      if (['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES'].includes(blockType)) {
+        const contentEl = block.querySelector('.visual-block-content');
+        let content = contentEl ? contentEl.innerHTML : '';
+        const labelSpan = contentEl ? contentEl.querySelector('.visual-block-label') : null;
+        if (labelSpan) content = content.replace(labelSpan.outerHTML, '').trim();
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '[[' + blockType + ']]' + content + '[[/' + blockType + ']]';
+        block.replaceWith(wrapper);
+        found = true;
+        break;
+      }
+
+      if (blockType === 'CODE') {
+        const language = block.getAttribute('data-language') || 'JAVASCRIPT';
+        const codeEl = block.querySelector('.visual-code-content');
+        let code = codeEl ? codeEl.textContent : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '[[CODE:' + language + ']]' + escapeHtml(code) + '[[/CODE]]';
+        block.replaceWith(wrapper);
+        found = true;
+        break;
+      }
+
+      if (['TERMINAL', 'OUTPUT', 'CMD'].includes(blockType)) {
+        const contentEl = block.querySelector('.visual-terminal-content, .visual-output-content, .visual-cmd-content');
+        let content = contentEl ? contentEl.innerHTML : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '[[' + blockType + ']]' + content + '[[/' + blockType + ']]';
+        block.replaceWith(wrapper);
+        found = true;
+        break;
+      }
+
+      if (blockType === 'GRID') {
+        const contentEl = block.querySelector('.visual-grid-content');
+        let content = contentEl ? contentEl.innerHTML : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '[[GRID]]' + content + '[[/GRID]]';
+        block.replaceWith(wrapper);
+        found = true;
+        break;
+      }
+
+      if (blockType === 'FIGURE') {
+        const caption = block.getAttribute('data-caption') || '';
+        const contentEl = block.querySelector('.visual-figure-content');
+        let content = contentEl ? contentEl.innerHTML : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '[[FIGURE:' + caption + ']]' + content + '[[/FIGURE]]';
+        block.replaceWith(wrapper);
+        found = true;
+        break;
+      }
+
+      iter++;
+    }
+
+    if (!found) break;
+    iter++;
+  }
+
+  return temp.innerHTML;
+}
+
+/**
+ * Render block markers into client-matching HTML
+ * Mirrors the parseContentMarkers logic from lesson_scripts.html
+ */
+function renderBlockMarkersAsClient(html) {
   let result = html;
 
-  // Icons và titles cho các loại callout
-  const calloutConfig = {
-    'NOTE': { icon: '📌', title: 'Ghi chú' },
-    'TIP': { icon: '💡', title: 'Mẹo' },
-    'WARNING': { icon: '⚠️', title: 'Cảnh báo' },
-    'HIGHLIGHT': { icon: '✨', title: 'Lưu ý' },
-    'EXAMPLE': { icon: '📖', title: 'Ví dụ' },
-    'CHECKPOINT': { icon: '✅', title: 'Kiểm tra' },
-    'TASK': { icon: '📋', title: 'Nhiệm vụ' },
-    'QA': { icon: '❓', title: 'Hỏi & Đáp' },
-    'RESOURCES': { icon: '📚', title: 'Tài nguyên' }
-  };
-
-  const allBlockTypes = ['NOTE', 'TIP', 'WARNING', 'HIGHLIGHT', 'EXAMPLE', 'CHECKPOINT', 'TASK', 'QA', 'RESOURCES', 'CODE', 'TERMINAL', 'OUTPUT', 'CMD', 'GRID', 'FIGURE', 'COLOR'];
-
-  // Hàm tìm innermost block (block không chứa block khác bên trong)
+  // Find innermost block (no nested blocks inside)
   function findInnermostBlock(text) {
     let bestMatch = null;
     let bestIndex = -1;
-
-    // Tìm tất cả các opening tags (match cả uppercase và lowercase)
-    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|OUTPUT|CMD|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
-
-    // Tìm tất cả các cặp opening-closing và chọn cặp innermost
+    const openingRegex = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/gi;
     let match;
     while ((match = openingRegex.exec(text)) !== null) {
       const openTag = match[0];
       const openIndex = match.index;
-      const tagType = match[1].split(':')[0].toUpperCase(); // Lấy type (CODE, FIGURE, COLOR, etc.)
-
-      // Tìm closing tag tương ứng (case insensitive)
+      const tagInfo = match[1];
+      const tagType = tagInfo.split(':')[0].toUpperCase();
       const closeRegex = new RegExp('\\[\\[\\/' + tagType + '\\]\\]', 'gi');
       closeRegex.lastIndex = openIndex + openTag.length;
-
       const closeMatch = closeRegex.exec(text);
       if (closeMatch) {
         const closeIndex = closeMatch.index;
         const content = text.substring(openIndex + openTag.length, closeIndex);
-
-        // Kiểm tra xem content có chứa opening tag khác không
-        const hasNestedBlock = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|OUTPUT|CMD|GRID|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
-
-        if (!hasNestedBlock) {
-          // Đây là innermost block
+        const hasNested = /\[\[(NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL(?::\w*)?|GRID|CMD|OUTPUT|CODE:\w+|FIGURE:[^\]]*|COLOR:\w+)\]\]/i.test(content);
+        if (!hasNested) {
           if (bestMatch === null || openIndex < bestIndex) {
             bestMatch = {
               fullMatch: text.substring(openIndex, closeIndex + closeMatch[0].length),
-              openTag: openTag,
-              closeTag: closeMatch[0],
-              tagInfo: match[1],
-              tagType: tagType,
-              content: content,
-              startIndex: openIndex,
-              endIndex: closeIndex + closeMatch[0].length
+              openTag, closeTag: closeMatch[0], tagInfo, tagType, content,
+              startIndex: openIndex, endIndex: closeIndex + closeMatch[0].length
             };
             bestIndex = openIndex;
           }
         }
       }
     }
-
     return bestMatch;
   }
 
-  // Hàm render một block thành HTML
+  // Render a single block into client-matching HTML
   function renderSingleBlock(blockInfo) {
     const { tagType, tagInfo, content } = blockInfo;
 
-    // Xử lý callout blocks - giữ nguyên content (có thể chứa nested blocks đã render)
-    if (calloutConfig[tagType]) {
-      const config = calloutConfig[tagType];
-      // Chỉ strip <p> tags wrapper, giữ nguyên nội dung bên trong (bao gồm nested blocks đã render)
-      const cleanContent = content
-        .replace(/^(\s*<\/?p[^>]*>\s*)+/gi, '')  // Strip leading <p> tags
-        .replace(/(\s*<\/?p[^>]*>\s*)+$/gi, '') // Strip trailing <p> tags
-        .trim();
-      return '<div class="preview-callout preview-callout-' + tagType.toLowerCase() + '">' +
-        '<span style="font-size: 20px; flex-shrink: 0;">' + config.icon + '</span>' +
-        '<div><strong>' + config.title + ':</strong> ' + cleanContent + '</div>' +
-      '</div>';
+    // COLOR sections
+    if (tagType === 'COLOR') {
+      const color = tagInfo.split(':')[1] || 'BLUE';
+      const colorMap = {
+        ORANGE: 'lesson-section-orange', RED: 'lesson-section-red',
+        BLUE: 'lesson-section-blue', GREEN: 'lesson-section-green',
+        PURPLE: 'lesson-section-purple', CYAN: 'lesson-section-cyan'
+      };
+      const className = colorMap[color.toUpperCase()] || 'lesson-section-blue';
+      return '<div class="' + className + '">' + content + '</div>';
     }
 
-    // Xử lý CODE blocks
+    // CODE blocks - VS Code style
     if (tagType === 'CODE') {
       const lang = tagInfo.split(':')[1] || 'TEXT';
       let cleanCode = content
-        .replace(/<\/?p[^>]*>/gi, '\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/?pre[^>]*>/gi, '')
-        .replace(/<\/?code[^>]*>/gi, '')
-        .replace(/<\/?div[^>]*>/gi, '')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/^\n+|\n+$/g, '')
-        .trim();
-
-      return '<div class="preview-code-block">' +
-        '<div class="preview-code-header"><span class="preview-code-lang">' + lang + '</span></div>' +
-        '<pre class="preview-code-content">' + escapeHtml(cleanCode) + '</pre>' +
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="code-block-wrapper">' +
+        '<div class="code-block-header">' +
+          '<span class="code-block-lang">' + lang.toUpperCase() + '</span>' +
+          '<div class="code-block-actions">' +
+            '<button class="btn-copy-code" onclick="copyPreviewCode(this)">📋 Copy</button>' +
+          '</div>' +
+        '</div>' +
+        '<pre><code class="language-' + lang.toLowerCase() + '">' + escapeHtml(cleanCode) + '</code></pre>' +
       '</div>';
     }
 
-    // Xử lý TERMINAL / OUTPUT / CMD blocks
-    if (tagType === 'TERMINAL' || tagType === 'OUTPUT' || tagType === 'CMD') {
-      let previewClass = 'preview-' + tagType.toLowerCase();
-      let cleanContent = content
-        .replace(/<\/?p[^>]*>/gi, '\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/^\n+|\n+$/g, '')
-        .trim();
-      return '<div class="' + previewClass + '"><pre style="margin:0; white-space:pre-wrap;">' + cleanContent + '</pre></div>';
+    // EXAMPLE blocks
+    if (tagType === 'EXAMPLE') {
+      return '<div class="example-block">' + content + '</div>';
     }
 
-    // Xử lý GRID blocks
-    if (tagType === 'GRID') {
-      let items = content
-        .replace(/<\/?p[^>]*>/gi, '\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .split(/[•\n]+/)
-        .filter(function(item) { return item.trim(); });
-
-      let gridHtml = '<div class="preview-grid">';
-      items.forEach(function(item) {
-        gridHtml += '<div class="preview-grid-item">' + item.trim() + '</div>';
-      });
-      gridHtml += '</div>';
-      return gridHtml;
+    // CALLOUT blocks
+    var calloutTypes = {
+      'NOTE': 'callout-note', 'TIP': 'callout-tip', 'WARNING': 'callout-warning',
+      'CHECKPOINT': 'callout-checkpoint', 'TASK': 'callout-task',
+      'QA': 'callout-qa', 'HIGHLIGHT': 'callout-highlight'
+    };
+    if (calloutTypes[tagType]) {
+      return '<div class="' + calloutTypes[tagType] + '">' + content + '</div>';
     }
 
-    // Xử lý FIGURE blocks
+    // RESOURCES
+    if (tagType === 'RESOURCES') {
+      return '<div class="resource-links">' + content + '</div>';
+    }
+
+    // FIGURE
     if (tagType === 'FIGURE') {
       const caption = tagInfo.split(':').slice(1).join(':') || '';
-      return '<div class="preview-figure">' +
-        '<div>' + content + '</div>' +
-        '<div class="preview-figure-caption">' + caption + '</div>' +
+      return '<figure>' + content + '<figcaption>' + caption + '</figcaption></figure>';
+    }
+
+    // GRID
+    if (tagType === 'GRID') {
+      return '<div class="grid-cards-section">' + content + '</div>';
+    }
+
+    // TERMINAL blocks - dark Tokyo Night style
+    if (tagType === 'TERMINAL') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="terminal-block">' +
+        '<div class="terminal-header">' +
+          '<div class="terminal-dots"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span><span class="terminal-dot green"></span></div>' +
+          '<span class="terminal-title">Terminal</span>' +
+        '</div>' +
+        '<pre class="terminal-body"><code>' + escapeHtml(cleanContent) + '</code></pre>' +
       '</div>';
     }
 
-    // Xử lý COLOR blocks
-    if (tagType === 'COLOR') {
-      const color = tagInfo.split(':')[1] || 'BLUE';
-      const cleanContent = content.replace(/<\/?p[^>]*>/gi, '').trim();
-      return '<span class="preview-color-' + color.toLowerCase() + '">' + cleanContent + '</span>';
+    // CMD blocks
+    if (tagType === 'CMD') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="cmd-block"><pre class="cmd-body"><code>' + escapeHtml(cleanContent) + '</code></pre></div>';
+    }
+
+    // OUTPUT blocks
+    if (tagType === 'OUTPUT') {
+      let cleanContent = content
+        .trim()
+        .replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\n+|\n+$/g, '');
+      return '<div class="output-block"><pre class="output-body"><code>' + escapeHtml(cleanContent) + '</code></pre></div>';
     }
 
     return content;
   }
 
-  // Lặp lại xử lý từ trong ra ngoài cho đến khi không còn block nào
-  let maxIterations = 100; // Prevent infinite loop
+  // Iterate innermost-first
+  let maxIterations = 200;
   let iterations = 0;
-
   while (iterations < maxIterations) {
     const innermostBlock = findInnermostBlock(result);
     if (!innermostBlock) break;
-
     const renderedHtml = renderSingleBlock(innermostBlock);
-    result = result.substring(0, innermostBlock.startIndex) +
-             renderedHtml +
-             result.substring(innermostBlock.endIndex);
+    result = result.substring(0, innermostBlock.startIndex) + renderedHtml + result.substring(innermostBlock.endIndex);
     iterations++;
   }
 
-  // Xóa các paragraph tags rỗng
+  // Clean empty paragraphs
   result = result.replace(/<p[^>]*>\s*<\/p>/gi, '');
 
   return result;
 }
 
+/**
+ * Copy code from preview code blocks
+ */
+function copyPreviewCode(btn) {
+  const wrapper = btn.closest('.code-block-wrapper, .terminal-block, .cmd-block, .output-block');
+  if (!wrapper) return;
+  const codeEl = wrapper.querySelector('code');
+  if (!codeEl) return;
+  const text = codeEl.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    const original = btn.innerHTML;
+    btn.innerHTML = '✅ Copied!';
+    setTimeout(function() { btn.innerHTML = original; }, 2000);
+  });
+}
+
 function closePreviewModal() {
-  document.getElementById('previewModal').classList.remove('active');
+  const overlay = document.getElementById('previewModal');
+  overlay.classList.remove('active');
+  document.body.style.overflow = '';
 }
 
 // ========================================
