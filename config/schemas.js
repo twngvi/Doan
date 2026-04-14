@@ -11,8 +11,8 @@ const AI_CONFIG = {
   // Gemini API Settings
   GEMINI_USER_KEY_PREFIX: "GEMINI_USER_KEY_",
   GEMINI_KEY_ENCRYPTION_SECRET_PROPERTY: "GEMINI_KEY_ENCRYPTION_SECRET",
-  GEMINI_MODEL_DEFAULT: "gemini-1.5-flash",
-  GEMINI_MODEL_ADVANCED: "gemini-1.5-flash",
+  GEMINI_MODEL_DEFAULT: "gemini-2.5-flash-lite",
+  GEMINI_MODEL_ADVANCED: "gemini-2.5-flash-lite",
 
   // Cache Settings
   CACHE_TTL_DAYS: 30, // Cache content trong 30 ngày

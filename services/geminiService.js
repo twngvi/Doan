@@ -13,8 +13,8 @@
 // ========== GEMINI SERVICE ==========
 
 const GeminiService = {
-  // API Endpoint - gemini-pro hoạt động trên v1
-  API_ENDPOINT: "https://generativelanguage.googleapis.com/v1/",
+  // API Endpoint - Gemini 1.5+ hoạt động ổn định nhất trên v1beta
+  API_ENDPOINT: "https://generativelanguage.googleapis.com/v1beta/",
 
   USER_KEY_PREFIX: AI_CONFIG.GEMINI_USER_KEY_PREFIX || "GEMINI_USER_KEY_",
   KEY_SECRET_PROPERTY:
