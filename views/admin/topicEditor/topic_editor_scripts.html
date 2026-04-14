@@ -1452,9 +1452,15 @@ function parseMarkersToVisualBlocks(container) {
   html = html.replace(/[\u27E7\u301B\uFF3D]/g, ']');
   html = html.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
 
-  // Remove tags between/around brackets
-  html = html.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, '[');
-  html = html.replace(/(<[^>]*>)*\](<[^>]*>)*/g, ']');
+  // Remove ONLY inline/formatting tags between/around brackets.
+  // Preserve block-level tags (h1-h6, div, p, ul, ol, li, pre, table, tr, td, th,
+  // blockquote, img, br, hr, section, article, nav, header, footer, figure, figcaption)
+  // so that headings after blocks are not accidentally destroyed.
+  var inlineTagPattern = '<\\/?(?:span|b|i|u|em|strong|font|a|s|sub|sup|mark|abbr|small|big|del|ins|cite|q|dfn|var|samp|kbd|wbr|bdo|bdi|ruby|rt|rp|data|time|output)(?:\\s[^>]*)?>'; 
+  var inlineTagsRe = new RegExp('(' + inlineTagPattern + ')*\\[(' + inlineTagPattern + ')*', 'gi');
+  html = html.replace(inlineTagsRe, '[');
+  var inlineTagsReClose = new RegExp('(' + inlineTagPattern + ')*\\](' + inlineTagPattern + ')*', 'gi');
+  html = html.replace(inlineTagsReClose, ']');
 
   // Clean inside [[ and ]]
   html = html.replace(/\[\[([^\[\]]*?)\]\]/g, function(match, inner) {

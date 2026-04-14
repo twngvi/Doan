@@ -1593,8 +1593,17 @@ function createTopicDocument(title, htmlContent) {
 }
 
 /**
- * Chuyển đổi HTML content sang Google Doc format
- * @param {string} html - Nội dung HTML
+ * Chuyển đổi HTML content sang Google Doc format.
+ * Handles both HTML elements AND text-based block markers ([[NOTE]], [[CODE:PYTHON]], etc.).
+ *
+ * Strategy:
+ *   1. Normalize HTML entities and bracket markers.
+ *   2. Extract block markers ([[TYPE]]...[[/TYPE]]) FIRST and split the HTML into
+ *      an ordered list of segments: { kind:"html", value } and { kind:"marker", value }.
+ *   3. For each HTML segment, use parseHtmlBlocks() to write structured content.
+ *   4. For each marker segment, write it as a plain-text paragraph so it round-trips.
+ *
+ * @param {string} html - Nội dung HTML (with block markers as text)
  * @param {Body} body - Body của Google Doc
  */
 function convertHtmlToDocContent(html, body) {
@@ -1614,7 +1623,7 @@ function convertHtmlToDocContent(html, body) {
     }
 
     // Process the HTML content
-    let content = html;
+    var content = html;
 
     // Replace common HTML entities
     content = content.replace(/&nbsp;/g, ' ');
@@ -1626,157 +1635,158 @@ function convertHtmlToDocContent(html, body) {
     // Ensure CODE markers are normalized and never left unclosed before parsing blocks
     content = normalizeCodeMarkersInHtml(content);
 
-    // Process block elements
-    const blocks = parseHtmlBlocks(content);
+    // ====================================================================
+    // Split content into sequential segments: HTML chunks and marker lines.
+    // Markers look like [[NOTE]], [[/NOTE]], [[CODE:PYTHON]], [[TERMINAL]],
+    // [[/CODE]], [[COLOR:RED]], [[/COLOR]], [[GRID]], [[/GRID]], etc.
+    // ====================================================================
+    var segments = splitContentIntoSegments(content);
 
-    Logger.log("Parsed blocks count: " + blocks.length);
+    Logger.log("Segments count: " + segments.length);
 
-    // If no blocks found, try to extract plain text
-    if (blocks.length === 0) {
-      Logger.log("No blocks found, extracting plain text...");
-
-      // Try to handle div-based content (common from contenteditable)
-      const divContent = extractDivContent(content);
-      if (divContent.length > 0) {
-        Logger.log("Found " + divContent.length + " div blocks");
-        for (let i = 0; i < divContent.length; i++) {
-          if (divContent[i].trim()) {
-            body.appendParagraph(divContent[i].trim());
-          }
-        }
-        ensureDocEndsWithHetMarker(body);
-        return true;
-      }
-
-      // Fallback: strip all tags and add as plain text
-      const plainText = stripHtml(content);
-      if (plainText.trim()) {
-        // Split by line breaks
-        const lines = plainText.split(/\n+/);
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].trim()) {
-            body.appendParagraph(lines[i].trim());
-          }
-        }
-      } else {
-        body.appendParagraph("(Không thể parse nội dung)");
-      }
+    if (segments.length === 0) {
+      body.appendParagraph("(Không thể parse nội dung)");
       ensureDocEndsWithHetMarker(body);
       return true;
     }
 
-    // Process found blocks
-    let imageCount = 0;
-    const MAX_IMAGES = 10; // Giới hạn số ảnh để tránh timeout
+    // Process each segment
+    var imageCount = 0;
+    var MAX_IMAGES = 10;
 
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      Logger.log("Processing block " + i + ": type=" + block.type + ", text=" + (block.text ? block.text.substring(0, 50) : "N/A"));
+    for (var si = 0; si < segments.length; si++) {
+      var seg = segments[si];
 
-      switch (block.type) {
-        case 'h1':
-          const h1 = body.appendParagraph(block.text || '');
-          h1.setHeading(DocumentApp.ParagraphHeading.HEADING1);
-          break;
+      if (seg.kind === "marker") {
+        // Write block marker as a plain-text paragraph in the Doc
+        body.appendParagraph(seg.value);
+        Logger.log("Wrote marker: " + seg.value);
+        continue;
+      }
 
-        case 'h2':
-          const h2 = body.appendParagraph(block.text || '');
-          h2.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-          break;
+      // seg.kind === "html" — process the HTML chunk with parseHtmlBlocks
+      var htmlChunk = seg.value;
+      if (!htmlChunk || !htmlChunk.trim()) continue;
 
-        case 'h3':
-          const h3 = body.appendParagraph(block.text || '');
-          h3.setHeading(DocumentApp.ParagraphHeading.HEADING3);
-          break;
+      var blocks = parseHtmlBlocks(htmlChunk);
 
-        case 'p':
-        case 'div':
-          if (block.text && block.text.trim()) {
-            body.appendParagraph(block.text);
-          }
-          break;
-
-        case 'ul':
-          if (block.items && block.items.length > 0) {
-            for (let j = 0; j < block.items.length; j++) {
-              const li = body.appendListItem(block.items[j]);
-              li.setGlyphType(DocumentApp.GlyphType.BULLET);
+      if (blocks.length === 0) {
+        // Fallback: try to extract plain text from the chunk
+        var plainText = stripHtml(htmlChunk);
+        if (plainText && plainText.trim()) {
+          var lines = plainText.split(/\n+/);
+          for (var li = 0; li < lines.length; li++) {
+            if (lines[li].trim()) {
+              body.appendParagraph(lines[li].trim());
             }
           }
-          break;
+        }
+        continue;
+      }
 
-        case 'ol':
-          if (block.items && block.items.length > 0) {
-            for (let j = 0; j < block.items.length; j++) {
-              const li = body.appendListItem(block.items[j]);
-              li.setGlyphType(DocumentApp.GlyphType.NUMBER);
+      for (var i = 0; i < blocks.length; i++) {
+        var block = blocks[i];
+
+        switch (block.type) {
+          case 'h1':
+            var h1p = body.appendParagraph(block.text || '');
+            h1p.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+            break;
+
+          case 'h2':
+            var h2p = body.appendParagraph(block.text || '');
+            h2p.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+            break;
+
+          case 'h3':
+            var h3p = body.appendParagraph(block.text || '');
+            h3p.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+            break;
+
+          case 'p':
+          case 'div':
+            if (block.text && block.text.trim()) {
+              body.appendParagraph(block.text);
             }
-          }
-          break;
+            break;
 
-        case 'pre':
-          const code = body.appendParagraph(block.text || '');
-          code.setFontFamily('Consolas');
-          code.setBackgroundColor('#f1f3f4');
-          break;
-
-        case 'codeblock':
-          // Code block with language header
-          const codeHeader = body.appendParagraph('📝 ' + (block.language || 'Code').toUpperCase());
-          codeHeader.setFontFamily('Arial');
-          codeHeader.setForegroundColor('#666666');
-          codeHeader.setFontSize(10);
-
-          const codeContent = body.appendParagraph(block.text || '');
-          codeContent.setFontFamily('Consolas');
-          codeContent.setBackgroundColor('#f1f3f4');
-          codeContent.setFontSize(11);
-          break;
-
-        case 'callout':
-          const callout = body.appendParagraph((block.icon || '') + ' ' + (block.text || ''));
-          // Style based on callout type
-          if (block.calloutType === 'note') {
-            callout.setBackgroundColor('#e8f5e9');
-          } else if (block.calloutType === 'warning') {
-            callout.setBackgroundColor('#fff3e0');
-          } else if (block.calloutType === 'info') {
-            callout.setBackgroundColor('#e3f2fd');
-          } else if (block.calloutType === 'danger') {
-            callout.setBackgroundColor('#ffebee');
-          }
-          break;
-
-        case 'image':
-          try {
-            // Skip if empty src
-            if (!block.src || block.src.trim() === '') {
-              body.appendParagraph('[Hình ảnh: URL trống]');
-              break;
+          case 'ul':
+            if (block.items && block.items.length > 0) {
+              for (var j = 0; j < block.items.length; j++) {
+                var uli = body.appendListItem(block.items[j]);
+                uli.setGlyphType(DocumentApp.GlyphType.BULLET);
+              }
             }
-            // Giới hạn số lượng ảnh để tránh timeout
-            if (imageCount >= MAX_IMAGES) {
-              body.appendParagraph('[Hình ảnh: ' + block.src + '] (bỏ qua - đã đạt giới hạn)');
-              break;
-            }
-            imageCount++;
-            const imageBlob = getImageBlobFromSrc(block.src);
+            break;
 
-            if (imageBlob) {
-              appendResizedImageToDoc(body, imageBlob);
-            } else {
-              body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
+          case 'ol':
+            if (block.items && block.items.length > 0) {
+              for (var j2 = 0; j2 < block.items.length; j2++) {
+                var oli = body.appendListItem(block.items[j2]);
+                oli.setGlyphType(DocumentApp.GlyphType.NUMBER);
+              }
             }
-          } catch (e) {
-            Logger.log("Image error: " + e.toString() + " - URL: " + block.src);
-            body.appendParagraph('[Hình ảnh: ' + block.src + ']');
-          }
-          break;
+            break;
 
-        default:
-          if (block.text && block.text.trim()) {
-            body.appendParagraph(block.text);
-          }
+          case 'pre':
+            var codePara = body.appendParagraph(block.text || '');
+            codePara.setFontFamily('Consolas');
+            codePara.setBackgroundColor('#f1f3f4');
+            break;
+
+          case 'codeblock':
+            var codeHeader = body.appendParagraph('📝 ' + (block.language || 'Code').toUpperCase());
+            codeHeader.setFontFamily('Arial');
+            codeHeader.setForegroundColor('#666666');
+            codeHeader.setFontSize(10);
+
+            var codeBody = body.appendParagraph(block.text || '');
+            codeBody.setFontFamily('Consolas');
+            codeBody.setBackgroundColor('#f1f3f4');
+            codeBody.setFontSize(11);
+            break;
+
+          case 'callout':
+            var calloutPara = body.appendParagraph((block.icon || '') + ' ' + (block.text || ''));
+            if (block.calloutType === 'note') {
+              calloutPara.setBackgroundColor('#e8f5e9');
+            } else if (block.calloutType === 'warning') {
+              calloutPara.setBackgroundColor('#fff3e0');
+            } else if (block.calloutType === 'info') {
+              calloutPara.setBackgroundColor('#e3f2fd');
+            } else if (block.calloutType === 'danger') {
+              calloutPara.setBackgroundColor('#ffebee');
+            }
+            break;
+
+          case 'image':
+            try {
+              if (!block.src || block.src.trim() === '') {
+                body.appendParagraph('[Hình ảnh: URL trống]');
+                break;
+              }
+              if (imageCount >= MAX_IMAGES) {
+                body.appendParagraph('[Hình ảnh: ' + block.src + '] (bỏ qua - đã đạt giới hạn)');
+                break;
+              }
+              imageCount++;
+              var imageBlob = getImageBlobFromSrc(block.src);
+              if (imageBlob) {
+                appendResizedImageToDoc(body, imageBlob);
+              } else {
+                body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
+              }
+            } catch (imgErr) {
+              Logger.log("Image error: " + imgErr.toString() + " - URL: " + block.src);
+              body.appendParagraph('[Hình ảnh: ' + block.src + ']');
+            }
+            break;
+
+          default:
+            if (block.text && block.text.trim()) {
+              body.appendParagraph(block.text);
+            }
+        }
       }
     }
 
@@ -1795,6 +1805,83 @@ function convertHtmlToDocContent(html, body) {
 }
 
 /**
+ * Split HTML content (with embedded [[MARKER]] text) into an ordered array of segments.
+ * Each segment is either { kind:"marker", value:"[[NOTE]]" } or { kind:"html", value:"<p>...</p>" }.
+ *
+ * The regex matches all known block markers:
+ *   Opening: [[NOTE]], [[TIP]], [[CODE:PYTHON]], [[TERMINAL]], [[GRID]], [[FIGURE:caption]], [[COLOR:RED]], etc.
+ *   Closing: [[/NOTE]], [[/CODE]], [[/TERMINAL]], [[/GRID]], [[/FIGURE]], [[/COLOR]], etc.
+ *
+ * @param {string} content - HTML string with embedded markers
+ * @returns {Array<{kind:string, value:string}>}
+ */
+function splitContentIntoSegments(content) {
+  var segments = [];
+  if (!content) return segments;
+
+  // Regex to match any block marker (opening or closing).
+  // Opening examples: [[NOTE]], [[CODE:PYTHON]], [[FIGURE:some caption]], [[COLOR:RED]], [[TERMINAL]]
+  // Closing examples: [[/NOTE]], [[/CODE]], [[/TERMINAL]], [[/GRID]], [[/FIGURE]], [[/COLOR]]
+  var markerRegex = /\[\[\/?(?:NOTE|TIP|WARNING|HIGHLIGHT|EXAMPLE|CHECKPOINT|TASK|QA|RESOURCES|TERMINAL|GRID|CMD|OUTPUT|CODE(?::\w+)?|FIGURE(?::[^\]]*)?|COLOR(?::\w+)?)\]\]/gi;
+
+  var lastIndex = 0;
+  var match;
+
+  while ((match = markerRegex.exec(content)) !== null) {
+    // Push the HTML chunk before this marker (if any)
+    if (match.index > lastIndex) {
+      var htmlBefore = content.substring(lastIndex, match.index);
+      // Strip wrapping </p>, </div> at the trailing end (from patterns like: <p>text</p><p>[[NOTE]]</p>)
+      htmlBefore = htmlBefore.replace(/\s*<\/(?:p|div)>\s*$/i, '');
+      // Strip dangling opening <p> or <div> at the trailing end (from patterns like: <p>[[NOTE]]</p>
+      // where the <p> before the marker text remains after the marker was extracted)
+      htmlBefore = htmlBefore.replace(/\s*<(?:p|div)[^>]*>\s*$/i, '');
+      if (htmlBefore.trim()) {
+        segments.push({ kind: "html", value: htmlBefore });
+      }
+    }
+
+    // Push the marker itself
+    segments.push({ kind: "marker", value: match[0] });
+
+    lastIndex = match.index + match[0].length;
+
+    // Skip trailing </p> or </div> immediately after marker (from wrapping like <p>[[NOTE]]</p>)
+    var afterMarker = content.substring(lastIndex);
+    var closingTagMatch = afterMarker.match(/^\s*<\/(?:p|div)>/i);
+    if (closingTagMatch) {
+      lastIndex += closingTagMatch[0].length;
+    }
+    // Also skip leading opening <p> or <div> tag right after marker+closing (from patterns like
+    // </p><p> between two consecutive markers: <p>[[NOTE]]</p><p>content</p><p>[[/NOTE]]</p>)
+    afterMarker = content.substring(lastIndex);
+    var openingTagAfter = afterMarker.match(/^\s*<(?:p|div)[^>]*>\s*(?=\[\[)/i);
+    if (openingTagAfter) {
+      lastIndex += openingTagAfter[0].length;
+    }
+  }
+
+  // Push remaining HTML after the last marker
+  if (lastIndex < content.length) {
+    var remaining = content.substring(lastIndex);
+    if (remaining.trim()) {
+      segments.push({ kind: "html", value: remaining });
+    }
+  }
+
+  // If no markers were found at all, treat the entire content as one HTML segment
+  if (segments.length === 0 && content.trim()) {
+    segments.push({ kind: "html", value: content });
+  }
+
+  Logger.log("splitContentIntoSegments: " + segments.length + " segments (" +
+    segments.filter(function(s) { return s.kind === "marker"; }).length + " markers, " +
+    segments.filter(function(s) { return s.kind === "html"; }).length + " html chunks)");
+
+  return segments;
+}
+
+/**
  * Normalize CODE markers and auto-repair missing [[/CODE]] closures.
  * Applies to both create topic and update topic flows because both use convertHtmlToDocContent.
  * @param {string} html
@@ -1803,10 +1890,14 @@ function convertHtmlToDocContent(html, body) {
 function normalizeCodeMarkersInHtml(html) {
   var normalized = String(html || "");
 
-  // Repair bracket markers when editor/export wraps parts with tags
+  // Repair bracket markers when editor/export wraps parts with inline formatting tags.
   // Example: [<span>[</span><span>CODE:PYTHON</span><span>]</span><span>]</span>
-  normalized = normalized.replace(/(<[^>]*>)*\[(<[^>]*>)*/g, "[");
-  normalized = normalized.replace(/(<[^>]*>)*\](<[^>]*>)*/g, "]");
+  // Only strip inline tags (span, b, i, em, strong, font, etc.), NOT block-level tags (p, div, h1-h6).
+  var inlineTag = '<\\/?(?:span|b|i|u|em|strong|font|a|s|sub|sup|mark|abbr|small|big|del|ins|cite|q|dfn|var|samp|kbd|wbr|bdo|bdi|ruby|rt|rp|data|time|output)(?:\\s[^>]*)?>'; 
+  var bracketOpenRe = new RegExp('(' + inlineTag + ')*\\[(' + inlineTag + ')*', 'gi');
+  var bracketCloseRe = new RegExp('(' + inlineTag + ')*\\](' + inlineTag + ')*', 'gi');
+  normalized = normalized.replace(bracketOpenRe, "[");
+  normalized = normalized.replace(bracketCloseRe, "]");
   normalized = normalized.replace(/\[\[([^\[\]]*?)\]\]/g, function (match, inner) {
     var cleanInner = String(inner || "").replace(/<[^>]*>/g, "").trim();
     return "[[" + cleanInner + "]]";
