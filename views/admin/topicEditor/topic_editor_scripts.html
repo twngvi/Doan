@@ -1524,12 +1524,27 @@ function hardResetLoadedContentLeftEdge(editor) {
     }
 
     if (node.style) {
+      // Skip visual blocks from reset - only reset plain text/doc containers
+      if (node.closest('.visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-block')) {
+        continue;
+      }
+
       node.style.removeProperty('border-left');
       node.style.removeProperty('padding-left');
       node.style.removeProperty('margin-left');
       node.style.removeProperty('text-indent');
       node.style.removeProperty('border');
       node.style.removeProperty('outline');
+      node.style.removeProperty('width');
+      node.style.removeProperty('max-width');
+      
+      // Only set 100% width on non-inline elements that aren't badges/icons
+      const tagName = node.tagName.toLowerCase();
+      if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+         node.style.setProperty('width', '100%', 'important');
+         node.style.setProperty('max-width', '100%', 'important');
+      }
+      
       if (!node.style.cssText || !node.style.cssText.trim()) {
         node.removeAttribute('style');
       }
