@@ -2,7 +2,7 @@
   (function () {
     "use strict";
 
-    const PET_VARIANTS = [
+    const DEFAULT_PET_VARIANTS = [
       {
         id: "pink",
         name: "Pet Hồng",
@@ -48,6 +48,7 @@
         description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
       },
     ];
+    let PET_VARIANTS = DEFAULT_PET_VARIANTS.slice();
 
     const BLINK_INTERVAL_MS = 5000;
     const BLINK_CLOSE_DURATION_MS = 220;
@@ -269,6 +270,91 @@
         .filter(Boolean);
     }
 
+    function normalizeVariantUnlockCondition(unlockCondition) {
+      const raw = unlockCondition || {};
+      const unlockType = String(raw.type || "level");
+
+      if (unlockType === "level") {
+        return {
+          type: "level",
+          value: Math.max(1, toNonNegativeNumber(raw.value, 1)),
+        };
+      }
+
+      return {
+        type: unlockType,
+        value: String(raw.value || ""),
+      };
+    }
+
+    function normalizePetVariantsFromServer(items) {
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map(function (item, index) {
+          const safe = item || {};
+          const fallback = DEFAULT_PET_VARIANTS[index] || DEFAULT_PET_VARIANTS[0] || {};
+          const id = String(safe.id || fallback.id || "").trim();
+          const level1 = String(safe.level1 || fallback.level1 || "").trim();
+          const level2 = String(safe.level2 || fallback.level2 || "").trim();
+          if (!id || (!level1 && !level2)) return null;
+
+          let scalePercent = toNonNegativeNumber(safe.scalePercent, 100);
+          scalePercent = Math.max(40, Math.min(200, scalePercent));
+
+          return {
+            id: id,
+            name: String(safe.name || fallback.name || ("Pet " + (index + 1))),
+            tone: String(safe.tone || fallback.tone || "#7c8cff"),
+            stageBackground: String(safe.stageBackground || fallback.stageBackground || "bg-1.webp"),
+            level1: level1 || String(fallback.level1 || ""),
+            level2: level2 || String(fallback.level2 || ""),
+            eyeOpen: String(safe.eyeOpen || fallback.eyeOpen || ""),
+            eyeClosed: String(safe.eyeClosed || fallback.eyeClosed || ""),
+            description: String(safe.description || fallback.description || ""),
+            unlockCondition: normalizeVariantUnlockCondition(safe.unlockCondition),
+            scalePercent: scalePercent,
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function getTopicProgressFromCache(topicId) {
+      if (!topicId || !window.globalTopicsCache || !window.globalTopicsCache.progress) {
+        return null;
+      }
+
+      return window.globalTopicsCache.progress[topicId] || null;
+    }
+
+    function isPetVariantUnlocked(variant) {
+      const condition = variant && variant.unlockCondition ? variant.unlockCondition : { type: "level", value: 1 };
+      const type = String(condition.type || "level");
+
+      if (type === "level") {
+        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
+        return currentLevel >= toNonNegativeNumber(condition.value, 1);
+      }
+
+      const topicId = String(condition.value || "").trim();
+      if (!topicId) return false;
+
+      const progress = getTopicProgressFromCache(topicId);
+      if (!progress) return false;
+
+      if (type === "topic") {
+        return !!(progress.completed || progress.lessonCompleted);
+      }
+      if (type === "topic_quiz") {
+        return !!(progress.quizDone || progress.completed);
+      }
+      if (type === "topic_matching") {
+        return !!(progress.matchingDone || progress.completed);
+      }
+
+      return false;
+    }
+
     function updatePetCatalogHints() {
       const accessoryHint = document.querySelector("#petAccessoryPopover .pet-accessory-hint");
       const foodHint = document.querySelector("#petFoodPopover .pet-accessory-hint");
@@ -318,26 +404,59 @@
 
           const loadedAccessories = normalizePetItemCatalog(result.accessories, "accessories");
           const loadedFood = normalizePetItemCatalog(result.food, "food");
+          const loadedVariants = normalizePetVariantsFromServer(result.variants);
           const hasAnyData = loadedAccessories.length > 0 || loadedFood.length > 0;
 
           if (!hasAnyData) {
+            if (loadedVariants.length > 0) {
+              PET_VARIANTS = loadedVariants;
+              if (state.currentIndex >= PET_VARIANTS.length) state.currentIndex = 0;
+              buildColorButtons();
+              renderPet();
+            }
             updatePetCatalogHints();
             return;
           }
 
           ACCESSORY_ITEMS = loadedAccessories;
           FOOD_ITEMS = loadedFood;
+          if (loadedVariants.length > 0) {
+            PET_VARIANTS = loadedVariants;
+            if (state.currentIndex >= PET_VARIANTS.length) state.currentIndex = 0;
+          }
           syncSelectedAccessoriesWithCatalog();
+          buildColorButtons();
           buildAccessoryButtons();
           buildFoodButtons();
           updateAccessoryButtons();
           renderAccessory();
+          renderPet();
           updatePetCatalogHints();
         })
         .withFailureHandler(function () {
           updatePetCatalogHints();
         })
         .getPetItemsForAdmin();
+    }
+
+    function loadTopicProgressCacheForPet() {
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (!response || response.success !== true) return;
+          if (!window.globalTopicsCache) window.globalTopicsCache = {};
+          window.globalTopicsCache.progress = response.progress || {};
+          updateColorButtons(state.currentIndex);
+        })
+        .withFailureHandler(function () {})
+        .getUserTopicProgress();
     }
 
     /**
@@ -579,7 +698,11 @@
 
       const buttons = buttonsWrap.querySelectorAll(".pet-color-btn");
       buttons.forEach((button, index) => {
-        button.classList.toggle("active", index === activeIndex);
+        const variant = PET_VARIANTS[index];
+        const unlocked = !!variant && isPetVariantUnlocked(variant);
+        button.classList.toggle("active", index === activeIndex && unlocked);
+        button.classList.toggle("is-locked", !unlocked);
+        button.setAttribute("aria-disabled", unlocked ? "false" : "true");
       });
     }
 
@@ -1245,6 +1368,7 @@
     }
 
     function renderPet() {
+      ensureCurrentVariantAccessible();
       const xp = state.progressionXP || 0;
       const progressionLevel = Math.floor(xp / 100) + 1;
       
@@ -1287,6 +1411,11 @@
       }
 
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
+      const variantScale = Math.max(40, Math.min(200, toNonNegativeNumber(variant.scalePercent, 100))) / 100;
+      if (previewImageEl) {
+        previewImageEl.style.transform = "scale(" + variantScale + ")";
+        previewImageEl.style.transformOrigin = "center bottom";
+      }
       applySrcAsync(previewImageEl, imageName);
       if (errorEl) errorEl.style.display = "none";
       
@@ -1344,22 +1473,57 @@
       renderPet();
     }
 
+    function ensureCurrentVariantAccessible() {
+      if (!Array.isArray(PET_VARIANTS) || PET_VARIANTS.length === 0) return;
+
+      if (state.currentIndex < 0 || state.currentIndex >= PET_VARIANTS.length) {
+        state.currentIndex = 0;
+      }
+
+      const currentVariant = PET_VARIANTS[state.currentIndex];
+      if (currentVariant && isPetVariantUnlocked(currentVariant)) {
+        return;
+      }
+
+      const firstUnlockedIndex = PET_VARIANTS.findIndex(function (variant) {
+        return isPetVariantUnlocked(variant);
+      });
+
+      state.currentIndex = firstUnlockedIndex >= 0 ? firstUnlockedIndex : 0;
+    }
+
     function buildColorButtons() {
       const buttonsWrap = document.getElementById("petColorButtons");
       if (!buttonsWrap) return;
 
       buttonsWrap.innerHTML = "";
       PET_VARIANTS.forEach((variant, index) => {
+        const unlocked = isPetVariantUnlocked(variant);
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "pet-color-btn";
         btn.title = variant.name;
         btn.setAttribute("aria-label", variant.name);
+        if (!unlocked) {
+          btn.classList.add("is-locked");
+          btn.setAttribute("aria-disabled", "true");
+        }
         btn.innerHTML =
           '<span class="pet-color-dot" style="background:' +
           variant.tone +
           '"></span>';
         btn.addEventListener("click", function () {
+          if (!unlocked) {
+            if (typeof showToast === "function") {
+              const cond = variant.unlockCondition || { type: "level", value: 1 };
+              if (cond.type === "level") {
+                showToast("Pet này yêu cầu Level " + cond.value, "warning");
+              } else {
+                showToast("Pet này chưa đủ điều kiện mở khóa", "warning");
+              }
+            }
+            return;
+          }
           state.currentIndex = index;
           releasePressState();
           renderPet();
@@ -2039,6 +2203,7 @@
         buildFoodButtons();
         updatePetCatalogHints();
         loadPetItemCatalogFromServer();
+        loadTopicProgressCacheForPet();
         bindAccessoryControls();
         bindSettingsPanelToggle();
         bindBackgroundPanelToggle();
@@ -2065,6 +2230,7 @@
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
       loadPetNameFromServer();
+      loadTopicProgressCacheForPet();
       loadPetConfigFromServer();
       updateXQPUI();
       renderPet();

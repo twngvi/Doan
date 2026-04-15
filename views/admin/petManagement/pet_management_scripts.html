@@ -11,6 +11,56 @@
 
     var ACCESSORY_LIST = [];
     var FOOD_LIST = [];
+    var PET_VARIANT_LIST = [
+      {
+        id: "pink",
+        name: "Pet Hồng",
+        tone: "#ff70e2",
+        description: "Tươi vui, nổi bật và phù hợp cho phong cách năng động.",
+        level1: "level1-pink.svg",
+        level2: "level2-pink.svg",
+        eyeOpen: "eye-pink-open.svg",
+        eyeClosed: "eye-pink-close.svg",
+        unlockCondition: { type: "level", value: 1 },
+        scalePercent: 100,
+      },
+      {
+        id: "yellow",
+        name: "Pet Vàng",
+        tone: "#facc15",
+        description: "Ấm áp và tích cực, tạo cảm giác thân thiện khi học.",
+        level1: "level1-yellow.svg",
+        level2: "level2-yellow.svg",
+        eyeOpen: "eye-yellow-open.svg",
+        eyeClosed: "eye-yellow-close.svg",
+        unlockCondition: { type: "level", value: 1 },
+        scalePercent: 100,
+      },
+      {
+        id: "blue",
+        name: "Pet Xanh Dương",
+        tone: "#38bdf8",
+        description: "Điềm tĩnh, tập trung, phù hợp cho các phiên học dài.",
+        level1: "level1-blue.svg",
+        level2: "level2-blue.svg",
+        eyeOpen: "eye-blue-open.svg",
+        eyeClosed: "eye-blue-close.svg",
+        unlockCondition: { type: "level", value: 1 },
+        scalePercent: 100,
+      },
+      {
+        id: "green",
+        name: "Pet Xanh Lá",
+        tone: "#4ade80",
+        description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
+        level1: "level1-green.svg",
+        level2: "level2-green.svg",
+        eyeOpen: "eye-green-open.svg",
+        eyeClosed: "eye-green-close.svg",
+        unlockCondition: { type: "level", value: 1 },
+        scalePercent: 100,
+      },
+    ];
     var i;
 
     for (i = 1; i <= 25; i++) {
@@ -33,6 +83,7 @@
     var state = {
       accessories: [],
       food: [],
+      petVariants: [],
       topics: TOPIC_FALLBACK.slice(),
       initialized: false,
       editor: {
@@ -40,6 +91,12 @@
         index: -1,
         isNew: false,
         draft: null
+      },
+      variantEditor: {
+        index: -1,
+        isNew: false,
+        draft: null,
+        previewLevel: 1
       }
     };
 
@@ -58,6 +115,37 @@
           type: item.unlockCondition && item.unlockCondition.type ? item.unlockCondition.type : "level",
           value: item.unlockCondition && item.unlockCondition.value ? item.unlockCondition.value : 1
         }
+      };
+    }
+
+    function cloneVariant(variant) {
+      var safe = variant || {};
+      var unlock = safe.unlockCondition || {};
+      var unlockType = unlock.type || "level";
+      var unlockValue = unlock.value;
+      if (unlockType === "level") {
+        unlockValue = Math.max(1, parseNonNegative(unlockValue, 1));
+      } else {
+        unlockValue = String(unlockValue || "");
+      }
+
+      var scalePercent = parseNonNegative(safe.scalePercent, 100);
+      scalePercent = Math.max(40, Math.min(200, scalePercent));
+
+      return {
+        id: String(safe.id || ""),
+        name: String(safe.name || ""),
+        tone: String(safe.tone || "#7c8cff"),
+        description: String(safe.description || ""),
+        level1: String(safe.level1 || ""),
+        level2: String(safe.level2 || ""),
+        eyeOpen: String(safe.eyeOpen || ""),
+        eyeClosed: String(safe.eyeClosed || ""),
+        unlockCondition: {
+          type: unlockType,
+          value: unlockValue,
+        },
+        scalePercent: scalePercent,
       };
     }
 
@@ -84,6 +172,24 @@
             petXpGain: 15,
             unlockCondition: { type: "level", value: 1 }
           };
+        });
+      }
+
+      if (state.petVariants.length === 0) {
+        state.petVariants = PET_VARIANT_LIST.map(function (variant) {
+          return cloneVariant(variant);
+        });
+      }
+    }
+
+    function ensureVariantFallbackState() {
+      if (!Array.isArray(state.petVariants)) {
+        state.petVariants = [];
+      }
+
+      if (state.petVariants.length === 0) {
+        state.petVariants = PET_VARIANT_LIST.map(function (variant) {
+          return cloneVariant(variant);
         });
       }
     }
@@ -131,6 +237,25 @@
         });
     }
 
+    function normalizeLoadedVariants(items) {
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map(function (item, index) {
+          var safe = cloneVariant(item);
+          if (!safe.id) {
+            safe.id = "variant-" + (index + 1);
+          }
+          if (!safe.name) {
+            safe.name = "Pet " + (index + 1);
+          }
+          return safe;
+        })
+        .filter(function (variant) {
+          return !!variant.id;
+        });
+    }
+
     function buildPersistPayload() {
       return {
         accessories: state.accessories.map(function (item) {
@@ -172,6 +297,32 @@
         .savePetItemsForAdmin(payloadJson);
     }
 
+    function persistPetVariantsToBackend(showNotice) {
+      if (!(window.google && google.script && google.script.run)) {
+        return;
+      }
+
+      var payloadJson = JSON.stringify({
+        variants: state.petVariants.map(function (variant) {
+          return cloneVariant(variant);
+        }),
+      });
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!showNotice) return;
+          if (result && result.success && typeof window.showNotification === 'function') {
+            window.showNotification('Da luu danh sach hinh dang PET', 'success');
+          }
+        })
+        .withFailureHandler(function () {
+          if (typeof window.showNotification === 'function') {
+            window.showNotification('Khong the luu hinh dang PET', 'error');
+          }
+        })
+        .savePetVariantsForAdmin(payloadJson);
+    }
+
     function loadPetItemsFromBackend() {
       if (!(window.google && google.script && google.script.run)) {
         return;
@@ -180,26 +331,48 @@
       google.script.run
         .withSuccessHandler(function (result) {
           if (!result || result.success !== true) {
-            return;
-          }
-
-          var loadedAccessories = normalizeLoadedItems(result.accessories, 'accessories');
-          var loadedFood = normalizeLoadedItems(result.food, 'food');
-          var hasPersistedData = loadedAccessories.length > 0 || loadedFood.length > 0;
-
-          if (hasPersistedData) {
-            state.accessories = loadedAccessories;
-            state.food = loadedFood;
+            ensureVariantFallbackState();
             updateCounts();
             renderAllPmItems();
             return;
           }
 
+          var loadedAccessories = normalizeLoadedItems(result.accessories, 'accessories');
+          var loadedFood = normalizeLoadedItems(result.food, 'food');
+          var loadedVariants = normalizeLoadedVariants(result.variants);
+          var hasPersistedData = loadedAccessories.length > 0 || loadedFood.length > 0;
+          var hasVariantData = loadedVariants.length > 0;
+
+          if (hasPersistedData) {
+            state.accessories = loadedAccessories;
+            state.food = loadedFood;
+            if (hasVariantData) {
+              state.petVariants = loadedVariants;
+            }
+            ensureVariantFallbackState();
+            updateCounts();
+            renderAllPmItems();
+            return;
+          }
+
+          if (hasVariantData) {
+            state.petVariants = loadedVariants;
+            ensureVariantFallbackState();
+            updateCounts();
+            renderAllPmItems();
+          }
+
           // First run with empty sheet: seed current defaults to backend.
           persistPetItemsToBackend(false);
+          if (!hasVariantData) {
+            persistPetVariantsToBackend(false);
+          }
         })
         .withFailureHandler(function () {
           // Keep local default list if backend load fails.
+          ensureVariantFallbackState();
+          updateCounts();
+          renderAllPmItems();
         })
         .getPetItemsForAdmin();
     }
@@ -224,6 +397,28 @@
       editorEls.foodXp = document.getElementById('pm-field-food-xp');
       editorEls.saveBtn = document.getElementById('pm-save-btn');
       editorEls.deleteBtn = document.getElementById('pm-delete-btn');
+
+      editorEls.variantSidebar = document.getElementById('pm-variant-editor-sidebar');
+      editorEls.variantTitle = document.getElementById('pm-variant-editor-title');
+      editorEls.variantName = document.getElementById('pm-variant-name');
+      editorEls.variantTone = document.getElementById('pm-variant-tone');
+      editorEls.variantDescription = document.getElementById('pm-variant-description');
+      editorEls.variantLevel1 = document.getElementById('pm-variant-level1');
+      editorEls.variantLevel2 = document.getElementById('pm-variant-level2');
+      editorEls.variantEyeOpen = document.getElementById('pm-variant-eye-open');
+      editorEls.variantEyeClosed = document.getElementById('pm-variant-eye-closed');
+      editorEls.variantUnlockType = document.getElementById('pm-variant-unlock-type');
+      editorEls.variantUnlockLevelWrap = document.getElementById('pm-variant-unlock-level-wrap');
+      editorEls.variantUnlockLevel = document.getElementById('pm-variant-unlock-level');
+      editorEls.variantUnlockTopicWrap = document.getElementById('pm-variant-unlock-topic-wrap');
+      editorEls.variantUnlockTopic = document.getElementById('pm-variant-unlock-topic');
+      editorEls.variantSizeDown = document.getElementById('pm-variant-size-down');
+      editorEls.variantSizeUp = document.getElementById('pm-variant-size-up');
+      editorEls.variantSizeValue = document.getElementById('pm-variant-size-value');
+      editorEls.variantPreviewImage = document.getElementById('pm-variant-preview-image');
+      editorEls.variantPreviewBox = document.getElementById('pm-variant-preview-box');
+      editorEls.variantSaveBtn = document.getElementById('pm-variant-save-btn');
+      editorEls.variantDeleteBtn = document.getElementById('pm-variant-delete-btn');
     }
 
     function getItemsByType(type) {
@@ -233,8 +428,11 @@
     function updateCounts() {
       var accCountEl = document.getElementById('accessory-count');
       var foodCountEl = document.getElementById('food-count');
+      var variantCountEl = document.getElementById('variant-count');
+      var variantCount = Array.isArray(state.petVariants) ? state.petVariants.length : 0;
       if (accCountEl) accCountEl.textContent = String(state.accessories.length);
       if (foodCountEl) foodCountEl.textContent = String(state.food.length);
+      if (variantCountEl) variantCountEl.textContent = String(variantCount);
     }
 
     function resolveAssetSrc(filePath) {
@@ -248,6 +446,15 @@
       }
 
       return PET_ASSET_CDN + src.replace(/^\/+/, '');
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function renderPmItems(containerId, items, itemType) {
@@ -275,6 +482,224 @@
     function renderAllPmItems() {
       renderPmItems('accessories-grid', state.accessories, 'accessories');
       renderPmItems('food-grid', state.food, 'food');
+      renderPetVariantItems();
+    }
+
+    function renderPetVariantItems() {
+      var container = document.getElementById('pet-variants-grid');
+      if (!container) return;
+
+      if (!Array.isArray(state.petVariants)) {
+        state.petVariants = [];
+      }
+
+      var html = '';
+      html += '<button type="button" class="pm-item-card pm-add-card" data-variant-add="1" aria-label="Them moi pet">+</button>';
+
+      state.petVariants.forEach(function (variant, index) {
+        var src = resolveAssetSrc(variant.level1 || variant.level2 || variant.eyeOpen || '');
+        var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
+        var tone = escapeHtml(variant.tone || '#7c8cff');
+        html += '' +
+          '<div class="pm-item-card pm-variant-card" data-variant-index="' + index + '">' +
+          '  <div class="pm-item-image-box"><img src="' + src + '" alt="' + safeName + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=pet-variant-' + index + '\'"></div>' +
+          '  <span class="pm-item-name">' + safeName + '</span>' +
+          '  <div class="pm-variant-meta">' +
+          '    <span class="pm-variant-level-pill">L1/L2</span>' +
+          '    <span class="pm-variant-color-dot" style="background:' + tone + '"></span>' +
+          '  </div>' +
+          '</div>';
+      });
+
+      container.innerHTML = html;
+    }
+
+    function normalizeVariantUnlockFieldVisibility() {
+      if (!editorEls.variantUnlockType || !editorEls.variantUnlockLevelWrap || !editorEls.variantUnlockTopicWrap) {
+        return;
+      }
+
+      var unlockType = editorEls.variantUnlockType.value || 'level';
+      var isLevel = unlockType === 'level';
+      editorEls.variantUnlockLevelWrap.style.display = isLevel ? 'flex' : 'none';
+      editorEls.variantUnlockTopicWrap.style.display = isLevel ? 'none' : 'flex';
+    }
+
+    function syncVariantTopicOptions() {
+      if (!editorEls.variantUnlockTopic) return;
+      var topics = state.topics.length ? state.topics : TOPIC_FALLBACK;
+      editorEls.variantUnlockTopic.innerHTML = topics
+        .map(function (topic) {
+          return '<option value="' + topic.id + '">' + topic.label + '</option>';
+        })
+        .join('');
+    }
+
+    function updateVariantScaleValue() {
+      if (!state.variantEditor.draft) return;
+      if (editorEls.variantSizeValue) {
+        editorEls.variantSizeValue.textContent = String(state.variantEditor.draft.scalePercent || 100) + '%';
+      }
+    }
+
+    function updateVariantPreview() {
+      if (!editorEls.variantPreviewImage || !state.variantEditor.draft) return;
+
+      var draft = state.variantEditor.draft;
+      var useLevel2 = state.variantEditor.previewLevel === 2;
+      var src = useLevel2 ? draft.level2 : draft.level1;
+      editorEls.variantPreviewImage.src = resolveAssetSrc(src || draft.level1 || draft.level2 || '');
+      editorEls.variantPreviewImage.style.transform = 'scale(' + ((draft.scalePercent || 100) / 100) + ')';
+
+      if (editorEls.variantPreviewBox) {
+        editorEls.variantPreviewBox.querySelectorAll('.pm-preview-toggle').forEach(function (btn) {
+          var lv = parseInt(btn.getAttribute('data-preview-level') || '1', 10);
+          btn.classList.toggle('active', lv === state.variantEditor.previewLevel);
+        });
+      }
+
+      updateVariantScaleValue();
+    }
+
+    function closePmVariantEditor() {
+      if (!editorEls.page || !editorEls.variantSidebar) return;
+      editorEls.page.classList.remove('pm-variant-editor-open');
+      editorEls.variantSidebar.setAttribute('aria-hidden', 'true');
+      state.variantEditor = {
+        index: -1,
+        isNew: false,
+        draft: null,
+        previewLevel: 1
+      };
+    }
+
+    function openPmVariantEditor(index, isNew) {
+      if (!editorEls.page || !editorEls.variantSidebar) return;
+
+      closePmEditor();
+
+      var draft;
+      if (isNew) {
+        draft = {
+          id: 'variant-' + (Date.now()),
+          name: '',
+          tone: '#7c8cff',
+          description: '',
+          level1: '',
+          level2: '',
+          eyeOpen: '',
+          eyeClosed: '',
+          unlockCondition: { type: 'level', value: 1 },
+          scalePercent: 100,
+        };
+      } else {
+        if (index < 0 || index >= state.petVariants.length) return;
+        draft = cloneVariant(state.petVariants[index]);
+      }
+
+      state.variantEditor = {
+        index: index,
+        isNew: !!isNew,
+        draft: draft,
+        previewLevel: 1
+      };
+
+      if (editorEls.variantTitle) {
+        editorEls.variantTitle.textContent = isNew ? 'Thêm hình dạng PET mới' : 'Chỉnh sửa hình dạng PET';
+      }
+      if (editorEls.variantName) editorEls.variantName.value = draft.name || '';
+      if (editorEls.variantTone) editorEls.variantTone.value = draft.tone || '#7c8cff';
+      if (editorEls.variantDescription) editorEls.variantDescription.value = draft.description || '';
+      if (editorEls.variantLevel1) editorEls.variantLevel1.value = draft.level1 || '';
+      if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
+      if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.value = draft.eyeOpen || '';
+      if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.value = draft.eyeClosed || '';
+      if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
+      if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
+
+      syncVariantTopicOptions();
+      if (editorEls.variantUnlockTopic && draft.unlockCondition && draft.unlockCondition.type !== 'level') {
+        editorEls.variantUnlockTopic.value = String(draft.unlockCondition.value || '');
+      }
+
+      normalizeVariantUnlockFieldVisibility();
+      updateVariantPreview();
+
+      editorEls.page.classList.add('pm-variant-editor-open');
+      editorEls.variantSidebar.setAttribute('aria-hidden', 'false');
+    }
+
+    function syncVariantDraftFromForm() {
+      var draft = state.variantEditor.draft;
+      if (!draft) return;
+
+      draft.name = editorEls.variantName ? editorEls.variantName.value.trim() : draft.name;
+      draft.tone = editorEls.variantTone ? editorEls.variantTone.value : draft.tone;
+      draft.description = editorEls.variantDescription ? editorEls.variantDescription.value.trim() : draft.description;
+      draft.level1 = editorEls.variantLevel1 ? editorEls.variantLevel1.value.trim() : draft.level1;
+      draft.level2 = editorEls.variantLevel2 ? editorEls.variantLevel2.value.trim() : draft.level2;
+      draft.eyeOpen = editorEls.variantEyeOpen ? editorEls.variantEyeOpen.value.trim() : draft.eyeOpen;
+      draft.eyeClosed = editorEls.variantEyeClosed ? editorEls.variantEyeClosed.value.trim() : draft.eyeClosed;
+
+      var unlockType = editorEls.variantUnlockType ? editorEls.variantUnlockType.value : 'level';
+      var unlockValue = unlockType === 'level'
+        ? Math.max(1, parseNonNegative(editorEls.variantUnlockLevel ? editorEls.variantUnlockLevel.value : 1, 1))
+        : (editorEls.variantUnlockTopic ? String(editorEls.variantUnlockTopic.value || '') : '');
+
+      draft.unlockCondition = {
+        type: unlockType,
+        value: unlockValue,
+      };
+    }
+
+    function changeVariantScale(step) {
+      if (!state.variantEditor.draft) return;
+      var next = parseNonNegative(state.variantEditor.draft.scalePercent, 100) + step;
+      next = Math.max(40, Math.min(200, next));
+      state.variantEditor.draft.scalePercent = next;
+      updateVariantPreview();
+    }
+
+    function handleSaveVariantEditor() {
+      if (!state.variantEditor.draft) return;
+      syncVariantDraftFromForm();
+
+      var draft = state.variantEditor.draft;
+      if (!draft.name) {
+        if (editorEls.variantName) editorEls.variantName.focus();
+        return;
+      }
+      if (!draft.level1 && !draft.level2) {
+        if (editorEls.variantLevel1) editorEls.variantLevel1.focus();
+        return;
+      }
+
+      if (state.variantEditor.isNew) {
+        state.petVariants.unshift(cloneVariant(draft));
+      } else if (state.variantEditor.index >= 0 && state.variantEditor.index < state.petVariants.length) {
+        state.petVariants[state.variantEditor.index] = cloneVariant(draft);
+      }
+
+      updateCounts();
+      renderAllPmItems();
+      persistPetVariantsToBackend(true);
+      closePmVariantEditor();
+    }
+
+    function handleDeleteVariantEditor() {
+      if (state.variantEditor.isNew) {
+        closePmVariantEditor();
+        return;
+      }
+
+      var index = state.variantEditor.index;
+      if (index < 0 || index >= state.petVariants.length) return;
+
+      state.petVariants.splice(index, 1);
+      updateCounts();
+      renderAllPmItems();
+      persistPetVariantsToBackend(true);
+      closePmVariantEditor();
     }
 
     function populateTopicOptions() {
@@ -456,6 +881,8 @@
       var items = getItemsByType(type);
       if (index < 0 || index >= items.length) return;
 
+      closePmVariantEditor();
+
       state.editor = {
         type: type,
         index: index,
@@ -593,14 +1020,31 @@
       openPmEditor(type, index);
     }
 
+    function handleVariantGridClick(event) {
+      var addCard = event.target.closest('[data-variant-add="1"]');
+      if (addCard) {
+        openPmVariantEditor(-1, true);
+        return;
+      }
+
+      var variantCard = event.target.closest('[data-variant-index]');
+      if (!variantCard) return;
+
+      var index = parseInt(variantCard.getAttribute('data-variant-index') || '-1', 10);
+      if (isNaN(index) || index < 0) return;
+      openPmVariantEditor(index, false);
+    }
+
     function bindPmEvents() {
       if (eventsBound) return;
 
       var accessoriesGrid = document.getElementById('accessories-grid');
       var foodGrid = document.getElementById('food-grid');
+      var variantGrid = document.getElementById('pet-variants-grid');
 
       if (accessoriesGrid) accessoriesGrid.addEventListener('click', handleGridClick);
       if (foodGrid) foodGrid.addEventListener('click', handleGridClick);
+      if (variantGrid) variantGrid.addEventListener('click', handleVariantGridClick);
 
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
@@ -608,8 +1052,51 @@
       if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
       if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
 
+      if (editorEls.variantUnlockType) editorEls.variantUnlockType.addEventListener('change', function () {
+        normalizeVariantUnlockFieldVisibility();
+        syncVariantDraftFromForm();
+      });
+      if (editorEls.variantUnlockTopic) editorEls.variantUnlockTopic.addEventListener('change', syncVariantDraftFromForm);
+      if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantTone) editorEls.variantTone.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        updateVariantPreview();
+      });
+      if (editorEls.variantDescription) editorEls.variantDescription.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantLevel1) editorEls.variantLevel1.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        updateVariantPreview();
+      });
+      if (editorEls.variantLevel2) editorEls.variantLevel2.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        updateVariantPreview();
+      });
+      if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantSizeDown) editorEls.variantSizeDown.addEventListener('click', function () {
+        changeVariantScale(-5);
+      });
+      if (editorEls.variantSizeUp) editorEls.variantSizeUp.addEventListener('click', function () {
+        changeVariantScale(5);
+      });
+      if (editorEls.variantSaveBtn) editorEls.variantSaveBtn.addEventListener('click', handleSaveVariantEditor);
+      if (editorEls.variantDeleteBtn) editorEls.variantDeleteBtn.addEventListener('click', handleDeleteVariantEditor);
+      if (editorEls.variantPreviewBox) {
+        editorEls.variantPreviewBox.querySelectorAll('.pm-preview-toggle').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            if (!state.variantEditor.draft) return;
+            state.variantEditor.previewLevel = parseInt(this.getAttribute('data-preview-level') || '1', 10) === 2 ? 2 : 1;
+            updateVariantPreview();
+          });
+        });
+      }
+
       document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') closePmEditor();
+        if (event.key === 'Escape') {
+          closePmEditor();
+          closePmVariantEditor();
+        }
       });
 
       eventsBound = true;
@@ -618,6 +1105,7 @@
     function loadTopicsForConditions() {
       if (!(window.google && google.script && google.script.run)) {
         populateTopicOptions();
+        syncVariantTopicOptions();
         return;
       }
 
@@ -634,9 +1122,11 @@
 
           if (parsed.length > 0) state.topics = parsed;
           populateTopicOptions();
+          syncVariantTopicOptions();
         })
         .withFailureHandler(function () {
           populateTopicOptions();
+          syncVariantTopicOptions();
         })
         .getAllTopicsForAdmin();
     }
@@ -651,6 +1141,7 @@
 
     window.initPetManagement = function () {
       initializeStateIfNeeded();
+      ensureVariantFallbackState();
       cacheEditorElements();
       bindPmEvents();
       loadTopicsForConditions();
@@ -658,6 +1149,7 @@
       renderAllPmItems();
       loadPetItemsFromBackend();
       closePmEditor();
+      closePmVariantEditor();
       window.togglePmSegment('accessories');
       state.initialized = true;
     };
@@ -675,6 +1167,7 @@
     };
 
     window.closePmEditor = closePmEditor;
+    window.closePmVariantEditor = closePmVariantEditor;
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', autoInitPetManagement);

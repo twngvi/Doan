@@ -1242,8 +1242,16 @@ function ensurePetVariantsSheet_() {
   }
 
   const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-  if (headers.length < PET_VARIANTS_HEADERS.length) {
+  const hasSameHeaders =
+    headers.length >= PET_VARIANTS_HEADERS.length &&
+    PET_VARIANTS_HEADERS.every(function (header, index) {
+      return String(headers[index] || "").trim() === header;
+    });
+
+  if (headers.length < PET_VARIANTS_HEADERS.length || !hasSameHeaders) {
     sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setValues([PET_VARIANTS_HEADERS]);
+    sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
   }
 
   return sheet;
@@ -1334,6 +1342,19 @@ function parsePetVariantRows_(data) {
   const unlockValueIdx = idx("unlockValue");
   const scalePercentIdx = idx("scalePercent");
   const orderIdx = idx("orderIndex");
+
+  if (
+    variantIdIdx < 0 ||
+    nameIdx < 0 ||
+    level1Idx < 0 ||
+    level2Idx < 0 ||
+    unlockTypeIdx < 0 ||
+    unlockValueIdx < 0 ||
+    scalePercentIdx < 0 ||
+    orderIdx < 0
+  ) {
+    return [];
+  }
 
   const variants = [];
   for (let i = 1; i < data.length; i++) {
@@ -1509,11 +1530,49 @@ function getPetItemsForAdmin() {
 function getPetVariantsForAdmin() {
   try {
     seedDefaultPetVariantsIfEmpty_();
-    const data = ensurePetVariantsSheet_().getDataRange().getValues();
+    const sheet = ensurePetVariantsSheet_();
+    const data = sheet.getDataRange().getValues();
+    let variants = parsePetVariantRows_(data);
+
+    if (variants.length === 0) {
+      const rows = DEFAULT_PET_VARIANTS.map(function (variant, index) {
+        return toPetVariantRow_(variant, index);
+      });
+
+      sheet.clearContents();
+      sheet
+        .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
+        .setValues([PET_VARIANTS_HEADERS]);
+      sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
+      if (rows.length > 0) {
+        sheet
+          .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
+          .setValues(rows);
+      }
+
+      variants = DEFAULT_PET_VARIANTS.map(function (variant) {
+        return {
+          id: variant.id,
+          name: variant.name,
+          tone: variant.tone,
+          description: variant.description,
+          level1: variant.level1,
+          level2: variant.level2,
+          eyeOpen: variant.eyeOpen,
+          eyeClosed: variant.eyeClosed,
+          unlockCondition: {
+            type: variant.unlockCondition.type,
+            value: variant.unlockCondition.value,
+          },
+          scalePercent: variant.scalePercent,
+        };
+      });
+    }
 
     return {
       success: true,
-      variants: parsePetVariantRows_(data),
+      variants: variants,
     };
   } catch (error) {
     Logger.log("Error getting pet variants for admin: " + error.toString());
