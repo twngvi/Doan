@@ -111,6 +111,9 @@
         file: item.file,
         priceXqp: item.priceXqp,
         petXpGain: item.petXpGain,
+        offsetX: item.offsetX || 0,
+        offsetY: item.offsetY || 0,
+        scalePercent: item.scalePercent || 100,
         unlockCondition: {
           type: item.unlockCondition && item.unlockCondition.type ? item.unlockCondition.type : "level",
           value: item.unlockCondition && item.unlockCondition.value ? item.unlockCondition.value : 1
@@ -157,6 +160,9 @@
             name: item.name,
             file: item.file,
             priceXqp: 300,
+            offsetX: 0,
+            offsetY: 0,
+            scalePercent: 100,
             unlockCondition: { type: "level", value: 1 }
           };
         });
@@ -220,6 +226,9 @@
             name: String(safeItem.name || ''),
             file: String(safeItem.file || ''),
             priceXqp: parseNonNegative(safeItem.priceXqp, 0),
+            offsetX: parseNonNegative(safeItem.offsetX, 0),
+            offsetY: parseNonNegative(safeItem.offsetY, 0),
+            scalePercent: Math.max(40, Math.min(200, parseNonNegative(safeItem.scalePercent, 100))),
             unlockCondition: {
               type: unlockType,
               value: unlockValue,
@@ -395,6 +404,17 @@
       editorEls.unlockTopic = document.getElementById('pm-field-unlock-topic');
       editorEls.foodXpWrap = document.getElementById('pm-food-xp-wrap');
       editorEls.foodXp = document.getElementById('pm-field-food-xp');
+      editorEls.accessoryPositionWrap = document.getElementById('pm-accessory-position-wrap');
+      editorEls.accessoryOffsetX = document.getElementById('pm-accessory-offset-x');
+      editorEls.accessoryOffsetY = document.getElementById('pm-accessory-offset-y');
+      editorEls.accessoryScaleWrap = document.getElementById('pm-accessory-scale-wrap');
+      editorEls.accessoryScaleDown = document.getElementById('pm-accessory-scale-down');
+      editorEls.accessoryScaleUp = document.getElementById('pm-accessory-scale-up');
+      editorEls.accessoryScaleValue = document.getElementById('pm-accessory-scale-value');
+      editorEls.accessoryPreviewWrap = document.getElementById('pm-accessory-preview-wrap');
+      editorEls.accessoryPreviewBox = document.getElementById('pm-accessory-preview-box');
+      editorEls.accessoryPreviewBase = document.getElementById('pm-accessory-preview-base');
+      editorEls.accessoryPreviewItem = document.getElementById('pm-accessory-preview-item');
       editorEls.saveBtn = document.getElementById('pm-save-btn');
       editorEls.deleteBtn = document.getElementById('pm-delete-btn');
 
@@ -402,11 +422,28 @@
       editorEls.variantTitle = document.getElementById('pm-variant-editor-title');
       editorEls.variantName = document.getElementById('pm-variant-name');
       editorEls.variantTone = document.getElementById('pm-variant-tone');
+      editorEls.variantToneHex = document.getElementById('pm-variant-tone-hex');
+      editorEls.variantColorSwatch = document.getElementById('pm-variant-color-swatch');
       editorEls.variantDescription = document.getElementById('pm-variant-description');
+      editorEls.levelTabs = document.querySelectorAll('.pm-level-tab');
+      editorEls.levelTabContents = [
+        document.getElementById('pm-level-1-content'),
+        document.getElementById('pm-level-2-content')
+      ];
       editorEls.variantLevel1 = document.getElementById('pm-variant-level1');
+      editorEls.variantLevel1File = document.getElementById('pm-variant-level1-file');
+      editorEls.variantLevel1FileName = document.getElementById('pm-level1-file-name');
+      editorEls.variantLevel1Preview = document.getElementById('pm-variant-level1-preview');
       editorEls.variantLevel2 = document.getElementById('pm-variant-level2');
+      editorEls.variantLevel2File = document.getElementById('pm-variant-level2-file');
+      editorEls.variantLevel2FileName = document.getElementById('pm-level2-file-name');
+      editorEls.variantLevel2Preview = document.getElementById('pm-variant-level2-preview');
       editorEls.variantEyeOpen = document.getElementById('pm-variant-eye-open');
+      editorEls.variantEyeOpenFile = document.getElementById('pm-variant-eye-open-file');
+      editorEls.variantEyeOpenFileName = document.getElementById('pm-eye-open-file-name');
       editorEls.variantEyeClosed = document.getElementById('pm-variant-eye-closed');
+      editorEls.variantEyeClosedFile = document.getElementById('pm-variant-eye-closed-file');
+      editorEls.variantEyeClosedFileName = document.getElementById('pm-eye-closed-file-name');
       editorEls.variantUnlockType = document.getElementById('pm-variant-unlock-type');
       editorEls.variantUnlockLevelWrap = document.getElementById('pm-variant-unlock-level-wrap');
       editorEls.variantUnlockLevel = document.getElementById('pm-variant-unlock-level');
@@ -429,7 +466,7 @@
       var accCountEl = document.getElementById('accessory-count');
       var foodCountEl = document.getElementById('food-count');
       var variantCountEl = document.getElementById('variant-count');
-      var variantCount = Array.isArray(state.petVariants) ? state.petVariants.length : 0;
+      var variantCount = Array.isArray(state.petVariants) ? state.petVariants.length * 2 : 0;
       if (accCountEl) accCountEl.textContent = String(state.accessories.length);
       if (foodCountEl) foodCountEl.textContent = String(state.food.length);
       if (variantCountEl) variantCountEl.textContent = String(variantCount);
@@ -497,18 +534,25 @@
       html += '<button type="button" class="pm-item-card pm-add-card" data-variant-add="1" aria-label="Them moi pet">+</button>';
 
       state.petVariants.forEach(function (variant, index) {
-        var src = resolveAssetSrc(variant.level1 || variant.level2 || variant.eyeOpen || '');
         var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
         var tone = escapeHtml(variant.tone || '#7c8cff');
-        html += '' +
-          '<div class="pm-item-card pm-variant-card" data-variant-index="' + index + '">' +
-          '  <div class="pm-item-image-box"><img src="' + src + '" alt="' + safeName + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=pet-variant-' + index + '\'"></div>' +
-          '  <span class="pm-item-name">' + safeName + '</span>' +
-          '  <div class="pm-variant-meta">' +
-          '    <span class="pm-variant-level-pill">L1/L2</span>' +
-          '    <span class="pm-variant-color-dot" style="background:' + tone + '"></span>' +
-          '  </div>' +
-          '</div>';
+        [1, 2].forEach(function (level) {
+          var src = resolveAssetSrc(level === 1 ? variant.level1 : variant.level2 || variant.level1 || variant.eyeOpen || '');
+          var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
+          html += '' +
+            '<div class="pm-item-card pm-variant-card pm-variant-level-card" data-variant-index="' + index + '" data-variant-level="' + level + '">' +
+            '  <div class="pm-item-badge"></div>' +
+            '  <div class="pm-item-image-box">' +
+            '    <span class="pm-variant-level-badge">' + levelLabel + '</span>' +
+            '    <img src="' + src + '" alt="' + safeName + ' ' + levelLabel + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=pet-variant-' + index + '-' + level + '\'\">' +
+            '  </div>' +
+            '  <span class="pm-item-name">' + safeName + '</span>' +
+            '  <div class="pm-variant-meta">' +
+            '    <span class="pm-variant-level-pill">' + levelLabel + '</span>' +
+            '    <span class="pm-variant-color-dot" style="background:' + tone + '"></span>' +
+            '  </div>' +
+            '</div>';
+        });
       });
 
       container.innerHTML = html;
@@ -573,7 +617,7 @@
       };
     }
 
-    function openPmVariantEditor(index, isNew) {
+    function openPmVariantEditor(index, isNew, previewLevel) {
       if (!editorEls.page || !editorEls.variantSidebar) return;
 
       closePmEditor();
@@ -601,19 +645,26 @@
         index: index,
         isNew: !!isNew,
         draft: draft,
-        previewLevel: 1
+        previewLevel: previewLevel === 2 ? 2 : 1
       };
 
       if (editorEls.variantTitle) {
         editorEls.variantTitle.textContent = isNew ? 'Thêm hình dạng PET mới' : 'Chỉnh sửa hình dạng PET';
       }
       if (editorEls.variantName) editorEls.variantName.value = draft.name || '';
-      if (editorEls.variantTone) editorEls.variantTone.value = draft.tone || '#7c8cff';
+      syncColorPickerFromHex(draft.tone || '#7c8cff');
+      syncColorHexToInput(draft.tone || '#7c8cff');
       if (editorEls.variantDescription) editorEls.variantDescription.value = draft.description || '';
       if (editorEls.variantLevel1) editorEls.variantLevel1.value = draft.level1 || '';
+      if (editorEls.variantLevel1FileName) editorEls.variantLevel1FileName.textContent = draft.level1 ? String(draft.level1).split('/').pop() : 'Chưa chọn tệp';
+      if (editorEls.variantLevel1Preview) editorEls.variantLevel1Preview.src = resolveAssetSrc(draft.level1 || '');
       if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
+      if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
+      if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
       if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.value = draft.eyeOpen || '';
+      if (editorEls.variantEyeOpenFileName) editorEls.variantEyeOpenFileName.textContent = draft.eyeOpen ? String(draft.eyeOpen).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.value = draft.eyeClosed || '';
+      if (editorEls.variantEyeClosedFileName) editorEls.variantEyeClosedFileName.textContent = draft.eyeClosed ? String(draft.eyeClosed).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
 
@@ -623,6 +674,11 @@
       }
 
       normalizeVariantUnlockFieldVisibility();
+      if (state.variantEditor.previewLevel === 2) {
+        selectLevel2Tab();
+      } else {
+        selectLevel1Tab();
+      }
       updateVariantPreview();
 
       editorEls.page.classList.add('pm-variant-editor-open');
@@ -816,10 +872,19 @@
 
       if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
+      
+      // Accessory position and scale
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(draft.offsetX || 0);
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(draft.offsetY || 0);
+      if (editorEls.accessoryPreviewWrap) editorEls.accessoryPreviewWrap.style.display = isFood ? 'none' : 'flex';
+      if (editorEls.accessoryScaleValue) editorEls.accessoryScaleValue.textContent = String(draft.scalePercent || 100) + '%';
+      
       if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
 
+      updateAccessoryFieldVisibility();
       syncUnlockFieldVisibility();
       updateEditorImagePreview();
+      updateAccessoryPreview();
     }
 
     function openSidebar() {
@@ -900,6 +965,139 @@
       return n;
     }
 
+    function getAccessoryCatalogItem(fileName) {
+      if (!fileName) return null;
+      var match = null;
+      var i;
+
+      for (i = 0; i < ACCESSORY_LIST.length; i++) {
+        if (ACCESSORY_LIST[i].file === fileName) {
+          match = ACCESSORY_LIST[i];
+          break;
+        }
+      }
+
+      return match;
+    }
+
+    function updateAccessoryPreview() {
+      if (!editorEls.accessoryPreviewItem || !state.editor.draft) return;
+
+      var draft = state.editor.draft;
+      var fileName = draft.file || '';
+      var previewSrc = resolveAssetSrc(fileName);
+      var accessoryItem = getAccessoryCatalogItem(fileName);
+      var offsetX = parseNonNegative(draft.offsetX, 0);
+      var offsetY = parseNonNegative(draft.offsetY, 0);
+      var scalePercent = Math.max(40, Math.min(200, parseNonNegative(draft.scalePercent, 100)));
+
+      if (editorEls.accessoryPreviewBase) {
+        editorEls.accessoryPreviewBase.src = resolveAssetSrc((PET_VARIANT_LIST[0] && PET_VARIANT_LIST[0].level1) || '');
+      }
+
+      editorEls.accessoryPreviewItem.src = previewSrc;
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-x', offsetX + 'px');
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-y', offsetY + 'px');
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale', (accessoryItem && accessoryItem.widthPercent ? accessoryItem.widthPercent + '%' : '34%'));
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String(scalePercent / 100));
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-rot', '0deg');
+    }
+
+    function syncAccessoryDraftFromForm() {
+      if (!state.editor.draft) return;
+      state.editor.draft.offsetX = parseNonNegative(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : 0, 0);
+      state.editor.draft.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
+      state.editor.draft.scalePercent = Math.max(40, Math.min(200, parseNonNegative(state.editor.draft.scalePercent, 100)));
+      updateAccessoryPreview();
+    }
+
+    function selectLevel1Tab() {
+      if (!editorEls.levelTabs || !editorEls.levelTabContents) return;
+      editorEls.levelTabs.forEach(function (tab) {
+        tab.classList.toggle('active', tab.getAttribute('data-level') === '1');
+      });
+      editorEls.levelTabContents[0].classList.add('active');
+      editorEls.levelTabContents[1].classList.remove('active');
+    }
+
+    function selectLevel2Tab() {
+      if (!editorEls.levelTabs || !editorEls.levelTabContents) return;
+      editorEls.levelTabs.forEach(function (tab) {
+        tab.classList.toggle('active', tab.getAttribute('data-level') === '2');
+      });
+      editorEls.levelTabContents[0].classList.remove('active');
+      editorEls.levelTabContents[1].classList.add('active');
+    }
+
+    function syncColorHexToInput(hexValue) {
+      if (editorEls.variantToneHex) {
+        editorEls.variantToneHex.value = hexValue;
+      }
+    }
+
+    function syncColorPickerFromHex(hexValue) {
+      if (editorEls.variantTone) {
+        editorEls.variantTone.value = hexValue;
+      }
+      if (editorEls.variantColorSwatch) {
+        editorEls.variantColorSwatch.style.backgroundColor = hexValue;
+      }
+    }
+
+    function setupLevelFileInputHandler(fileInputId, imageInputId, fileNameId, previewId) {
+      var fileInput = document.getElementById(fileInputId);
+      if (!fileInput) return;
+
+      fileInput.addEventListener('change', function (event) {
+        var file = event.target.files && event.target.files[0];
+        if (!file) return;
+
+        var fileName = file.name;
+        var fileNameEl = document.getElementById(fileNameId);
+        if (fileNameEl) fileNameEl.textContent = fileName;
+
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var dataUrl = e.target.result;
+          if (imageInputId) {
+            var imageInput = document.getElementById(imageInputId);
+            if (imageInput) imageInput.value = dataUrl;
+          }
+          var previewEl = document.getElementById(previewId);
+          if (previewEl && previewEl.tagName === 'IMG') {
+            previewEl.src = dataUrl;
+          }
+          syncVariantDraftFromForm();
+          updateVariantPreview();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function handleAccessoryScaleChange(step) {
+      if (!state.editor.draft) return;
+      var currentScale = state.editor.draft.scalePercent || 100;
+      var newScale = currentScale + step;
+      newScale = Math.max(40, Math.min(200, newScale));
+      state.editor.draft.scalePercent = newScale;
+      if (editorEls.accessoryScaleValue) {
+        editorEls.accessoryScaleValue.textContent = newScale + '%';
+      }
+    }
+
+    function updateAccessoryFieldVisibility() {
+      var isAccessory = state.editor.type === 'accessories';
+      if (editorEls.accessoryPositionWrap) {
+        editorEls.accessoryPositionWrap.style.display = isAccessory ? 'flex' : 'none';
+      }
+      if (editorEls.accessoryScaleWrap) {
+        editorEls.accessoryScaleWrap.style.display = isAccessory ? 'flex' : 'none';
+      }
+      if (editorEls.accessoryPreviewWrap) {
+        editorEls.accessoryPreviewWrap.style.display = isAccessory ? 'flex' : 'none';
+      }
+    }
+
     function handleSaveEditor() {
       if (!state.editor.draft || !state.editor.type) return;
 
@@ -936,6 +1134,14 @@
         type: unlockType,
         value: unlockValue
       };
+      
+      // Accessory position and scale
+      if (type === 'accessories') {
+        payload.offsetX = parseNonNegative(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : 0, 0);
+        payload.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
+        payload.scalePercent = parseNonNegative(state.editor.draft.scalePercent || 100, 100);
+        payload.scalePercent = Math.max(40, Math.min(200, payload.scalePercent));
+      }
 
       if (type === 'food') {
         payload.petXpGain = parseNonNegative(editorEls.foodXp ? editorEls.foodXp.value : 0, 0);
@@ -1032,7 +1238,8 @@
 
       var index = parseInt(variantCard.getAttribute('data-variant-index') || '-1', 10);
       if (isNaN(index) || index < 0) return;
-      openPmVariantEditor(index, false);
+      var level = parseInt(variantCard.getAttribute('data-variant-level') || '1', 10);
+      openPmVariantEditor(index, false, level === 2 ? 2 : 1);
     }
 
     function bindPmEvents() {
@@ -1049,8 +1256,68 @@
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
       if (editorEls.imageFile) editorEls.imageFile.addEventListener('change', handleImageFileChange);
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.addEventListener('input', syncAccessoryDraftFromForm);
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.addEventListener('input', syncAccessoryDraftFromForm);
       if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
       if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
+
+      // Accessory scale buttons
+      if (editorEls.accessoryScaleDown) {
+        editorEls.accessoryScaleDown.addEventListener('click', function () {
+          handleAccessoryScaleChange(-5);
+          updateAccessoryPreview();
+        });
+      }
+      if (editorEls.accessoryScaleUp) {
+        editorEls.accessoryScaleUp.addEventListener('click', function () {
+          handleAccessoryScaleChange(5);
+          updateAccessoryPreview();
+        });
+      }
+
+      // Level tabs
+      if (editorEls.levelTabs && editorEls.levelTabs.length > 0) {
+        editorEls.levelTabs.forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            var level = parseInt(this.getAttribute('data-level') || '1', 10);
+            if (level === 2) {
+              selectLevel2Tab();
+            } else {
+              selectLevel1Tab();
+            }
+          });
+        });
+      }
+
+      // Color picker events
+      if (editorEls.variantTone) {
+        editorEls.variantTone.addEventListener('input', function () {
+          var color = this.value;
+          if (editorEls.variantColorSwatch) {
+            editorEls.variantColorSwatch.style.backgroundColor = color;
+          }
+          syncColorHexToInput(color);
+          syncVariantDraftFromForm();
+          updateVariantPreview();
+        });
+      }
+
+      if (editorEls.variantToneHex) {
+        editorEls.variantToneHex.addEventListener('input', function () {
+          var hex = this.value;
+          if (/^#[0-9A-F]{6}$/i.test(hex)) {
+            syncColorPickerFromHex(hex);
+            syncVariantDraftFromForm();
+            updateVariantPreview();
+          }
+        });
+      }
+
+      // File upload handlers for level and eye images
+      setupLevelFileInputHandler('pm-variant-level1-file', 'pm-variant-level1', 'pm-level1-file-name', 'pm-variant-level1-preview');
+      setupLevelFileInputHandler('pm-variant-level2-file', 'pm-variant-level2', 'pm-level2-file-name', 'pm-variant-level2-preview');
+      setupLevelFileInputHandler('pm-variant-eye-open-file', 'pm-variant-eye-open', 'pm-eye-open-file-name', null);
+      setupLevelFileInputHandler('pm-variant-eye-closed-file', 'pm-variant-eye-closed', 'pm-eye-closed-file-name', null);
 
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.addEventListener('change', function () {
         normalizeVariantUnlockFieldVisibility();
@@ -1059,18 +1326,14 @@
       if (editorEls.variantUnlockTopic) editorEls.variantUnlockTopic.addEventListener('change', syncVariantDraftFromForm);
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
-      if (editorEls.variantTone) editorEls.variantTone.addEventListener('input', function () {
-        syncVariantDraftFromForm();
-        updateVariantPreview();
-      });
       if (editorEls.variantDescription) editorEls.variantDescription.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantLevel1) editorEls.variantLevel1.addEventListener('input', function () {
         syncVariantDraftFromForm();
-        updateVariantPreview();
+        if (state.variantEditor.previewLevel === 1) updateVariantPreview();
       });
       if (editorEls.variantLevel2) editorEls.variantLevel2.addEventListener('input', function () {
         syncVariantDraftFromForm();
-        updateVariantPreview();
+        if (state.variantEditor.previewLevel === 2) updateVariantPreview();
       });
       if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.addEventListener('input', syncVariantDraftFromForm);

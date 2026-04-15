@@ -1127,6 +1127,9 @@ const PET_ITEMS_HEADERS = [
   "unlockType",
   "unlockValue",
   "petXpGain",
+  "offsetX",
+  "offsetY",
+  "scalePercent",
   "orderIndex",
   "updatedAt",
 ];
@@ -1452,6 +1455,9 @@ function getPetItemsForAdmin() {
     const unlockTypeIdx = idx("unlockType");
     const unlockValueIdx = idx("unlockValue");
     const petXpIdx = idx("petXpGain");
+    const offsetXIdx = idx("offsetX");
+    const offsetYIdx = idx("offsetY");
+    const scalePercentIdx = idx("scalePercent");
     const orderIdx = idx("orderIndex");
 
     const accessories = [];
@@ -1491,6 +1497,11 @@ function getPetItemsForAdmin() {
         item.petXpGain = parseInt(row[petXpIdx], 10) || 0;
         food.push(item);
       } else {
+        item.offsetX = parseInt(row[offsetXIdx], 10) || 0;
+        item.offsetY = parseInt(row[offsetYIdx], 10) || 0;
+        let scalePercent = parseInt(row[scalePercentIdx], 10);
+        if (isNaN(scalePercent)) scalePercent = 100;
+        item.scalePercent = Math.max(40, Math.min(200, scalePercent));
         accessories.push(item);
       }
     }
@@ -1531,6 +1542,9 @@ function getPetVariantsForAdmin() {
   try {
     seedDefaultPetVariantsIfEmpty_();
     const sheet = ensurePetVariantsSheet_();
+  let scalePercent = parseInt(safeItem.scalePercent, 10);
+  if (isNaN(scalePercent)) scalePercent = 100;
+  scalePercent = Math.max(40, Math.min(200, scalePercent));
     const data = sheet.getDataRange().getValues();
     let variants = parsePetVariantRows_(data);
 
@@ -1541,6 +1555,9 @@ function getPetVariantsForAdmin() {
 
       sheet.clearContents();
       sheet
+    normalizedType === "food" ? 0 : parseInt(safeItem.offsetX, 10) || 0,
+    normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
+    normalizedType === "food" ? 100 : scalePercent,
         .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
         .setValues([PET_VARIANTS_HEADERS]);
       sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");

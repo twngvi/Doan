@@ -256,6 +256,9 @@
             name: String(safe.name || (fallback && fallback.name) || ""),
             file: String(safe.file || (fallback && fallback.file) || ""),
             priceXqp: toNonNegativeNumber(safe.priceXqp, 0),
+            offsetX: toNonNegativeNumber(safe.offsetX, 0),
+            offsetY: toNonNegativeNumber(safe.offsetY, 0),
+            scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(safe.scalePercent, 100))),
             unlockCondition: safe.unlockCondition || { type: 'level', value: 1 }
           };
 
@@ -1241,6 +1244,7 @@
 
       const rule = getAccessoryRule(fileName);
       const finalPosition = resolveAccessoryPosition(fileName, desiredPosition);
+      const accessoryCatalogItem = getAccessoryItemByFileName(fileName);
 
       const baseTop = 12;
       const baseLeftMap = {
@@ -1263,9 +1267,18 @@
       accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
-      accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue));
+      accessoryImageEl.style.setProperty("--pet-accessory-offset-x", ((accessoryCatalogItem && accessoryCatalogItem.offsetX) || 0) + "px");
+      accessoryImageEl.style.setProperty("--pet-accessory-offset-y", ((accessoryCatalogItem && accessoryCatalogItem.offsetY) || 0) + "px");
+      accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue * (((accessoryCatalogItem && accessoryCatalogItem.scalePercent) || 100) / 100)));
 
       return finalPosition;
+    }
+
+    function getAccessoryItemByFileName(fileName) {
+      if (!fileName) return null;
+      return ACCESSORY_ITEMS.find(function (item) {
+        return item.file === fileName;
+      }) || null;
     }
 
     function updateAccessoryPanelState() {
@@ -1360,6 +1373,7 @@
           accessoryImageEl,
           selected.fileName,
           selected.position,
+          selected,
         );
 
         applySrcAsync(accessoryImageEl, selected.fileName);
@@ -1690,9 +1704,13 @@
           }
 
           const finalPosition = resolveAccessoryPosition(fileName, state.accessoryPosition);
+          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100 };
           state.selectedAccessories.push({
             fileName: fileName,
             position: finalPosition,
+            offsetX: toNonNegativeNumber(catalogItem.offsetX, 0),
+            offsetY: toNonNegativeNumber(catalogItem.offsetY, 0),
+            scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(catalogItem.scalePercent, 100))),
           });
           state.selectedAccessory = fileName;
           state.accessoryPosition = finalPosition;
