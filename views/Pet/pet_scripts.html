@@ -1451,7 +1451,11 @@
         const displayName = String(catalogItem.name || ("Phụ kiện " + (index + 1)));
 
         const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
-        const isLocked = catalogItem.unlockCondition && catalogItem.unlockCondition.type === 'level' && catalogItem.unlockCondition.value > currentLevel;
+        const meetsUnlockCondition =
+          !catalogItem.unlockCondition ||
+          catalogItem.unlockCondition.type !== 'level' ||
+          catalogItem.unlockCondition.value <= currentLevel;
+        const isLocked = !state.isLevelTwo || !meetsUnlockCondition;
 
         const btn = document.createElement("button");
         btn.type = "button";

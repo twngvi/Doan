@@ -4794,6 +4794,21 @@ sys.stderr = sys.__stderr__
     return "";
   }
 
+  function getTopicProgressState(topicId) {
+    if (!topicId || !window.globalTopicsCache || !window.globalTopicsCache.progress) {
+      return null;
+    }
+
+    return window.globalTopicsCache.progress[topicId] || null;
+  }
+
+  function canSwitchToTopic(topicId, isCurrentTopic) {
+    if (isCurrentTopic) return true;
+
+    const progress = getTopicProgressState(topicId);
+    return !!(progress && (progress.lessonCompleted || progress.completed));
+  }
+
   /**
    * Initialize topic switcher: load topics from global cache
    */
@@ -4863,18 +4878,18 @@ sys.stderr = sys.__stderr__
       const isActive = topic.topicId === currentTopicId;
       const contentDocId = resolveTopicContentDocId(topic);
       const hasContent = !!contentDocId;
+      const canSwitch = hasContent && canSwitchToTopic(topic.topicId, isActive);
 
       let statusIcon = "";
       if (isActive) {
         statusIcon = "▶";
       } else if (!hasContent) {
         statusIcon = "🔒";
+      } else if (!canSwitch) {
+        statusIcon = "🔒";
       } else {
         // Check progress from global cache
-        let progress = null;
-        if (window.globalTopicsCache && window.globalTopicsCache.progress) {
-          progress = window.globalTopicsCache.progress[topic.topicId];
-        }
+        const progress = getTopicProgressState(topic.topicId);
         if (progress && progress.lessonCompleted) {
           statusIcon = "✅";
         }
@@ -4883,8 +4898,8 @@ sys.stderr = sys.__stderr__
       const itemClass =
         "topic-switcher-item" +
         (isActive ? " active" : "") +
-        (!hasContent ? " no-content" : "");
-      const canSwitch = hasContent && !isActive;
+        (!hasContent ? " no-content" : "") +
+        (!canSwitch && !isActive && hasContent ? " locked" : "");
       const safeTopicId = escapeHtml(String(topic.topicId || ""));
       const safeTopicTitle = escapeHtml(String(topic.title || "Chủ đề"));
       const safeDocId = escapeHtml(contentDocId);
@@ -4973,6 +4988,11 @@ sys.stderr = sys.__stderr__
       safeContentDocId === "null"
     ) {
       showToast("Topic này chưa có nội dung bài học", "warning");
+      return;
+    }
+
+    if (!canSwitchToTopic(safeTopicId, false)) {
+      showToast("Chỉ các topic đã hoàn thành mới có thể mở từ danh sách này", "warning");
       return;
     }
 
