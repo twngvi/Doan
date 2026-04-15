@@ -171,6 +171,15 @@
     let foodLoadWarningShown = false;
     let petTooltipEl = null;
 
+    function resolvePetThumbSrc(fileName) {
+      const src = String(fileName || "").trim();
+      if (!src) return "";
+      if (/^(https?:|data:|blob:)/i.test(src)) {
+        return src;
+      }
+      return PET_ASSET_BASE_URLS[0] + src.replace(/^\/+/, "");
+    }
+
     function getPetTooltip() {
       if (!petTooltipEl) {
         petTooltipEl = document.createElement("div");
@@ -353,6 +362,11 @@
 
     async function fetchAssetUrl(fileName) {
       if (!fileName) return "";
+      const directSrc = String(fileName).trim();
+      if (/^(https?:|data:|blob:)/i.test(directSrc)) {
+        blobUrlCache[fileName] = directSrc;
+        return directSrc;
+      }
       if (Object.prototype.hasOwnProperty.call(blobUrlCache, fileName)) {
         return blobUrlCache[fileName];
       }
@@ -1430,32 +1444,12 @@
       });
       gridEl.appendChild(noAccessoryBtn);
 
-      const observer = new IntersectionObserver((entries, obs) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const thumb = entry.target;
-            const fileName = thumb.getAttribute("data-lazy-src");
-            if (fileName) {
-              fetchAssetUrl(fileName).then(url => {
-                 thumb.src = url;
-                 thumb.style.visibility = "visible";
-              });
-              obs.unobserve(thumb);
-            }
-          }
-        });
-      }, { root: document.getElementById("petAccessoryPopover"), rootMargin: "50px" });
-
       ACCESSORY_ITEMS.forEach(function (catalogItem, index) {
         const fileName = catalogItem.file;
         const displayName = String(catalogItem.name || ("Phụ kiện " + (index + 1)));
 
         const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
-        const meetsUnlockCondition =
-          !catalogItem.unlockCondition ||
-          catalogItem.unlockCondition.type !== 'level' ||
-          catalogItem.unlockCondition.value <= currentLevel;
-        const isLocked = !state.isLevelTwo || !meetsUnlockCondition;
+        const isLocked = catalogItem.unlockCondition && catalogItem.unlockCondition.type === 'level' && catalogItem.unlockCondition.value > currentLevel;
 
         const btn = document.createElement("button");
         btn.type = "button";
@@ -1474,9 +1468,15 @@
         thumb.className = "pet-accessory-thumb";
         thumb.alt = displayName;
         thumb.loading = "lazy";
-        thumb.style.visibility = "hidden"; // Hide initially until loaded
-        thumb.setAttribute("data-lazy-src", fileName);
-        observer.observe(thumb);
+        thumb.src = resolvePetThumbSrc(fileName);
+        thumb.onerror = function () {
+          this.src = "";
+          this.style.visibility = "hidden";
+        };
+        thumb.onload = function () {
+          this.style.visibility = "visible";
+        };
+        thumb.style.visibility = "hidden";
 
         btn.appendChild(thumb);
         
@@ -1599,9 +1599,15 @@
         img.className = "pet-food-thumb";
         img.alt = displayName;
         img.loading = "lazy";
+        img.src = resolvePetThumbSrc(fileName);
+        img.onerror = function () {
+          this.src = "";
+          this.style.visibility = "hidden";
+        };
+        img.onload = function () {
+          this.style.visibility = "visible";
+        };
         img.style.visibility = "hidden";
-        img.setAttribute("data-lazy-src", fileName);
-        observer.observe(img);
 
         const missingLabel = document.createElement("span");
         missingLabel.className = "pet-food-missing";

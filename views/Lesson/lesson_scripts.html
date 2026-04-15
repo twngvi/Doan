@@ -4794,7 +4794,7 @@ sys.stderr = sys.__stderr__
     return "";
   }
 
-  function getTopicProgressState(topicId) {
+  function getTopicProgress(topicId) {
     if (!topicId || !window.globalTopicsCache || !window.globalTopicsCache.progress) {
       return null;
     }
@@ -4802,10 +4802,10 @@ sys.stderr = sys.__stderr__
     return window.globalTopicsCache.progress[topicId] || null;
   }
 
-  function canSwitchToTopic(topicId, isCurrentTopic) {
-    if (isCurrentTopic) return true;
+  function canSwitchToTopic(topicId, isActive) {
+    if (isActive) return true;
 
-    const progress = getTopicProgressState(topicId);
+    const progress = getTopicProgress(topicId);
     return !!(progress && (progress.lessonCompleted || progress.completed));
   }
 
@@ -4888,8 +4888,7 @@ sys.stderr = sys.__stderr__
       } else if (!canSwitch) {
         statusIcon = "🔒";
       } else {
-        // Check progress from global cache
-        const progress = getTopicProgressState(topic.topicId);
+        const progress = getTopicProgress(topic.topicId);
         if (progress && progress.lessonCompleted) {
           statusIcon = "✅";
         }
@@ -4991,8 +4990,9 @@ sys.stderr = sys.__stderr__
       return;
     }
 
-    if (!canSwitchToTopic(safeTopicId, false)) {
-      showToast("Chỉ các topic đã hoàn thành mới có thể mở từ danh sách này", "warning");
+    const currentTopicId = currentLessonData ? currentLessonData.topicId : null;
+    if (!canSwitchToTopic(safeTopicId, safeTopicId === currentTopicId)) {
+      showToast("Topic này chưa được mở khóa", "warning");
       return;
     }
 

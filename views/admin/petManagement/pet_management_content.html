@@ -45,6 +45,23 @@
         </div>
       </div>
     </div>
+
+    <!-- Pet Variants Segment -->
+    <div class="pm-segment" id="segment-variants">
+      <button class="pm-segment-header" onclick="togglePmSegment('variants')">
+        <div class="header-left">
+          <span class="material-symbols-sharp icon-main">pets</span>
+          <span class="header-label">Quản lý Hình dạng PET</span>
+          <span class="header-count" id="variant-count">0</span>
+        </div>
+        <span class="material-symbols-sharp icon-chevron">expand_more</span>
+      </button>
+      <div class="pm-segment-content">
+        <div class="pm-items-grid pm-variant-grid" id="pet-variants-grid">
+          <!-- Variant cards will be loaded here -->
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="pm-editor-backdrop" id="pm-editor-backdrop" onclick="closePmEditor()"></div>
@@ -64,6 +81,16 @@
       <div class="pm-form-group">
         <label for="pm-field-image">Ảnh (URL hoặc đường dẫn CDN)</label>
         <input type="text" id="pm-field-image" placeholder="VD: Food/food-31.svg hoặc https://...">
+        <div class="pm-image-upload-row">
+          <label class="pm-image-upload-btn" for="pm-field-image-file">Chọn tệp</label>
+          <input
+            type="file"
+            id="pm-field-image-file"
+            accept="image/*,.png,.jpg,.jpeg,.gif,.webp,.svg"
+            hidden
+          >
+          <span class="pm-image-file-name" id="pm-image-file-name">Chưa chọn tệp</span>
+        </div>
         <div class="pm-image-preview-box">
           <img id="pm-image-preview" alt="Xem trước ảnh sản phẩm">
         </div>
@@ -103,6 +130,98 @@
     <div class="pm-editor-footer">
       <button type="button" class="pm-btn pm-btn-danger" id="pm-delete-btn">Xóa item</button>
       <button type="button" class="pm-btn pm-btn-primary" id="pm-save-btn">Lưu thay đổi</button>
+    </div>
+  </aside>
+
+  <div class="pm-editor-backdrop" id="pm-variant-editor-backdrop" onclick="closePmVariantEditor()"></div>
+  <aside class="pm-editor-sidebar pm-variant-editor-sidebar" id="pm-variant-editor-sidebar" aria-hidden="true">
+    <div class="pm-editor-header">
+      <h2 id="pm-variant-editor-title">Chi tiết hình dạng PET</h2>
+      <button type="button" class="pm-editor-close" onclick="closePmVariantEditor()" aria-label="Đóng sidebar">×</button>
+    </div>
+
+    <div class="pm-editor-body">
+      <div class="pm-form-group">
+        <label for="pm-variant-name">Tên pet</label>
+        <input type="text" id="pm-variant-name" placeholder="VD: Pet Galaxy">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-tone">Màu đại diện</label>
+        <input type="color" id="pm-variant-tone" value="#7c8cff">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-description">Mô tả</label>
+        <input type="text" id="pm-variant-description" placeholder="Mô tả ngắn cho pet">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-level1">Ảnh Level 1</label>
+        <input type="text" id="pm-variant-level1" placeholder="VD: level1-pink.svg hoặc https://...">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-level2">Ảnh Level 2</label>
+        <input type="text" id="pm-variant-level2" placeholder="VD: level2-pink.svg hoặc https://...">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-eye-open">Ảnh mắt mở</label>
+        <input type="text" id="pm-variant-eye-open" placeholder="VD: eye-pink-open.svg hoặc https://...">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-eye-closed">Ảnh mắt nhắm</label>
+        <input type="text" id="pm-variant-eye-closed" placeholder="VD: eye-pink-close.svg hoặc https://...">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-unlock-type">Điều kiện mở khóa</label>
+        <select id="pm-variant-unlock-type">
+          <option value="level">Level pet</option>
+          <option value="topic">Hoàn thành topic</option>
+          <option value="topic_quiz">Hoàn thành Quiz của topic</option>
+          <option value="topic_matching">Hoàn thành Matching của topic</option>
+        </select>
+      </div>
+
+      <div class="pm-form-group" id="pm-variant-unlock-level-wrap">
+        <label for="pm-variant-unlock-level">Level cần đạt</label>
+        <input type="number" id="pm-variant-unlock-level" min="1" step="1" value="1">
+      </div>
+
+      <div class="pm-form-group" id="pm-variant-unlock-topic-wrap" style="display:none;">
+        <label for="pm-variant-unlock-topic">Topic cần đạt</label>
+        <select id="pm-variant-unlock-topic"></select>
+      </div>
+
+      <div class="pm-form-group">
+        <label>Kích thước hiển thị</label>
+        <div class="pm-size-control-row">
+          <button type="button" class="pm-size-btn" id="pm-variant-size-down">-</button>
+          <span class="pm-size-value" id="pm-variant-size-value">100%</span>
+          <button type="button" class="pm-size-btn" id="pm-variant-size-up">+</button>
+        </div>
+      </div>
+
+      <div class="pm-form-group">
+        <label>Khung test hiển thị</label>
+        <div class="pm-variant-preview-box" id="pm-variant-preview-box">
+          <div class="pm-variant-preview-head">
+            <button type="button" class="pm-preview-toggle active" data-preview-level="1">Level 1</button>
+            <button type="button" class="pm-preview-toggle" data-preview-level="2">Level 2</button>
+          </div>
+          <div class="pm-variant-preview-stage">
+            <img id="pm-variant-preview-image" alt="Preview pet variant" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pm-editor-footer">
+      <button type="button" class="pm-btn pm-btn-danger" id="pm-variant-delete-btn">Xóa pet</button>
+      <button type="button" class="pm-btn pm-btn-primary" id="pm-variant-save-btn">Lưu hình dạng</button>
     </div>
   </aside>
 </div>

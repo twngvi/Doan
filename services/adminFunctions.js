@@ -1131,6 +1131,74 @@ const PET_ITEMS_HEADERS = [
   "updatedAt",
 ];
 
+const PET_VARIANTS_SHEET_NAME = "Pet_Variants";
+const PET_VARIANTS_HEADERS = [
+  "variantId",
+  "name",
+  "tone",
+  "description",
+  "level1File",
+  "level2File",
+  "eyeOpenFile",
+  "eyeClosedFile",
+  "unlockType",
+  "unlockValue",
+  "scalePercent",
+  "orderIndex",
+  "updatedAt",
+];
+
+const DEFAULT_PET_VARIANTS = [
+  {
+    id: "pink",
+    name: "Pet Hồng",
+    tone: "#ff70e2",
+    description: "Tươi vui, nổi bật và phù hợp cho phong cách năng động.",
+    level1: "level1-pink.svg",
+    level2: "level2-pink.svg",
+    eyeOpen: "eye-pink-open.svg",
+    eyeClosed: "eye-pink-close.svg",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "yellow",
+    name: "Pet Vàng",
+    tone: "#facc15",
+    description: "Ấm áp và tích cực, tạo cảm giác thân thiện khi học.",
+    level1: "level1-yellow.svg",
+    level2: "level2-yellow.svg",
+    eyeOpen: "eye-yellow-open.svg",
+    eyeClosed: "eye-yellow-close.svg",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "blue",
+    name: "Pet Xanh Dương",
+    tone: "#38bdf8",
+    description: "Điềm tĩnh, tập trung, phù hợp cho các phiên học dài.",
+    level1: "level1-blue.svg",
+    level2: "level2-blue.svg",
+    eyeOpen: "eye-blue-open.svg",
+    eyeClosed: "eye-blue-close.svg",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "green",
+    name: "Pet Xanh Lá",
+    tone: "#4ade80",
+    description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
+    level1: "level1-green.svg",
+    level2: "level2-green.svg",
+    eyeOpen: "eye-green-open.svg",
+    eyeClosed: "eye-green-close.svg",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+];
+
 function ensurePetItemsSheet_() {
   const ss = getOrCreateDatabase();
   let sheet = ss.getSheetByName(PET_ITEMS_SHEET_NAME);
@@ -1152,6 +1220,30 @@ function ensurePetItemsSheet_() {
     sheet
       .getRange(1, 1, 1, PET_ITEMS_HEADERS.length)
       .setValues([PET_ITEMS_HEADERS]);
+  }
+
+  return sheet;
+}
+
+function ensurePetVariantsSheet_() {
+  const ss = getOrCreateDatabase();
+  let sheet = ss.getSheetByName(PET_VARIANTS_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(PET_VARIANTS_SHEET_NAME);
+  }
+
+  const lastColumn = sheet.getLastColumn();
+  if (lastColumn === 0) {
+    sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setValues([PET_VARIANTS_HEADERS]);
+    sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  if (headers.length < PET_VARIANTS_HEADERS.length) {
+    sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setValues([PET_VARIANTS_HEADERS]);
   }
 
   return sheet;
@@ -1186,16 +1278,143 @@ function toPetItemRow_(item, itemType, orderIndex) {
   ];
 }
 
+function toPetVariantRow_(variant, orderIndex) {
+  const safeVariant = variant || {};
+  const unlock = safeVariant.unlockCondition || {};
+  const unlockType = unlock.type || "level";
+  let unlockValue = unlock.value;
+
+  if (unlockType === "level") {
+    unlockValue = parseInt(unlockValue, 10);
+    if (isNaN(unlockValue) || unlockValue < 1) unlockValue = 1;
+  } else {
+    unlockValue = String(unlockValue || "");
+  }
+
+  let scalePercent = parseInt(safeVariant.scalePercent, 10);
+  if (isNaN(scalePercent)) scalePercent = 100;
+  scalePercent = Math.max(40, Math.min(200, scalePercent));
+
+  return [
+    String(safeVariant.id || ""),
+    String(safeVariant.name || ""),
+    String(safeVariant.tone || "#7c8cff"),
+    String(safeVariant.description || ""),
+    String(safeVariant.level1 || ""),
+    String(safeVariant.level2 || ""),
+    String(safeVariant.eyeOpen || ""),
+    String(safeVariant.eyeClosed || ""),
+    unlockType,
+    unlockValue,
+    scalePercent,
+    parseInt(orderIndex, 10) || 0,
+    new Date(),
+  ];
+}
+
+function parsePetVariantRows_(data) {
+  if (!Array.isArray(data) || data.length <= 1) {
+    return [];
+  }
+
+  const headers = data[0];
+  const idx = function (name) {
+    return headers.indexOf(name);
+  };
+
+  const variantIdIdx = idx("variantId");
+  const nameIdx = idx("name");
+  const toneIdx = idx("tone");
+  const descriptionIdx = idx("description");
+  const level1Idx = idx("level1File");
+  const level2Idx = idx("level2File");
+  const eyeOpenIdx = idx("eyeOpenFile");
+  const eyeClosedIdx = idx("eyeClosedFile");
+  const unlockTypeIdx = idx("unlockType");
+  const unlockValueIdx = idx("unlockValue");
+  const scalePercentIdx = idx("scalePercent");
+  const orderIdx = idx("orderIndex");
+
+  const variants = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const variantId = row[variantIdIdx];
+    if (!variantId) continue;
+
+    const unlockType = String(row[unlockTypeIdx] || "level");
+    const rawUnlockValue = row[unlockValueIdx];
+    let unlockValue;
+
+    if (unlockType === "level") {
+      const parsedLevel = parseInt(rawUnlockValue, 10);
+      unlockValue = isNaN(parsedLevel) || parsedLevel < 1 ? 1 : parsedLevel;
+    } else {
+      unlockValue = String(rawUnlockValue || "");
+    }
+
+    let scalePercent = parseInt(row[scalePercentIdx], 10);
+    if (isNaN(scalePercent)) scalePercent = 100;
+    scalePercent = Math.max(40, Math.min(200, scalePercent));
+
+    variants.push({
+      id: String(variantId),
+      name: String(row[nameIdx] || ""),
+      tone: String(row[toneIdx] || "#7c8cff"),
+      description: String(row[descriptionIdx] || ""),
+      level1: String(row[level1Idx] || ""),
+      level2: String(row[level2Idx] || ""),
+      eyeOpen: String(row[eyeOpenIdx] || ""),
+      eyeClosed: String(row[eyeClosedIdx] || ""),
+      unlockCondition: {
+        type: unlockType,
+        value: unlockValue,
+      },
+      scalePercent: scalePercent,
+      _orderIndex: parseInt(row[orderIdx], 10) || 0,
+    });
+  }
+
+  variants.sort(function (a, b) {
+    return (a._orderIndex || 0) - (b._orderIndex || 0);
+  });
+
+  variants.forEach(function (item) {
+    delete item._orderIndex;
+  });
+
+  return variants;
+}
+
+function seedDefaultPetVariantsIfEmpty_() {
+  const sheet = ensurePetVariantsSheet_();
+  const data = sheet.getDataRange().getValues();
+  if (data.length > 1) return;
+
+  const rows = DEFAULT_PET_VARIANTS.map(function (variant, index) {
+    return toPetVariantRow_(variant, index);
+  });
+
+  if (rows.length > 0) {
+    sheet
+      .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
+      .setValues(rows);
+  }
+}
+
 function getPetItemsForAdmin() {
   try {
+    seedDefaultPetVariantsIfEmpty_();
     const sheet = ensurePetItemsSheet_();
     const data = sheet.getDataRange().getValues();
+    const variantsData = ensurePetVariantsSheet_().getDataRange().getValues();
+    const variants = parsePetVariantRows_(variantsData);
 
     if (data.length <= 1) {
       return {
         success: true,
         accessories: [],
         food: [],
+        variants: variants,
       };
     }
 
@@ -1273,6 +1492,7 @@ function getPetItemsForAdmin() {
       success: true,
       accessories: accessories,
       food: food,
+      variants: variants,
     };
   } catch (error) {
     Logger.log("Error getting pet items for admin: " + error.toString());
@@ -1281,7 +1501,97 @@ function getPetItemsForAdmin() {
       message: error.toString(),
       accessories: [],
       food: [],
+      variants: [],
     };
+  }
+}
+
+function getPetVariantsForAdmin() {
+  try {
+    seedDefaultPetVariantsIfEmpty_();
+    const data = ensurePetVariantsSheet_().getDataRange().getValues();
+
+    return {
+      success: true,
+      variants: parsePetVariantRows_(data),
+    };
+  } catch (error) {
+    Logger.log("Error getting pet variants for admin: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+      variants: [],
+    };
+  }
+}
+
+function getPetVariantsForUser() {
+  try {
+    const result = getPetVariantsForAdmin();
+    if (!result || result.success !== true) {
+      return {
+        success: false,
+        variants: [],
+        message: result && result.message ? result.message : "Failed to load pet variants",
+      };
+    }
+
+    return {
+      success: true,
+      variants: result.variants || [],
+    };
+  } catch (error) {
+    Logger.log("Error getting pet variants for user: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+      variants: [],
+    };
+  }
+}
+
+function savePetVariantsForAdmin(payloadJson) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const payload =
+      typeof payloadJson === "string"
+        ? JSON.parse(payloadJson || "{}")
+        : payloadJson || {};
+
+    const variants = Array.isArray(payload.variants) ? payload.variants : [];
+
+    const rows = variants.map(function (variant, index) {
+      return toPetVariantRow_(variant, index);
+    });
+
+    const sheet = ensurePetVariantsSheet_();
+    sheet.clearContents();
+    sheet
+      .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
+      .setValues([PET_VARIANTS_HEADERS]);
+    sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
+
+    if (rows.length > 0) {
+      sheet
+        .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
+        .setValues(rows);
+    }
+
+    return {
+      success: true,
+      message: "Đã lưu danh sách Pet variants thành công",
+      totalVariants: rows.length,
+    };
+  } catch (error) {
+    Logger.log("Error saving pet variants for admin: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+    };
+  } finally {
+    lock.releaseLock();
   }
 }
 

@@ -210,6 +210,8 @@
       editorEls.title = document.getElementById('pm-editor-title');
       editorEls.name = document.getElementById('pm-field-name');
       editorEls.image = document.getElementById('pm-field-image');
+      editorEls.imageFile = document.getElementById('pm-field-image-file');
+      editorEls.imageFileName = document.getElementById('pm-image-file-name');
       editorEls.imagePreview = document.getElementById('pm-image-preview');
       editorEls.price = document.getElementById('pm-field-price');
       editorEls.unlockType = document.getElementById('pm-field-unlock-type');
@@ -312,6 +314,50 @@
       };
     }
 
+    function updateSelectedImageFileLabel(fileName) {
+      if (!editorEls.imageFileName) return;
+      editorEls.imageFileName.textContent = fileName || 'Chưa chọn tệp';
+    }
+
+    function handleImageFileChange(event) {
+      var input = event.target;
+      var file = input && input.files && input.files[0] ? input.files[0] : null;
+
+      if (!file) {
+        updateSelectedImageFileLabel('');
+        return;
+      }
+
+      var isAccepted = /^image\//i.test(file.type) || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name || '');
+      if (!isAccepted) {
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Chỉ cho phép chọn file ảnh', 'error');
+        } else {
+          alert('Chỉ cho phép chọn file ảnh');
+        }
+        input.value = '';
+        updateSelectedImageFileLabel('');
+        return;
+      }
+
+      var reader = new FileReader();
+      reader.onload = function () {
+        if (editorEls.image) {
+          editorEls.image.value = String(reader.result || '');
+        }
+        updateSelectedImageFileLabel(file.name);
+        updateEditorImagePreview();
+      };
+      reader.onerror = function () {
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Không thể đọc file ảnh', 'error');
+        } else {
+          alert('Không thể đọc file ảnh');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
     function fillEditorForm() {
       if (!state.editor.draft) return;
 
@@ -328,6 +374,8 @@
 
       if (editorEls.name) editorEls.name.value = isNew ? '' : (draft.name || '');
       if (editorEls.image) editorEls.image.value = isNew ? '' : (draft.file || '');
+      if (editorEls.imageFile) editorEls.imageFile.value = '';
+      updateSelectedImageFileLabel(isNew ? '' : (draft.file ? String(draft.file).split('/').pop() : ''));
       if (editorEls.price) editorEls.price.value = isNew ? '' : String(draft.priceXqp || 0);
       if (editorEls.unlockType) {
         editorEls.unlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
@@ -556,6 +604,7 @@
 
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
+      if (editorEls.imageFile) editorEls.imageFile.addEventListener('change', handleImageFileChange);
       if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
       if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
 
