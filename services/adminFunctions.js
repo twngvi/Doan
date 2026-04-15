@@ -1274,6 +1274,9 @@ function toPetItemRow_(item, itemType, orderIndex) {
   }
 
   const normalizedType = itemType === "food" ? "food" : "accessories";
+  let scalePercent = parseInt(safeItem.scalePercent, 10);
+  if (isNaN(scalePercent)) scalePercent = 100;
+  scalePercent = Math.max(40, Math.min(200, scalePercent));
 
   return [
     String(safeItem.id || ""),
@@ -1284,6 +1287,9 @@ function toPetItemRow_(item, itemType, orderIndex) {
     unlockType,
     unlockValue,
     normalizedType === "food" ? parseInt(safeItem.petXpGain, 10) || 0 : 0,
+    normalizedType === "food" ? 0 : parseInt(safeItem.offsetX, 10) || 0,
+    normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
+    normalizedType === "food" ? 100 : scalePercent,
     parseInt(orderIndex, 10) || 0,
     new Date(),
   ];
@@ -1542,9 +1548,6 @@ function getPetVariantsForAdmin() {
   try {
     seedDefaultPetVariantsIfEmpty_();
     const sheet = ensurePetVariantsSheet_();
-  let scalePercent = parseInt(safeItem.scalePercent, 10);
-  if (isNaN(scalePercent)) scalePercent = 100;
-  scalePercent = Math.max(40, Math.min(200, scalePercent));
     const data = sheet.getDataRange().getValues();
     let variants = parsePetVariantRows_(data);
 
@@ -1555,9 +1558,6 @@ function getPetVariantsForAdmin() {
 
       sheet.clearContents();
       sheet
-    normalizedType === "food" ? 0 : parseInt(safeItem.offsetX, 10) || 0,
-    normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
-    normalizedType === "food" ? 100 : scalePercent,
         .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
         .setValues([PET_VARIANTS_HEADERS]);
       sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
