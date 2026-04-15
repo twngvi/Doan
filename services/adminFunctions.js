@@ -1130,6 +1130,7 @@ const PET_ITEMS_HEADERS = [
   "offsetX",
   "offsetY",
   "scalePercent",
+  "positionMode",
   "orderIndex",
   "updatedAt",
 ];
@@ -1277,6 +1278,7 @@ function toPetItemRow_(item, itemType, orderIndex) {
   let scalePercent = parseInt(safeItem.scalePercent, 10);
   if (isNaN(scalePercent)) scalePercent = 100;
   scalePercent = Math.max(40, Math.min(200, scalePercent));
+  const positionMode = normalizedType === "food" ? "center" : String(safeItem.positionMode || "center");
 
   return [
     String(safeItem.id || ""),
@@ -1290,6 +1292,7 @@ function toPetItemRow_(item, itemType, orderIndex) {
     normalizedType === "food" ? 0 : parseInt(safeItem.offsetX, 10) || 0,
     normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
     normalizedType === "food" ? 100 : scalePercent,
+    positionMode,
     parseInt(orderIndex, 10) || 0,
     new Date(),
   ];
@@ -1464,6 +1467,7 @@ function getPetItemsForAdmin() {
     const offsetXIdx = idx("offsetX");
     const offsetYIdx = idx("offsetY");
     const scalePercentIdx = idx("scalePercent");
+    const positionModeIdx = idx("positionMode");
     const orderIdx = idx("orderIndex");
 
     const accessories = [];
@@ -1508,6 +1512,7 @@ function getPetItemsForAdmin() {
         let scalePercent = parseInt(row[scalePercentIdx], 10);
         if (isNaN(scalePercent)) scalePercent = 100;
         item.scalePercent = Math.max(40, Math.min(200, scalePercent));
+        item.positionMode = String(row[positionModeIdx] || "center");
         accessories.push(item);
       }
     }

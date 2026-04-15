@@ -114,6 +114,7 @@
         offsetX: item.offsetX || 0,
         offsetY: item.offsetY || 0,
         scalePercent: item.scalePercent || 100,
+        positionMode: item.positionMode || 'center',
         unlockCondition: {
           type: item.unlockCondition && item.unlockCondition.type ? item.unlockCondition.type : "level",
           value: item.unlockCondition && item.unlockCondition.value ? item.unlockCondition.value : 1
@@ -163,6 +164,7 @@
             offsetX: 0,
             offsetY: 0,
             scalePercent: 100,
+            positionMode: 'center',
             unlockCondition: { type: "level", value: 1 }
           };
         });
@@ -229,6 +231,7 @@
             offsetX: parseNonNegative(safeItem.offsetX, 0),
             offsetY: parseNonNegative(safeItem.offsetY, 0),
             scalePercent: Math.max(40, Math.min(200, parseNonNegative(safeItem.scalePercent, 100))),
+            positionMode: String(safeItem.positionMode || 'center'),
             unlockCondition: {
               type: unlockType,
               value: unlockValue,
@@ -405,6 +408,13 @@
       editorEls.foodXpWrap = document.getElementById('pm-food-xp-wrap');
       editorEls.foodXp = document.getElementById('pm-field-food-xp');
       editorEls.accessoryPositionWrap = document.getElementById('pm-accessory-position-wrap');
+      editorEls.accessoryPositionMode = document.getElementById('pm-accessory-position-mode');
+      editorEls.accessoryNudgePanel = document.getElementById('pm-accessory-nudge-panel');
+      editorEls.accessoryNudgeUp = document.getElementById('pm-accessory-nudge-up');
+      editorEls.accessoryNudgeDown = document.getElementById('pm-accessory-nudge-down');
+      editorEls.accessoryNudgeLeft = document.getElementById('pm-accessory-nudge-left');
+      editorEls.accessoryNudgeRight = document.getElementById('pm-accessory-nudge-right');
+      editorEls.accessoryOffsetHint = document.getElementById('pm-accessory-offset-hint');
       editorEls.accessoryOffsetX = document.getElementById('pm-accessory-offset-x');
       editorEls.accessoryOffsetY = document.getElementById('pm-accessory-offset-y');
       editorEls.accessoryScaleWrap = document.getElementById('pm-accessory-scale-wrap');
@@ -645,7 +655,7 @@
         index: index,
         isNew: !!isNew,
         draft: draft,
-        previewLevel: previewLevel === 2 ? 2 : 1
+        previewLevel: previewLevel === 1 ? 1 : 2
       };
 
       if (editorEls.variantTitle) {
@@ -874,10 +884,12 @@
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
       
       // Accessory position and scale
+      if (editorEls.accessoryPositionMode) editorEls.accessoryPositionMode.value = normalizeAccessoryPositionMode(draft.positionMode || 'center');
       if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(draft.offsetX || 0);
       if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(draft.offsetY || 0);
       if (editorEls.accessoryPreviewWrap) editorEls.accessoryPreviewWrap.style.display = isFood ? 'none' : 'flex';
       if (editorEls.accessoryScaleValue) editorEls.accessoryScaleValue.textContent = String(draft.scalePercent || 100) + '%';
+      syncAccessoryOffsetHint();
       
       if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
 
@@ -934,6 +946,10 @@
           file: '',
           priceXqp: '',
           petXpGain: isFood ? '' : 0,
+          offsetX: 0,
+          offsetY: 0,
+          scalePercent: 100,
+          positionMode: 'center',
           unlockCondition: { type: 'level', value: '' }
         }
       };
@@ -980,6 +996,67 @@
       return match;
     }
 
+    function getAccessoryPositionLabel(positionMode) {
+      if (positionMode === 'left') return 'Trái đầu';
+      if (positionMode === 'right') return 'Phải đầu';
+      if (positionMode === 'custom') return 'Tùy chỉnh riêng';
+      return 'Giữa đầu';
+    }
+
+    function normalizeAccessoryPositionMode(positionMode) {
+      if (positionMode === 'left' || positionMode === 'right' || positionMode === 'custom') {
+        return positionMode;
+      }
+      return 'center';
+    }
+
+    function syncAccessoryOffsetHint() {
+      if (!editorEls.accessoryOffsetHint || !state.editor.draft) return;
+      editorEls.accessoryOffsetHint.textContent = 'X: ' + (parseNonNegative(state.editor.draft.offsetX, 0)) + 'px · Y: ' + (parseNonNegative(state.editor.draft.offsetY, 0)) + 'px';
+    }
+
+    function applyAccessoryPositionMode(mode, shouldResetOffset) {
+      if (!state.editor.draft) return;
+
+      var normalizedMode = normalizeAccessoryPositionMode(mode);
+      state.editor.draft.positionMode = normalizedMode;
+
+      if (editorEls.accessoryPositionMode) {
+        editorEls.accessoryPositionMode.value = normalizedMode;
+      }
+
+      if (normalizedMode !== 'custom' && shouldResetOffset !== false) {
+        state.editor.draft.offsetX = 0;
+        state.editor.draft.offsetY = 0;
+        if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = '0';
+        if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = '0';
+      }
+
+      if (editorEls.accessoryNudgePanel) {
+        editorEls.accessoryNudgePanel.classList.toggle('is-custom', normalizedMode === 'custom');
+      }
+
+      syncAccessoryOffsetHint();
+      updateAccessoryPreview();
+    }
+
+    function nudgeAccessoryPosition(deltaX, deltaY) {
+      if (!state.editor.draft) return;
+      state.editor.draft.positionMode = 'custom';
+      state.editor.draft.offsetX = parseNonNegative(state.editor.draft.offsetX, 0) + deltaX;
+      state.editor.draft.offsetY = parseNonNegative(state.editor.draft.offsetY, 0) + deltaY;
+      if (editorEls.accessoryPositionMode) {
+        editorEls.accessoryPositionMode.value = 'custom';
+      }
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(state.editor.draft.offsetX);
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(state.editor.draft.offsetY);
+      if (editorEls.accessoryNudgePanel) {
+        editorEls.accessoryNudgePanel.classList.add('is-custom');
+      }
+      syncAccessoryOffsetHint();
+      updateAccessoryPreview();
+    }
+
     function updateAccessoryPreview() {
       if (!editorEls.accessoryPreviewItem || !state.editor.draft) return;
 
@@ -987,20 +1064,28 @@
       var fileName = draft.file || '';
       var previewSrc = resolveAssetSrc(fileName);
       var accessoryItem = getAccessoryCatalogItem(fileName);
+      var accessoryRule = getAccessoryRule(fileName);
       var offsetX = parseNonNegative(draft.offsetX, 0);
       var offsetY = parseNonNegative(draft.offsetY, 0);
       var scalePercent = Math.max(40, Math.min(200, parseNonNegative(draft.scalePercent, 100)));
+      var positionMode = normalizeAccessoryPositionMode(draft.positionMode);
+      var previewPosition = accessoryRule.forcedPosition || (positionMode === 'custom' ? 'center' : positionMode);
+      var previewLeft = previewPosition === 'left' ? 42 : previewPosition === 'right' ? 58 : 50;
+      var previewTop = 27 + (accessoryRule.topOffset || 0);
 
       if (editorEls.accessoryPreviewBase) {
-        editorEls.accessoryPreviewBase.src = resolveAssetSrc((PET_VARIANT_LIST[0] && PET_VARIANT_LIST[0].level1) || '');
+        editorEls.accessoryPreviewBase.src = resolveAssetSrc((PET_VARIANT_LIST[0] && PET_VARIANT_LIST[0].level2) || (PET_VARIANT_LIST[0] && PET_VARIANT_LIST[0].level1) || '');
       }
 
       editorEls.accessoryPreviewItem.src = previewSrc;
+      editorEls.accessoryPreviewItem.style.top = previewTop + '%';
+      editorEls.accessoryPreviewItem.style.left = previewLeft + '%';
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-x', offsetX + 'px');
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-y', offsetY + 'px');
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale', (accessoryItem && accessoryItem.widthPercent ? accessoryItem.widthPercent + '%' : '34%'));
-      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String(scalePercent / 100));
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String((accessoryRule.scale || 1) * (scalePercent / 100)));
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-rot', '0deg');
+      syncAccessoryOffsetHint();
     }
 
     function syncAccessoryDraftFromForm() {
@@ -1008,6 +1093,10 @@
       state.editor.draft.offsetX = parseNonNegative(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : 0, 0);
       state.editor.draft.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
       state.editor.draft.scalePercent = Math.max(40, Math.min(200, parseNonNegative(state.editor.draft.scalePercent, 100)));
+      state.editor.draft.positionMode = normalizeAccessoryPositionMode(editorEls.accessoryPositionMode ? editorEls.accessoryPositionMode.value : state.editor.draft.positionMode);
+      if (editorEls.accessoryNudgePanel) {
+        editorEls.accessoryNudgePanel.classList.toggle('is-custom', state.editor.draft.positionMode === 'custom');
+      }
       updateAccessoryPreview();
     }
 
@@ -1096,6 +1185,9 @@
       if (editorEls.accessoryPreviewWrap) {
         editorEls.accessoryPreviewWrap.style.display = isAccessory ? 'flex' : 'none';
       }
+      if (editorEls.accessoryNudgePanel) {
+        editorEls.accessoryNudgePanel.classList.toggle('is-custom', isAccessory && state.editor.draft && normalizeAccessoryPositionMode(state.editor.draft.positionMode) === 'custom');
+      }
     }
 
     function handleSaveEditor() {
@@ -1141,6 +1233,7 @@
         payload.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
         payload.scalePercent = parseNonNegative(state.editor.draft.scalePercent || 100, 100);
         payload.scalePercent = Math.max(40, Math.min(200, payload.scalePercent));
+        payload.positionMode = normalizeAccessoryPositionMode(editorEls.accessoryPositionMode ? editorEls.accessoryPositionMode.value : state.editor.draft.positionMode);
       }
 
       if (type === 'food') {
@@ -1256,8 +1349,31 @@
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
       if (editorEls.imageFile) editorEls.imageFile.addEventListener('change', handleImageFileChange);
-      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.addEventListener('input', syncAccessoryDraftFromForm);
-      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.addEventListener('input', syncAccessoryDraftFromForm);
+      if (editorEls.accessoryPositionMode) {
+        editorEls.accessoryPositionMode.addEventListener('change', function () {
+          applyAccessoryPositionMode(this.value, true);
+        });
+      }
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.addEventListener('input', function () {
+        applyAccessoryPositionMode('custom', false);
+        syncAccessoryDraftFromForm();
+      });
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.addEventListener('input', function () {
+        applyAccessoryPositionMode('custom', false);
+        syncAccessoryDraftFromForm();
+      });
+      if (editorEls.accessoryNudgeUp) {
+        editorEls.accessoryNudgeUp.addEventListener('click', function () { nudgeAccessoryPosition(0, -4); });
+      }
+      if (editorEls.accessoryNudgeDown) {
+        editorEls.accessoryNudgeDown.addEventListener('click', function () { nudgeAccessoryPosition(0, 4); });
+      }
+      if (editorEls.accessoryNudgeLeft) {
+        editorEls.accessoryNudgeLeft.addEventListener('click', function () { nudgeAccessoryPosition(-4, 0); });
+      }
+      if (editorEls.accessoryNudgeRight) {
+        editorEls.accessoryNudgeRight.addEventListener('click', function () { nudgeAccessoryPosition(4, 0); });
+      }
       if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
       if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
 

@@ -259,6 +259,7 @@
             offsetX: toNonNegativeNumber(safe.offsetX, 0),
             offsetY: toNonNegativeNumber(safe.offsetY, 0),
             scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(safe.scalePercent, 100))),
+            positionMode: String(safe.positionMode || 'center'),
             unlockCondition: safe.unlockCondition || { type: 'level', value: 1 }
           };
 
@@ -1243,8 +1244,9 @@
       if (!accessoryImageEl || !fileName) return "center";
 
       const rule = getAccessoryRule(fileName);
-      const finalPosition = resolveAccessoryPosition(fileName, desiredPosition);
       const accessoryCatalogItem = accessoryData || getAccessoryItemByFileName(fileName);
+      const positionMode = String((accessoryCatalogItem && accessoryCatalogItem.positionMode) || "center");
+      const finalPosition = desiredPosition || (positionMode === "custom" ? "center" : positionMode);
 
       const baseTop = 12;
       const baseLeftMap = {
@@ -1703,11 +1705,14 @@
             return;
           }
 
-          const finalPosition = resolveAccessoryPosition(fileName, state.accessoryPosition);
-          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100 };
+          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100, positionMode: 'center' };
+          const finalPosition = catalogItem.positionMode === 'custom'
+            ? 'center'
+            : resolveAccessoryPosition(fileName, catalogItem.positionMode || state.accessoryPosition);
           state.selectedAccessories.push({
             fileName: fileName,
             position: finalPosition,
+            positionMode: catalogItem.positionMode || 'center',
             offsetX: toNonNegativeNumber(catalogItem.offsetX, 0),
             offsetY: toNonNegativeNumber(catalogItem.offsetY, 0),
             scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(catalogItem.scalePercent, 100))),
