@@ -1339,6 +1339,8 @@ function populateEditForm(data) {
     forceNormalizeComputedLeftEdge(editor);
     // Strict guard: ensure color text after heading always starts on a new line
     enforceHeadingColorLineBreak(editor);
+    // Force "Hết" text to left-align in editor (stays centered in Google Doc on save)
+    normalizeHetAlignmentForEditor(editor);
   }
 
   editor.focus();
@@ -1522,12 +1524,27 @@ function hardResetLoadedContentLeftEdge(editor) {
     }
 
     if (node.style) {
+      // Skip visual blocks from reset - only reset plain text/doc containers
+      if (node.closest('.visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-block')) {
+        continue;
+      }
+
       node.style.removeProperty('border-left');
       node.style.removeProperty('padding-left');
       node.style.removeProperty('margin-left');
       node.style.removeProperty('text-indent');
       node.style.removeProperty('border');
       node.style.removeProperty('outline');
+      node.style.removeProperty('width');
+      node.style.removeProperty('max-width');
+      
+      // Only set 100% width on non-inline elements that aren't badges/icons
+      const tagName = node.tagName.toLowerCase();
+      if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+         node.style.setProperty('width', '100%', 'important');
+         node.style.setProperty('max-width', '100%', 'important');
+      }
+      
       if (!node.style.cssText || !node.style.cssText.trim()) {
         node.removeAttribute('style');
       }
@@ -1581,6 +1598,39 @@ function enforceHeadingColorLineBreak(editor) {
     next.classList.add('visual-color-block-section');
     next.style.setProperty('display', 'block', 'important');
     next.style.setProperty('margin-top', '8px', 'important');
+  }
+}
+
+/**
+ * Force "Hết" text to left-align when loaded into editor.
+ * Google Doc stores "Hết" as centered (via ensureDocEndsWithHetMarker),
+ * but in the web editor we want it left-aligned for readability.
+ * The centered alignment is re-applied automatically when saving back to Doc.
+ */
+function normalizeHetAlignmentForEditor(editor) {
+  if (!editor) return;
+
+  // Walk all block-level elements and check for "Hết" text
+  var blocks = editor.querySelectorAll('p, div, span, h1, h2, h3, h4, h5, h6');
+  for (var i = 0; i < blocks.length; i++) {
+    var el = blocks[i];
+    var text = (el.textContent || '').replace(/\u00A0/g, ' ').trim();
+
+    if (text === 'Hết') {
+      // Remove center alignment from inline style
+      if (el.style && el.style.textAlign === 'center') {
+        el.style.textAlign = 'left';
+      }
+      // Also check parent for center alignment (Google Doc often wraps in <p style="text-align:center">)
+      var parent = el.parentElement;
+      if (parent && parent !== editor && parent.style && parent.style.textAlign === 'center') {
+        // Only reset if the parent only contains "Hết"
+        var parentText = (parent.textContent || '').replace(/\u00A0/g, ' ').trim();
+        if (parentText === 'Hết') {
+          parent.style.textAlign = 'left';
+        }
+      }
+    }
   }
 }
 

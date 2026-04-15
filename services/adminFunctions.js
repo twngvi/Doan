@@ -2013,6 +2013,18 @@ function ensureDocEndsWithHetMarker(body) {
   }
 
   if (lastMeaningfulText === "Hết") {
+    // "Hết" already exists – ensure it is centered (it may have lost alignment
+    // after a round-trip through the web editor which strips center styling).
+    for (var j = body.getNumChildren() - 1; j >= 0; j--) {
+      var el = body.getChild(j);
+      if (el.getType() === DocumentApp.ElementType.PARAGRAPH) {
+        var elText = normalizeLineText(el.asParagraph().getText());
+        if (elText === "Hết") {
+          el.asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+          break;
+        }
+      }
+    }
     return;
   }
 
