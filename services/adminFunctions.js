@@ -1154,54 +1154,204 @@ const PET_VARIANTS_HEADERS = [
 
 const DEFAULT_PET_VARIANTS = [
   {
-    id: "pink",
-    name: "Pet Hồng",
-    tone: "#ff70e2",
-    description: "Tươi vui, nổi bật và phù hợp cho phong cách năng động.",
-    level1: "level1-pink.svg",
-    level2: "level2-pink.svg",
-    eyeOpen: "eye-pink-open.svg",
-    eyeClosed: "eye-pink-close.svg",
+    id: "pet-12",
+    name: "Pet 12",
+    tone: "#f87171",
+    description: "Mau PET so 12.",
+    level1: "PET/12.svg",
+    level2: "PET/12.svg",
+    eyeOpen: "",
+    eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
   },
   {
-    id: "yellow",
-    name: "Pet Vàng",
+    id: "pet-13",
+    name: "Pet 13",
+    tone: "#fb923c",
+    description: "Mau PET so 13.",
+    level1: "PET/13.svg",
+    level2: "PET/13.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-14",
+    name: "Pet 14",
     tone: "#facc15",
-    description: "Ấm áp và tích cực, tạo cảm giác thân thiện khi học.",
-    level1: "level1-yellow.svg",
-    level2: "level2-yellow.svg",
-    eyeOpen: "eye-yellow-open.svg",
-    eyeClosed: "eye-yellow-close.svg",
+    description: "Mau PET so 14.",
+    level1: "PET/14.svg",
+    level2: "PET/14.svg",
+    eyeOpen: "",
+    eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
   },
   {
-    id: "blue",
-    name: "Pet Xanh Dương",
+    id: "pet-15",
+    name: "Pet 15",
+    tone: "#a3e635",
+    description: "Mau PET so 15.",
+    level1: "PET/15.svg",
+    level2: "PET/15.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-16",
+    name: "Pet 16",
+    tone: "#34d399",
+    description: "Mau PET so 16.",
+    level1: "PET/16.svg",
+    level2: "PET/16.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-17",
+    name: "Pet 17",
+    tone: "#22d3ee",
+    description: "Mau PET so 17.",
+    level1: "PET/17.svg",
+    level2: "PET/17.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-18",
+    name: "Pet 18",
     tone: "#38bdf8",
-    description: "Điềm tĩnh, tập trung, phù hợp cho các phiên học dài.",
-    level1: "level1-blue.svg",
-    level2: "level2-blue.svg",
-    eyeOpen: "eye-blue-open.svg",
-    eyeClosed: "eye-blue-close.svg",
+    description: "Mau PET so 18.",
+    level1: "PET/18.svg",
+    level2: "PET/18.svg",
+    eyeOpen: "",
+    eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
   },
   {
-    id: "green",
-    name: "Pet Xanh Lá",
-    tone: "#4ade80",
-    description: "Tươi mát, cân bằng và truyền cảm hứng tiến bộ mỗi ngày.",
-    level1: "level1-green.svg",
-    level2: "level2-green.svg",
-    eyeOpen: "eye-green-open.svg",
-    eyeClosed: "eye-green-close.svg",
+    id: "pet-19",
+    name: "Pet 19",
+    tone: "#60a5fa",
+    description: "Mau PET so 19.",
+    level1: "PET/19.svg",
+    level2: "PET/19.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-20",
+    name: "Pet 20",
+    tone: "#818cf8",
+    description: "Mau PET so 20.",
+    level1: "PET/20.svg",
+    level2: "PET/20.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-21",
+    name: "Pet 21",
+    tone: "#a78bfa",
+    description: "Mau PET so 21.",
+    level1: "PET/21.svg",
+    level2: "PET/21.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-22",
+    name: "Pet 22",
+    tone: "#f472b6",
+    description: "Mau PET so 22.",
+    level1: "PET/22.svg",
+    level2: "PET/22.svg",
+    eyeOpen: "",
+    eyeClosed: "",
+    unlockCondition: { type: "level", value: 1 },
+    scalePercent: 100,
+  },
+  {
+    id: "pet-23",
+    name: "Pet 23",
+    tone: "#fb7185",
+    description: "Mau PET so 23.",
+    level1: "PET/23.svg",
+    level2: "PET/23.svg",
+    eyeOpen: "",
+    eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
   },
 ];
+
+const LEGACY_PET_VARIANT_IDS = ["pink", "yellow", "blue", "green"];
+
+function isLegacyPetVariantSet_(variants) {
+  if (!Array.isArray(variants) || variants.length !== LEGACY_PET_VARIANT_IDS.length) {
+    return false;
+  }
+
+  const variantIds = variants
+    .map(function (variant) {
+      return String((variant && variant.id) || "").toLowerCase().trim();
+    })
+    .sort();
+  const legacyIds = LEGACY_PET_VARIANT_IDS.slice().sort();
+
+  for (let i = 0; i < legacyIds.length; i++) {
+    if (variantIds[i] !== legacyIds[i]) {
+      return false;
+    }
+  }
+
+  return variants.every(function (variant) {
+    const level1 = String((variant && variant.level1) || "").trim();
+    const level2 = String((variant && variant.level2) || "").trim();
+    const eyeOpen = String((variant && variant.eyeOpen) || "").trim();
+    const eyeClosed = String((variant && variant.eyeClosed) || "").trim();
+
+    return (
+      /^level1-(pink|yellow|blue|green)\.svg$/i.test(level1) &&
+      /^level2-(pink|yellow|blue|green)\.svg$/i.test(level2) &&
+      /^eye-(pink|yellow|blue|green)-open\.svg$/i.test(eyeOpen) &&
+      /^eye-(pink|yellow|blue|green)-close\.svg$/i.test(eyeClosed)
+    );
+  });
+}
+
+function overwritePetVariantsWithDefault_(sheet) {
+  const rows = DEFAULT_PET_VARIANTS.map(function (variant, index) {
+    return toPetVariantRow_(variant, index);
+  });
+
+  sheet.clearContents();
+  sheet
+    .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
+    .setValues([PET_VARIANTS_HEADERS]);
+  sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
+  sheet.setFrozenRows(1);
+
+  if (rows.length > 0) {
+    sheet
+      .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
+      .setValues(rows);
+  }
+}
 
 function ensurePetItemsSheet_() {
   const ss = getOrCreateDatabase();
@@ -1421,16 +1571,14 @@ function parsePetVariantRows_(data) {
 function seedDefaultPetVariantsIfEmpty_() {
   const sheet = ensurePetVariantsSheet_();
   const data = sheet.getDataRange().getValues();
-  if (data.length > 1) return;
+  if (data.length <= 1) {
+    overwritePetVariantsWithDefault_(sheet);
+    return;
+  }
 
-  const rows = DEFAULT_PET_VARIANTS.map(function (variant, index) {
-    return toPetVariantRow_(variant, index);
-  });
-
-  if (rows.length > 0) {
-    sheet
-      .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
-      .setValues(rows);
+  const variants = parsePetVariantRows_(data);
+  if (isLegacyPetVariantSet_(variants)) {
+    overwritePetVariantsWithDefault_(sheet);
   }
 }
 
@@ -1557,21 +1705,7 @@ function getPetVariantsForAdmin() {
     let variants = parsePetVariantRows_(data);
 
     if (variants.length === 0) {
-      const rows = DEFAULT_PET_VARIANTS.map(function (variant, index) {
-        return toPetVariantRow_(variant, index);
-      });
-
-      sheet.clearContents();
-      sheet
-        .getRange(1, 1, 1, PET_VARIANTS_HEADERS.length)
-        .setValues([PET_VARIANTS_HEADERS]);
-      sheet.getRange(1, 1, 1, PET_VARIANTS_HEADERS.length).setFontWeight("bold");
-      sheet.setFrozenRows(1);
-      if (rows.length > 0) {
-        sheet
-          .getRange(2, 1, rows.length, PET_VARIANTS_HEADERS.length)
-          .setValues(rows);
-      }
+      overwritePetVariantsWithDefault_(sheet);
 
       variants = DEFAULT_PET_VARIANTS.map(function (variant) {
         return {
