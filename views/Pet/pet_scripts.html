@@ -136,7 +136,8 @@
         description: "Mau PET so 23.",
       },
     ];
-    const FIXED_LEVEL1_EGG_FILE = "level1-yellow.svg";
+    const DEFAULT_LEVEL1_FILE = "level1-yellow.svg";
+    const ACCESSORY_POSITIONS = ["left", "center", "right"];
     let PET_VARIANTS = DEFAULT_PET_VARIANTS.slice();
 
     const BLINK_INTERVAL_MS = 5000;
@@ -329,6 +330,52 @@
       return parsed;
     }
 
+    function toSignedNumber(value, fallback) {
+      const parsed = parseInt(value, 10);
+      if (!Number.isFinite(parsed)) return fallback;
+      return parsed;
+    }
+
+    function normalizeAccessoryPositionMode(positionMode) {
+      return ACCESSORY_POSITIONS.indexOf(positionMode) >= 0 ? positionMode : "center";
+    }
+
+    function normalizeAccessoryPositionProfiles(rawProfiles, fallbackItem) {
+      let safeProfiles = {};
+      if (rawProfiles && typeof rawProfiles === "string") {
+        try {
+          safeProfiles = JSON.parse(rawProfiles);
+        } catch (e) {
+          safeProfiles = {};
+        }
+      } else if (rawProfiles && typeof rawProfiles === "object") {
+        safeProfiles = rawProfiles;
+      }
+      const safeFallback = fallbackItem || {};
+
+      const toProfile = function (profile) {
+        const safe = profile || {};
+        return {
+          offsetX: toSignedNumber(safe.offsetX, toSignedNumber(safeFallback.offsetX, 0)),
+          offsetY: toSignedNumber(safe.offsetY, toSignedNumber(safeFallback.offsetY, 0)),
+          scalePercent: Math.max(40, Math.min(220, toNonNegativeNumber(safe.scalePercent, toNonNegativeNumber(safeFallback.scalePercent, 100)))),
+        };
+      };
+
+      return {
+        left: toProfile(safeProfiles.left),
+        center: toProfile(safeProfiles.center),
+        right: toProfile(safeProfiles.right),
+      };
+    }
+
+    function getAccessoryProfileByPosition(item, position) {
+      const safeItem = item || {};
+      const profiles = normalizeAccessoryPositionProfiles(safeItem.positionProfiles, safeItem);
+      const mode = normalizeAccessoryPositionMode(position);
+      return profiles[mode] || profiles.center;
+    }
+
     function normalizePetItemCatalog(items, itemType) {
       if (!Array.isArray(items)) return [];
 
@@ -345,10 +392,11 @@
             name: String(safe.name || (fallback && fallback.name) || ""),
             file: String(safe.file || (fallback && fallback.file) || ""),
             priceXqp: toNonNegativeNumber(safe.priceXqp, 0),
-            offsetX: toNonNegativeNumber(safe.offsetX, 0),
-            offsetY: toNonNegativeNumber(safe.offsetY, 0),
-            scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(safe.scalePercent, 100))),
-            positionMode: String(safe.positionMode || 'center'),
+            offsetX: toSignedNumber(safe.offsetX, 0),
+            offsetY: toSignedNumber(safe.offsetY, 0),
+            scalePercent: Math.max(40, Math.min(220, toNonNegativeNumber(safe.scalePercent, 100))),
+            positionMode: normalizeAccessoryPositionMode(String(safe.positionMode || 'center')),
+            positionProfiles: normalizeAccessoryPositionProfiles(safe.positionProfiles, safe),
             unlockCondition: safe.unlockCondition || { type: 'level', value: 1 }
           };
 
@@ -388,25 +436,27 @@
           const safe = item || {};
           const fallback = DEFAULT_PET_VARIANTS[index] || DEFAULT_PET_VARIANTS[0] || {};
           const id = String(safe.id || fallback.id || "").trim();
-          const level1 = FIXED_LEVEL1_EGG_FILE;
+          const level1 = String(safe.level1 || fallback.level1 || DEFAULT_LEVEL1_FILE).trim();
           const level2 = String(safe.level2 || fallback.level2 || "").trim();
-          if (!id || !level2) return null;
+          if (!id || !level1 || !level2) return null;
 
           let scalePercent = toNonNegativeNumber(safe.scalePercent, 100);
           scalePercent = Math.max(40, Math.min(200, scalePercent));
+          const tiltDeg = Math.max(-45, Math.min(45, toSignedNumber(safe.tiltDeg, 0)));
 
           return {
             id: id,
             name: String(safe.name || fallback.name || ("Pet " + (index + 1))),
             tone: String(safe.tone || fallback.tone || "#7c8cff"),
             stageBackground: String(safe.stageBackground || fallback.stageBackground || "bg-1.webp"),
-            level1: level1 || String(fallback.level1 || ""),
-            level2: level2 || String(fallback.level2 || ""),
+            level1: level1,
+            level2: level2,
             eyeOpen: String(safe.eyeOpen || fallback.eyeOpen || ""),
             eyeClosed: String(safe.eyeClosed || fallback.eyeClosed || ""),
             description: String(safe.description || fallback.description || ""),
             unlockCondition: normalizeVariantUnlockCondition(safe.unlockCondition),
             scalePercent: scalePercent,
+            tiltDeg: tiltDeg,
           };
         })
         .filter(Boolean);
@@ -1333,9 +1383,10 @@
       if (!accessoryImageEl || !fileName) return "center";
 
       const rule = getAccessoryRule(fileName);
-      const accessoryCatalogItem = accessoryData || getAccessoryItemByFileName(fileName);
-      const positionMode = String((accessoryCatalogItem && accessoryCatalogItem.positionMode) || "center");
-      const finalPosition = desiredPosition || (positionMode === "custom" ? "center" : positionMode);
+      const accessoryCatalogItem = getAccessoryItemByFileName(fileName) || accessoryData;
+      const positionMode = normalizeAccessoryPositionMode((accessoryCatalogItem && accessoryCatalogItem.positionMode) || "center");
+      const finalPosition = resolveAccessoryPosition(fileName, desiredPosition || positionMode);
+      const activeProfile = getAccessoryProfileByPosition(accessoryCatalogItem, finalPosition);
 
       const baseTop = 12;
       const baseLeftMap = {
@@ -1358,9 +1409,9 @@
       accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
-      accessoryImageEl.style.setProperty("--pet-accessory-offset-x", ((accessoryCatalogItem && accessoryCatalogItem.offsetX) || 0) + "px");
-      accessoryImageEl.style.setProperty("--pet-accessory-offset-y", ((accessoryCatalogItem && accessoryCatalogItem.offsetY) || 0) + "px");
-      accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue * (((accessoryCatalogItem && accessoryCatalogItem.scalePercent) || 100) / 100)));
+      accessoryImageEl.style.setProperty("--pet-accessory-offset-x", (activeProfile.offsetX || 0) + "px");
+      accessoryImageEl.style.setProperty("--pet-accessory-offset-y", (activeProfile.offsetY || 0) + "px");
+      accessoryImageEl.style.setProperty("--pet-accessory-scale", String(scaleValue * ((activeProfile.scalePercent || 100) / 100)));
 
       return finalPosition;
     }
@@ -1427,21 +1478,11 @@
     }
 
     function renderEyes() {
-      const variant = PET_VARIANTS[state.currentIndex];
-      if (!variant) return;
-
       const eyesImageEl = document.getElementById("petEyesImage");
       if (!eyesImageEl) return;
 
-      if (!state.isLevelTwo) {
-        eyesImageEl.style.display = "none";
-        return;
-      }
-
-      const shouldCloseEyes =
-        state.isPressing || (state.isLevelTwo && state.isEyesClosed);
-      const eyeAsset = shouldCloseEyes ? variant.eyeClosed : variant.eyeOpen;
-      applySrcAsync(eyesImageEl, eyeAsset);
+      eyesImageEl.style.display = "none";
+      eyesImageEl.src = "";
     }
 
     function renderAccessory() {
@@ -1517,8 +1558,9 @@
 
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       const variantScale = Math.max(40, Math.min(200, toNonNegativeNumber(variant.scalePercent, 100))) / 100;
+      const variantTilt = Math.max(-45, Math.min(45, toSignedNumber(variant.tiltDeg, 0)));
       if (previewImageEl) {
-        previewImageEl.style.transform = "scale(" + variantScale + ")";
+        previewImageEl.style.transform = "scale(" + variantScale + ") rotate(" + variantTilt + "deg)";
         previewImageEl.style.transformOrigin = "center bottom";
       }
       applySrcAsync(previewImageEl, imageName);
@@ -1794,17 +1836,19 @@
             return;
           }
 
-          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100, positionMode: 'center' };
-          const finalPosition = catalogItem.positionMode === 'custom'
-            ? 'center'
-            : resolveAccessoryPosition(fileName, catalogItem.positionMode || state.accessoryPosition);
+          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100, positionMode: 'center', positionProfiles: {} };
+          const defaultPosition = normalizeAccessoryPositionMode(catalogItem.positionMode || state.accessoryPosition);
+          const finalPosition = resolveAccessoryPosition(fileName, defaultPosition);
+          const profiles = normalizeAccessoryPositionProfiles(catalogItem.positionProfiles, catalogItem);
+          const activeProfile = profiles[finalPosition] || profiles.center;
           state.selectedAccessories.push({
             fileName: fileName,
             position: finalPosition,
-            positionMode: catalogItem.positionMode || 'center',
-            offsetX: toNonNegativeNumber(catalogItem.offsetX, 0),
-            offsetY: toNonNegativeNumber(catalogItem.offsetY, 0),
-            scalePercent: Math.max(40, Math.min(200, toNonNegativeNumber(catalogItem.scalePercent, 100))),
+            positionMode: defaultPosition,
+            offsetX: activeProfile.offsetX,
+            offsetY: activeProfile.offsetY,
+            scalePercent: activeProfile.scalePercent,
+            positionProfiles: profiles,
           });
           state.selectedAccessory = fileName;
           state.accessoryPosition = finalPosition;
@@ -2254,7 +2298,7 @@
         const variant = PET_VARIANTS[state.currentIndex];
         const bg = STAGE_BACKGROUNDS[state.selectedStageBackgroundIndex] || STAGE_BACKGROUNDS[0];
         if (variant && bg) {
-            [variant.level1, variant.level2, variant.eyeOpen, bg.fileName].forEach(file => {
+          [variant.level1, variant.level2, bg.fileName].forEach(file => {
                fetchAssetUrl(file); // Fire and forget fetch cache
             });
         }

@@ -157,7 +157,8 @@
         scalePercent: 100,
       },
     ];
-    var FIXED_LEVEL1_EGG_FILE = "level1-yellow.svg";
+    var DEFAULT_LEVEL1_FILE = "level1-yellow.svg";
+    var ACCESSORY_POSITIONS = ['left', 'center', 'right'];
     var i;
 
     for (i = 1; i <= 25; i++) {
@@ -193,7 +194,8 @@
         index: -1,
         isNew: false,
         draft: null,
-        previewLevel: 1
+        previewLevel: 1,
+        editLevel: 1
       }
     };
 
@@ -201,20 +203,89 @@
     var eventsBound = false;
     var isPersisting = false;
 
-    function cloneItem(item) {
+    function parseSignedInteger(value, fallback) {
+      var n = parseInt(String(value == null ? '' : value), 10);
+      if (isNaN(n)) return fallback;
+      return n;
+    }
+
+    function normalizeAccessoryPositionMode(positionMode) {
+      return ACCESSORY_POSITIONS.indexOf(positionMode) >= 0 ? positionMode : 'center';
+    }
+
+    function normalizeAccessoryProfile(profile, fallback) {
+      var safeProfile = profile || {};
+      var safeFallback = fallback || {};
+      var scalePercent = parseNonNegative(safeProfile.scalePercent, parseNonNegative(safeFallback.scalePercent, 100));
+      scalePercent = Math.max(40, Math.min(220, scalePercent));
+
       return {
-        id: item.id,
-        name: item.name,
-        file: item.file,
-        priceXqp: item.priceXqp,
-        petXpGain: item.petXpGain,
-        offsetX: item.offsetX || 0,
-        offsetY: item.offsetY || 0,
-        scalePercent: item.scalePercent || 100,
-        positionMode: item.positionMode || 'center',
+        offsetX: parseSignedInteger(safeProfile.offsetX, parseSignedInteger(safeFallback.offsetX, 0)),
+        offsetY: parseSignedInteger(safeProfile.offsetY, parseSignedInteger(safeFallback.offsetY, 0)),
+        scalePercent: scalePercent,
+      };
+    }
+
+    function buildDefaultAccessoryProfiles(item) {
+      var safeItem = item || {};
+      var baseProfile = normalizeAccessoryProfile({
+        offsetX: safeItem.offsetX,
+        offsetY: safeItem.offsetY,
+        scalePercent: safeItem.scalePercent,
+      }, {
+        offsetX: 0,
+        offsetY: 0,
+        scalePercent: 100,
+      });
+
+      return {
+        left: normalizeAccessoryProfile(safeItem.positionProfiles && safeItem.positionProfiles.left, baseProfile),
+        center: normalizeAccessoryProfile(safeItem.positionProfiles && safeItem.positionProfiles.center, baseProfile),
+        right: normalizeAccessoryProfile(safeItem.positionProfiles && safeItem.positionProfiles.right, baseProfile),
+      };
+    }
+
+    function cloneAccessoryProfiles(profiles) {
+      var safeProfiles = profiles || {};
+      return {
+        left: normalizeAccessoryProfile(safeProfiles.left, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
+        center: normalizeAccessoryProfile(safeProfiles.center, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
+        right: normalizeAccessoryProfile(safeProfiles.right, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
+      };
+    }
+
+    function getAccessoryProfileByPosition(profiles, position) {
+      var normalizedPosition = normalizeAccessoryPositionMode(position);
+      var safeProfiles = cloneAccessoryProfiles(profiles);
+      return safeProfiles[normalizedPosition];
+    }
+
+    function getAccessoryPositionLabel(positionMode) {
+      if (positionMode === 'left') return 'Trái đầu';
+      if (positionMode === 'right') return 'Phải đầu';
+      return 'Giữa đầu';
+    }
+
+    function cloneItem(item) {
+      var safeItem = item || {};
+      var positionMode = normalizeAccessoryPositionMode(safeItem.positionMode || 'center');
+      var positionProfiles = buildDefaultAccessoryProfiles(safeItem);
+      var activeProfile = getAccessoryProfileByPosition(positionProfiles, positionMode);
+
+      return {
+        id: safeItem.id,
+        name: safeItem.name,
+        file: safeItem.file,
+        priceXqp: safeItem.priceXqp,
+        petXpGain: safeItem.petXpGain,
+        offsetX: activeProfile.offsetX,
+        offsetY: activeProfile.offsetY,
+        scalePercent: activeProfile.scalePercent,
+        positionMode: positionMode,
+        positionProfiles: positionProfiles,
         unlockCondition: {
-          type: item.unlockCondition && item.unlockCondition.type ? item.unlockCondition.type : "level",
-          value: item.unlockCondition && item.unlockCondition.value ? item.unlockCondition.value : 1
+          type: safeItem.unlockCondition && safeItem.unlockCondition.type ? safeItem.unlockCondition.type : "level",
+          value: safeItem.unlockCondition && safeItem.unlockCondition.value ? safeItem.unlockCondition.value : 1
         }
       };
     }
@@ -238,15 +309,14 @@
         name: String(safe.name || ""),
         tone: String(safe.tone || "#7c8cff"),
         description: String(safe.description || ""),
-        level1: FIXED_LEVEL1_EGG_FILE,
+        level1: String(safe.level1 || DEFAULT_LEVEL1_FILE),
         level2: String(safe.level2 || ""),
-        eyeOpen: String(safe.eyeOpen || ""),
-        eyeClosed: String(safe.eyeClosed || ""),
         unlockCondition: {
           type: unlockType,
           value: unlockValue,
         },
         scalePercent: scalePercent,
+        tiltDeg: Math.max(-45, Math.min(45, parseSignedInteger(safe.tiltDeg, 0))),
       };
     }
 
@@ -262,6 +332,11 @@
             offsetY: 0,
             scalePercent: 100,
             positionMode: 'center',
+            positionProfiles: {
+              left: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+              center: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+              right: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+            },
             unlockCondition: { type: "level", value: 1 }
           };
         });
@@ -325,10 +400,11 @@
             name: String(safeItem.name || ''),
             file: String(safeItem.file || ''),
             priceXqp: parseNonNegative(safeItem.priceXqp, 0),
-            offsetX: parseNonNegative(safeItem.offsetX, 0),
-            offsetY: parseNonNegative(safeItem.offsetY, 0),
-            scalePercent: Math.max(40, Math.min(200, parseNonNegative(safeItem.scalePercent, 100))),
-            positionMode: String(safeItem.positionMode || 'center'),
+            offsetX: parseSignedInteger(safeItem.offsetX, 0),
+            offsetY: parseSignedInteger(safeItem.offsetY, 0),
+            scalePercent: Math.max(40, Math.min(220, parseNonNegative(safeItem.scalePercent, 100))),
+            positionMode: normalizeAccessoryPositionMode(String(safeItem.positionMode || 'center')),
+            positionProfiles: buildDefaultAccessoryProfiles(safeItem),
             unlockCondition: {
               type: unlockType,
               value: unlockValue,
@@ -505,7 +581,8 @@
       editorEls.foodXpWrap = document.getElementById('pm-food-xp-wrap');
       editorEls.foodXp = document.getElementById('pm-field-food-xp');
       editorEls.accessoryPositionWrap = document.getElementById('pm-accessory-position-wrap');
-      editorEls.accessoryPositionMode = document.getElementById('pm-accessory-position-mode');
+      editorEls.accessoryProfileTabs = document.getElementById('pm-accessory-profile-tabs');
+      editorEls.accessoryActiveProfile = document.getElementById('pm-accessory-active-profile');
       editorEls.accessoryNudgePanel = document.getElementById('pm-accessory-nudge-panel');
       editorEls.accessoryNudgeUp = document.getElementById('pm-accessory-nudge-up');
       editorEls.accessoryNudgeDown = document.getElementById('pm-accessory-nudge-down');
@@ -532,11 +609,9 @@
       editorEls.variantToneHex = document.getElementById('pm-variant-tone-hex');
       editorEls.variantColorSwatch = document.getElementById('pm-variant-color-swatch');
       editorEls.variantDescription = document.getElementById('pm-variant-description');
-      editorEls.levelTabs = document.querySelectorAll('.pm-level-tab');
-      editorEls.levelTabContents = [
-        document.getElementById('pm-level-1-content'),
-        document.getElementById('pm-level-2-content')
-      ];
+      editorEls.variantEditLevelTabs = document.getElementById('pm-variant-edit-level-tabs');
+      editorEls.variantLevel1Wrap = document.getElementById('pm-variant-level1-wrap');
+      editorEls.variantLevel2Wrap = document.getElementById('pm-variant-level2-wrap');
       editorEls.variantLevel1 = document.getElementById('pm-variant-level1');
       editorEls.variantLevel1File = document.getElementById('pm-variant-level1-file');
       editorEls.variantLevel1FileName = document.getElementById('pm-level1-file-name');
@@ -545,12 +620,6 @@
       editorEls.variantLevel2File = document.getElementById('pm-variant-level2-file');
       editorEls.variantLevel2FileName = document.getElementById('pm-level2-file-name');
       editorEls.variantLevel2Preview = document.getElementById('pm-variant-level2-preview');
-      editorEls.variantEyeOpen = document.getElementById('pm-variant-eye-open');
-      editorEls.variantEyeOpenFile = document.getElementById('pm-variant-eye-open-file');
-      editorEls.variantEyeOpenFileName = document.getElementById('pm-eye-open-file-name');
-      editorEls.variantEyeClosed = document.getElementById('pm-variant-eye-closed');
-      editorEls.variantEyeClosedFile = document.getElementById('pm-variant-eye-closed-file');
-      editorEls.variantEyeClosedFileName = document.getElementById('pm-eye-closed-file-name');
       editorEls.variantUnlockType = document.getElementById('pm-variant-unlock-type');
       editorEls.variantUnlockLevelWrap = document.getElementById('pm-variant-unlock-level-wrap');
       editorEls.variantUnlockLevel = document.getElementById('pm-variant-unlock-level');
@@ -559,6 +628,8 @@
       editorEls.variantSizeDown = document.getElementById('pm-variant-size-down');
       editorEls.variantSizeUp = document.getElementById('pm-variant-size-up');
       editorEls.variantSizeValue = document.getElementById('pm-variant-size-value');
+      editorEls.variantTilt = document.getElementById('pm-variant-tilt');
+      editorEls.variantTiltValue = document.getElementById('pm-variant-tilt-value');
       editorEls.variantPreviewImage = document.getElementById('pm-variant-preview-image');
       editorEls.variantPreviewBox = document.getElementById('pm-variant-preview-box');
       editorEls.variantSaveBtn = document.getElementById('pm-variant-save-btn');
@@ -644,7 +715,7 @@
         var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
         var tone = escapeHtml(variant.tone || '#7c8cff');
         [1, 2].forEach(function (level) {
-          var src = resolveAssetSrc(level === 1 ? FIXED_LEVEL1_EGG_FILE : variant.level2 || variant.eyeOpen || '');
+          var src = resolveAssetSrc(level === 1 ? (variant.level1 || DEFAULT_LEVEL1_FILE) : (variant.level2 || ''));
           var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
           html += '' +
             '<div class="pm-item-card pm-variant-card pm-variant-level-card" data-variant-index="' + index + '" data-variant-level="' + level + '" title="Bấm để chỉnh sửa trong sidebar">' +
@@ -693,6 +764,11 @@
       }
     }
 
+    function updateVariantTiltValue() {
+      if (!state.variantEditor.draft || !editorEls.variantTiltValue) return;
+      editorEls.variantTiltValue.textContent = String(state.variantEditor.draft.tiltDeg || 0) + '°';
+    }
+
     function updateVariantPreview() {
       if (!editorEls.variantPreviewImage || !state.variantEditor.draft) return;
 
@@ -700,7 +776,14 @@
       var useLevel2 = state.variantEditor.previewLevel === 2;
       var src = useLevel2 ? draft.level2 : draft.level1;
       editorEls.variantPreviewImage.src = resolveAssetSrc(src || draft.level1 || draft.level2 || '');
-      editorEls.variantPreviewImage.style.transform = 'scale(' + ((draft.scalePercent || 100) / 100) + ')';
+      editorEls.variantPreviewImage.style.transform = 'scale(' + ((draft.scalePercent || 100) / 100) + ') rotate(' + (draft.tiltDeg || 0) + 'deg)';
+
+      if (editorEls.variantLevel1Preview) {
+        editorEls.variantLevel1Preview.src = resolveAssetSrc(draft.level1 || DEFAULT_LEVEL1_FILE);
+      }
+      if (editorEls.variantLevel2Preview) {
+        editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
+      }
 
       if (editorEls.variantPreviewBox) {
         editorEls.variantPreviewBox.querySelectorAll('.pm-preview-toggle').forEach(function (btn) {
@@ -710,6 +793,31 @@
       }
 
       updateVariantScaleValue();
+      updateVariantTiltValue();
+    }
+
+    function setVariantEditLevel(level, syncPreview) {
+      var normalizedLevel = level === 2 ? 2 : 1;
+      state.variantEditor.editLevel = normalizedLevel;
+
+      if (editorEls.variantEditLevelTabs) {
+        editorEls.variantEditLevelTabs.querySelectorAll('[data-edit-level]').forEach(function (btn) {
+          var btnLevel = parseInt(btn.getAttribute('data-edit-level') || '1', 10);
+          btn.classList.toggle('active', btnLevel === normalizedLevel);
+        });
+      }
+
+      if (editorEls.variantLevel1Wrap) {
+        editorEls.variantLevel1Wrap.style.display = normalizedLevel === 1 ? 'flex' : 'none';
+      }
+      if (editorEls.variantLevel2Wrap) {
+        editorEls.variantLevel2Wrap.style.display = normalizedLevel === 2 ? 'flex' : 'none';
+      }
+
+      if (syncPreview !== false) {
+        state.variantEditor.previewLevel = normalizedLevel;
+        updateVariantPreview();
+      }
     }
 
     function closePmVariantEditor() {
@@ -720,7 +828,8 @@
         index: -1,
         isNew: false,
         draft: null,
-        previewLevel: 1
+        previewLevel: 1,
+        editLevel: 1
       };
     }
 
@@ -736,12 +845,11 @@
           name: '',
           tone: '#7c8cff',
           description: '',
-          level1: FIXED_LEVEL1_EGG_FILE,
+          level1: DEFAULT_LEVEL1_FILE,
           level2: '',
-          eyeOpen: '',
-          eyeClosed: '',
           unlockCondition: { type: 'level', value: 1 },
           scalePercent: 100,
+          tiltDeg: 0,
         };
       } else {
         if (index < 0 || index >= state.petVariants.length) return;
@@ -752,7 +860,8 @@
         index: index,
         isNew: !!isNew,
         draft: draft,
-        previewLevel: previewLevel === 2 ? 2 : 1
+        previewLevel: previewLevel === 2 ? 2 : 1,
+        editLevel: previewLevel === 2 ? 2 : 1
       };
 
       if (editorEls.variantTitle) {
@@ -763,18 +872,15 @@
       syncColorHexToInput(draft.tone || '#7c8cff');
       if (editorEls.variantDescription) editorEls.variantDescription.value = draft.description || '';
       if (editorEls.variantLevel1) {
-        editorEls.variantLevel1.value = FIXED_LEVEL1_EGG_FILE;
-        editorEls.variantLevel1.readOnly = true;
+        editorEls.variantLevel1.value = draft.level1 || DEFAULT_LEVEL1_FILE;
+        editorEls.variantLevel1.readOnly = false;
       }
       if (editorEls.variantLevel1FileName) editorEls.variantLevel1FileName.textContent = draft.level1 ? String(draft.level1).split('/').pop() : 'Chưa chọn tệp';
-      if (editorEls.variantLevel1Preview) editorEls.variantLevel1Preview.src = resolveAssetSrc(FIXED_LEVEL1_EGG_FILE);
+      if (editorEls.variantLevel1Preview) editorEls.variantLevel1Preview.src = resolveAssetSrc(draft.level1 || DEFAULT_LEVEL1_FILE);
       if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
       if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
-      if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.value = draft.eyeOpen || '';
-      if (editorEls.variantEyeOpenFileName) editorEls.variantEyeOpenFileName.textContent = draft.eyeOpen ? String(draft.eyeOpen).split('/').pop() : 'Chưa chọn tệp';
-      if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.value = draft.eyeClosed || '';
-      if (editorEls.variantEyeClosedFileName) editorEls.variantEyeClosedFileName.textContent = draft.eyeClosed ? String(draft.eyeClosed).split('/').pop() : 'Chưa chọn tệp';
+      if (editorEls.variantTilt) editorEls.variantTilt.value = String(draft.tiltDeg || 0);
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
 
@@ -784,11 +890,7 @@
       }
 
       normalizeVariantUnlockFieldVisibility();
-      if (state.variantEditor.previewLevel === 2) {
-        selectLevel2Tab();
-      } else {
-        selectLevel1Tab();
-      }
+      setVariantEditLevel(state.variantEditor.editLevel, false);
       updateVariantPreview();
 
       editorEls.page.classList.add('pm-variant-editor-open');
@@ -802,10 +904,9 @@
       draft.name = editorEls.variantName ? editorEls.variantName.value.trim() : draft.name;
       draft.tone = editorEls.variantTone ? editorEls.variantTone.value : draft.tone;
       draft.description = editorEls.variantDescription ? editorEls.variantDescription.value.trim() : draft.description;
-      draft.level1 = FIXED_LEVEL1_EGG_FILE;
+      draft.level1 = editorEls.variantLevel1 ? editorEls.variantLevel1.value.trim() : draft.level1;
       draft.level2 = editorEls.variantLevel2 ? editorEls.variantLevel2.value.trim() : draft.level2;
-      draft.eyeOpen = editorEls.variantEyeOpen ? editorEls.variantEyeOpen.value.trim() : draft.eyeOpen;
-      draft.eyeClosed = editorEls.variantEyeClosed ? editorEls.variantEyeClosed.value.trim() : draft.eyeClosed;
+      draft.tiltDeg = Math.max(-45, Math.min(45, parseSignedInteger(editorEls.variantTilt ? editorEls.variantTilt.value : draft.tiltDeg, 0)));
 
       var unlockType = editorEls.variantUnlockType ? editorEls.variantUnlockType.value : 'level';
       var unlockValue = unlockType === 'level'
@@ -833,6 +934,10 @@
       var draft = state.variantEditor.draft;
       if (!draft.name) {
         if (editorEls.variantName) editorEls.variantName.focus();
+        return;
+      }
+      if (!draft.level1) {
+        if (editorEls.variantLevel1) editorEls.variantLevel1.focus();
         return;
       }
       if (!draft.level2) {
@@ -864,11 +969,39 @@
       var index = state.variantEditor.index;
       if (index < 0 || index >= state.petVariants.length) return;
 
-      state.petVariants.splice(index, 1);
-      updateCounts();
-      renderAllPmItems();
-      persistPetVariantsToBackend(true);
-      closePmVariantEditor();
+      var deleteVariant = function () {
+        state.petVariants.splice(index, 1);
+        updateCounts();
+        renderAllPmItems();
+        persistPetVariantsToBackend(true);
+        closePmVariantEditor();
+      };
+
+      if (typeof window.showAppConfirm === 'function') {
+        try {
+          var result = window.showAppConfirm('Ban chac chan muon xoa hinh dang PET nay?', {
+            title: 'Xac nhan xoa',
+            confirmText: 'Xoa',
+            cancelText: 'Huy'
+          });
+
+          if (result && typeof result.then === 'function') {
+            result.then(function (ok) {
+              if (ok) deleteVariant();
+            }).catch(function () {});
+            return;
+          }
+
+          if (result) deleteVariant();
+          return;
+        } catch (e) {
+          // Fall back to native confirm below.
+        }
+      }
+
+      if (window.confirm('Ban chac chan muon xoa hinh dang PET nay?')) {
+        deleteVariant();
+      }
     }
 
     function populateTopicOptions() {
@@ -987,12 +1120,10 @@
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
       
       // Accessory position and scale
-      if (editorEls.accessoryPositionMode) editorEls.accessoryPositionMode.value = normalizeAccessoryPositionMode(draft.positionMode || 'center');
-      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(draft.offsetX || 0);
-      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(draft.offsetY || 0);
+      draft.positionProfiles = buildDefaultAccessoryProfiles(draft);
+      draft.positionMode = normalizeAccessoryPositionMode(draft.positionMode || 'center');
       if (editorEls.accessoryPreviewWrap) editorEls.accessoryPreviewWrap.style.display = isFood ? 'none' : 'flex';
-      if (editorEls.accessoryScaleValue) editorEls.accessoryScaleValue.textContent = String(draft.scalePercent || 100) + '%';
-      syncAccessoryOffsetHint();
+      setActiveAccessoryProfileTab(draft.positionMode);
       
       if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
 
@@ -1053,6 +1184,11 @@
           offsetY: 0,
           scalePercent: 100,
           positionMode: 'center',
+          positionProfiles: {
+            left: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+            center: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+            right: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+          },
           unlockCondition: { type: 'level', value: '' }
         }
       };
@@ -1108,63 +1244,48 @@
       return rules[fileName] || { forcedPosition: null, topOffset: 0, scale: 1 };
     }
 
-    function getAccessoryPositionLabel(positionMode) {
-      if (positionMode === 'left') return 'Trái đầu';
-      if (positionMode === 'right') return 'Phải đầu';
-      if (positionMode === 'custom') return 'Tùy chỉnh riêng';
-      return 'Giữa đầu';
-    }
-
-    function normalizeAccessoryPositionMode(positionMode) {
-      if (positionMode === 'left' || positionMode === 'right' || positionMode === 'custom') {
-        return positionMode;
-      }
-      return 'center';
-    }
-
     function syncAccessoryOffsetHint() {
       if (!editorEls.accessoryOffsetHint || !state.editor.draft) return;
-      editorEls.accessoryOffsetHint.textContent = 'X: ' + (parseNonNegative(state.editor.draft.offsetX, 0)) + 'px · Y: ' + (parseNonNegative(state.editor.draft.offsetY, 0)) + 'px';
+      var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
+      editorEls.accessoryOffsetHint.textContent = 'X: ' + currentProfile.offsetX + 'px · Y: ' + currentProfile.offsetY + 'px';
+      if (editorEls.accessoryActiveProfile) {
+        editorEls.accessoryActiveProfile.textContent = 'Đang chỉnh: ' + getAccessoryPositionLabel(currentPosition);
+      }
     }
 
-    function applyAccessoryPositionMode(mode, shouldResetOffset) {
+    function setActiveAccessoryProfileTab(positionMode) {
       if (!state.editor.draft) return;
 
-      var normalizedMode = normalizeAccessoryPositionMode(mode);
+      var normalizedMode = normalizeAccessoryPositionMode(positionMode);
       state.editor.draft.positionMode = normalizedMode;
 
-      if (editorEls.accessoryPositionMode) {
-        editorEls.accessoryPositionMode.value = normalizedMode;
+      if (editorEls.accessoryProfileTabs) {
+        editorEls.accessoryProfileTabs.querySelectorAll('[data-accessory-pos]').forEach(function (tab) {
+          var pos = tab.getAttribute('data-accessory-pos') || 'center';
+          tab.classList.toggle('active', pos === normalizedMode);
+        });
       }
 
-      if (normalizedMode !== 'custom' && shouldResetOffset !== false) {
-        state.editor.draft.offsetX = 0;
-        state.editor.draft.offsetY = 0;
-        if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = '0';
-        if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = '0';
-      }
-
-      if (editorEls.accessoryNudgePanel) {
-        editorEls.accessoryNudgePanel.classList.toggle('is-custom', normalizedMode === 'custom');
-      }
-
+      var activeProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, normalizedMode);
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(activeProfile.offsetX);
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(activeProfile.offsetY);
+      if (editorEls.accessoryScaleValue) editorEls.accessoryScaleValue.textContent = String(activeProfile.scalePercent) + '%';
       syncAccessoryOffsetHint();
       updateAccessoryPreview();
     }
 
     function nudgeAccessoryPosition(deltaX, deltaY) {
       if (!state.editor.draft) return;
-      state.editor.draft.positionMode = 'custom';
-      state.editor.draft.offsetX = parseNonNegative(state.editor.draft.offsetX, 0) + deltaX;
-      state.editor.draft.offsetY = parseNonNegative(state.editor.draft.offsetY, 0) + deltaY;
-      if (editorEls.accessoryPositionMode) {
-        editorEls.accessoryPositionMode.value = 'custom';
-      }
-      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(state.editor.draft.offsetX);
-      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(state.editor.draft.offsetY);
-      if (editorEls.accessoryNudgePanel) {
-        editorEls.accessoryNudgePanel.classList.add('is-custom');
-      }
+
+      var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
+      currentProfile.offsetX += deltaX;
+      currentProfile.offsetY += deltaY;
+      state.editor.draft.positionProfiles[currentPosition] = currentProfile;
+
+      if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(currentProfile.offsetX);
+      if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(currentProfile.offsetY);
       syncAccessoryOffsetHint();
       updateAccessoryPreview();
     }
@@ -1177,11 +1298,9 @@
       var previewSrc = resolveAssetSrc(fileName);
       var accessoryItem = getAccessoryCatalogItem(fileName);
       var accessoryRule = getAccessoryRule(fileName);
-      var offsetX = parseNonNegative(draft.offsetX, 0);
-      var offsetY = parseNonNegative(draft.offsetY, 0);
-      var scalePercent = Math.max(40, Math.min(200, parseNonNegative(draft.scalePercent, 100)));
-      var positionMode = normalizeAccessoryPositionMode(draft.positionMode);
-      var previewPosition = accessoryRule.forcedPosition || (positionMode === 'custom' ? 'center' : positionMode);
+      var currentPosition = normalizeAccessoryPositionMode(draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(draft.positionProfiles, currentPosition);
+      var previewPosition = accessoryRule.forcedPosition || currentPosition;
       var previewLeft = previewPosition === 'left' ? 42 : previewPosition === 'right' ? 58 : 50;
       var previewTop = 27 + (accessoryRule.topOffset || 0);
 
@@ -1192,42 +1311,26 @@
       editorEls.accessoryPreviewItem.src = previewSrc;
       editorEls.accessoryPreviewItem.style.top = previewTop + '%';
       editorEls.accessoryPreviewItem.style.left = previewLeft + '%';
-      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-x', offsetX + 'px');
-      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-y', offsetY + 'px');
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-x', currentProfile.offsetX + 'px');
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-y', currentProfile.offsetY + 'px');
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale', (accessoryItem && accessoryItem.widthPercent ? accessoryItem.widthPercent + '%' : '34%'));
-      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String((accessoryRule.scale || 1) * (scalePercent / 100)));
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String((accessoryRule.scale || 1) * (currentProfile.scalePercent / 100)));
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-rot', '0deg');
       syncAccessoryOffsetHint();
     }
 
     function syncAccessoryDraftFromForm() {
       if (!state.editor.draft) return;
-      state.editor.draft.offsetX = parseNonNegative(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : 0, 0);
-      state.editor.draft.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
-      state.editor.draft.scalePercent = Math.max(40, Math.min(200, parseNonNegative(state.editor.draft.scalePercent, 100)));
-      state.editor.draft.positionMode = normalizeAccessoryPositionMode(editorEls.accessoryPositionMode ? editorEls.accessoryPositionMode.value : state.editor.draft.positionMode);
-      if (editorEls.accessoryNudgePanel) {
-        editorEls.accessoryNudgePanel.classList.toggle('is-custom', state.editor.draft.positionMode === 'custom');
-      }
+      var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
+      currentProfile.offsetX = parseSignedInteger(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : currentProfile.offsetX, currentProfile.offsetX);
+      currentProfile.offsetY = parseSignedInteger(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : currentProfile.offsetY, currentProfile.offsetY);
+      currentProfile.scalePercent = Math.max(40, Math.min(220, parseNonNegative(currentProfile.scalePercent, 100)));
+      state.editor.draft.positionProfiles[currentPosition] = currentProfile;
+      state.editor.draft.offsetX = currentProfile.offsetX;
+      state.editor.draft.offsetY = currentProfile.offsetY;
+      state.editor.draft.scalePercent = currentProfile.scalePercent;
       updateAccessoryPreview();
-    }
-
-    function selectLevel1Tab() {
-      if (!editorEls.levelTabs || !editorEls.levelTabContents) return;
-      editorEls.levelTabs.forEach(function (tab) {
-        tab.classList.toggle('active', tab.getAttribute('data-level') === '1');
-      });
-      editorEls.levelTabContents[0].classList.add('active');
-      editorEls.levelTabContents[1].classList.remove('active');
-    }
-
-    function selectLevel2Tab() {
-      if (!editorEls.levelTabs || !editorEls.levelTabContents) return;
-      editorEls.levelTabs.forEach(function (tab) {
-        tab.classList.toggle('active', tab.getAttribute('data-level') === '2');
-      });
-      editorEls.levelTabContents[0].classList.remove('active');
-      editorEls.levelTabContents[1].classList.add('active');
     }
 
     function syncColorHexToInput(hexValue) {
@@ -1277,13 +1380,18 @@
 
     function handleAccessoryScaleChange(step) {
       if (!state.editor.draft) return;
-      var currentScale = state.editor.draft.scalePercent || 100;
+      var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
+      var currentScale = currentProfile.scalePercent || 100;
       var newScale = currentScale + step;
-      newScale = Math.max(40, Math.min(200, newScale));
+      newScale = Math.max(40, Math.min(220, newScale));
+      currentProfile.scalePercent = newScale;
+      state.editor.draft.positionProfiles[currentPosition] = currentProfile;
       state.editor.draft.scalePercent = newScale;
       if (editorEls.accessoryScaleValue) {
         editorEls.accessoryScaleValue.textContent = newScale + '%';
       }
+      updateAccessoryPreview();
     }
 
     function updateAccessoryFieldVisibility() {
@@ -1296,9 +1404,6 @@
       }
       if (editorEls.accessoryPreviewWrap) {
         editorEls.accessoryPreviewWrap.style.display = isAccessory ? 'flex' : 'none';
-      }
-      if (editorEls.accessoryNudgePanel) {
-        editorEls.accessoryNudgePanel.classList.toggle('is-custom', isAccessory && state.editor.draft && normalizeAccessoryPositionMode(state.editor.draft.positionMode) === 'custom');
       }
     }
 
@@ -1341,11 +1446,13 @@
       
       // Accessory position and scale
       if (type === 'accessories') {
-        payload.offsetX = parseNonNegative(editorEls.accessoryOffsetX ? editorEls.accessoryOffsetX.value : 0, 0);
-        payload.offsetY = parseNonNegative(editorEls.accessoryOffsetY ? editorEls.accessoryOffsetY.value : 0, 0);
-        payload.scalePercent = parseNonNegative(state.editor.draft.scalePercent || 100, 100);
-        payload.scalePercent = Math.max(40, Math.min(200, payload.scalePercent));
-        payload.positionMode = normalizeAccessoryPositionMode(editorEls.accessoryPositionMode ? editorEls.accessoryPositionMode.value : state.editor.draft.positionMode);
+        syncAccessoryDraftFromForm();
+        payload.positionMode = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+        payload.positionProfiles = cloneAccessoryProfiles(state.editor.draft.positionProfiles);
+        var activeProfile = getAccessoryProfileByPosition(payload.positionProfiles, payload.positionMode);
+        payload.offsetX = activeProfile.offsetX;
+        payload.offsetY = activeProfile.offsetY;
+        payload.scalePercent = activeProfile.scalePercent;
       }
 
       if (type === 'food') {
@@ -1461,17 +1568,17 @@
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
       if (editorEls.imageFile) editorEls.imageFile.addEventListener('change', handleImageFileChange);
-      if (editorEls.accessoryPositionMode) {
-        editorEls.accessoryPositionMode.addEventListener('change', function () {
-          applyAccessoryPositionMode(this.value, true);
+      if (editorEls.accessoryProfileTabs) {
+        editorEls.accessoryProfileTabs.querySelectorAll('[data-accessory-pos]').forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            setActiveAccessoryProfileTab(this.getAttribute('data-accessory-pos') || 'center');
+          });
         });
       }
       if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.addEventListener('input', function () {
-        applyAccessoryPositionMode('custom', false);
         syncAccessoryDraftFromForm();
       });
       if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.addEventListener('input', function () {
-        applyAccessoryPositionMode('custom', false);
         syncAccessoryDraftFromForm();
       });
       if (editorEls.accessoryNudgeUp) {
@@ -1503,16 +1610,12 @@
         });
       }
 
-      // Level tabs
-      if (editorEls.levelTabs && editorEls.levelTabs.length > 0) {
-        editorEls.levelTabs.forEach(function (tab) {
+      // Level editor toggles in right sidebar
+      if (editorEls.variantEditLevelTabs) {
+        editorEls.variantEditLevelTabs.querySelectorAll('[data-edit-level]').forEach(function (tab) {
           tab.addEventListener('click', function () {
-            var level = parseInt(this.getAttribute('data-level') || '1', 10);
-            if (level === 2) {
-              selectLevel2Tab();
-            } else {
-              selectLevel1Tab();
-            }
+            var level = parseInt(this.getAttribute('data-edit-level') || '1', 10);
+            setVariantEditLevel(level, true);
           });
         });
       }
@@ -1541,10 +1644,9 @@
         });
       }
 
-      // File upload handlers for level and eye images
+      // File upload handlers for level images
+      setupLevelFileInputHandler('pm-variant-level1-file', 'pm-variant-level1', 'pm-level1-file-name', 'pm-variant-level1-preview');
       setupLevelFileInputHandler('pm-variant-level2-file', 'pm-variant-level2', 'pm-level2-file-name', 'pm-variant-level2-preview');
-      setupLevelFileInputHandler('pm-variant-eye-open-file', 'pm-variant-eye-open', 'pm-eye-open-file-name', null);
-      setupLevelFileInputHandler('pm-variant-eye-closed-file', 'pm-variant-eye-closed', 'pm-eye-closed-file-name', null);
 
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.addEventListener('change', function () {
         normalizeVariantUnlockFieldVisibility();
@@ -1554,12 +1656,18 @@
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantDescription) editorEls.variantDescription.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantLevel1) editorEls.variantLevel1.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        if (state.variantEditor.previewLevel === 1) updateVariantPreview();
+      });
       if (editorEls.variantLevel2) editorEls.variantLevel2.addEventListener('input', function () {
         syncVariantDraftFromForm();
         if (state.variantEditor.previewLevel === 2) updateVariantPreview();
       });
-      if (editorEls.variantEyeOpen) editorEls.variantEyeOpen.addEventListener('input', syncVariantDraftFromForm);
-      if (editorEls.variantEyeClosed) editorEls.variantEyeClosed.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantTilt) editorEls.variantTilt.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        updateVariantPreview();
+      });
       if (editorEls.variantSizeDown) editorEls.variantSizeDown.addEventListener('click', function () {
         changeVariantScale(-5);
       });
@@ -1572,8 +1680,8 @@
         editorEls.variantPreviewBox.querySelectorAll('.pm-preview-toggle').forEach(function (btn) {
           btn.addEventListener('click', function () {
             if (!state.variantEditor.draft) return;
-            state.variantEditor.previewLevel = parseInt(this.getAttribute('data-preview-level') || '1', 10) === 2 ? 2 : 1;
-            updateVariantPreview();
+            var targetLevel = parseInt(this.getAttribute('data-preview-level') || '1', 10) === 2 ? 2 : 1;
+            setVariantEditLevel(targetLevel, true);
           });
         });
       }

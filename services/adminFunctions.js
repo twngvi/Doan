@@ -1131,6 +1131,7 @@ const PET_ITEMS_HEADERS = [
   "offsetY",
   "scalePercent",
   "positionMode",
+  "positionProfilesJson",
   "orderIndex",
   "updatedAt",
 ];
@@ -1148,6 +1149,7 @@ const PET_VARIANTS_HEADERS = [
   "unlockType",
   "unlockValue",
   "scalePercent",
+  "tiltDeg",
   "orderIndex",
   "updatedAt",
 ];
@@ -1164,6 +1166,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-13",
@@ -1176,6 +1179,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-14",
@@ -1188,6 +1192,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-15",
@@ -1200,6 +1205,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-16",
@@ -1212,6 +1218,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-17",
@@ -1224,6 +1231,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-18",
@@ -1236,6 +1244,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-19",
@@ -1248,6 +1257,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-20",
@@ -1260,6 +1270,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-21",
@@ -1272,6 +1283,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-22",
@@ -1284,6 +1296,7 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
   {
     id: "pet-23",
@@ -1296,17 +1309,22 @@ const DEFAULT_PET_VARIANTS = [
     eyeClosed: "",
     unlockCondition: { type: "level", value: 1 },
     scalePercent: 100,
+    tiltDeg: 0,
   },
 ];
 
-const FIXED_LEVEL1_EGG_FILE = "level1-yellow.svg";
+const DEFAULT_LEVEL1_FILE = "level1-yellow.svg";
 
 const LEGACY_PET_VARIANT_IDS = ["pink", "yellow", "blue", "green"];
 
 function enforcePetVariantLevel1Egg_(variant) {
   const safeVariant = variant || {};
   return Object.assign({}, safeVariant, {
-    level1: FIXED_LEVEL1_EGG_FILE,
+    level1: String(safeVariant.level1 || DEFAULT_LEVEL1_FILE),
+    level2: String(safeVariant.level2 || ""),
+    eyeOpen: String(safeVariant.eyeOpen || ""),
+    eyeClosed: String(safeVariant.eyeClosed || ""),
+    tiltDeg: Math.max(-45, Math.min(45, parseInt(safeVariant.tiltDeg, 10) || 0)),
   });
 }
 
@@ -1336,7 +1354,7 @@ function isLegacyPetVariantSet_(variants) {
 
     return (
       (/^level1-(pink|yellow|blue|green)\.svg$/i.test(level1) ||
-        level1.toLowerCase() === FIXED_LEVEL1_EGG_FILE.toLowerCase()) &&
+        level1.toLowerCase() === DEFAULT_LEVEL1_FILE.toLowerCase()) &&
       /^level2-(pink|yellow|blue|green)\.svg$/i.test(level2) &&
       /^eye-(pink|yellow|blue|green)-open\.svg$/i.test(eyeOpen) &&
       /^eye-(pink|yellow|blue|green)-close\.svg$/i.test(eyeClosed)
@@ -1437,8 +1455,12 @@ function toPetItemRow_(item, itemType, orderIndex) {
   const normalizedType = itemType === "food" ? "food" : "accessories";
   let scalePercent = parseInt(safeItem.scalePercent, 10);
   if (isNaN(scalePercent)) scalePercent = 100;
-  scalePercent = Math.max(40, Math.min(200, scalePercent));
+  scalePercent = Math.max(40, Math.min(220, scalePercent));
   const positionMode = normalizedType === "food" ? "center" : String(safeItem.positionMode || "center");
+  const positionProfilesJson =
+    normalizedType === "food"
+      ? ""
+      : JSON.stringify(safeItem.positionProfiles || {});
 
   return [
     String(safeItem.id || ""),
@@ -1453,6 +1475,7 @@ function toPetItemRow_(item, itemType, orderIndex) {
     normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
     normalizedType === "food" ? 100 : scalePercent,
     positionMode,
+    positionProfilesJson,
     parseInt(orderIndex, 10) || 0,
     new Date(),
   ];
@@ -1473,7 +1496,10 @@ function toPetVariantRow_(variant, orderIndex) {
 
   let scalePercent = parseInt(safeVariant.scalePercent, 10);
   if (isNaN(scalePercent)) scalePercent = 100;
-  scalePercent = Math.max(40, Math.min(200, scalePercent));
+  scalePercent = Math.max(40, Math.min(220, scalePercent));
+  let tiltDeg = parseInt(safeVariant.tiltDeg, 10);
+  if (isNaN(tiltDeg)) tiltDeg = 0;
+  tiltDeg = Math.max(-45, Math.min(45, tiltDeg));
 
   return [
     String(safeVariant.id || ""),
@@ -1487,6 +1513,7 @@ function toPetVariantRow_(variant, orderIndex) {
     unlockType,
     unlockValue,
     scalePercent,
+    tiltDeg,
     parseInt(orderIndex, 10) || 0,
     new Date(),
   ];
@@ -1513,6 +1540,7 @@ function parsePetVariantRows_(data) {
   const unlockTypeIdx = idx("unlockType");
   const unlockValueIdx = idx("unlockValue");
   const scalePercentIdx = idx("scalePercent");
+  const tiltDegIdx = idx("tiltDeg");
   const orderIdx = idx("orderIndex");
 
   if (
@@ -1547,14 +1575,24 @@ function parsePetVariantRows_(data) {
 
     let scalePercent = parseInt(row[scalePercentIdx], 10);
     if (isNaN(scalePercent)) scalePercent = 100;
-    scalePercent = Math.max(40, Math.min(200, scalePercent));
+    scalePercent = Math.max(40, Math.min(220, scalePercent));
+
+    let tiltDeg = parseInt(row[tiltDegIdx], 10);
+    let orderIndex = parseInt(row[orderIdx], 10);
+    if (isNaN(orderIndex) && !isNaN(tiltDeg)) {
+      // Legacy rows stored orderIndex where tiltDeg now resides.
+      orderIndex = tiltDeg;
+      tiltDeg = 0;
+    }
+    if (isNaN(tiltDeg)) tiltDeg = 0;
+    tiltDeg = Math.max(-45, Math.min(45, tiltDeg));
 
     variants.push({
       id: String(variantId),
       name: String(row[nameIdx] || ""),
       tone: String(row[toneIdx] || "#7c8cff"),
       description: String(row[descriptionIdx] || ""),
-      level1: FIXED_LEVEL1_EGG_FILE,
+      level1: String(row[level1Idx] || DEFAULT_LEVEL1_FILE),
       level2: String(row[level2Idx] || ""),
       eyeOpen: String(row[eyeOpenIdx] || ""),
       eyeClosed: String(row[eyeClosedIdx] || ""),
@@ -1563,7 +1601,8 @@ function parsePetVariantRows_(data) {
         value: unlockValue,
       },
       scalePercent: scalePercent,
-      _orderIndex: parseInt(row[orderIdx], 10) || 0,
+      tiltDeg: tiltDeg,
+      _orderIndex: isNaN(orderIndex) ? 0 : orderIndex,
     });
   }
 
@@ -1626,6 +1665,7 @@ function getPetItemsForAdmin() {
     const offsetYIdx = idx("offsetY");
     const scalePercentIdx = idx("scalePercent");
     const positionModeIdx = idx("positionMode");
+    const positionProfilesIdx = idx("positionProfilesJson");
     const orderIdx = idx("orderIndex");
 
     const accessories = [];
@@ -1649,6 +1689,15 @@ function getPetItemsForAdmin() {
         unlockValue = String(rawUnlockValue || "");
       }
 
+      let orderIndex = parseInt(row[orderIdx], 10);
+      if (isNaN(orderIndex) && positionProfilesIdx >= 0) {
+        // Legacy rows (before positionProfilesJson) stored orderIndex in this slot.
+        const legacyOrderIndex = parseInt(row[positionProfilesIdx], 10);
+        if (!isNaN(legacyOrderIndex)) {
+          orderIndex = legacyOrderIndex;
+        }
+      }
+
       const item = {
         id: String(itemId),
         name: String(row[nameIdx] || ""),
@@ -1658,19 +1707,35 @@ function getPetItemsForAdmin() {
           type: unlockType,
           value: unlockValue,
         },
-        _orderIndex: parseInt(row[orderIdx], 10) || 0,
+        _orderIndex: isNaN(orderIndex) ? 0 : orderIndex,
       };
 
       if (itemType === "food") {
         item.petXpGain = parseInt(row[petXpIdx], 10) || 0;
         food.push(item);
       } else {
+        let parsedProfiles = {};
+        if (positionProfilesIdx >= 0) {
+          const rawProfiles = row[positionProfilesIdx];
+          if (rawProfiles && typeof rawProfiles === "string") {
+            try {
+              const parsed = JSON.parse(rawProfiles);
+              parsedProfiles = parsed && typeof parsed === "object" ? parsed : {};
+            } catch (e) {
+              parsedProfiles = {};
+            }
+          } else if (rawProfiles && typeof rawProfiles === "object") {
+            parsedProfiles = rawProfiles;
+          }
+        }
+
         item.offsetX = parseInt(row[offsetXIdx], 10) || 0;
         item.offsetY = parseInt(row[offsetYIdx], 10) || 0;
         let scalePercent = parseInt(row[scalePercentIdx], 10);
         if (isNaN(scalePercent)) scalePercent = 100;
-        item.scalePercent = Math.max(40, Math.min(200, scalePercent));
+        item.scalePercent = Math.max(40, Math.min(220, scalePercent));
         item.positionMode = String(row[positionModeIdx] || "center");
+        item.positionProfiles = parsedProfiles;
         accessories.push(item);
       }
     }
@@ -1732,6 +1797,7 @@ function getPetVariantsForAdmin() {
             value: variant.unlockCondition.value,
           },
           scalePercent: variant.scalePercent,
+          tiltDeg: variant.tiltDeg || 0,
         };
       });
     }
