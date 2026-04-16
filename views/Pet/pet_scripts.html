@@ -359,6 +359,7 @@
           offsetX: toSignedNumber(safe.offsetX, toSignedNumber(safeFallback.offsetX, 0)),
           offsetY: toSignedNumber(safe.offsetY, toSignedNumber(safeFallback.offsetY, 0)),
           scalePercent: Math.max(40, Math.min(220, toNonNegativeNumber(safe.scalePercent, toNonNegativeNumber(safeFallback.scalePercent, 100)))),
+          rotDeg: Math.max(-180, Math.min(180, toSignedNumber(safe.rotDeg, toSignedNumber(safeFallback.rotDeg, 0)))),
         };
       };
 
@@ -1323,8 +1324,8 @@
     }
 
     function getAccessoryRule(fileName) {
-      if (!fileName) return {};
-      return ACCESSORY_RULES[fileName] || {};
+      // Runtime should follow admin-configured profiles exactly.
+      return {};
     }
 
     function getAllowedAccessoryPositions(fileName) {
@@ -1382,29 +1383,22 @@
     function updateAccessoryPositionClasses(accessoryImageEl, fileName, desiredPosition, accessoryData) {
       if (!accessoryImageEl || !fileName) return "center";
 
-      const rule = getAccessoryRule(fileName);
       const accessoryCatalogItem = getAccessoryItemByFileName(fileName) || accessoryData;
       const positionMode = normalizeAccessoryPositionMode((accessoryCatalogItem && accessoryCatalogItem.positionMode) || "center");
       const finalPosition = resolveAccessoryPosition(fileName, desiredPosition || positionMode);
       const activeProfile = getAccessoryProfileByPosition(accessoryCatalogItem, finalPosition);
 
-      const baseTop = 12;
+      const baseTop = 27;
       const baseLeftMap = {
-        left: 25,
+        left: 42,
         center: 50,
-        right: 75,
+        right: 58,
       };
 
-      const topValue =
-        typeof rule.topOverride === "number"
-          ? rule.topOverride
-          : baseTop + (rule.topOffset || 0);
-      const leftValue =
-        typeof rule.leftOverride === "number"
-          ? rule.leftOverride
-          : baseLeftMap[finalPosition] || 50;
-      const rotValue = finalPosition === "left" ? -12 : finalPosition === "right" ? 12 : 0;
-      const scaleValue = rule.scale || 1;
+      const topValue = baseTop;
+      const leftValue = baseLeftMap[finalPosition] || 50;
+      const rotValue = activeProfile.rotDeg || 0;
+      const scaleValue = 1;
 
       accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
@@ -1848,6 +1842,7 @@
             offsetX: activeProfile.offsetX,
             offsetY: activeProfile.offsetY,
             scalePercent: activeProfile.scalePercent,
+            rotDeg: activeProfile.rotDeg || 0,
             positionProfiles: profiles,
           });
           state.selectedAccessory = fileName;

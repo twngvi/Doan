@@ -218,11 +218,14 @@
       var safeFallback = fallback || {};
       var scalePercent = parseNonNegative(safeProfile.scalePercent, parseNonNegative(safeFallback.scalePercent, 100));
       scalePercent = Math.max(40, Math.min(220, scalePercent));
+      var rotDeg = parseSignedInteger(safeProfile.rotDeg, parseSignedInteger(safeFallback.rotDeg, 0));
+      rotDeg = Math.max(-180, Math.min(180, rotDeg));
 
       return {
         offsetX: parseSignedInteger(safeProfile.offsetX, parseSignedInteger(safeFallback.offsetX, 0)),
         offsetY: parseSignedInteger(safeProfile.offsetY, parseSignedInteger(safeFallback.offsetY, 0)),
         scalePercent: scalePercent,
+        rotDeg: rotDeg,
       };
     }
 
@@ -232,10 +235,12 @@
         offsetX: safeItem.offsetX,
         offsetY: safeItem.offsetY,
         scalePercent: safeItem.scalePercent,
+        rotDeg: safeItem.rotDeg,
       }, {
         offsetX: 0,
         offsetY: 0,
         scalePercent: 100,
+        rotDeg: 0,
       });
 
       return {
@@ -245,12 +250,20 @@
       };
     }
 
+    function buildZeroedAccessoryProfiles() {
+      return {
+        left: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+        center: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+        right: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+      };
+    }
+
     function cloneAccessoryProfiles(profiles) {
       var safeProfiles = profiles || {};
       return {
-        left: normalizeAccessoryProfile(safeProfiles.left, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
-        center: normalizeAccessoryProfile(safeProfiles.center, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
-        right: normalizeAccessoryProfile(safeProfiles.right, { offsetX: 0, offsetY: 0, scalePercent: 100 }),
+        left: normalizeAccessoryProfile(safeProfiles.left, { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 }),
+        center: normalizeAccessoryProfile(safeProfiles.center, { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 }),
+        right: normalizeAccessoryProfile(safeProfiles.right, { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 }),
       };
     }
 
@@ -281,6 +294,7 @@
         offsetX: activeProfile.offsetX,
         offsetY: activeProfile.offsetY,
         scalePercent: activeProfile.scalePercent,
+        rotDeg: activeProfile.rotDeg,
         positionMode: positionMode,
         positionProfiles: positionProfiles,
         unlockCondition: {
@@ -333,9 +347,9 @@
             scalePercent: 100,
             positionMode: 'center',
             positionProfiles: {
-              left: { offsetX: 0, offsetY: 0, scalePercent: 100 },
-              center: { offsetX: 0, offsetY: 0, scalePercent: 100 },
-              right: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+              left: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+              center: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+              right: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
             },
             unlockCondition: { type: "level", value: 1 }
           };
@@ -583,11 +597,15 @@
       editorEls.accessoryPositionWrap = document.getElementById('pm-accessory-position-wrap');
       editorEls.accessoryProfileTabs = document.getElementById('pm-accessory-profile-tabs');
       editorEls.accessoryActiveProfile = document.getElementById('pm-accessory-active-profile');
+      editorEls.accessoryResetProfilesBtn = document.getElementById('pm-accessory-reset-profiles');
       editorEls.accessoryNudgePanel = document.getElementById('pm-accessory-nudge-panel');
       editorEls.accessoryNudgeUp = document.getElementById('pm-accessory-nudge-up');
       editorEls.accessoryNudgeDown = document.getElementById('pm-accessory-nudge-down');
       editorEls.accessoryNudgeLeft = document.getElementById('pm-accessory-nudge-left');
       editorEls.accessoryNudgeRight = document.getElementById('pm-accessory-nudge-right');
+      editorEls.accessoryRotateLeft = document.getElementById('pm-accessory-rotate-left');
+      editorEls.accessoryRotateRight = document.getElementById('pm-accessory-rotate-right');
+      editorEls.accessoryRotateValue = document.getElementById('pm-accessory-rotate-value');
       editorEls.accessoryOffsetHint = document.getElementById('pm-accessory-offset-hint');
       editorEls.accessoryOffsetX = document.getElementById('pm-accessory-offset-x');
       editorEls.accessoryOffsetY = document.getElementById('pm-accessory-offset-y');
@@ -629,6 +647,7 @@
       editorEls.variantSizeUp = document.getElementById('pm-variant-size-up');
       editorEls.variantSizeValue = document.getElementById('pm-variant-size-value');
       editorEls.variantTilt = document.getElementById('pm-variant-tilt');
+      editorEls.variantTiltNumber = document.getElementById('pm-variant-tilt-number');
       editorEls.variantTiltValue = document.getElementById('pm-variant-tilt-value');
       editorEls.variantPreviewImage = document.getElementById('pm-variant-preview-image');
       editorEls.variantPreviewBox = document.getElementById('pm-variant-preview-box');
@@ -766,7 +785,14 @@
 
     function updateVariantTiltValue() {
       if (!state.variantEditor.draft || !editorEls.variantTiltValue) return;
-      editorEls.variantTiltValue.textContent = String(state.variantEditor.draft.tiltDeg || 0) + '°';
+      var tiltDeg = state.variantEditor.draft.tiltDeg || 0;
+      editorEls.variantTiltValue.textContent = String(tiltDeg) + '°';
+      if (editorEls.variantTilt) {
+        editorEls.variantTilt.value = String(tiltDeg);
+      }
+      if (editorEls.variantTiltNumber) {
+        editorEls.variantTiltNumber.value = String(tiltDeg);
+      }
     }
 
     function updateVariantPreview() {
@@ -881,6 +907,7 @@
       if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
       if (editorEls.variantTilt) editorEls.variantTilt.value = String(draft.tiltDeg || 0);
+      if (editorEls.variantTiltNumber) editorEls.variantTiltNumber.value = String(draft.tiltDeg || 0);
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
 
@@ -1185,9 +1212,9 @@
           scalePercent: 100,
           positionMode: 'center',
           positionProfiles: {
-            left: { offsetX: 0, offsetY: 0, scalePercent: 100 },
-            center: { offsetX: 0, offsetY: 0, scalePercent: 100 },
-            right: { offsetX: 0, offsetY: 0, scalePercent: 100 },
+            left: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+            center: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
+            right: { offsetX: 0, offsetY: 0, scalePercent: 100, rotDeg: 0 },
           },
           unlockCondition: { type: 'level', value: '' }
         }
@@ -1249,6 +1276,9 @@
       var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
       var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
       editorEls.accessoryOffsetHint.textContent = 'X: ' + currentProfile.offsetX + 'px · Y: ' + currentProfile.offsetY + 'px';
+      if (editorEls.accessoryRotateValue) {
+        editorEls.accessoryRotateValue.textContent = String(currentProfile.rotDeg || 0) + '°';
+      }
       if (editorEls.accessoryActiveProfile) {
         editorEls.accessoryActiveProfile.textContent = 'Đang chỉnh: ' + getAccessoryPositionLabel(currentPosition);
       }
@@ -1271,6 +1301,7 @@
       if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(activeProfile.offsetX);
       if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(activeProfile.offsetY);
       if (editorEls.accessoryScaleValue) editorEls.accessoryScaleValue.textContent = String(activeProfile.scalePercent) + '%';
+      if (editorEls.accessoryRotateValue) editorEls.accessoryRotateValue.textContent = String(activeProfile.rotDeg || 0) + '°';
       syncAccessoryOffsetHint();
       updateAccessoryPreview();
     }
@@ -1287,6 +1318,24 @@
       if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.value = String(currentProfile.offsetX);
       if (editorEls.accessoryOffsetY) editorEls.accessoryOffsetY.value = String(currentProfile.offsetY);
       syncAccessoryOffsetHint();
+      updateAccessoryPreview();
+    }
+
+    function changeAccessoryRotation(step) {
+      if (!state.editor.draft) return;
+
+      var currentPosition = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+      var currentProfile = getAccessoryProfileByPosition(state.editor.draft.positionProfiles, currentPosition);
+      var nextRot = parseSignedInteger(currentProfile.rotDeg, 0) + step;
+      nextRot = Math.max(-180, Math.min(180, nextRot));
+      currentProfile.rotDeg = nextRot;
+      state.editor.draft.positionProfiles[currentPosition] = currentProfile;
+      state.editor.draft.rotDeg = nextRot;
+
+      if (editorEls.accessoryRotateValue) {
+        editorEls.accessoryRotateValue.textContent = String(nextRot) + '°';
+      }
+
       updateAccessoryPreview();
     }
 
@@ -1315,7 +1364,7 @@
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-offset-y', currentProfile.offsetY + 'px');
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale', (accessoryItem && accessoryItem.widthPercent ? accessoryItem.widthPercent + '%' : '34%'));
       editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-scale-factor', String((accessoryRule.scale || 1) * (currentProfile.scalePercent / 100)));
-      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-rot', '0deg');
+      editorEls.accessoryPreviewItem.style.setProperty('--pm-accessory-preview-rot', String(currentProfile.rotDeg || 0) + 'deg');
       syncAccessoryOffsetHint();
     }
 
@@ -1330,7 +1379,26 @@
       state.editor.draft.offsetX = currentProfile.offsetX;
       state.editor.draft.offsetY = currentProfile.offsetY;
       state.editor.draft.scalePercent = currentProfile.scalePercent;
+      state.editor.draft.rotDeg = currentProfile.rotDeg;
       updateAccessoryPreview();
+    }
+
+    function resetAccessoryProfilesToDefault() {
+      if (!state.editor.draft || state.editor.type !== 'accessories') return;
+
+      state.editor.draft.positionProfiles = buildZeroedAccessoryProfiles();
+      state.editor.draft.positionMode = 'center';
+      state.editor.draft.offsetX = 0;
+      state.editor.draft.offsetY = 0;
+      state.editor.draft.scalePercent = 100;
+      state.editor.draft.rotDeg = 0;
+
+      setActiveAccessoryProfileTab('center');
+      updateAccessoryPreview();
+
+      if (typeof window.showNotification === 'function') {
+        window.showNotification('Da reset profile trai/giua/phai ve mac dinh', 'success');
+      }
     }
 
     function syncColorHexToInput(hexValue) {
@@ -1453,6 +1521,7 @@
         payload.offsetX = activeProfile.offsetX;
         payload.offsetY = activeProfile.offsetY;
         payload.scalePercent = activeProfile.scalePercent;
+        payload.rotDeg = activeProfile.rotDeg;
       }
 
       if (type === 'food') {
@@ -1575,6 +1644,9 @@
           });
         });
       }
+      if (editorEls.accessoryResetProfilesBtn) {
+        editorEls.accessoryResetProfilesBtn.addEventListener('click', resetAccessoryProfilesToDefault);
+      }
       if (editorEls.accessoryOffsetX) editorEls.accessoryOffsetX.addEventListener('input', function () {
         syncAccessoryDraftFromForm();
       });
@@ -1592,6 +1664,12 @@
       }
       if (editorEls.accessoryNudgeRight) {
         editorEls.accessoryNudgeRight.addEventListener('click', function () { nudgeAccessoryPosition(4, 0); });
+      }
+      if (editorEls.accessoryRotateLeft) {
+        editorEls.accessoryRotateLeft.addEventListener('click', function () { changeAccessoryRotation(-5); });
+      }
+      if (editorEls.accessoryRotateRight) {
+        editorEls.accessoryRotateRight.addEventListener('click', function () { changeAccessoryRotation(5); });
       }
       if (editorEls.saveBtn) editorEls.saveBtn.addEventListener('click', handleSaveEditor);
       if (editorEls.deleteBtn) editorEls.deleteBtn.addEventListener('click', handleDeleteItem);
@@ -1665,6 +1743,15 @@
         if (state.variantEditor.previewLevel === 2) updateVariantPreview();
       });
       if (editorEls.variantTilt) editorEls.variantTilt.addEventListener('input', function () {
+        syncVariantDraftFromForm();
+        updateVariantPreview();
+      });
+      if (editorEls.variantTiltNumber) editorEls.variantTiltNumber.addEventListener('input', function () {
+        var tilt = Math.max(-45, Math.min(45, parseSignedInteger(this.value, 0)));
+        this.value = String(tilt);
+        if (editorEls.variantTilt) {
+          editorEls.variantTilt.value = String(tilt);
+        }
         syncVariantDraftFromForm();
         updateVariantPreview();
       });
