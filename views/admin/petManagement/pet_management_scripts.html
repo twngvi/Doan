@@ -157,6 +157,7 @@
         scalePercent: 100,
       },
     ];
+    var FIXED_LEVEL1_EGG_FILE = "level1-yellow.svg";
     var i;
 
     for (i = 1; i <= 25; i++) {
@@ -237,7 +238,7 @@
         name: String(safe.name || ""),
         tone: String(safe.tone || "#7c8cff"),
         description: String(safe.description || ""),
-        level1: String(safe.level1 || ""),
+        level1: FIXED_LEVEL1_EGG_FILE,
         level2: String(safe.level2 || ""),
         eyeOpen: String(safe.eyeOpen || ""),
         eyeClosed: String(safe.eyeClosed || ""),
@@ -643,10 +644,10 @@
         var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
         var tone = escapeHtml(variant.tone || '#7c8cff');
         [1, 2].forEach(function (level) {
-          var src = resolveAssetSrc(level === 1 ? variant.level1 : variant.level2 || variant.level1 || variant.eyeOpen || '');
+          var src = resolveAssetSrc(level === 1 ? FIXED_LEVEL1_EGG_FILE : variant.level2 || variant.eyeOpen || '');
           var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
           html += '' +
-            '<div class="pm-item-card pm-variant-card pm-variant-level-card" data-variant-index="' + index + '" data-variant-level="' + level + '">' +
+            '<div class="pm-item-card pm-variant-card pm-variant-level-card" data-variant-index="' + index + '" data-variant-level="' + level + '" title="Bấm để chỉnh sửa trong sidebar">' +
             '  <div class="pm-item-badge"></div>' +
             '  <div class="pm-item-image-box">' +
             '    <span class="pm-variant-level-badge">' + levelLabel + '</span>' +
@@ -735,7 +736,7 @@
           name: '',
           tone: '#7c8cff',
           description: '',
-          level1: '',
+          level1: FIXED_LEVEL1_EGG_FILE,
           level2: '',
           eyeOpen: '',
           eyeClosed: '',
@@ -751,7 +752,7 @@
         index: index,
         isNew: !!isNew,
         draft: draft,
-        previewLevel: previewLevel === 1 ? 1 : 2
+        previewLevel: previewLevel === 2 ? 2 : 1
       };
 
       if (editorEls.variantTitle) {
@@ -761,9 +762,12 @@
       syncColorPickerFromHex(draft.tone || '#7c8cff');
       syncColorHexToInput(draft.tone || '#7c8cff');
       if (editorEls.variantDescription) editorEls.variantDescription.value = draft.description || '';
-      if (editorEls.variantLevel1) editorEls.variantLevel1.value = draft.level1 || '';
+      if (editorEls.variantLevel1) {
+        editorEls.variantLevel1.value = FIXED_LEVEL1_EGG_FILE;
+        editorEls.variantLevel1.readOnly = true;
+      }
       if (editorEls.variantLevel1FileName) editorEls.variantLevel1FileName.textContent = draft.level1 ? String(draft.level1).split('/').pop() : 'Chưa chọn tệp';
-      if (editorEls.variantLevel1Preview) editorEls.variantLevel1Preview.src = resolveAssetSrc(draft.level1 || '');
+      if (editorEls.variantLevel1Preview) editorEls.variantLevel1Preview.src = resolveAssetSrc(FIXED_LEVEL1_EGG_FILE);
       if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
       if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
@@ -798,7 +802,7 @@
       draft.name = editorEls.variantName ? editorEls.variantName.value.trim() : draft.name;
       draft.tone = editorEls.variantTone ? editorEls.variantTone.value : draft.tone;
       draft.description = editorEls.variantDescription ? editorEls.variantDescription.value.trim() : draft.description;
-      draft.level1 = editorEls.variantLevel1 ? editorEls.variantLevel1.value.trim() : draft.level1;
+      draft.level1 = FIXED_LEVEL1_EGG_FILE;
       draft.level2 = editorEls.variantLevel2 ? editorEls.variantLevel2.value.trim() : draft.level2;
       draft.eyeOpen = editorEls.variantEyeOpen ? editorEls.variantEyeOpen.value.trim() : draft.eyeOpen;
       draft.eyeClosed = editorEls.variantEyeClosed ? editorEls.variantEyeClosed.value.trim() : draft.eyeClosed;
@@ -831,21 +835,24 @@
         if (editorEls.variantName) editorEls.variantName.focus();
         return;
       }
-      if (!draft.level1 && !draft.level2) {
-        if (editorEls.variantLevel1) editorEls.variantLevel1.focus();
+      if (!draft.level2) {
+        if (editorEls.variantLevel2) editorEls.variantLevel2.focus();
         return;
       }
 
+      var savedIndex = 0;
       if (state.variantEditor.isNew) {
         state.petVariants.unshift(cloneVariant(draft));
+        savedIndex = 0;
       } else if (state.variantEditor.index >= 0 && state.variantEditor.index < state.petVariants.length) {
         state.petVariants[state.variantEditor.index] = cloneVariant(draft);
+        savedIndex = state.variantEditor.index;
       }
 
       updateCounts();
       renderAllPmItems();
       persistPetVariantsToBackend(true);
-      closePmVariantEditor();
+      openPmVariantEditor(savedIndex, false, state.variantEditor.previewLevel);
     }
 
     function handleDeleteVariantEditor() {
@@ -1535,7 +1542,6 @@
       }
 
       // File upload handlers for level and eye images
-      setupLevelFileInputHandler('pm-variant-level1-file', 'pm-variant-level1', 'pm-level1-file-name', 'pm-variant-level1-preview');
       setupLevelFileInputHandler('pm-variant-level2-file', 'pm-variant-level2', 'pm-level2-file-name', 'pm-variant-level2-preview');
       setupLevelFileInputHandler('pm-variant-eye-open-file', 'pm-variant-eye-open', 'pm-eye-open-file-name', null);
       setupLevelFileInputHandler('pm-variant-eye-closed-file', 'pm-variant-eye-closed', 'pm-eye-closed-file-name', null);
@@ -1548,10 +1554,6 @@
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantDescription) editorEls.variantDescription.addEventListener('input', syncVariantDraftFromForm);
-      if (editorEls.variantLevel1) editorEls.variantLevel1.addEventListener('input', function () {
-        syncVariantDraftFromForm();
-        if (state.variantEditor.previewLevel === 1) updateVariantPreview();
-      });
       if (editorEls.variantLevel2) editorEls.variantLevel2.addEventListener('input', function () {
         syncVariantDraftFromForm();
         if (state.variantEditor.previewLevel === 2) updateVariantPreview();

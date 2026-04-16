@@ -1299,7 +1299,16 @@ const DEFAULT_PET_VARIANTS = [
   },
 ];
 
+const FIXED_LEVEL1_EGG_FILE = "level1-yellow.svg";
+
 const LEGACY_PET_VARIANT_IDS = ["pink", "yellow", "blue", "green"];
+
+function enforcePetVariantLevel1Egg_(variant) {
+  const safeVariant = variant || {};
+  return Object.assign({}, safeVariant, {
+    level1: FIXED_LEVEL1_EGG_FILE,
+  });
+}
 
 function isLegacyPetVariantSet_(variants) {
   if (!Array.isArray(variants) || variants.length !== LEGACY_PET_VARIANT_IDS.length) {
@@ -1326,7 +1335,8 @@ function isLegacyPetVariantSet_(variants) {
     const eyeClosed = String((variant && variant.eyeClosed) || "").trim();
 
     return (
-      /^level1-(pink|yellow|blue|green)\.svg$/i.test(level1) &&
+      (/^level1-(pink|yellow|blue|green)\.svg$/i.test(level1) ||
+        level1.toLowerCase() === FIXED_LEVEL1_EGG_FILE.toLowerCase()) &&
       /^level2-(pink|yellow|blue|green)\.svg$/i.test(level2) &&
       /^eye-(pink|yellow|blue|green)-open\.svg$/i.test(eyeOpen) &&
       /^eye-(pink|yellow|blue|green)-close\.svg$/i.test(eyeClosed)
@@ -1449,7 +1459,7 @@ function toPetItemRow_(item, itemType, orderIndex) {
 }
 
 function toPetVariantRow_(variant, orderIndex) {
-  const safeVariant = variant || {};
+  const safeVariant = enforcePetVariantLevel1Egg_(variant || {});
   const unlock = safeVariant.unlockCondition || {};
   const unlockType = unlock.type || "level";
   let unlockValue = unlock.value;
@@ -1544,7 +1554,7 @@ function parsePetVariantRows_(data) {
       name: String(row[nameIdx] || ""),
       tone: String(row[toneIdx] || "#7c8cff"),
       description: String(row[descriptionIdx] || ""),
-      level1: String(row[level1Idx] || ""),
+      level1: FIXED_LEVEL1_EGG_FILE,
       level2: String(row[level2Idx] || ""),
       eyeOpen: String(row[eyeOpenIdx] || ""),
       eyeClosed: String(row[eyeClosedIdx] || ""),
@@ -1702,7 +1712,7 @@ function getPetVariantsForAdmin() {
     seedDefaultPetVariantsIfEmpty_();
     const sheet = ensurePetVariantsSheet_();
     const data = sheet.getDataRange().getValues();
-    let variants = parsePetVariantRows_(data);
+    let variants = parsePetVariantRows_(data).map(enforcePetVariantLevel1Egg_);
 
     if (variants.length === 0) {
       overwritePetVariantsWithDefault_(sheet);
@@ -1776,8 +1786,9 @@ function savePetVariantsForAdmin(payloadJson) {
         : payloadJson || {};
 
     const variants = Array.isArray(payload.variants) ? payload.variants : [];
+    const normalizedVariants = variants.map(enforcePetVariantLevel1Egg_);
 
-    const rows = variants.map(function (variant, index) {
+    const rows = normalizedVariants.map(function (variant, index) {
       return toPetVariantRow_(variant, index);
     });
 
