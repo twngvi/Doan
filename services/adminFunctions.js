@@ -1810,6 +1810,46 @@ function savePetVariantsForAdmin(payloadJson) {
   }
 }
 
+/**
+ * One-shot: Ghi de ngay lap tuc sheet Pet_Variants bang bo default hien tai.
+ * Chay tay trong Apps Script Editor khi can dong bo ngay, khong doi lan tai trang dau tien.
+ */
+function syncPetVariantsOneShotNow() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const sheet = ensurePetVariantsSheet_();
+    const beforeData = sheet.getDataRange().getValues();
+    const beforeVariants = parsePetVariantRows_(beforeData);
+
+    overwritePetVariantsWithDefault_(sheet);
+
+    const afterData = sheet.getDataRange().getValues();
+    const afterVariants = parsePetVariantRows_(afterData);
+
+    return {
+      success: true,
+      message: "Da dong bo ngay Pet_Variants theo bo default moi",
+      sheetName: PET_VARIANTS_SHEET_NAME,
+      previousCount: beforeVariants.length,
+      updatedCount: afterVariants.length,
+      updatedVariantIds: afterVariants.map(function (variant) {
+        return variant.id;
+      }),
+      syncedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    Logger.log("Error running one-shot Pet_Variants sync: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function savePetItemsForAdmin(payloadJson) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
