@@ -243,6 +243,7 @@
       progressionXP: 0, // Total accumulated XP
       isRolling: false,
       autoSaveTimeoutId: null,
+      catalogLoaded: false,
     };
 
     let petMeteorInterval = null;
@@ -511,6 +512,44 @@
       }
     }
 
+    function buildSelectedAccessoryFromCatalog(fileName) {
+      const safeFileName = String(fileName || "").trim();
+      if (!safeFileName) return null;
+
+      const catalogItem = getAccessoryItemByFileName(safeFileName);
+      if (!catalogItem) return null;
+
+      const defaultPosition = normalizeAccessoryPositionMode(catalogItem.positionMode || "center");
+      const finalPosition = resolveAccessoryPosition(safeFileName, defaultPosition);
+      const profiles = normalizeAccessoryPositionProfiles(catalogItem.positionProfiles, catalogItem);
+      const activeProfile = profiles[finalPosition] || profiles.center;
+
+      return {
+        fileName: safeFileName,
+        position: finalPosition,
+        positionMode: defaultPosition,
+        offsetX: activeProfile.offsetX,
+        offsetY: activeProfile.offsetY,
+        scalePercent: activeProfile.scalePercent,
+        rotDeg: activeProfile.rotDeg || 0,
+        positionProfiles: profiles,
+      };
+    }
+
+    function getPersistedSelectedAccessories() {
+      return (state.selectedAccessories || [])
+        .map(function (item) {
+          if (typeof item === "string") {
+            return { fileName: String(item).trim() };
+          }
+          const safe = item || {};
+          return { fileName: String(safe.fileName || "").trim() };
+        })
+        .filter(function (item) {
+          return !!item.fileName;
+        });
+    }
+
     function syncSelectedAccessoriesWithCatalog() {
       const allowedFiles = new Set(
         ACCESSORY_ITEMS.map(function (item) {
@@ -518,15 +557,41 @@
         })
       );
 
-      state.selectedAccessories = state.selectedAccessories.filter(function (item) {
-        return item && allowedFiles.has(item.fileName);
+      const nextSelected = [];
+      (state.selectedAccessories || []).forEach(function (item) {
+        const fileName =
+          typeof item === "string"
+            ? String(item || "").trim()
+            : String((item && item.fileName) || "").trim();
+        if (!fileName || !allowedFiles.has(fileName)) return;
+        if (nextSelected.some(function (selected) { return selected.fileName === fileName; })) return;
+
+        const normalizedItem = buildSelectedAccessoryFromCatalog(fileName);
+        if (normalizedItem) {
+          nextSelected.push(normalizedItem);
+        }
       });
+
+      state.selectedAccessories = nextSelected.slice(0, MAX_ACCESSORIES_PER_PET);
+
+      if (!state.selectedAccessories.length) {
+        state.selectedAccessory = "";
+        state.accessoryPosition = "center";
+        return;
+      }
 
       if (state.selectedAccessory && !allowedFiles.has(state.selectedAccessory)) {
         state.selectedAccessory = state.selectedAccessories[0]
           ? state.selectedAccessories[0].fileName
           : "";
       }
+
+      if (!state.selectedAccessory) {
+        state.selectedAccessory = state.selectedAccessories[0].fileName;
+      }
+
+      const activeAccessory = resolveActiveAccessory();
+      state.accessoryPosition = activeAccessory ? activeAccessory.position : "center";
     }
 
     function loadPetItemCatalogFromServer() {
@@ -542,6 +607,7 @@
       google.script.run
         .withSuccessHandler(function (result) {
           if (!result || result.success !== true) {
+            state.catalogLoaded = false;
             updatePetCatalogHints();
             return;
           }
@@ -550,6 +616,7 @@
           const loadedFood = normalizePetItemCatalog(result.food, "food");
           const loadedVariants = normalizePetVariantsFromServer(result.variants);
           const hasAnyData = loadedAccessories.length > 0 || loadedFood.length > 0;
+          state.catalogLoaded = true;
 
           if (!hasAnyData) {
             if (loadedVariants.length > 0) {
@@ -936,7 +1003,7 @@
       return {
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
-        selectedAccessories: state.selectedAccessories,
+        selectedAccessories: getPersistedSelectedAccessories(),
         selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
         progressionXP: progressionXP,
         progressionLevel: Math.floor(progressionXP / 100) + 1,
@@ -1026,10 +1093,13 @@
 
     function isDirty() {
       if (!state.lastSavedConfig) return false;
+
+          const currentSelected = JSON.stringify(getPersistedSelectedAccessories());
+          const savedSelected = JSON.stringify(Array.isArray(state.lastSavedConfig.selectedAccessories) ? state.lastSavedConfig.selectedAccessories : []);
       
       return state.currentIndex !== state.lastSavedConfig.currentIndex ||
              state.isLevelTwo !== state.lastSavedConfig.isLevelTwo ||
-             JSON.stringify(state.selectedAccessories) !== JSON.stringify(state.lastSavedConfig.selectedAccessories) ||
+            currentSelected !== savedSelected ||
              state.selectedStageBackgroundIndex !== state.lastSavedConfig.selectedStageBackgroundIndex ||
              state.petDisplayName !== state.originalPetName;
     }
@@ -1101,6 +1171,9 @@
             state.currentIndex = typeof config.currentIndex === 'number' ? config.currentIndex : state.currentIndex;
             state.isLevelTwo = !!config.isLevelTwo;
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
+            if (state.catalogLoaded) {
+              syncSelectedAccessoriesWithCatalog();
+            }
             state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
             if (typeof config.progressionXP === 'number') {
               state.progressionXP = config.progressionXP;
@@ -1466,7 +1539,8 @@
       buttons.forEach(function (button) {
         const pos = button.getAttribute("data-pos") || "";
         const isAllowed = state.isLevelTwo && allowed.indexOf(pos) >= 0;
-        button.disabled = !isAllowed;
+        // Position is now controlled from admin profiles to keep user/admin visuals identical.
+        button.disabled = true;
         button.classList.toggle("active", isAllowed && pos === activePosition);
       });
     }
@@ -1959,27 +2033,9 @@
 
         const target = event.target.closest(".pet-pill-btn[data-pos]");
         if (!target) return;
-
-        const pos = target.getAttribute("data-pos") || "";
-        if (!pos) return;
-
-
-        const activeAccessory = resolveActiveAccessory();
-        const allowed = getAllowedAccessoryPositions(
-          activeAccessory ? activeAccessory.fileName : "",
-        );
-        if (allowed.indexOf(pos) < 0) return;
-
-        if (activeAccessory) {
-          const finalPosition = resolveAccessoryPosition(activeAccessory.fileName, pos);
-          activeAccessory.position = finalPosition;
-          state.accessoryPosition = finalPosition;
-        } else {
-          state.accessoryPosition = pos;
+        if (typeof showToast === "function") {
+          showToast("Vị trí phụ kiện được quản lý trong Admin", "info");
         }
-
-        updateAccessoryPositionButtons();
-        renderAccessory();
       });
     }
 
