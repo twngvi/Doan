@@ -82,6 +82,24 @@ function registerWithEmailPassword(userData) {
   return registerWithEmail(userData);
 }
 
+function registerUser(userData) {
+  // Backward-compatible wrapper for legacy frontend calls.
+  const payload = Object.assign({}, userData || {});
+
+  if (!payload.confirmPassword && payload.password) {
+    payload.confirmPassword = payload.password;
+  }
+
+  const result = registerWithEmail(payload);
+
+  // Keep both formats to avoid breaking old/new UIs.
+  if (result && typeof result.success !== "undefined") {
+    result.status = result.success ? "success" : "error";
+  }
+
+  return result;
+}
+
 function verifyEmailToken(token) {
   return verifyEmail(token);
 }
@@ -93,19 +111,22 @@ function loginWithEmailPassword(credentials) {
 function loginUser(payload) {
   // Wrapper function for frontend compatibility
   const result = loginWithEmail({
-    email: payload.username, // frontend sends 'username' but backend expects 'email'
-    password: payload.password,
+    // Support both legacy username field and current email field.
+    email: payload && (payload.email || payload.username),
+    password: payload && payload.password,
   });
 
-  // Convert response format to match frontend expectations
+  // Return both modern and legacy response fields.
   if (result.success) {
     return {
+      success: true,
       status: "success",
       message: result.message,
       user: result.user,
     };
   } else {
     return {
+      success: false,
       status: "error",
       message: result.message,
     };
@@ -126,6 +147,13 @@ function resetPasswordWithCode(data) {
 }
 
 function resendVerificationEmailToUser(email) {
+  return resendVerificationEmail(email);
+}
+
+function resendVerificationCode(payload) {
+  // Backward-compatible wrapper: accepts either string email or { email } object.
+  const email =
+    payload && typeof payload === "object" ? payload.email : payload;
   return resendVerificationEmail(email);
 }
 

@@ -455,7 +455,13 @@
               submitBtn.disabled = false;
               submitBtn.innerHTML = "<span>Đăng nhập</span>";
             }
-            if (result.success) {
+            if (result && (result.success || result.status === "success")) {
+              if (result.user) {
+                localStorage.setItem("currentUser", JSON.stringify(result.user));
+                localStorage.setItem("isLoggedIn", "true");
+                window.currentUser = result.user;
+              }
+
               // Show galaxy-themed success popup
               showAuthSuccessAndRedirect(
                 "Đăng nhập thành công!",
@@ -570,7 +576,12 @@
             }
             showAuthToast("Lỗi: " + error.message, "error");
           })
-          .registerUser({ fullName: name, email, password });
+          .registerWithEmailPassword({
+            fullName: name,
+            email,
+            password,
+            confirmPassword: confirm,
+          });
       } else {
         // Fallback for testing
         console.log("Register attempt:", { name, email });
@@ -851,7 +862,7 @@
             }
             showAuthToast("Lỗi: " + error.message, "error");
           })
-          .verifyEmail({ email, code });
+          .verifyEmailCode({ email, code });
       } else {
         // Fallback for testing
         console.log("Verify email:", { email, code });
@@ -897,7 +908,7 @@
           .withFailureHandler((error) => {
             showAuthToast("Lỗi: " + error.message, "error");
           })
-          .resendVerificationCode({ email });
+          .resendVerificationEmailToUser(email);
       } else {
         // Fallback for testing
         console.log("Resend verify code:", { email });
