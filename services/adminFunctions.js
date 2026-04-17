@@ -660,6 +660,408 @@ function getAdminOnlineUsersData() {
 }
 
 /**
+ * Lấy dữ liệu thống kê học tập/người chơi cho trang Admin User Stats.
+ * Trả về format tương thích với views/admin/userStats/user_stats_scripts.html
+ */
+function getAdminUserLearningStats(options) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message:
+          (adminContext && adminContext.message) ||
+          "Không thể xác thực quyền admin",
+      };
+    }
+
+    const safeOptions = options || {};
+    const maxUsers = Math.max(1, Math.min(300, parseInt(safeOptions.maxUsers, 10) || 200));
+
+    const usersSheet = getSheet("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
+    }
+
+    const usersData = usersSheet.getDataRange().getValues();
+    if (usersData.length <= 1) {
+      return { success: true, data: [] };
+    }
+
+    const usersHeaders = usersData[0];
+    const userCols = {
+      userId: usersHeaders.indexOf("userId"),
+      email: usersHeaders.indexOf("email"),
+      displayName: usersHeaders.indexOf("displayName"),
+      username: usersHeaders.indexOf("username"),
+      role: usersHeaders.indexOf("role"),
+      progressSheetId: usersHeaders.indexOf("progressSheetId"),
+      createdAt: usersHeaders.indexOf("createdAt"),
+    };
+
+    const topicTitleMap = getAdminTopicTitleMap_();
+    const result = [];
+
+    for (let i = 1; i < usersData.length; i++) {
+      if (result.length >= maxUsers) break;
+
+      const row = usersData[i];
+      const role =
+        userCols.role >= 0 ? String(row[userCols.role] || "").trim().toUpperCase() : "";
+
+      // Chỉ thống kê tài khoản có vai trò USER.
+      if (role !== "USER") {
+        continue;
+      }
+
+      const userId =
+        userCols.userId >= 0 && row[userCols.userId]
+          ? String(row[userCols.userId]).trim()
+          : "USR_" + i;
+      const email =
+        userCols.email >= 0 && row[userCols.email]
+          ? String(row[userCols.email]).trim()
+          : "";
+      const displayName =
+        (userCols.displayName >= 0 && row[userCols.displayName]) ||
+        (userCols.username >= 0 && row[userCols.username]) ||
+        email ||
+        userId ||
+        "Người dùng";
+      const progressSheetId =
+        userCols.progressSheetId >= 0 && row[userCols.progressSheetId]
+          ? String(row[userCols.progressSheetId]).trim()
+          : "";
+
+      const userItem = {
+        id: userId,
+        name: String(displayName),
+        email: email,
+        lessons: [],
+        attempts: [],
+        plays: [],
+      };
+
+      if (!progressSheetId) {
+        result.push(userItem);
+        continue;
+      }
+
+      try {
+        const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+        const lessonMap = {};
+        const rawQuizAttempts = [];
+        const playsMap = {};
+
+        // 1) Topic progress -> lessons base data
+        const topicProgressSheet = userSpreadsheet.getSheetByName("Topic_Progress");
+        if (topicProgressSheet && topicProgressSheet.getLastRow() > 1) {
+          const tpData = topicProgressSheet.getDataRange().getValues();
+          const tpHeaders = tpData[0];
+          const tpCols = {
+            topicId: tpHeaders.indexOf("topicId"),
+            topicTitle: tpHeaders.indexOf("topicTitle"),
+            progress: tpHeaders.indexOf("progress"),
+            attempts: tpHeaders.indexOf("attempts"),
+            lessonCompleted: tpHeaders.indexOf("lessonCompleted"),
+            mindmapViewed: tpHeaders.indexOf("mindmapViewed"),
+            flashcardsCompleted: tpHeaders.indexOf("flashcardsCompleted"),
+            miniQuizCompleted: tpHeaders.indexOf("miniQuizCompleted"),
+          };
+
+          for (let r = 1; r < tpData.length; r++) {
+            const tpRow = tpData[r];
+            const topicId =
+              tpCols.topicId >= 0 && tpRow[tpCols.topicId]
+                ? String(tpRow[tpCols.topicId]).trim()
+                : "";
+            if (!topicId) continue;
+
+            const topicTitleFromRow =
+              tpCols.topicTitle >= 0 ? String(tpRow[tpCols.topicTitle] || "").trim() : "";
+            const topicTitle = topicTitleFromRow || topicTitleMap[topicId] || topicId;
+
+            let progressPercent = 0;
+            if (tpCols.lessonCompleted >= 0) {
+              let completedParts = 0;
+              if (isAdminTruthy_(tpRow[tpCols.lessonCompleted])) completedParts++;
+              if (tpCols.mindmapViewed >= 0 && isAdminTruthy_(tpRow[tpCols.mindmapViewed])) completedParts++;
+              if (tpCols.flashcardsCompleted >= 0 && isAdminTruthy_(tpRow[tpCols.flashcardsCompleted])) completedParts++;
+              if (tpCols.miniQuizCompleted >= 0 && isAdminTruthy_(tpRow[tpCols.miniQuizCompleted])) completedParts++;
+              progressPercent = Math.round((completedParts / 4) * 100);
+            } else if (tpCols.progress >= 0) {
+              progressPercent = clampAdminPercent_(tpRow[tpCols.progress]);
+            }
+
+            const attemptCount = tpCols.attempts >= 0 ? Math.max(0, parseInt(tpRow[tpCols.attempts], 10) || 0) : 0;
+
+            lessonMap[topicId] = {
+              lessonId: topicId,
+              lessonTitle: topicTitle,
+              progressPercent: progressPercent,
+              attemptCount: attemptCount,
+              avgScore: 0,
+              _scoreSum: 0,
+              _scoreCount: 0,
+            };
+          }
+        }
+
+        // 2) Quiz results -> attempts + lesson score aggregation + plays
+        const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
+        if (quizSheet && quizSheet.getLastRow() > 1) {
+          const qData = quizSheet.getDataRange().getValues();
+          const qHeaders = qData[0];
+          const qCols = {
+            topicId: qHeaders.indexOf("topicId"),
+            topicTitle: qHeaders.indexOf("topicTitle"),
+            score: qHeaders.indexOf("score"),
+            totalQuestions: qHeaders.indexOf("totalQuestions"),
+            percentage: qHeaders.indexOf("percentage"),
+            status: qHeaders.indexOf("status"),
+            completedAt: qHeaders.indexOf("completedAt"),
+            gameMode: qHeaders.indexOf("gameMode"),
+          };
+
+          for (let r = 1; r < qData.length; r++) {
+            const qRow = qData[r];
+            const status = qCols.status >= 0 ? String(qRow[qCols.status] || "").toLowerCase() : "complete";
+            if (status === "partial") continue;
+
+            const topicId =
+              qCols.topicId >= 0 && qRow[qCols.topicId]
+                ? String(qRow[qCols.topicId]).trim()
+                : "";
+            const rowTopicTitle = qCols.topicTitle >= 0 ? String(qRow[qCols.topicTitle] || "").trim() : "";
+            const topicTitle = rowTopicTitle || topicTitleMap[topicId] || topicId || "Quiz";
+
+            const percentage =
+              qCols.percentage >= 0
+                ? clampAdminPercent_(qRow[qCols.percentage])
+                : deriveQuizPercent_(qCols.score >= 0 ? qRow[qCols.score] : 0, qCols.totalQuestions >= 0 ? qRow[qCols.totalQuestions] : 0);
+
+            const completedAtDate =
+              qCols.completedAt >= 0 ? parseAdminSheetDate(qRow[qCols.completedAt]) : null;
+            const completedAtIso = completedAtDate ? completedAtDate.toISOString() : "";
+
+            rawQuizAttempts.push({
+              topicId: topicId,
+              lessonTitle: topicTitle,
+              score: percentage,
+              completedAt: completedAtIso,
+            });
+
+            if (topicId) {
+              if (!lessonMap[topicId]) {
+                lessonMap[topicId] = {
+                  lessonId: topicId,
+                  lessonTitle: topicTitle,
+                  progressPercent: 0,
+                  attemptCount: 0,
+                  avgScore: 0,
+                  _scoreSum: 0,
+                  _scoreCount: 0,
+                };
+              }
+              lessonMap[topicId].attemptCount++;
+              lessonMap[topicId]._scoreSum += percentage;
+              lessonMap[topicId]._scoreCount += 1;
+            }
+
+            const mode = qCols.gameMode >= 0 && qRow[qCols.gameMode]
+              ? String(qRow[qCols.gameMode]).trim().toUpperCase()
+              : "MCQ";
+            const playKey = "quiz|" + mode + "|" + (topicId || topicTitle);
+            if (!playsMap[playKey]) {
+              playsMap[playKey] = {
+                mode: mode || "MCQ",
+                topicId: topicId,
+                topicTitle: topicTitle,
+                playCount: 0,
+                bestScore: 0,
+                playedAt: completedAtIso,
+              };
+            }
+            playsMap[playKey].playCount++;
+            playsMap[playKey].bestScore = Math.max(playsMap[playKey].bestScore, percentage);
+            if (completedAtDate) {
+              const currentPlayedAt = parseAdminSheetDate(playsMap[playKey].playedAt);
+              if (!currentPlayedAt || completedAtDate.getTime() > currentPlayedAt.getTime()) {
+                playsMap[playKey].playedAt = completedAtIso;
+              }
+            }
+          }
+        }
+
+        // 3) Matching results -> plays
+        const matchingSheet = userSpreadsheet.getSheetByName("Matching_Results");
+        if (matchingSheet && matchingSheet.getLastRow() > 1) {
+          const mData = matchingSheet.getDataRange().getValues();
+          const mHeaders = mData[0];
+          const mCols = {
+            topicId: mHeaders.indexOf("topicId"),
+            topicTitle: mHeaders.indexOf("topicTitle"),
+            completed: mHeaders.indexOf("completed"),
+            accuracy: mHeaders.indexOf("accuracy"),
+            playedAt: mHeaders.indexOf("playedAt"),
+          };
+
+          for (let r = 1; r < mData.length; r++) {
+            const mRow = mData[r];
+            if (mCols.completed >= 0 && !isAdminTruthy_(mRow[mCols.completed])) {
+              continue;
+            }
+
+            const topicId =
+              mCols.topicId >= 0 && mRow[mCols.topicId]
+                ? String(mRow[mCols.topicId]).trim()
+                : "";
+            const rowTopicTitle = mCols.topicTitle >= 0 ? String(mRow[mCols.topicTitle] || "").trim() : "";
+            const topicTitle = rowTopicTitle || topicTitleMap[topicId] || topicId || "Matching";
+            const accuracy = mCols.accuracy >= 0 ? clampAdminPercent_(mRow[mCols.accuracy]) : 0;
+
+            const playedAtDate = mCols.playedAt >= 0 ? parseAdminSheetDate(mRow[mCols.playedAt]) : null;
+            const playedAtIso = playedAtDate ? playedAtDate.toISOString() : "";
+
+            const playKey = "matching|" + (topicId || topicTitle);
+            if (!playsMap[playKey]) {
+              playsMap[playKey] = {
+                mode: "Matching",
+                topicId: topicId,
+                topicTitle: topicTitle,
+                playCount: 0,
+                bestScore: 0,
+                playedAt: playedAtIso,
+              };
+            }
+            playsMap[playKey].playCount++;
+            playsMap[playKey].bestScore = Math.max(playsMap[playKey].bestScore, accuracy);
+
+            if (playedAtDate) {
+              const currentPlayedAt = parseAdminSheetDate(playsMap[playKey].playedAt);
+              if (!currentPlayedAt || playedAtDate.getTime() > currentPlayedAt.getTime()) {
+                playsMap[playKey].playedAt = playedAtIso;
+              }
+            }
+          }
+        }
+
+        // Finalize lessons
+        const lessons = Object.keys(lessonMap)
+          .map(function (topicId) {
+            const lesson = lessonMap[topicId];
+            if (lesson._scoreCount > 0) {
+              lesson.avgScore = Math.round((lesson._scoreSum / lesson._scoreCount) * 100) / 100;
+            }
+            delete lesson._scoreSum;
+            delete lesson._scoreCount;
+            return lesson;
+          })
+          .sort(function (a, b) {
+            if (b.progressPercent !== a.progressPercent) {
+              return b.progressPercent - a.progressPercent;
+            }
+            return String(a.lessonTitle || "").localeCompare(String(b.lessonTitle || ""));
+          });
+
+        // Finalize attempts (quiz-based)
+        rawQuizAttempts.sort(function (a, b) {
+          return new Date(a.completedAt || 0).getTime() - new Date(b.completedAt || 0).getTime();
+        });
+
+        const attemptNumberByTopic = {};
+        const attempts = rawQuizAttempts
+          .map(function (attempt) {
+            const key = attempt.topicId || attempt.lessonTitle || "UNKNOWN";
+            attemptNumberByTopic[key] = (attemptNumberByTopic[key] || 0) + 1;
+            return {
+              completedAt: attempt.completedAt,
+              lessonId: attempt.topicId || "",
+              lessonTitle: attempt.lessonTitle || attempt.topicId || "Quiz",
+              attemptNumber: attemptNumberByTopic[key],
+              score: attempt.score,
+            };
+          })
+          .sort(function (a, b) {
+            return new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime();
+          });
+
+        const plays = Object.keys(playsMap)
+          .map(function (key) {
+            return playsMap[key];
+          })
+          .sort(function (a, b) {
+            return new Date(b.playedAt || 0).getTime() - new Date(a.playedAt || 0).getTime();
+          });
+
+        userItem.lessons = lessons;
+        userItem.attempts = attempts;
+        userItem.plays = plays;
+      } catch (userError) {
+        Logger.log(
+          "Error aggregating user stats for " + userId + ": " + userError.toString(),
+        );
+      }
+
+      result.push(userItem);
+    }
+
+    return {
+      success: true,
+      data: result,
+      meta: {
+        totalUsers: result.length,
+      },
+    };
+  } catch (error) {
+    Logger.log("Error getting admin user learning stats: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+function getAdminTopicTitleMap_() {
+  const map = {};
+
+  try {
+    const topicsSheet = getSheet("Topics");
+    if (!topicsSheet || topicsSheet.getLastRow() <= 1) return map;
+
+    const data = topicsSheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    const titleCol = headers.indexOf("title");
+
+    for (let i = 1; i < data.length; i++) {
+      const topicId = topicIdCol >= 0 ? String(data[i][topicIdCol] || "").trim() : "";
+      if (!topicId) continue;
+      const title = titleCol >= 0 ? String(data[i][titleCol] || "").trim() : "";
+      map[topicId] = title || topicId;
+    }
+  } catch (error) {
+    Logger.log("Error building topic map: " + error.toString());
+  }
+
+  return map;
+}
+
+function isAdminTruthy_(value) {
+  return value === true || value === 1 || value === "1" || value === "TRUE" || value === "true";
+}
+
+function clampAdminPercent_(value) {
+  const n = Number(value || 0);
+  if (isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function deriveQuizPercent_(score, totalQuestions) {
+  const s = Number(score || 0);
+  const t = Number(totalQuestions || 0);
+  if (!t || isNaN(s) || isNaN(t)) return 0;
+  return clampAdminPercent_(Math.round((s / t) * 100));
+}
+
+/**
  * Heartbeat từ client để ghi nhận user còn đang mở web
  * payload: { userId?: string, email?: string, page?: string }
  */
@@ -1110,6 +1512,22 @@ function getContentManagementFullHtml() {
   } catch (error) {
     Logger.log("Error getting content management full HTML: " + error.toString());
     return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý Nội dung: " + error.toString() + "</p>";
+  }
+}
+
+/**
+ * Lấy HTML đầy đủ của User Stats (styles + content + scripts)
+ */
+function getUserStatsFullHtml() {
+  try {
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/userStats/user_stats_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/userStats/user_stats_content').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/userStats/user_stats_scripts').getContent();
+
+    return styles + content + scripts;
+  } catch (error) {
+    Logger.log("Error getting user stats full HTML: " + error.toString());
+    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Thống kê người dùng: " + error.toString() + "</p>";
   }
 }
 

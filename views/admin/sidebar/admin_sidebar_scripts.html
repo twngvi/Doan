@@ -136,8 +136,8 @@
 
   // Show Admin Page
   function showAdminPage(pageId) {
-    // Hide all admin pages
-    document.querySelectorAll('[id^="page-"]').forEach(page => {
+    // Hide only admin sub-pages (avoid hiding global app pages like #page-admin)
+    document.querySelectorAll('#admin-panel .admin-page').forEach(page => {
       page.style.display = 'none';
     });
 
@@ -145,11 +145,16 @@
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
       targetPage.style.display = 'block';
-      
-      // Trigger page-specific init if exists
-      const initFn = window[`init${pageId.replace('page-', '').replace(/-/g, '')}`];
-      if (typeof initFn === 'function') {
-        initFn();
+
+      // User stats is loaded dynamically to avoid raw template directives rendering as text.
+      if (pageId === 'page-user-stats') {
+        inituserstats();
+      } else {
+        // Trigger page-specific init if exists
+        const initFn = window[`init${pageId.replace('page-', '').replace(/-/g, '')}`];
+        if (typeof initFn === 'function') {
+          initFn();
+        }
       }
     }
 
@@ -541,6 +546,47 @@
   // ========================================
   // CONTENT MANAGEMENT DYNAMIC LOADER
   // ========================================
+
+  let userStatsLoaded = false;
+
+  function inituserstats() {
+    if (userStatsLoaded) {
+      if (typeof initUserStatsPage === 'function') {
+        initUserStatsPage();
+      }
+      return;
+    }
+
+    loadUserStatsContent();
+  }
+
+  function loadUserStatsContent() {
+    const container = document.getElementById('user-stats-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        userStatsLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initUserStatsPage === 'function') {
+            initUserStatsPage();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Thống kê người dùng: ' + error.message + '</div>';
+      })
+      .getUserStatsFullHtml();
+  }
 
   let contentManagementLoaded = false;
 
