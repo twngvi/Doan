@@ -320,6 +320,81 @@ function saveUserAvatarUrl(userId, avatarUrl) {
   }
 }
 
+const PET_GLOBAL_RESET_VERSION = "2026-04-17-lv1-random-egg-v1";
+const PET_GLOBAL_RESET_PROPERTY_KEY = "PET_GLOBAL_RESET_VERSION";
+const PET_EGG_VARIANT_COUNT = 12;
+const PET_EGG_VARIANT_BASE_ID = 12;
+
+function pickRandomPetEggIndex_() {
+  return Math.floor(Math.random() * PET_EGG_VARIANT_COUNT);
+}
+
+function normalizePetEggIndex_(value, fallback) {
+  var n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < 0 || n >= PET_EGG_VARIANT_COUNT) return fallback;
+  return n;
+}
+
+function getPetVariantIdByEggIndex_(index) {
+  var normalizedIndex = normalizePetEggIndex_(index, 0);
+  return "pet-" + String(PET_EGG_VARIANT_BASE_ID + normalizedIndex);
+}
+
+function buildFreshPetConfig_(forcedIndex) {
+  var defaultIndex = normalizePetEggIndex_(forcedIndex, pickRandomPetEggIndex_());
+  return {
+    currentIndex: defaultIndex,
+    isLevelTwo: false,
+    selectedAccessories: [],
+    selectedStageBackgroundIndex: 0,
+    progressionXP: 0,
+    progressionLevel: 1,
+    progressionXPProgress: 0,
+    selectionLocked: true,
+    lockedVariantId: getPetVariantIdByEggIndex_(defaultIndex),
+    petConfigVersion: PET_GLOBAL_RESET_VERSION,
+  };
+}
+
+function ensurePetGlobalResetApplied_(usersSheet) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PET_GLOBAL_RESET_PROPERTY_KEY) === PET_GLOBAL_RESET_VERSION) {
+    return;
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    if (props.getProperty(PET_GLOBAL_RESET_PROPERTY_KEY) === PET_GLOBAL_RESET_VERSION) {
+      return;
+    }
+
+    var data = usersSheet.getDataRange().getValues();
+    var headers = data[0] || [];
+    var configIdx = headers.indexOf("petConfig");
+
+    if (configIdx === -1) {
+      usersSheet.getRange(1, headers.length + 1).setValue("petConfig");
+      configIdx = headers.length;
+      headers.push("petConfig");
+    }
+
+    if (data.length > 1) {
+      var resetValues = [];
+      for (var i = 1; i < data.length; i++) {
+        resetValues.push([JSON.stringify(buildFreshPetConfig_())]);
+      }
+      usersSheet.getRange(2, configIdx + 1, resetValues.length, 1).setValues(resetValues);
+    }
+
+    props.setProperty(PET_GLOBAL_RESET_PROPERTY_KEY, PET_GLOBAL_RESET_VERSION);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function getUserPetName(userId) {
   const DEFAULT_NAME = "NAMEPET";
   try {
@@ -488,8 +563,10 @@ function getUserPetConfig(userId) {
     const usersSheet = getSheet("Users");
     if (!usersSheet) return { success: false, message: "Users sheet not found" };
 
+    ensurePetGlobalResetApplied_(usersSheet);
+
     const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
+    const headers = data[0] || [];
     let configIdx = headers.indexOf("petConfig");
     let userRow = -1;
 
@@ -507,10 +584,34 @@ function getUserPetConfig(userId) {
         configIdx = headers.length;
     }
 
-    const configValue = usersSheet.getRange(userRow + 1, configIdx + 1).getValue();
-    if (!configValue) return { success: true, config: null };
+    const configCell = usersSheet.getRange(userRow + 1, configIdx + 1);
+    const configValue = configCell.getValue();
+    let parsedConfig = null;
+    let shouldPersist = false;
 
-    let parsedConfig = JSON.parse(configValue);
+    if (!configValue) {
+      parsedConfig = buildFreshPetConfig_();
+      shouldPersist = true;
+    } else {
+      try {
+        parsedConfig = JSON.parse(configValue);
+      } catch (parseError) {
+        parsedConfig = buildFreshPetConfig_();
+        shouldPersist = true;
+      }
+    }
+
+    if (!parsedConfig || typeof parsedConfig !== "object") {
+      parsedConfig = buildFreshPetConfig_();
+      shouldPersist = true;
+    }
+
+    const normalizedIndex = normalizePetEggIndex_(parsedConfig.currentIndex, pickRandomPetEggIndex_());
+    if (normalizedIndex !== parsedConfig.currentIndex) {
+      shouldPersist = true;
+    }
+    parsedConfig.currentIndex = normalizedIndex;
+
     const progressionXP = parseInt(parsedConfig.progressionXP, 10);
     const legacyLevel = parseInt(parsedConfig.progressionLevel, 10);
     const legacyProgress = parseInt(parsedConfig.progressionXPProgress, 10);
@@ -531,6 +632,28 @@ function getUserPetConfig(userId) {
     parsedConfig.progressionXP = normalizedXP;
     parsedConfig.progressionLevel = normalizedLevel;
     parsedConfig.progressionXPProgress = normalizedProgress;
+
+    if (parsedConfig.selectionLocked !== true) {
+      parsedConfig.selectionLocked = true;
+      shouldPersist = true;
+    }
+
+    const lockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
+    if (!lockedVariantId) {
+      parsedConfig.lockedVariantId = getPetVariantIdByEggIndex_(normalizedIndex);
+      shouldPersist = true;
+    } else {
+      parsedConfig.lockedVariantId = lockedVariantId;
+    }
+
+    if (parsedConfig.petConfigVersion !== PET_GLOBAL_RESET_VERSION) {
+      parsedConfig.petConfigVersion = PET_GLOBAL_RESET_VERSION;
+      shouldPersist = true;
+    }
+
+    if (shouldPersist) {
+      configCell.setValue(JSON.stringify(parsedConfig));
+    }
 
     return { success: true, config: parsedConfig };
   } catch (error) {
@@ -569,15 +692,24 @@ function saveUserPetConfig(userId, config) {
     }
 
     const safeConfig = config && typeof config === "object" ? config : {};
+    const normalizedIndex = normalizePetEggIndex_(safeConfig.currentIndex, 0);
     const progressionXP = parseInt(safeConfig.progressionXP, 10);
     const normalizedXP = Number.isFinite(progressionXP) ? progressionXP : 0;
     const normalizedLevel = Math.floor(normalizedXP / 100) + 1;
     const normalizedProgress = normalizedXP % 100;
+    let lockedVariantId = String(safeConfig.lockedVariantId || "").trim();
+    if (!lockedVariantId) {
+      lockedVariantId = getPetVariantIdByEggIndex_(normalizedIndex);
+    }
 
     const normalizedConfig = Object.assign({}, safeConfig, {
+      currentIndex: normalizedIndex,
       progressionXP: normalizedXP,
       progressionLevel: normalizedLevel,
       progressionXPProgress: normalizedProgress,
+      selectionLocked: true,
+      lockedVariantId: lockedVariantId,
+      petConfigVersion: PET_GLOBAL_RESET_VERSION,
     });
 
     const configString = JSON.stringify(normalizedConfig);

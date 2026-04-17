@@ -138,6 +138,7 @@
     ];
     const DEFAULT_LEVEL1_FILE = "level1-yellow.svg";
     const ACCESSORY_POSITIONS = ["left", "center", "right"];
+    const PET_CONFIG_VERSION = "2026-04-17-lv1-random-egg-v1";
     let PET_VARIANTS = DEFAULT_PET_VARIANTS.slice();
 
     const BLINK_INTERVAL_MS = 5000;
@@ -244,6 +245,8 @@
       isRolling: false,
       autoSaveTimeoutId: null,
       catalogLoaded: false,
+      selectionLocked: true,
+      lockedVariantId: "",
     };
 
     let petMeteorInterval = null;
@@ -462,6 +465,47 @@
         .filter(Boolean);
     }
 
+    function getVariantIdByIndex(index) {
+      if (!Array.isArray(PET_VARIANTS) || index < 0 || index >= PET_VARIANTS.length) {
+        return "";
+      }
+      const variant = PET_VARIANTS[index] || {};
+      return String(variant.id || "").trim();
+    }
+
+    function getVariantIndexById(variantId) {
+      const targetId = String(variantId || "").trim();
+      if (!targetId || !Array.isArray(PET_VARIANTS)) return -1;
+      return PET_VARIANTS.findIndex(function (variant) {
+        return String((variant && variant.id) || "").trim() === targetId;
+      });
+    }
+
+    function syncLockedVariantByCurrentIndex() {
+      const currentVariantId = getVariantIdByIndex(state.currentIndex);
+      if (!currentVariantId) return;
+
+      if (state.lockedVariantId !== currentVariantId) {
+        state.lockedVariantId = currentVariantId;
+        queuePetConfigAutoSave();
+      }
+    }
+
+    function enforceLockedVariantSelection() {
+      if (!state.selectionLocked) return;
+
+      const lockedVariantId = String(state.lockedVariantId || "").trim();
+      if (!lockedVariantId) {
+        syncLockedVariantByCurrentIndex();
+        return;
+      }
+
+      const lockedIndex = getVariantIndexById(lockedVariantId);
+      if (lockedIndex >= 0 && state.currentIndex !== lockedIndex) {
+        state.currentIndex = lockedIndex;
+      }
+    }
+
     function getTopicProgressFromCache(topicId) {
       if (!topicId || !window.globalTopicsCache || !window.globalTopicsCache.progress) {
         return null;
@@ -620,6 +664,8 @@
             if (loadedVariants.length > 0) {
               PET_VARIANTS = loadedVariants;
               if (state.currentIndex >= PET_VARIANTS.length) state.currentIndex = 0;
+              enforceLockedVariantSelection();
+              syncLockedVariantByCurrentIndex();
               buildColorButtons();
               renderPet();
             }
@@ -633,6 +679,8 @@
             PET_VARIANTS = loadedVariants;
             if (state.currentIndex >= PET_VARIANTS.length) state.currentIndex = 0;
           }
+          enforceLockedVariantSelection();
+          syncLockedVariantByCurrentIndex();
           syncSelectedAccessoriesWithCatalog();
           buildColorButtons();
           buildAccessoryButtons();
@@ -825,6 +873,31 @@
       });
     }
 
+    function applyLevel1TiltByPointer(clientX) {
+      const xp = state.progressionXP || 0;
+      const progressionLevel = Math.floor(xp / 100) + 1;
+      if (progressionLevel !== 1 || state.isPressing || state.isRolling) return;
+
+      const visualEl = document.getElementById("petVisual");
+      const stageEl = document.getElementById("petStage");
+      if (!visualEl || !stageEl) return;
+
+      const stageRect = stageEl.getBoundingClientRect();
+      const relX = (clientX - stageRect.left) / stageRect.width - 0.5;
+      const rotateDeg = relX * -30;
+
+      visualEl.style.transition = "transform 120ms ease-out";
+      visualEl.style.transform = "rotate(" + rotateDeg.toFixed(2) + "deg)";
+    }
+
+    function clearLevel1Tilt() {
+      const visualEl = document.getElementById("petVisual");
+      if (!visualEl) return;
+
+      visualEl.style.transform = "";
+      visualEl.style.transition = "";
+    }
+
     function resolvePressZone(clientX) {
       const visualEl = document.getElementById("petVisual");
       if (!visualEl) return "center";
@@ -950,13 +1023,19 @@
     }
 
     function resetPetProgression() {
+      const nextEggIndex = PET_VARIANTS.length
+        ? Math.floor(Math.random() * PET_VARIANTS.length)
+        : 0;
+
       state.progressionXP = 0;
-      state.currentIndex = 0;
+      state.currentIndex = nextEggIndex;
       state.selectedAccessories = [];
       state.selectedStageBackgroundIndex = 0;
+      state.selectionLocked = true;
+      state.lockedVariantId = getVariantIdByIndex(nextEggIndex);
       
       if (typeof showToast === "function") {
-        showToast("Đã đưa PET về trạng thái ban đầu (Level 1)", "info");
+        showToast("Đã reset PET về Level 1 và chọn ngẫu nhiên trứng mới", "info");
       }
       
       renderPet();
@@ -966,6 +1045,9 @@
 
     function buildPersistedConfig() {
       const progressionXP = state.progressionXP || 0;
+      const lockedVariantId = String(
+        state.lockedVariantId || getVariantIdByIndex(state.currentIndex) || "",
+      ).trim();
       return {
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
@@ -974,6 +1056,9 @@
         progressionXP: progressionXP,
         progressionLevel: Math.floor(progressionXP / 100) + 1,
         progressionXPProgress: progressionXP % 100,
+        selectionLocked: true,
+        lockedVariantId: lockedVariantId,
+        petConfigVersion: PET_CONFIG_VERSION,
       };
     }
 
@@ -1136,6 +1221,8 @@
             const config = result.config;
             state.currentIndex = typeof config.currentIndex === 'number' ? config.currentIndex : state.currentIndex;
             state.isLevelTwo = !!config.isLevelTwo;
+            state.selectionLocked = config.selectionLocked !== false;
+            state.lockedVariantId = String(config.lockedVariantId || '').trim();
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             if (state.catalogLoaded) {
               syncSelectedAccessoriesWithCatalog();
@@ -1156,6 +1243,9 @@
                 state.progressionXP = state.progressionXP || 0;
               }
             }
+
+            enforceLockedVariantSelection();
+            syncLockedVariantByCurrentIndex();
 
             state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
             updateSaveButtonUI();
@@ -1570,6 +1660,7 @@
     }
 
     function renderPet() {
+      enforceLockedVariantSelection();
       ensureCurrentVariantAccessible();
       const xp = state.progressionXP || 0;
       const progressionLevel = Math.floor(xp / 100) + 1;
@@ -1669,6 +1760,13 @@
     }
 
     function movePet(step) {
+      if (state.selectionLocked) {
+        if (typeof showToast === "function") {
+          showToast("PET da khoa theo trung da chon. Reset Level 1 de doi trung khac.", "info");
+        }
+        return;
+      }
+
       const total = PET_VARIANTS.length;
       state.currentIndex = (state.currentIndex + step + total) % total;
       releasePressState();
@@ -1715,6 +1813,20 @@
           variant.tone +
           '"></span>';
         btn.addEventListener("click", function () {
+          const targetVariantId = String((variant && variant.id) || "").trim();
+          const isLockedToDifferentVariant =
+            state.selectionLocked &&
+            state.lockedVariantId &&
+            targetVariantId &&
+            state.lockedVariantId !== targetVariantId;
+
+          if (isLockedToDifferentVariant) {
+            if (typeof showToast === "function") {
+              showToast("PET da khoa theo trung da chon. Reset Level 1 de doi trung khac.", "info");
+            }
+            return;
+          }
+
           if (!unlocked) {
             if (typeof showToast === "function") {
               const cond = variant.unlockCondition || { type: "level", value: 1 };
@@ -2031,8 +2143,13 @@
       const animatorEl = document.getElementById("petAnimator");
       if (!stageEl || !animatorEl) return;
 
+      stageEl.addEventListener("mousemove", function (event) {
+        applyLevel1TiltByPointer(event.clientX);
+      });
+
       stageEl.addEventListener("mouseleave", function () {
         clearInteractionClasses();
+        clearLevel1Tilt();
       });
 
       stageEl.addEventListener("mousedown", function (event) {
