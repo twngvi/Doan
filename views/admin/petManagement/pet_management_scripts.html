@@ -202,6 +202,11 @@
     var editorEls = {};
     var eventsBound = false;
     var isPersisting = false;
+    var isPersistingVariants = false;
+    var pendingItemPersistRequest = null;
+    var pendingVariantPersistRequest = null;
+    var reorderNoticeTimerId = null;
+    var reorderNoticeToken = 0;
     var dragState = {
       active: false,
       listType: null,
@@ -474,12 +479,21 @@
       };
     }
 
-    function persistPetItemsToBackend(showNotice) {
+    function persistPetItemsToBackend(showNotice, callbacks) {
       if (!(window.google && google.script && google.script.run)) {
+        if (callbacks && typeof callbacks.onFailure === 'function') {
+          callbacks.onFailure(new Error('Google Script API unavailable'));
+        }
         return;
       }
 
+      var persistCallbacks = callbacks || {};
+
       if (isPersisting) {
+        pendingItemPersistRequest = {
+          showNotice: showNotice,
+          callbacks: persistCallbacks,
+        };
         return;
       }
 
@@ -489,14 +503,34 @@
       google.script.run
         .withSuccessHandler(function (result) {
           isPersisting = false;
+          if (typeof persistCallbacks.onSuccess === 'function') {
+            persistCallbacks.onSuccess(result);
+          }
+
+          if (pendingItemPersistRequest) {
+            var nextRequest = pendingItemPersistRequest;
+            pendingItemPersistRequest = null;
+            persistPetItemsToBackend(nextRequest.showNotice, nextRequest.callbacks);
+          }
+
           if (!showNotice) return;
 
           if (result && result.success && typeof window.showNotification === 'function') {
             window.showNotification('Da luu danh muc PET', 'success');
           }
         })
-        .withFailureHandler(function () {
+        .withFailureHandler(function (error) {
           isPersisting = false;
+          if (typeof persistCallbacks.onFailure === 'function') {
+            persistCallbacks.onFailure(error);
+          }
+
+          if (pendingItemPersistRequest) {
+            var nextRequest = pendingItemPersistRequest;
+            pendingItemPersistRequest = null;
+            persistPetItemsToBackend(nextRequest.showNotice, nextRequest.callbacks);
+          }
+
           if (typeof window.showNotification === 'function') {
             window.showNotification('Khong the luu danh muc PET', 'error');
           }
@@ -504,10 +538,25 @@
         .savePetItemsForAdmin(payloadJson);
     }
 
-    function persistPetVariantsToBackend(showNotice) {
+    function persistPetVariantsToBackend(showNotice, callbacks) {
       if (!(window.google && google.script && google.script.run)) {
+        if (callbacks && typeof callbacks.onFailure === 'function') {
+          callbacks.onFailure(new Error('Google Script API unavailable'));
+        }
         return;
       }
+
+      var persistCallbacks = callbacks || {};
+
+      if (isPersistingVariants) {
+        pendingVariantPersistRequest = {
+          showNotice: showNotice,
+          callbacks: persistCallbacks,
+        };
+        return;
+      }
+
+      isPersistingVariants = true;
 
       var payloadJson = JSON.stringify({
         variants: state.petVariants.map(function (variant) {
@@ -517,6 +566,18 @@
 
       google.script.run
         .withSuccessHandler(function (result) {
+          isPersistingVariants = false;
+
+          if (typeof persistCallbacks.onSuccess === 'function') {
+            persistCallbacks.onSuccess(result);
+          }
+
+          if (pendingVariantPersistRequest) {
+            var nextRequest = pendingVariantPersistRequest;
+            pendingVariantPersistRequest = null;
+            persistPetVariantsToBackend(nextRequest.showNotice, nextRequest.callbacks);
+          }
+
           if (!showNotice) return;
           if (result && result.success && typeof window.showNotification === 'function') {
             window.showNotification('Da luu danh sach hinh dang PET', 'success');
@@ -525,7 +586,19 @@
             window.showNotification(message, 'error');
           }
         })
-        .withFailureHandler(function () {
+        .withFailureHandler(function (error) {
+          isPersistingVariants = false;
+
+          if (typeof persistCallbacks.onFailure === 'function') {
+            persistCallbacks.onFailure(error);
+          }
+
+          if (pendingVariantPersistRequest) {
+            var nextRequest = pendingVariantPersistRequest;
+            pendingVariantPersistRequest = null;
+            persistPetVariantsToBackend(nextRequest.showNotice, nextRequest.callbacks);
+          }
+
           if (typeof window.showNotification === 'function') {
             window.showNotification('Khong the luu hinh dang PET', 'error');
           }
@@ -712,6 +785,7 @@
           '<div class="pm-item-card pm-data-card" draggable="true" data-item-type="' + itemType + '" data-item-index="' + index + '" data-sort-index="' + index + '" title="Kéo để đổi vị trí">' +
           '  <div class="pm-item-badge"></div>' +
           '  <div class="pm-item-image-box">' +
+          '    <span class="material-symbols-sharp pm-drag-handle" aria-hidden="true">drag_indicator</span>' +
           '    <img src="' + src + '" alt="' + item.name + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=' + item.id + '\'">' +
           '  </div>' +
           '  <span class="pm-item-name">' + item.name + '</span>' +
@@ -748,6 +822,7 @@
             '<div class="pm-item-card pm-variant-card pm-variant-level-card" draggable="true" data-variant-index="' + index + '" data-sort-index="' + index + '" data-variant-level="' + level + '" title="Kéo để đổi vị trí hoặc bấm để chỉnh sửa">' +
             '  <div class="pm-item-badge"></div>' +
             '  <div class="pm-item-image-box">' +
+            '    <span class="material-symbols-sharp pm-drag-handle" aria-hidden="true">drag_indicator</span>' +
             '    <span class="pm-variant-level-badge">' + levelLabel + '</span>' +
             '    <img src="' + src + '" alt="' + safeName + ' ' + levelLabel + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=pet-variant-' + index + '-' + level + '\'\">' +
             '  </div>' +
@@ -1700,6 +1775,22 @@
       return isNaN(index) ? -1 : index;
     }
 
+    function queueReorderNotice(message, type, token) {
+      if (token !== reorderNoticeToken) return;
+
+      if (reorderNoticeTimerId) {
+        clearTimeout(reorderNoticeTimerId);
+      }
+
+      reorderNoticeTimerId = setTimeout(function () {
+        if (token !== reorderNoticeToken) return;
+        if (typeof window.showNotification === 'function') {
+          window.showNotification(message, type || 'success');
+        }
+        reorderNoticeTimerId = null;
+      }, 650);
+    }
+
     function applyListReorder(listType, fromIndex, toIndex) {
       if (fromIndex === toIndex) return false;
 
@@ -1720,14 +1811,29 @@
 
       updateCounts();
       renderAllPmItems();
-      if (listType === 'variants') {
-        persistPetVariantsToBackend(false);
-      } else {
-        persistPetItemsToBackend(false);
-      }
 
-      if (typeof window.showNotification === 'function') {
-        window.showNotification('Da cap nhat thu tu', 'success');
+      var currentToken = ++reorderNoticeToken;
+      var onPersistSuccess = function (result) {
+        if (result && result.success) {
+          queueReorderNotice('Da luu thu tu', 'success', currentToken);
+        } else {
+          queueReorderNotice('Khong the luu thu tu', 'error', currentToken);
+        }
+      };
+      var onPersistFailure = function () {
+        queueReorderNotice('Khong the luu thu tu', 'error', currentToken);
+      };
+
+      if (listType === 'variants') {
+        persistPetVariantsToBackend(false, {
+          onSuccess: onPersistSuccess,
+          onFailure: onPersistFailure,
+        });
+      } else {
+        persistPetItemsToBackend(false, {
+          onSuccess: onPersistSuccess,
+          onFailure: onPersistFailure,
+        });
       }
 
       return true;
