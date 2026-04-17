@@ -967,10 +967,6 @@
         if (editorEls.variantLevel1) editorEls.variantLevel1.focus();
         return;
       }
-      if (!draft.level2) {
-        if (editorEls.variantLevel2) editorEls.variantLevel2.focus();
-        return;
-      }
 
       var savedIndex = 0;
       if (state.variantEditor.isNew) {
@@ -1094,13 +1090,48 @@
         return;
       }
 
+      if (typeof window.showNotification === 'function') {
+        window.showNotification('Đang tải ảnh lên...', 'info');
+      }
+
       var reader = new FileReader();
-      reader.onload = function () {
-        if (editorEls.image) {
-          editorEls.image.value = String(reader.result || '');
+      reader.onload = function (e) {
+        var base64Data = e.target.result.split(',')[1];
+        var mimeType = file.type;
+        var fileName = file.name;
+
+        if (window.google && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(function (result) {
+              if (result.success) {
+                if (editorEls.image) {
+                  editorEls.image.value = result.imageUrl;
+                }
+                updateSelectedImageFileLabel(fileName);
+                updateEditorImagePreview();
+                if (typeof window.showNotification === 'function') {
+                  window.showNotification('Tải ảnh lên thành công', 'success');
+                }
+              } else {
+                if (typeof window.showNotification === 'function') {
+                  window.showNotification('Lỗi khi tải ảnh: ' + result.message, 'error');
+                }
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (typeof window.showNotification === 'function') {
+                window.showNotification('Lỗi tải ảnh lên Drive', 'error');
+              }
+            })
+            .uploadImageToDrive(base64Data, fileName, mimeType);
+        } else {
+          // Fallback to base64 if not in Apps Script (local dev)
+          if (editorEls.image) {
+            editorEls.image.value = String(e.target.result || '');
+          }
+          updateSelectedImageFileLabel(fileName);
+          updateEditorImagePreview();
         }
-        updateSelectedImageFileLabel(file.name);
-        updateEditorImagePreview();
       };
       reader.onerror = function () {
         if (typeof window.showNotification === 'function') {
@@ -1428,19 +1459,58 @@
         var fileNameEl = document.getElementById(fileNameId);
         if (fileNameEl) fileNameEl.textContent = fileName;
 
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Đang tải ảnh lên...', 'info');
+        }
+
         var reader = new FileReader();
         reader.onload = function (e) {
-          var dataUrl = e.target.result;
-          if (imageInputId) {
-            var imageInput = document.getElementById(imageInputId);
-            if (imageInput) imageInput.value = dataUrl;
+          var base64Data = e.target.result.split(',')[1];
+          var mimeType = file.type;
+
+          if (window.google && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(function (result) {
+                if (result.success) {
+                  var dataUrl = result.imageUrl;
+                  if (imageInputId) {
+                    var imageInput = document.getElementById(imageInputId);
+                    if (imageInput) imageInput.value = dataUrl;
+                  }
+                  var previewEl = document.getElementById(previewId);
+                  if (previewEl && previewEl.tagName === 'IMG') {
+                    previewEl.src = dataUrl;
+                  }
+                  syncVariantDraftFromForm();
+                  updateVariantPreview();
+                  if (typeof window.showNotification === 'function') {
+                    window.showNotification('Tải ảnh lên thành công', 'success');
+                  }
+                } else {
+                  if (typeof window.showNotification === 'function') {
+                    window.showNotification('Lỗi khi tải ảnh: ' + result.message, 'error');
+                  }
+                }
+              })
+              .withFailureHandler(function (err) {
+                if (typeof window.showNotification === 'function') {
+                  window.showNotification('Lỗi tải ảnh lên Drive', 'error');
+                }
+              })
+              .uploadImageToDrive(base64Data, fileName, mimeType);
+          } else {
+            var dataUrl = e.target.result;
+            if (imageInputId) {
+              var imageInput = document.getElementById(imageInputId);
+              if (imageInput) imageInput.value = dataUrl;
+            }
+            var previewEl = document.getElementById(previewId);
+            if (previewEl && previewEl.tagName === 'IMG') {
+              previewEl.src = dataUrl;
+            }
+            syncVariantDraftFromForm();
+            updateVariantPreview();
           }
-          var previewEl = document.getElementById(previewId);
-          if (previewEl && previewEl.tagName === 'IMG') {
-            previewEl.src = dataUrl;
-          }
-          syncVariantDraftFromForm();
-          updateVariantPreview();
         };
         reader.readAsDataURL(file);
       });

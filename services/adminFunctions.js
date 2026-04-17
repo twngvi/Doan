@@ -1160,7 +1160,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 12",
     tone: "#f87171",
     description: "Mau PET so 12.",
-    level1: "level1-yellow.svg",
+    level1: "level1-blue.svg",
     level2: "PET/12.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1173,7 +1173,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 13",
     tone: "#fb923c",
     description: "Mau PET so 13.",
-    level1: "level1-yellow.svg",
+    level1: "level1-green.svg",
     level2: "PET/13.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1186,7 +1186,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 14",
     tone: "#facc15",
     description: "Mau PET so 14.",
-    level1: "level1-yellow.svg",
+    level1: "level1-pink.svg",
     level2: "PET/14.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1212,7 +1212,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 16",
     tone: "#34d399",
     description: "Mau PET so 16.",
-    level1: "level1-yellow.svg",
+    level1: "level1-blue.svg",
     level2: "PET/16.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1225,7 +1225,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 17",
     tone: "#22d3ee",
     description: "Mau PET so 17.",
-    level1: "level1-yellow.svg",
+    level1: "level1-green.svg",
     level2: "PET/17.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1238,7 +1238,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 18",
     tone: "#38bdf8",
     description: "Mau PET so 18.",
-    level1: "level1-yellow.svg",
+    level1: "level1-pink.svg",
     level2: "PET/18.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1264,7 +1264,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 20",
     tone: "#818cf8",
     description: "Mau PET so 20.",
-    level1: "level1-yellow.svg",
+    level1: "level1-blue.svg",
     level2: "PET/20.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1277,7 +1277,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 21",
     tone: "#a78bfa",
     description: "Mau PET so 21.",
-    level1: "level1-yellow.svg",
+    level1: "level1-green.svg",
     level2: "PET/21.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1290,7 +1290,7 @@ const DEFAULT_PET_VARIANTS = [
     name: "Pet 22",
     tone: "#f472b6",
     description: "Mau PET so 22.",
-    level1: "level1-yellow.svg",
+    level1: "level1-pink.svg",
     level2: "PET/22.svg",
     eyeOpen: "",
     eyeClosed: "",
@@ -1636,8 +1636,8 @@ function getPetItemsForAdmin() {
     seedDefaultPetVariantsIfEmpty_();
     const sheet = ensurePetItemsSheet_();
     const data = sheet.getDataRange().getValues();
-    const variantsData = ensurePetVariantsSheet_().getDataRange().getValues();
-    const variants = parsePetVariantRows_(variantsData);
+    const variantsResult = getPetVariantsForAdmin();
+    const variants = variantsResult.success ? variantsResult.variants : [];
 
     if (data.length <= 1) {
       return {
@@ -1779,7 +1779,7 @@ function getPetVariantsForAdmin() {
     const data = sheet.getDataRange().getValues();
     let variants = parsePetVariantRows_(data).map(enforcePetVariantLevel1Egg_);
 
-    if (variants.length === 0) {
+    if (variants.length < 12) {
       overwritePetVariantsWithDefault_(sheet);
 
       variants = DEFAULT_PET_VARIANTS.map(function (variant) {
@@ -2017,7 +2017,13 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
     Logger.log("Mime type: " + mimeType);
     
     // Get the images folder
-    const folder = DriveApp.getFolderById(TOPIC_EDITOR_CONFIG.IMAGES_FOLDER_ID);
+    let folder;
+    try {
+      folder = DriveApp.getFolderById(TOPIC_EDITOR_CONFIG.IMAGES_FOLDER_ID);
+    } catch (e) {
+      Logger.log("Image upload folder not found or accessible. Falling back to root folder: " + e.toString());
+      folder = DriveApp.getRootFolder();
+    }
     
     // Decode base64 to blob
     const blob = Utilities.newBlob(

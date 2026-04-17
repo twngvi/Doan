@@ -8,7 +8,7 @@
         name: "Pet 12",
         tone: "#f87171",
         stageBackground: "bg-1.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-blue.svg",
         level2: "PET/12.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -19,7 +19,7 @@
         name: "Pet 13",
         tone: "#fb923c",
         stageBackground: "bg-2.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-green.svg",
         level2: "PET/13.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -30,7 +30,7 @@
         name: "Pet 14",
         tone: "#facc15",
         stageBackground: "bg-3.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-pink.svg",
         level2: "PET/14.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -52,7 +52,7 @@
         name: "Pet 16",
         tone: "#34d399",
         stageBackground: "bg-2.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-blue.svg",
         level2: "PET/16.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -63,7 +63,7 @@
         name: "Pet 17",
         tone: "#22d3ee",
         stageBackground: "bg-3.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-green.svg",
         level2: "PET/17.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -74,7 +74,7 @@
         name: "Pet 18",
         tone: "#38bdf8",
         stageBackground: "bg-1.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-pink.svg",
         level2: "PET/18.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -96,7 +96,7 @@
         name: "Pet 20",
         tone: "#818cf8",
         stageBackground: "bg-3.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-blue.svg",
         level2: "PET/20.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -107,7 +107,7 @@
         name: "Pet 21",
         tone: "#a78bfa",
         stageBackground: "bg-1.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-green.svg",
         level2: "PET/21.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -118,7 +118,7 @@
         name: "Pet 22",
         tone: "#f472b6",
         stageBackground: "bg-2.svg",
-        level1: "level1-yellow.svg",
+        level1: "level1-pink.svg",
         level2: "PET/22.svg",
         eyeOpen: "",
         eyeClosed: "",
@@ -440,7 +440,7 @@
           const id = String(safe.id || fallback.id || "").trim();
           const level1 = String(safe.level1 || fallback.level1 || DEFAULT_LEVEL1_FILE).trim();
           const level2 = String(safe.level2 || fallback.level2 || "").trim();
-          if (!id || !level1 || !level2) return null;
+          if (!id || !level1) return null;
 
           let scalePercent = toNonNegativeNumber(safe.scalePercent, 100);
           scalePercent = Math.max(40, Math.min(200, scalePercent));
@@ -1322,6 +1322,29 @@
       }
     }
 
+    function bindAccessoryPositionClick() {
+      const container = document.getElementById("petAccessoryPosition");
+      if (!container) return;
+
+      container.addEventListener("click", function (e) {
+        const btn = e.target.closest(".pet-pill-btn");
+        if (!btn || btn.disabled || !state.isLevelTwo) return;
+
+        const pos = btn.getAttribute("data-pos");
+        if (!pos) return;
+
+        state.accessoryPosition = pos;
+
+        const activeAccessory = resolveActiveAccessory();
+        if (activeAccessory) {
+          activeAccessory.position = pos;
+        }
+
+        updateAccessoryPositionButtons();
+        renderAccessory();
+      });
+    }
+
     function bindPanelControlsClick() {
       const controlsRoot = document.getElementById("petPanelControls");
       if (!controlsRoot) return;
@@ -1539,8 +1562,7 @@
       buttons.forEach(function (button) {
         const pos = button.getAttribute("data-pos") || "";
         const isAllowed = state.isLevelTwo && allowed.indexOf(pos) >= 0;
-        // Position is now controlled from admin profiles to keep user/admin visuals identical.
-        button.disabled = true;
+        button.disabled = !isAllowed;
         button.classList.toggle("active", isAllowed && pos === activePosition);
       });
     }
@@ -2418,6 +2440,7 @@
         bindFoodPanelToggle();
         bindPanelControlsClick();
         bindNavigationGuard();
+        bindAccessoryPositionClick();
         startBlinkLoop();
         updateSettingsPanelVisibility();
         updateBackgroundPanelVisibility();
