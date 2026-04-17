@@ -100,7 +100,7 @@
 
     isAdminSidebarCollapsed = !isAdminSidebarCollapsed;
     sidebar.classList.toggle('collapsed', isAdminSidebarCollapsed);
-    document.body.classList.toggle('sidebar-collapsed', isAdminSidebarCollapsed);
+    document.body.classList.toggle('admin-sidebar-collapsed', isAdminSidebarCollapsed);
 
     // Save state
     localStorage.setItem('adminSidebarCollapsed', isAdminSidebarCollapsed);
@@ -109,13 +109,20 @@
   // Load Sidebar State
   function loadAdminSidebarState() {
     const saved = localStorage.getItem('adminSidebarCollapsed');
+    const sidebar = document.getElementById('adminSidebar');
+
     if (saved === 'true') {
       isAdminSidebarCollapsed = true;
-      const sidebar = document.getElementById('adminSidebar');
       if (sidebar) {
         sidebar.classList.add('collapsed');
-        document.body.classList.add('sidebar-collapsed');
       }
+      document.body.classList.add('admin-sidebar-collapsed');
+    } else {
+      isAdminSidebarCollapsed = false;
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+      }
+      document.body.classList.remove('admin-sidebar-collapsed');
     }
   }
 
@@ -178,8 +185,9 @@
     sessionStorage.removeItem('authPanelOpen');
     sessionStorage.removeItem('authFormType');
     
-    // Remove admin sidebar class
+    // Remove admin sidebar classes
     document.body.classList.remove('has-admin-sidebar');
+    document.body.classList.remove('admin-sidebar-collapsed');
     
     // Reset landing CTA if available
     if (typeof resetLandingCTA === 'function') {
@@ -198,8 +206,9 @@
 
   // Navigate to User Site
   function navigateToUserSite() {
-    // Remove admin sidebar class
+    // Remove admin sidebar classes
     document.body.classList.remove('has-admin-sidebar');
+    document.body.classList.remove('admin-sidebar-collapsed');
     
     // Show dashboard page
     if (typeof showPage === 'function') {
