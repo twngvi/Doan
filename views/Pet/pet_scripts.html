@@ -444,7 +444,6 @@
 
           let scalePercent = toNonNegativeNumber(safe.scalePercent, 100);
           scalePercent = Math.max(40, Math.min(200, scalePercent));
-          const tiltDeg = Math.max(-45, Math.min(45, toSignedNumber(safe.tiltDeg, 0)));
 
           return {
             id: id,
@@ -458,7 +457,6 @@
             description: String(safe.description || fallback.description || ""),
             unlockCondition: normalizeVariantUnlockCondition(safe.unlockCondition),
             scalePercent: scalePercent,
-            tiltDeg: tiltDeg,
           };
         })
         .filter(Boolean);
@@ -825,38 +823,6 @@
       INTERACTION_CLASSES.forEach(function (className) {
         visualEl.classList.remove(className);
       });
-    }
-
-    function applyLevel1TiltByPointer(clientX, clientY) {
-      if (state.isLevelTwo || state.isPressing) return;
-
-      const visualEl = document.getElementById("petVisual");
-      if (!visualEl) return;
-
-      const stageEl = document.getElementById("petStage");
-      if (!stageEl) return;
-
-      const stageRect = stageEl.getBoundingClientRect();
-      // Calculate mouse position relative to stage center (-0.5 to 0.5)
-      const relX = (clientX - stageRect.left) / stageRect.width - 0.5;
-      const relY = clientY !== undefined ? (clientY - stageRect.top) / stageRect.height - 0.5 : 0;
-
-      // Apply smooth rotation and slight skew based on mouse position
-      const rotateAngle = relX * -45; // max ±22.5 degrees tilt
-      const skewAngle = relX * 10;     // subtle skew
-      const scaleX = 1 + Math.abs(relX) * 0.04; // very subtle stretch
-
-      visualEl.style.transform = 
-        'rotate(' + rotateAngle.toFixed(2) + 'deg) ' +
-        'skewY(' + skewAngle.toFixed(2) + 'deg) ' +
-        'scaleX(' + scaleX.toFixed(3) + ')';
-    }
-
-    function clearLevel1Tilt() {
-      const visualEl = document.getElementById("petVisual");
-      if (visualEl) {
-        visualEl.style.transform = '';
-      }
     }
 
     function resolvePressZone(clientX) {
@@ -1648,9 +1614,8 @@
 
       const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
       const variantScale = Math.max(40, Math.min(200, toNonNegativeNumber(variant.scalePercent, 100))) / 100;
-      const variantTilt = Math.max(-45, Math.min(45, toSignedNumber(variant.tiltDeg, 0)));
       if (previewImageEl) {
-        previewImageEl.style.transform = "scale(" + variantScale + ") rotate(" + variantTilt + "deg)";
+        previewImageEl.style.transform = "scale(" + variantScale + ")";
         previewImageEl.style.transformOrigin = "center bottom";
       }
       applySrcAsync(previewImageEl, imageName);
@@ -2066,19 +2031,8 @@
       const animatorEl = document.getElementById("petAnimator");
       if (!stageEl || !animatorEl) return;
 
-      stageEl.addEventListener("mousemove", function (event) {
-        const xp = state.progressionXP || 0;
-        const progressionLevel = Math.floor(xp / 100) + 1;
-        
-        // Level 1: Tilt only
-        if (progressionLevel === 1 && !state.isPressing) {
-            applyLevel1TiltByPointer(event.clientX, event.clientY);
-        }
-      });
-
       stageEl.addEventListener("mouseleave", function () {
         clearInteractionClasses();
-        clearLevel1Tilt();
       });
 
       stageEl.addEventListener("mousedown", function (event) {

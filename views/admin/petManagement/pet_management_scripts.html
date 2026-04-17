@@ -202,6 +202,15 @@
     var editorEls = {};
     var eventsBound = false;
     var isPersisting = false;
+    var dragState = {
+      active: false,
+      listType: null,
+      fromIndex: -1,
+      dropIndex: -1,
+      moved: false,
+      cardEl: null,
+    };
+    var suppressClickUntil = 0;
 
     function parseSignedInteger(value, fallback) {
       var n = parseInt(String(value == null ? '' : value), 10);
@@ -330,7 +339,6 @@
           value: unlockValue,
         },
         scalePercent: scalePercent,
-        tiltDeg: Math.max(-45, Math.min(45, parseSignedInteger(safe.tiltDeg, 0))),
       };
     }
 
@@ -512,6 +520,9 @@
           if (!showNotice) return;
           if (result && result.success && typeof window.showNotification === 'function') {
             window.showNotification('Da luu danh sach hinh dang PET', 'success');
+          } else if (typeof window.showNotification === 'function') {
+            var message = result && result.message ? String(result.message) : 'Khong the luu hinh dang PET';
+            window.showNotification(message, 'error');
           }
         })
         .withFailureHandler(function () {
@@ -646,9 +657,6 @@
       editorEls.variantSizeDown = document.getElementById('pm-variant-size-down');
       editorEls.variantSizeUp = document.getElementById('pm-variant-size-up');
       editorEls.variantSizeValue = document.getElementById('pm-variant-size-value');
-      editorEls.variantTilt = document.getElementById('pm-variant-tilt');
-      editorEls.variantTiltNumber = document.getElementById('pm-variant-tilt-number');
-      editorEls.variantTiltValue = document.getElementById('pm-variant-tilt-value');
       editorEls.variantPreviewImage = document.getElementById('pm-variant-preview-image');
       editorEls.variantPreviewBox = document.getElementById('pm-variant-preview-box');
       editorEls.variantSaveBtn = document.getElementById('pm-variant-save-btn');
@@ -701,7 +709,7 @@
       items.forEach(function (item, index) {
         var src = resolveAssetSrc(item.file);
         html += '' +
-          '<div class="pm-item-card pm-data-card" data-item-type="' + itemType + '" data-item-index="' + index + '">' +
+          '<div class="pm-item-card pm-data-card" draggable="true" data-item-type="' + itemType + '" data-item-index="' + index + '" data-sort-index="' + index + '" title="Kéo để đổi vị trí">' +
           '  <div class="pm-item-badge"></div>' +
           '  <div class="pm-item-image-box">' +
           '    <img src="' + src + '" alt="' + item.name + '" loading="lazy" onerror="this.src=\'https://api.dicebear.com/9.x/shapes/svg?seed=' + item.id + '\'">' +
@@ -737,7 +745,7 @@
           var src = resolveAssetSrc(level === 1 ? (variant.level1 || DEFAULT_LEVEL1_FILE) : (variant.level2 || ''));
           var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
           html += '' +
-            '<div class="pm-item-card pm-variant-card pm-variant-level-card" data-variant-index="' + index + '" data-variant-level="' + level + '" title="Bấm để chỉnh sửa trong sidebar">' +
+            '<div class="pm-item-card pm-variant-card pm-variant-level-card" draggable="true" data-variant-index="' + index + '" data-sort-index="' + index + '" data-variant-level="' + level + '" title="Kéo để đổi vị trí hoặc bấm để chỉnh sửa">' +
             '  <div class="pm-item-badge"></div>' +
             '  <div class="pm-item-image-box">' +
             '    <span class="pm-variant-level-badge">' + levelLabel + '</span>' +
@@ -783,18 +791,6 @@
       }
     }
 
-    function updateVariantTiltValue() {
-      if (!state.variantEditor.draft || !editorEls.variantTiltValue) return;
-      var tiltDeg = state.variantEditor.draft.tiltDeg || 0;
-      editorEls.variantTiltValue.textContent = String(tiltDeg) + '°';
-      if (editorEls.variantTilt) {
-        editorEls.variantTilt.value = String(tiltDeg);
-      }
-      if (editorEls.variantTiltNumber) {
-        editorEls.variantTiltNumber.value = String(tiltDeg);
-      }
-    }
-
     function updateVariantPreview() {
       if (!editorEls.variantPreviewImage || !state.variantEditor.draft) return;
 
@@ -802,7 +798,7 @@
       var useLevel2 = state.variantEditor.previewLevel === 2;
       var src = useLevel2 ? draft.level2 : draft.level1;
       editorEls.variantPreviewImage.src = resolveAssetSrc(src || draft.level1 || draft.level2 || '');
-      editorEls.variantPreviewImage.style.transform = 'scale(' + ((draft.scalePercent || 100) / 100) + ') rotate(' + (draft.tiltDeg || 0) + 'deg)';
+      editorEls.variantPreviewImage.style.transform = 'scale(' + ((draft.scalePercent || 100) / 100) + ')';
 
       if (editorEls.variantLevel1Preview) {
         editorEls.variantLevel1Preview.src = resolveAssetSrc(draft.level1 || DEFAULT_LEVEL1_FILE);
@@ -819,7 +815,6 @@
       }
 
       updateVariantScaleValue();
-      updateVariantTiltValue();
     }
 
     function setVariantEditLevel(level, syncPreview) {
@@ -875,7 +870,6 @@
           level2: '',
           unlockCondition: { type: 'level', value: 1 },
           scalePercent: 100,
-          tiltDeg: 0,
         };
       } else {
         if (index < 0 || index >= state.petVariants.length) return;
@@ -906,8 +900,6 @@
       if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
       if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
-      if (editorEls.variantTilt) editorEls.variantTilt.value = String(draft.tiltDeg || 0);
-      if (editorEls.variantTiltNumber) editorEls.variantTiltNumber.value = String(draft.tiltDeg || 0);
       if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
 
@@ -933,7 +925,6 @@
       draft.description = editorEls.variantDescription ? editorEls.variantDescription.value.trim() : draft.description;
       draft.level1 = editorEls.variantLevel1 ? editorEls.variantLevel1.value.trim() : draft.level1;
       draft.level2 = editorEls.variantLevel2 ? editorEls.variantLevel2.value.trim() : draft.level2;
-      draft.tiltDeg = Math.max(-45, Math.min(45, parseSignedInteger(editorEls.variantTilt ? editorEls.variantTilt.value : draft.tiltDeg, 0)));
 
       var unlockType = editorEls.variantUnlockType ? editorEls.variantUnlockType.value : 'level';
       var unlockValue = unlockType === 'level'
@@ -970,8 +961,8 @@
 
       var savedIndex = 0;
       if (state.variantEditor.isNew) {
-        state.petVariants.unshift(cloneVariant(draft));
-        savedIndex = 0;
+        state.petVariants.push(cloneVariant(draft));
+        savedIndex = state.petVariants.length - 1;
       } else if (state.variantEditor.index >= 0 && state.variantEditor.index < state.petVariants.length) {
         state.petVariants[state.variantEditor.index] = cloneVariant(draft);
         savedIndex = state.variantEditor.index;
@@ -1600,7 +1591,7 @@
 
       var target = getItemsByType(type);
       if (isNew) {
-        target.unshift(payload);
+        target.push(payload);
       } else if (index >= 0 && index < target.length) {
         target[index] = payload;
       }
@@ -1659,7 +1650,166 @@
       }
     }
 
+    function isClickSuppressed() {
+      return Date.now() < suppressClickUntil;
+    }
+
+    function resetDragState() {
+      dragState.active = false;
+      dragState.listType = null;
+      dragState.fromIndex = -1;
+      dragState.dropIndex = -1;
+      dragState.moved = false;
+      dragState.cardEl = null;
+    }
+
+    function clearDropTargets() {
+      document.querySelectorAll('.pm-item-card.pm-drop-target').forEach(function (el) {
+        el.classList.remove('pm-drop-target');
+      });
+    }
+
+    function moveArrayItemInPlace(items, fromIndex, toIndex) {
+      if (!Array.isArray(items)) return;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) return;
+      if (fromIndex === toIndex) return;
+
+      var movedItem = items.splice(fromIndex, 1)[0];
+      items.splice(toIndex, 0, movedItem);
+    }
+
+    function mapIndexAfterMove(index, fromIndex, toIndex) {
+      if (index === fromIndex) return toIndex;
+      if (fromIndex < toIndex && index > fromIndex && index <= toIndex) return index - 1;
+      if (fromIndex > toIndex && index >= toIndex && index < fromIndex) return index + 1;
+      return index;
+    }
+
+    function resolveCardListType(cardEl) {
+      if (!cardEl) return '';
+      if (cardEl.classList.contains('pm-variant-level-card')) return 'variants';
+      if (cardEl.classList.contains('pm-data-card')) {
+        return String(cardEl.getAttribute('data-item-type') || '');
+      }
+      return '';
+    }
+
+    function resolveCardSortIndex(cardEl) {
+      if (!cardEl) return -1;
+      var index = parseInt(cardEl.getAttribute('data-sort-index') || '-1', 10);
+      return isNaN(index) ? -1 : index;
+    }
+
+    function applyListReorder(listType, fromIndex, toIndex) {
+      if (fromIndex === toIndex) return false;
+
+      var targetList = listType === 'variants' ? state.petVariants : getItemsByType(listType);
+      if (!Array.isArray(targetList)) return false;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= targetList.length || toIndex >= targetList.length) {
+        return false;
+      }
+
+      moveArrayItemInPlace(targetList, fromIndex, toIndex);
+
+      if (state.editor && state.editor.type === listType && !state.editor.isNew && state.editor.index >= 0) {
+        state.editor.index = mapIndexAfterMove(state.editor.index, fromIndex, toIndex);
+      }
+      if (listType === 'variants' && state.variantEditor && !state.variantEditor.isNew && state.variantEditor.index >= 0) {
+        state.variantEditor.index = mapIndexAfterMove(state.variantEditor.index, fromIndex, toIndex);
+      }
+
+      updateCounts();
+      renderAllPmItems();
+      if (listType === 'variants') {
+        persistPetVariantsToBackend(false);
+      } else {
+        persistPetItemsToBackend(false);
+      }
+
+      if (typeof window.showNotification === 'function') {
+        window.showNotification('Da cap nhat thu tu', 'success');
+      }
+
+      return true;
+    }
+
+    function bindSortableGrid(gridEl, listType) {
+      if (!gridEl) return;
+
+      gridEl.addEventListener('dragstart', function (event) {
+        var cardEl = event.target.closest('.pm-data-card, .pm-variant-level-card');
+        if (!cardEl) return;
+
+        var cardListType = resolveCardListType(cardEl);
+        if (cardListType !== listType) return;
+
+        var fromIndex = resolveCardSortIndex(cardEl);
+        if (fromIndex < 0) return;
+
+        dragState.active = true;
+        dragState.listType = listType;
+        dragState.fromIndex = fromIndex;
+        dragState.dropIndex = fromIndex;
+        dragState.moved = false;
+        dragState.cardEl = cardEl;
+
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(fromIndex));
+        }
+
+        cardEl.classList.add('pm-dragging');
+      });
+
+      gridEl.addEventListener('dragover', function (event) {
+        if (!dragState.active || dragState.listType !== listType) return;
+
+        var cardEl = event.target.closest('.pm-data-card, .pm-variant-level-card');
+        if (!cardEl) return;
+        if (resolveCardListType(cardEl) !== listType) return;
+
+        var dropIndex = resolveCardSortIndex(cardEl);
+        if (dropIndex < 0) return;
+
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+
+        dragState.dropIndex = dropIndex;
+        clearDropTargets();
+        cardEl.classList.add('pm-drop-target');
+      });
+
+      gridEl.addEventListener('drop', function (event) {
+        if (!dragState.active || dragState.listType !== listType) return;
+        event.preventDefault();
+
+        var applied = applyListReorder(listType, dragState.fromIndex, dragState.dropIndex);
+        if (applied) {
+          dragState.moved = true;
+        }
+
+        clearDropTargets();
+      });
+
+      gridEl.addEventListener('dragend', function () {
+        if (dragState.cardEl) {
+          dragState.cardEl.classList.remove('pm-dragging');
+        }
+        clearDropTargets();
+
+        if (dragState.moved) {
+          suppressClickUntil = Date.now() + 300;
+        }
+
+        resetDragState();
+      });
+    }
+
     function handleGridClick(event) {
+      if (isClickSuppressed()) return;
+
       var addCard = event.target.closest('.pm-add-card');
       if (addCard) {
         var addType = addCard.getAttribute('data-item-type');
@@ -1678,6 +1828,8 @@
     }
 
     function handleVariantGridClick(event) {
+      if (isClickSuppressed()) return;
+
       var addCard = event.target.closest('[data-variant-add="1"]');
       if (addCard) {
         openPmVariantEditor(-1, true);
@@ -1703,6 +1855,9 @@
       if (accessoriesGrid) accessoriesGrid.addEventListener('click', handleGridClick);
       if (foodGrid) foodGrid.addEventListener('click', handleGridClick);
       if (variantGrid) variantGrid.addEventListener('click', handleVariantGridClick);
+      bindSortableGrid(accessoriesGrid, 'accessories');
+      bindSortableGrid(foodGrid, 'food');
+      bindSortableGrid(variantGrid, 'variants');
 
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
@@ -1811,19 +1966,6 @@
       if (editorEls.variantLevel2) editorEls.variantLevel2.addEventListener('input', function () {
         syncVariantDraftFromForm();
         if (state.variantEditor.previewLevel === 2) updateVariantPreview();
-      });
-      if (editorEls.variantTilt) editorEls.variantTilt.addEventListener('input', function () {
-        syncVariantDraftFromForm();
-        updateVariantPreview();
-      });
-      if (editorEls.variantTiltNumber) editorEls.variantTiltNumber.addEventListener('input', function () {
-        var tilt = Math.max(-45, Math.min(45, parseSignedInteger(this.value, 0)));
-        this.value = String(tilt);
-        if (editorEls.variantTilt) {
-          editorEls.variantTilt.value = String(tilt);
-        }
-        syncVariantDraftFromForm();
-        updateVariantPreview();
       });
       if (editorEls.variantSizeDown) editorEls.variantSizeDown.addEventListener('click', function () {
         changeVariantScale(-5);
