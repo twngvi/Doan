@@ -1531,6 +1531,22 @@ function getUserStatsFullHtml() {
   }
 }
 
+/**
+ * Lấy HTML đầy đủ của Course Stats (styles + content + scripts)
+ */
+function getCourseStatsFullHtml() {
+  try {
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/courseStats/course_stats_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/courseStats/course_stats_content').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/courseStats/course_stats_scripts').getContent();
+
+    return styles + content + scripts;
+  } catch (error) {
+    Logger.log("Error getting course stats full HTML: " + error.toString());
+    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Thống kê khóa học: " + error.toString() + "</p>";
+  }
+}
+
 // ========================================
 // PET MANAGEMENT DATA (GOOGLE SHEETS)
 // ========================================

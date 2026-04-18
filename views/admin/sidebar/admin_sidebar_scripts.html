@@ -588,6 +588,47 @@
       .getUserStatsFullHtml();
   }
 
+  let quizManagementLoaded = false;
+
+  function initquizmanagement() {
+    if (quizManagementLoaded) {
+      if (typeof initCourseStatsPage === 'function') {
+        initCourseStatsPage();
+      }
+      return;
+    }
+
+    loadQuizManagementContent();
+  }
+
+  function loadQuizManagementContent() {
+    const container = document.getElementById('course-stats-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        quizManagementLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initCourseStatsPage === 'function') {
+            initCourseStatsPage();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Thống kê khóa học: ' + error.message + '</div>';
+      })
+      .getCourseStatsFullHtml();
+  }
+
   let contentManagementLoaded = false;
 
   function initcontentmanagement() {
