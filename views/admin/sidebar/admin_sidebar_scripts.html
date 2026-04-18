@@ -100,7 +100,7 @@
 
     isAdminSidebarCollapsed = !isAdminSidebarCollapsed;
     sidebar.classList.toggle('collapsed', isAdminSidebarCollapsed);
-    document.body.classList.toggle('sidebar-collapsed', isAdminSidebarCollapsed);
+    document.body.classList.toggle('admin-sidebar-collapsed', isAdminSidebarCollapsed);
 
     // Save state
     localStorage.setItem('adminSidebarCollapsed', isAdminSidebarCollapsed);
@@ -109,13 +109,20 @@
   // Load Sidebar State
   function loadAdminSidebarState() {
     const saved = localStorage.getItem('adminSidebarCollapsed');
+    const sidebar = document.getElementById('adminSidebar');
+
     if (saved === 'true') {
       isAdminSidebarCollapsed = true;
-      const sidebar = document.getElementById('adminSidebar');
       if (sidebar) {
         sidebar.classList.add('collapsed');
-        document.body.classList.add('sidebar-collapsed');
       }
+      document.body.classList.add('admin-sidebar-collapsed');
+    } else {
+      isAdminSidebarCollapsed = false;
+      if (sidebar) {
+        sidebar.classList.remove('collapsed');
+      }
+      document.body.classList.remove('admin-sidebar-collapsed');
     }
   }
 
@@ -129,8 +136,8 @@
 
   // Show Admin Page
   function showAdminPage(pageId) {
-    // Hide all admin pages
-    document.querySelectorAll('[id^="page-"]').forEach(page => {
+    // Hide only admin sub-pages (avoid hiding global app pages like #page-admin)
+    document.querySelectorAll('#admin-panel .admin-page').forEach(page => {
       page.style.display = 'none';
     });
 
@@ -138,11 +145,16 @@
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
       targetPage.style.display = 'block';
-      
-      // Trigger page-specific init if exists
-      const initFn = window[`init${pageId.replace('page-', '').replace(/-/g, '')}`];
-      if (typeof initFn === 'function') {
-        initFn();
+
+      // User stats is loaded dynamically to avoid raw template directives rendering as text.
+      if (pageId === 'page-user-stats') {
+        inituserstats();
+      } else {
+        // Trigger page-specific init if exists
+        const initFn = window[`init${pageId.replace('page-', '').replace(/-/g, '')}`];
+        if (typeof initFn === 'function') {
+          initFn();
+        }
       }
     }
 
@@ -178,8 +190,9 @@
     sessionStorage.removeItem('authPanelOpen');
     sessionStorage.removeItem('authFormType');
     
-    // Remove admin sidebar class
+    // Remove admin sidebar classes
     document.body.classList.remove('has-admin-sidebar');
+    document.body.classList.remove('admin-sidebar-collapsed');
     
     // Reset landing CTA if available
     if (typeof resetLandingCTA === 'function') {
@@ -198,8 +211,9 @@
 
   // Navigate to User Site
   function navigateToUserSite() {
-    // Remove admin sidebar class
+    // Remove admin sidebar classes
     document.body.classList.remove('has-admin-sidebar');
+    document.body.classList.remove('admin-sidebar-collapsed');
     
     // Show dashboard page
     if (typeof showPage === 'function') {
@@ -298,12 +312,10 @@
   // Search Admin Pages
   function searchAdminPages(query) {
     const pages = [
-      { id: 'page-admin-dashboard', name: 'Tổng quan', icon: 'dashboard', keywords: ['dashboard', 'tong quan', 'home'] },
-      { id: 'page-online-stats', name: 'Đang online', icon: 'group', keywords: ['online', 'dang online', 'user', 'nguoi dung'] },
-      { id: 'page-user-management', name: 'Quản lý Users', icon: 'manage_accounts', keywords: ['user', 'quan ly', 'nguoi dung', 'account'] },
+      { id: 'page-online-stats', name: 'Tổng quan', icon: 'group', keywords: ['tong quan', 'overview', 'dashboard', 'online', 'dang online', 'user', 'nguoi dung'] },
       { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson', 'topic', 'tao moi', 'them', 'create'] },
-      { id: 'page-quiz-management', name: 'Quản lý Quiz', icon: 'quiz', keywords: ['quiz', 'cau hoi', 'trac nghiem'] },
-      { id: 'page-reports', name: 'Báo cáo', icon: 'analytics', keywords: ['report', 'bao cao', 'thong ke', 'analytics'] },
+      { id: 'page-quiz-management', name: 'Quản lý người dùng', icon: 'manage_accounts', keywords: ['user', 'nguoi dung', 'tai khoan', 'quan ly nguoi dung'] },
+      { id: 'page-user-stats', name: 'Thống kê người dùng', icon: 'bar_chart', keywords: ['thong ke', 'thong ke nguoi dung', 'user stats', 'analytics', 'nguoi dung'] },
       { id: 'page-settings', name: 'Cài đặt', icon: 'settings', keywords: ['setting', 'cai dat', 'config'] },
     ];
 
@@ -534,6 +546,47 @@
   // ========================================
   // CONTENT MANAGEMENT DYNAMIC LOADER
   // ========================================
+
+  let userStatsLoaded = false;
+
+  function inituserstats() {
+    if (userStatsLoaded) {
+      if (typeof initUserStatsPage === 'function') {
+        initUserStatsPage();
+      }
+      return;
+    }
+
+    loadUserStatsContent();
+  }
+
+  function loadUserStatsContent() {
+    const container = document.getElementById('user-stats-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        userStatsLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initUserStatsPage === 'function') {
+            initUserStatsPage();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Thống kê người dùng: ' + error.message + '</div>';
+      })
+      .getUserStatsFullHtml();
+  }
 
   let contentManagementLoaded = false;
 

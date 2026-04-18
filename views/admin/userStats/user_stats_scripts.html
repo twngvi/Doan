@@ -1,0 +1,399 @@
+<!-- User Statistics Page Scripts -->
+<script>
+  // ========================================
+  // USER STATS PAGE CONTROLLER
+  // ========================================
+
+  let userStatsState = {
+    users: [],
+    filteredUsers: [],
+    selectedUserId: null,
+    searchQuery: '',
+    sortBy: 'progress-desc',
+    initialized: false,
+  };
+
+  function initUserStatsPage() {
+    if (!userStatsState.initialized) {
+      bindUserStatsEvents();
+      userStatsState.initialized = true;
+    }
+
+    loadUserStatsData();
+  }
+
+  // Compatible with current dynamic init resolver in admin sidebar scripts.
+  window.inituserstats = initUserStatsPage;
+
+  function bindUserStatsEvents() {
+    const searchInput = document.getElementById('userStatsSearchInput');
+    const sortSelect = document.getElementById('userStatsSortSelect');
+    const refreshBtn = document.getElementById('userStatsRefreshBtn');
+
+    if (searchInput) {
+      searchInput.addEventListener('input', debounce((event) => {
+        userStatsState.searchQuery = String(event.target.value || '').trim().toLowerCase();
+        applyUserStatsFilters();
+      }, 250));
+    }
+
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (event) => {
+        userStatsState.sortBy = event.target.value;
+        applyUserStatsFilters();
+      });
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadUserStatsData);
+    }
+  }
+
+  async function loadUserStatsData() {
+    showUserStatsLoading(true);
+
+    try {
+      const result = await getUserStatsFromServer();
+      const users = (result && result.success && Array.isArray(result.data)) ? result.data : [];
+
+      userStatsState.users = users;
+      userStatsState.filteredUsers = users.slice();
+      if (!users.find((user) => user.id === userStatsState.selectedUserId)) {
+        userStatsState.selectedUserId = null;
+      }
+
+      applyUserStatsFilters();
+    } catch (error) {
+      console.error('loadUserStatsData error:', error);
+      userStatsState.users = [];
+      userStatsState.filteredUsers = [];
+      renderUserList();
+      renderUserDetail(null);
+    } finally {
+      showUserStatsLoading(false);
+    }
+  }
+
+  async function getUserStatsFromServer() {
+    if (typeof callAppsScript === 'function') {
+      return callAppsScript('getAdminUserLearningStats');
+    }
+
+    // Fallback mock data for UI testing when server API is not wired yet.
+    return Promise.resolve({
+      success: true,
+      data: buildUserStatsMockData(),
+    });
+  }
+
+  function applyUserStatsFilters() {
+    const query = userStatsState.searchQuery;
+    const sortBy = userStatsState.sortBy;
+
+    let users = userStatsState.users.filter((user) => {
+      if (!query) return true;
+      const name = String(user.name || '').toLowerCase();
+      const email = String(user.email || '').toLowerCase();
+      return name.includes(query) || email.includes(query);
+    });
+
+    users.sort((a, b) => compareUserStats(a, b, sortBy));
+
+    userStatsState.filteredUsers = users;
+
+    if (!userStatsState.selectedUserId && users.length > 0) {
+      userStatsState.selectedUserId = users[0].id;
+    }
+
+    if (userStatsState.selectedUserId && !users.find((user) => user.id === userStatsState.selectedUserId)) {
+      userStatsState.selectedUserId = users.length ? users[0].id : null;
+    }
+
+    renderUserList();
+    const selectedUser = users.find((user) => user.id === userStatsState.selectedUserId) || null;
+    renderUserDetail(selectedUser);
+  }
+
+  function compareUserStats(a, b, sortBy) {
+    if (sortBy === 'name-asc') {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+    }
+
+    const aStats = getUserSummaryStats(a);
+    const bStats = getUserSummaryStats(b);
+
+    if (sortBy === 'lessons-desc') return bStats.learnedLessons - aStats.learnedLessons;
+    if (sortBy === 'plays-desc') return bStats.totalPlays - aStats.totalPlays;
+    if (sortBy === 'attempts-desc') return bStats.totalAttempts - aStats.totalAttempts;
+
+    return bStats.overallProgress - aStats.overallProgress;
+  }
+
+  function renderUserList() {
+    const userList = document.getElementById('userStatsUserList');
+    const emptyState = document.getElementById('userStatsEmptyState');
+    const count = document.getElementById('userStatsDisplayedCount');
+
+    if (!userList || !emptyState || !count) return;
+
+    const users = userStatsState.filteredUsers;
+    count.textContent = `${users.length} người dùng`;
+
+    if (!users.length) {
+      userList.innerHTML = '';
+      userList.style.display = 'none';
+      emptyState.style.display = 'flex';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    userList.style.display = 'flex';
+
+    userList.innerHTML = users.map((user) => {
+      const stats = getUserSummaryStats(user);
+      const isActive = user.id === userStatsState.selectedUserId;
+
+      return `
+        <button class="user-list-item ${isActive ? 'active' : ''}" type="button" data-user-id="${escapeHtml(user.id)}">
+          <div class="user-item-main">
+            <h4 class="user-item-name">${escapeHtml(user.name)}</h4>
+            <span class="user-item-chip">${stats.overallProgress}%</span>
+          </div>
+          <p class="user-item-email">${escapeHtml(user.email || '')}</p>
+          <p class="user-item-email">Học ${stats.learnedLessons} bài • ${stats.totalAttempts} lần học • ${stats.totalPlays} lượt chơi</p>
+        </button>
+      `;
+    }).join('');
+
+    userList.querySelectorAll('.user-list-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        userStatsState.selectedUserId = item.dataset.userId;
+        applyUserStatsFilters();
+      });
+    });
+  }
+
+  function renderUserDetail(user) {
+    const placeholder = document.getElementById('userStatsDetailPlaceholder');
+    const content = document.getElementById('userStatsDetailContent');
+
+    if (!placeholder || !content) return;
+
+    if (!user) {
+      placeholder.style.display = 'flex';
+      content.style.display = 'none';
+      return;
+    }
+
+    placeholder.style.display = 'none';
+    content.style.display = 'flex';
+
+    renderDetailHeader(user);
+    renderSummaryCards(user);
+    renderLessonProgress(user);
+    renderAttemptTable(user);
+    renderPlaysList(user);
+  }
+
+  function renderDetailHeader(user) {
+    const header = document.getElementById('userStatsDetailHeader');
+    if (!header) return;
+
+    header.innerHTML = `
+      <h2 class="detail-user-name">${escapeHtml(user.name)}</h2>
+      <p class="detail-user-meta">${escapeHtml(user.email || '')} • ID: ${escapeHtml(user.id || '')}</p>
+    `;
+  }
+
+  function renderSummaryCards(user) {
+    const summaryCards = document.getElementById('userStatsSummaryCards');
+    if (!summaryCards) return;
+
+    const summary = getUserSummaryStats(user);
+    const cards = [
+      { label: 'Bài đã học', value: summary.learnedLessons },
+      { label: 'Tiến độ tổng', value: `${summary.overallProgress}%` },
+      { label: 'Số lần học', value: summary.totalAttempts },
+      { label: 'Số lượt chơi', value: summary.totalPlays },
+    ];
+
+    summaryCards.innerHTML = cards.map((card) => `
+      <article class="summary-card">
+        <p class="summary-label">${card.label}</p>
+        <p class="summary-value">${card.value}</p>
+      </article>
+    `).join('');
+  }
+
+  function renderLessonProgress(user) {
+    const container = document.getElementById('userStatsLessonProgressList');
+    if (!container) return;
+
+    const lessons = Array.isArray(user.lessons) ? user.lessons : [];
+    if (!lessons.length) {
+      container.innerHTML = '<div class="lesson-progress-item"><p class="lesson-meta">Chưa có dữ liệu bài học</p></div>';
+      return;
+    }
+
+    container.innerHTML = lessons.map((lesson) => {
+      const progress = normalizePercent(lesson.progressPercent);
+      return `
+        <article class="lesson-progress-item">
+          <div class="lesson-progress-top">
+            <p class="lesson-name">${escapeHtml(lesson.lessonTitle || lesson.lessonId || 'Bài học')}</p>
+            <p class="lesson-meta">${progress}%</p>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: ${progress}%;"></div>
+          </div>
+          <p class="lesson-meta">Học ${Number(lesson.attemptCount || 0)} lần • Điểm TB: ${Number(lesson.avgScore || 0)}</p>
+        </article>
+      `;
+    }).join('');
+  }
+
+  function renderAttemptTable(user) {
+    const tbody = document.getElementById('userStatsAttemptTableBody');
+    if (!tbody) return;
+
+    const attempts = Array.isArray(user.attempts) ? user.attempts : [];
+    if (!attempts.length) {
+      tbody.innerHTML = '<tr><td colspan="4">Chưa có dữ liệu điểm từng lần</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = attempts.map((attempt) => `
+      <tr>
+        <td>${formatDateTime(attempt.completedAt)}</td>
+        <td>${escapeHtml(attempt.lessonTitle || attempt.lessonId || '')}</td>
+        <td>#${Number(attempt.attemptNumber || 0)}</td>
+        <td class="score">${Number(attempt.score || 0)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderPlaysList(user) {
+    const container = document.getElementById('userStatsPlaysList');
+    if (!container) return;
+
+    const plays = Array.isArray(user.plays) ? user.plays : [];
+    if (!plays.length) {
+      container.innerHTML = '<div class="play-item"><p class="play-meta">Chưa có lịch sử lượt chơi</p></div>';
+      return;
+    }
+
+    container.innerHTML = plays.map((play) => `
+      <article class="play-item">
+        <div class="play-item-top">
+          <p class="play-topic">${escapeHtml(play.mode || 'Chế độ')} - ${escapeHtml(play.topicTitle || play.topicId || 'Topic')}</p>
+          <p class="play-meta">${formatDateTime(play.playedAt)}</p>
+        </div>
+        <p class="play-meta">Số lượt: ${Number(play.playCount || 0)} • Điểm cao nhất: ${Number(play.bestScore || 0)}</p>
+      </article>
+    `).join('');
+  }
+
+  function showUserStatsLoading(isLoading) {
+    const loading = document.getElementById('userStatsLoadingState');
+    const list = document.getElementById('userStatsUserList');
+    if (!loading || !list) return;
+
+    loading.style.display = isLoading ? 'flex' : 'none';
+    list.style.display = isLoading ? 'none' : 'flex';
+  }
+
+  function getUserSummaryStats(user) {
+    const lessons = Array.isArray(user.lessons) ? user.lessons : [];
+    const learnedLessons = lessons.filter((item) => Number(item.progressPercent || 0) > 0).length;
+    const overallProgress = lessons.length
+      ? Math.round(lessons.reduce((sum, item) => sum + normalizePercent(item.progressPercent), 0) / lessons.length)
+      : 0;
+
+    const attempts = Array.isArray(user.attempts) ? user.attempts : [];
+    const plays = Array.isArray(user.plays) ? user.plays : [];
+
+    return {
+      learnedLessons,
+      overallProgress,
+      totalAttempts: attempts.length,
+      totalPlays: plays.reduce((sum, play) => sum + Number(play.playCount || 0), 0),
+    };
+  }
+
+  function normalizePercent(value) {
+    const number = Number(value || 0);
+    if (Number.isNaN(number)) return 0;
+    return Math.max(0, Math.min(100, Math.round(number)));
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '-';
+
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '-';
+      return date.toLocaleString('vi-VN');
+    } catch (_error) {
+      return '-';
+    }
+  }
+
+  function escapeHtml(input) {
+    return String(input || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildUserStatsMockData() {
+    return [
+      {
+        id: 'u_demo_01',
+        name: 'Nguyen Van A',
+        email: 'vana@example.com',
+        lessons: [
+          { lessonId: 'L001', lessonTitle: 'Bai 1 - Chu cai', progressPercent: 100, attemptCount: 3, avgScore: 92 },
+          { lessonId: 'L002', lessonTitle: 'Bai 2 - Tu vung', progressPercent: 70, attemptCount: 2, avgScore: 81 },
+          { lessonId: 'L003', lessonTitle: 'Bai 3 - Ngu phap', progressPercent: 40, attemptCount: 1, avgScore: 66 },
+        ],
+        attempts: [
+          { completedAt: '2026-04-10T09:20:00Z', lessonId: 'L001', lessonTitle: 'Bai 1 - Chu cai', attemptNumber: 1, score: 88 },
+          { completedAt: '2026-04-11T09:20:00Z', lessonId: 'L001', lessonTitle: 'Bai 1 - Chu cai', attemptNumber: 2, score: 95 },
+          { completedAt: '2026-04-12T09:20:00Z', lessonId: 'L002', lessonTitle: 'Bai 2 - Tu vung', attemptNumber: 1, score: 81 },
+        ],
+        plays: [
+          { playedAt: '2026-04-12T11:00:00Z', mode: 'MCQ', topicId: 'T001', topicTitle: 'Dong vat', playCount: 3, bestScore: 100 },
+          { playedAt: '2026-04-12T12:00:00Z', mode: 'Matching', topicId: 'T003', topicTitle: 'Thuc an', playCount: 2, bestScore: 80 },
+        ],
+      },
+      {
+        id: 'u_demo_02',
+        name: 'Tran Thi B',
+        email: 'thib@example.com',
+        lessons: [
+          { lessonId: 'L001', lessonTitle: 'Bai 1 - Chu cai', progressPercent: 100, attemptCount: 2, avgScore: 90 },
+          { lessonId: 'L002', lessonTitle: 'Bai 2 - Tu vung', progressPercent: 100, attemptCount: 4, avgScore: 96 },
+          { lessonId: 'L003', lessonTitle: 'Bai 3 - Ngu phap', progressPercent: 100, attemptCount: 2, avgScore: 92 },
+        ],
+        attempts: [
+          { completedAt: '2026-04-09T08:00:00Z', lessonId: 'L001', lessonTitle: 'Bai 1 - Chu cai', attemptNumber: 1, score: 85 },
+          { completedAt: '2026-04-10T08:00:00Z', lessonId: 'L002', lessonTitle: 'Bai 2 - Tu vung', attemptNumber: 1, score: 95 },
+          { completedAt: '2026-04-11T08:00:00Z', lessonId: 'L003', lessonTitle: 'Bai 3 - Ngu phap', attemptNumber: 1, score: 92 },
+        ],
+        plays: [
+          { playedAt: '2026-04-11T10:00:00Z', mode: 'MCQ', topicId: 'T002', topicTitle: 'Mau sac', playCount: 5, bestScore: 95 },
+        ],
+      },
+    ];
+  }
+
+  function debounce(fn, wait) {
+    let timeout;
+    return function debounced(...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+</script>
