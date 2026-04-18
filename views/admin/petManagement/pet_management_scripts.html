@@ -229,6 +229,89 @@
       return n;
     }
 
+    function normalizeUnlockConditionEntry(condition) {
+      var safeCondition = condition || {};
+      var unlockType = String(safeCondition.type || 'level').trim() || 'level';
+      var unlockValue = safeCondition.value;
+
+      if (unlockType === 'level') {
+        unlockValue = Math.max(1, parseNonNegative(unlockValue, 1));
+        return {
+          type: 'level',
+          value: unlockValue,
+        };
+      }
+
+      unlockValue = String(unlockValue || '').trim();
+      if (!unlockValue) return null;
+
+      return {
+        type: unlockType,
+        value: unlockValue,
+      };
+    }
+
+    function normalizeUnlockMode(mode) {
+      return String(mode || 'all') === 'any' ? 'any' : 'all';
+    }
+
+    function normalizeUnlockConditionData(unlockCondition) {
+      var raw = unlockCondition || {};
+
+      if (raw && Array.isArray(raw.conditions)) {
+        var mode = normalizeUnlockMode(raw.mode);
+        var conditions = raw.conditions
+          .map(normalizeUnlockConditionEntry)
+          .filter(Boolean);
+
+        if (conditions.length === 0) {
+          return { type: 'level', value: 1 };
+        }
+        if (conditions.length === 1) {
+          return conditions[0];
+        }
+
+        return {
+          mode: mode,
+          conditions: conditions,
+        };
+      }
+
+      return normalizeUnlockConditionEntry(raw) || { type: 'level', value: 1 };
+    }
+
+    function unlockConditionToList(unlockCondition) {
+      var normalized = normalizeUnlockConditionData(unlockCondition);
+      if (Array.isArray(normalized.conditions)) {
+        return normalized.conditions.slice();
+      }
+      return [normalized];
+    }
+
+    function getUnlockConditionMode(unlockCondition) {
+      var normalized = normalizeUnlockConditionData(unlockCondition);
+      return Array.isArray(normalized.conditions) ? normalizeUnlockMode(normalized.mode) : 'all';
+    }
+
+    function unlockConditionFromList(conditions, mode) {
+      var normalizedConditions = (Array.isArray(conditions) ? conditions : [])
+        .map(normalizeUnlockConditionEntry)
+        .filter(Boolean);
+      var normalizedMode = normalizeUnlockMode(mode);
+
+      if (normalizedConditions.length === 0) {
+        return { type: 'level', value: 1 };
+      }
+      if (normalizedConditions.length === 1) {
+        return normalizedConditions[0];
+      }
+
+      return {
+        mode: normalizedMode,
+        conditions: normalizedConditions,
+      };
+    }
+
     function normalizeAccessoryPositionMode(positionMode) {
       return ACCESSORY_POSITIONS.indexOf(positionMode) >= 0 ? positionMode : 'center';
     }
@@ -317,23 +400,13 @@
         rotDeg: activeProfile.rotDeg,
         positionMode: positionMode,
         positionProfiles: positionProfiles,
-        unlockCondition: {
-          type: safeItem.unlockCondition && safeItem.unlockCondition.type ? safeItem.unlockCondition.type : "level",
-          value: safeItem.unlockCondition && safeItem.unlockCondition.value ? safeItem.unlockCondition.value : 1
-        }
+        unlockCondition: normalizeUnlockConditionData(safeItem.unlockCondition)
       };
     }
 
     function cloneVariant(variant) {
       var safe = variant || {};
-      var unlock = safe.unlockCondition || {};
-      var unlockType = unlock.type || "level";
-      var unlockValue = unlock.value;
-      if (unlockType === "level") {
-        unlockValue = Math.max(1, parseNonNegative(unlockValue, 1));
-      } else {
-        unlockValue = String(unlockValue || "");
-      }
+      var unlockCondition = normalizeUnlockConditionData(safe.unlockCondition);
 
       var scalePercent = parseNonNegative(safe.scalePercent, 100);
       scalePercent = Math.max(40, Math.min(200, scalePercent));
@@ -346,10 +419,7 @@
         level1: String(safe.level1 || DEFAULT_LEVEL1_FILE),
         level2: String(safe.level2 || ""),
         secondPetPriceXqp: parseNonNegative(safe.secondPetPriceXqp, 500),
-        unlockCondition: {
-          type: unlockType,
-          value: unlockValue,
-        },
+        unlockCondition: unlockCondition,
         scalePercent: scalePercent,
       };
     }
@@ -426,15 +496,6 @@
       return items
         .map(function (item, index) {
           var safeItem = item || {};
-          var unlock = safeItem.unlockCondition || {};
-          var unlockType = unlock.type || 'level';
-          var unlockValue = unlock.value;
-
-          if (unlockType === 'level') {
-            unlockValue = Math.max(1, parseNonNegative(unlockValue, 1));
-          } else {
-            unlockValue = String(unlockValue || '');
-          }
 
           var fallbackId =
             type === 'food'
@@ -453,10 +514,7 @@
             scalePercent: Math.max(40, Math.min(220, parseNonNegative(safeItem.scalePercent, 100))),
             positionMode: normalizeAccessoryPositionMode(String(safeItem.positionMode || 'center')),
             positionProfiles: buildDefaultAccessoryProfiles(safeItem),
-            unlockCondition: {
-              type: unlockType,
-              value: unlockValue,
-            },
+            unlockCondition: normalizeUnlockConditionData(safeItem.unlockCondition),
           };
 
           if (type === 'food') {
@@ -710,6 +768,11 @@
       editorEls.unlockTopicWrap = document.getElementById('pm-unlock-topic-wrap');
       editorEls.unlockTopicLabel = document.getElementById('pm-unlock-topic-label');
       editorEls.unlockTopic = document.getElementById('pm-field-unlock-topic');
+      editorEls.unlockModeWrap = document.getElementById('pm-unlock-mode-wrap');
+      editorEls.unlockMode = document.getElementById('pm-field-unlock-mode');
+      editorEls.unlockExtraGroup = document.getElementById('pm-unlock-extra-group');
+      editorEls.unlockExtraList = document.getElementById('pm-unlock-extra-list');
+      editorEls.addUnlockConditionBtn = document.getElementById('pm-add-unlock-condition');
       editorEls.foodXpWrap = document.getElementById('pm-food-xp-wrap');
       editorEls.foodXp = document.getElementById('pm-field-food-xp');
       editorEls.accessoryPositionWrap = document.getElementById('pm-accessory-position-wrap');
@@ -759,6 +822,11 @@
       editorEls.variantUnlockLevel = document.getElementById('pm-variant-unlock-level');
       editorEls.variantUnlockTopicWrap = document.getElementById('pm-variant-unlock-topic-wrap');
       editorEls.variantUnlockTopic = document.getElementById('pm-variant-unlock-topic');
+      editorEls.variantUnlockModeWrap = document.getElementById('pm-variant-unlock-mode-wrap');
+      editorEls.variantUnlockMode = document.getElementById('pm-variant-unlock-mode');
+      editorEls.variantUnlockExtraGroup = document.getElementById('pm-variant-unlock-extra-group');
+      editorEls.variantUnlockExtraList = document.getElementById('pm-variant-unlock-extra-list');
+      editorEls.addVariantUnlockConditionBtn = document.getElementById('pm-variant-add-unlock-condition');
       editorEls.variantSizeDown = document.getElementById('pm-variant-size-down');
       editorEls.variantSizeUp = document.getElementById('pm-variant-size-up');
       editorEls.variantSizeValue = document.getElementById('pm-variant-size-value');
@@ -851,7 +919,6 @@
 
       state.petVariants.forEach(function (variant, index) {
         var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
-        var secondPetPriceXqp = parseNonNegative(variant.secondPetPriceXqp, 500);
         [1, 2].forEach(function (level) {
           var src = resolveAssetSrc(level === 1 ? (variant.level1 || DEFAULT_LEVEL1_FILE) : (variant.level2 || ''));
           var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
@@ -866,7 +933,6 @@
             '  <span class="pm-item-name">' + safeName + '</span>' +
             '  <div class="pm-variant-meta">' +
             '    <span class="pm-variant-level-pill">' + levelLabel + '</span>' +
-            '    <span class="pm-variant-price-pill">Pet 2: ' + secondPetPriceXqp + ' XQP</span>' +
             '  </div>' +
             '</div>';
         });
@@ -886,14 +952,118 @@
       editorEls.variantUnlockTopicWrap.style.display = isLevel ? 'none' : 'flex';
     }
 
-    function syncVariantTopicOptions() {
-      if (!editorEls.variantUnlockTopic) return;
+    function buildTopicOptionsHtml(selectedId) {
+      var selected = String(selectedId || '');
       var topics = state.topics.length ? state.topics : TOPIC_FALLBACK;
-      editorEls.variantUnlockTopic.innerHTML = topics
+      return topics
         .map(function (topic) {
-          return '<option value="' + topic.id + '">' + topic.label + '</option>';
+          var topicId = String(topic.id || '');
+          var selectedAttr = topicId === selected ? ' selected' : '';
+          return '<option value="' + topicId + '"' + selectedAttr + '>' + topic.label + '</option>';
         })
         .join('');
+    }
+
+    function syncVariantTopicOptions() {
+      if (!editorEls.variantUnlockTopic) return;
+      var currentValue = String(editorEls.variantUnlockTopic.value || '');
+      editorEls.variantUnlockTopic.innerHTML = buildTopicOptionsHtml(currentValue);
+    }
+
+    function toggleUnlockExtraRowValueFields(rowEl) {
+      if (!rowEl) return;
+
+      var typeSelect = rowEl.querySelector('.pm-unlock-extra-type');
+      var levelInput = rowEl.querySelector('.pm-unlock-extra-level');
+      var topicSelect = rowEl.querySelector('.pm-unlock-extra-topic');
+      if (!typeSelect || !levelInput || !topicSelect) return;
+
+      var unlockType = String(typeSelect.value || 'level');
+      var isLevel = unlockType === 'level';
+      levelInput.style.display = isLevel ? 'block' : 'none';
+      topicSelect.style.display = isLevel ? 'none' : 'block';
+    }
+
+    function createUnlockExtraRow(condition) {
+      var normalized = normalizeUnlockConditionEntry(condition) || { type: 'level', value: 1 };
+      var rowEl = document.createElement('div');
+      rowEl.className = 'pm-unlock-extra-row';
+      rowEl.innerHTML =
+        '<select class="pm-unlock-extra-type">' +
+          '<option value="level">Đạt level thanh tiến độ</option>' +
+          '<option value="topic">Hoàn thành bài học của topic</option>' +
+          '<option value="topic_quiz">Hoàn thành Quiz của topic</option>' +
+          '<option value="topic_matching">Hoàn thành Matching của topic</option>' +
+        '</select>' +
+        '<input class="pm-unlock-extra-level" type="number" min="1" step="1" value="1">' +
+        '<select class="pm-unlock-extra-topic"></select>' +
+        '<button type="button" class="pm-unlock-extra-remove" aria-label="Xóa điều kiện">×</button>';
+
+      var typeSelect = rowEl.querySelector('.pm-unlock-extra-type');
+      var levelInput = rowEl.querySelector('.pm-unlock-extra-level');
+      var topicSelect = rowEl.querySelector('.pm-unlock-extra-topic');
+
+      if (topicSelect) {
+        topicSelect.innerHTML = buildTopicOptionsHtml(normalized.type === 'level' ? '' : normalized.value);
+      }
+      if (typeSelect) {
+        typeSelect.value = normalized.type;
+      }
+      if (levelInput && normalized.type === 'level') {
+        levelInput.value = String(Math.max(1, parseNonNegative(normalized.value, 1)));
+      }
+
+      if (typeSelect) {
+        typeSelect.addEventListener('change', function () {
+          toggleUnlockExtraRowValueFields(rowEl);
+        });
+      }
+
+      toggleUnlockExtraRowValueFields(rowEl);
+      return rowEl;
+    }
+
+    function setUnlockExtraRows(listEl, conditions) {
+      if (!listEl) return;
+      listEl.innerHTML = '';
+
+      (Array.isArray(conditions) ? conditions : []).forEach(function (condition) {
+        listEl.appendChild(createUnlockExtraRow(condition));
+      });
+    }
+
+    function collectUnlockExtraRows(listEl) {
+      if (!listEl) return [];
+
+      var conditions = [];
+      listEl.querySelectorAll('.pm-unlock-extra-row').forEach(function (rowEl) {
+        var typeSelect = rowEl.querySelector('.pm-unlock-extra-type');
+        var levelInput = rowEl.querySelector('.pm-unlock-extra-level');
+        var topicSelect = rowEl.querySelector('.pm-unlock-extra-topic');
+        if (!typeSelect) return;
+
+        var unlockType = String(typeSelect.value || 'level');
+        var unlockValue = unlockType === 'level'
+          ? Math.max(1, parseNonNegative(levelInput ? levelInput.value : 1, 1))
+          : String(topicSelect ? topicSelect.value || '' : '');
+
+        var normalized = normalizeUnlockConditionEntry({
+          type: unlockType,
+          value: unlockValue,
+        });
+        if (normalized) {
+          conditions.push(normalized);
+        }
+      });
+
+      return conditions;
+    }
+
+    function refreshUnlockExtraTopicOptions() {
+      document.querySelectorAll('.pm-unlock-extra-topic').forEach(function (topicSelect) {
+        var currentValue = String(topicSelect.value || '');
+        topicSelect.innerHTML = buildTopicOptionsHtml(currentValue);
+      });
     }
 
     function updateVariantScaleValue() {
@@ -997,6 +1167,11 @@
         editLevel: previewLevel === 2 ? 2 : 1
       };
 
+      var unlockMode = getUnlockConditionMode(draft.unlockCondition);
+      var unlockConditions = unlockConditionToList(draft.unlockCondition);
+      var primaryUnlock = unlockConditions[0] || { type: 'level', value: 1 };
+      var extraUnlockConditions = unlockConditions.slice(1);
+
       if (editorEls.variantTitle) {
         editorEls.variantTitle.textContent = isNew ? 'Thêm hình dạng PET mới' : 'Chỉnh sửa hình dạng PET';
       }
@@ -1012,13 +1187,15 @@
       if (editorEls.variantLevel2) editorEls.variantLevel2.value = draft.level2 || '';
       if (editorEls.variantLevel2FileName) editorEls.variantLevel2FileName.textContent = draft.level2 ? String(draft.level2).split('/').pop() : 'Chưa chọn tệp';
       if (editorEls.variantLevel2Preview) editorEls.variantLevel2Preview.src = resolveAssetSrc(draft.level2 || '');
-      if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
-      if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String((draft.unlockCondition && draft.unlockCondition.value) || 1);
+      if (editorEls.variantUnlockType) editorEls.variantUnlockType.value = primaryUnlock.type || 'level';
+      if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.value = String(primaryUnlock.value || 1);
+      if (editorEls.variantUnlockMode) editorEls.variantUnlockMode.value = unlockMode;
 
       syncVariantTopicOptions();
-      if (editorEls.variantUnlockTopic && draft.unlockCondition && draft.unlockCondition.type !== 'level') {
-        editorEls.variantUnlockTopic.value = String(draft.unlockCondition.value || '');
+      if (editorEls.variantUnlockTopic && primaryUnlock.type !== 'level') {
+        editorEls.variantUnlockTopic.value = String(primaryUnlock.value || '');
       }
+      setUnlockExtraRows(editorEls.variantUnlockExtraList, extraUnlockConditions);
 
       normalizeVariantUnlockFieldVisibility();
       setVariantEditLevel(state.variantEditor.editLevel, false);
@@ -1042,11 +1219,14 @@
       var unlockValue = unlockType === 'level'
         ? Math.max(1, parseNonNegative(editorEls.variantUnlockLevel ? editorEls.variantUnlockLevel.value : 1, 1))
         : (editorEls.variantUnlockTopic ? String(editorEls.variantUnlockTopic.value || '') : '');
+      var unlockMode = editorEls.variantUnlockMode ? normalizeUnlockMode(editorEls.variantUnlockMode.value) : 'all';
 
-      draft.unlockCondition = {
+      var conditions = [{
         type: unlockType,
         value: unlockValue,
-      };
+      }].concat(collectUnlockExtraRows(editorEls.variantUnlockExtraList));
+
+      draft.unlockCondition = unlockConditionFromList(conditions, unlockMode);
     }
 
     function changeVariantScale(step) {
@@ -1147,12 +1327,8 @@
 
     function populateTopicOptions() {
       if (!editorEls.unlockTopic) return;
-      var topics = state.topics.length ? state.topics : TOPIC_FALLBACK;
-      editorEls.unlockTopic.innerHTML = topics
-        .map(function (topic) {
-          return '<option value="' + topic.id + '">' + topic.label + '</option>';
-        })
-        .join('');
+      var currentValue = String(editorEls.unlockTopic.value || '');
+      editorEls.unlockTopic.innerHTML = buildTopicOptionsHtml(currentValue);
     }
 
     function syncUnlockFieldVisibility() {
@@ -1166,11 +1342,11 @@
 
       if (!editorEls.unlockTopicLabel) return;
       if (unlockType === 'topic_quiz') {
-        editorEls.unlockTopicLabel.textContent = 'Chon topic Quiz can dat';
+        editorEls.unlockTopicLabel.textContent = 'Chọn topic cần hoàn thành Quiz';
       } else if (unlockType === 'topic_matching') {
-        editorEls.unlockTopicLabel.textContent = 'Chon topic Matching can dat';
+        editorEls.unlockTopicLabel.textContent = 'Chọn topic cần hoàn thành Matching';
       } else {
-        editorEls.unlockTopicLabel.textContent = 'Chon topic can dat';
+        editorEls.unlockTopicLabel.textContent = 'Chọn topic cần hoàn thành bài học';
       }
     }
 
@@ -1270,6 +1446,10 @@
       var isFood = type === 'food';
       var isAccessory = type === 'accessories';
       var isBackground = type === 'backgrounds';
+      var unlockMode = getUnlockConditionMode(draft.unlockCondition);
+      var unlockConditions = unlockConditionToList(draft.unlockCondition);
+      var primaryUnlock = unlockConditions[0] || { type: 'level', value: 1 };
+      var extraUnlockConditions = unlockConditions.slice(1);
 
       if (editorEls.title) {
         if (isBackground) {
@@ -1287,18 +1467,22 @@
       updateSelectedImageFileLabel(isNew ? '' : (draft.file ? String(draft.file).split('/').pop() : ''));
       if (editorEls.price) editorEls.price.value = isNew ? '' : String(draft.priceXqp || 0);
       if (editorEls.unlockType) {
-        editorEls.unlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
+        editorEls.unlockType.value = primaryUnlock.type || 'level';
+      }
+      if (editorEls.unlockMode) {
+        editorEls.unlockMode.value = unlockMode;
       }
       if (editorEls.unlockLevel) {
         editorEls.unlockLevel.value = (isBackground || !isNew)
-          ? String((draft.unlockCondition && draft.unlockCondition.value) || 1)
+          ? String(primaryUnlock.value || 1)
           : '';
       }
 
       populateTopicOptions();
-      if (editorEls.unlockTopic && draft.unlockCondition.type !== 'level') {
-        editorEls.unlockTopic.value = String(draft.unlockCondition.value || '');
+      if (editorEls.unlockTopic && primaryUnlock.type !== 'level') {
+        editorEls.unlockTopic.value = String(primaryUnlock.value || '');
       }
+      setUnlockExtraRows(editorEls.unlockExtraList, isBackground ? [] : extraUnlockConditions);
 
       if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
@@ -1674,6 +1858,12 @@
       if (editorEls.price && editorEls.price.parentElement) {
         editorEls.price.parentElement.style.display = state.editor.type === 'backgrounds' ? 'none' : 'flex';
       }
+      if (editorEls.unlockExtraGroup) {
+        editorEls.unlockExtraGroup.style.display = state.editor.type === 'backgrounds' ? 'none' : 'flex';
+      }
+      if (editorEls.unlockModeWrap) {
+        editorEls.unlockModeWrap.style.display = state.editor.type === 'backgrounds' ? 'none' : 'flex';
+      }
     }
 
     function handleSaveEditor() {
@@ -1687,6 +1877,7 @@
       var file = editorEls.image ? editorEls.image.value.trim() : '';
       var priceXqp = parseNonNegative(editorEls.price ? editorEls.price.value : 0, 0);
       var unlockType = editorEls.unlockType ? editorEls.unlockType.value : 'level';
+      var unlockMode = editorEls.unlockMode ? normalizeUnlockMode(editorEls.unlockMode.value) : 'all';
       var unlockValue;
 
       if (!name) {
@@ -1711,10 +1902,14 @@
       payload.name = name;
       payload.file = file;
       payload.priceXqp = type === 'backgrounds' ? 0 : priceXqp;
-      payload.unlockCondition = {
+      var unlockConditions = [{
         type: unlockType,
         value: unlockValue
-      };
+      }];
+      if (type !== 'backgrounds') {
+        unlockConditions = unlockConditions.concat(collectUnlockExtraRows(editorEls.unlockExtraList));
+      }
+      payload.unlockCondition = unlockConditionFromList(unlockConditions, unlockMode);
       
       // Accessory position and scale
       if (type === 'accessories') {
@@ -2019,6 +2214,24 @@
       bindSortableGrid(variantGrid, 'variants');
 
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
+      if (editorEls.unlockMode) {
+        editorEls.unlockMode.addEventListener('change', function () {
+          // Item editor reads unlock mode on save; this keeps UI behavior consistent.
+        });
+      }
+      if (editorEls.addUnlockConditionBtn && editorEls.unlockExtraList) {
+        editorEls.addUnlockConditionBtn.addEventListener('click', function () {
+          editorEls.unlockExtraList.appendChild(createUnlockExtraRow({ type: 'level', value: 1 }));
+        });
+      }
+      if (editorEls.unlockExtraList) {
+        editorEls.unlockExtraList.addEventListener('click', function (event) {
+          var removeBtn = event.target.closest('.pm-unlock-extra-remove');
+          if (!removeBtn) return;
+          var rowEl = removeBtn.closest('.pm-unlock-extra-row');
+          if (rowEl) rowEl.remove();
+        });
+      }
       if (editorEls.image) editorEls.image.addEventListener('input', updateEditorImagePreview);
       if (editorEls.imageFile) editorEls.imageFile.addEventListener('change', handleImageFileChange);
       if (editorEls.accessoryProfileTabs) {
@@ -2090,6 +2303,26 @@
         normalizeVariantUnlockFieldVisibility();
         syncVariantDraftFromForm();
       });
+      if (editorEls.variantUnlockMode) {
+        editorEls.variantUnlockMode.addEventListener('change', syncVariantDraftFromForm);
+      }
+      if (editorEls.addVariantUnlockConditionBtn && editorEls.variantUnlockExtraList) {
+        editorEls.addVariantUnlockConditionBtn.addEventListener('click', function () {
+          editorEls.variantUnlockExtraList.appendChild(createUnlockExtraRow({ type: 'level', value: 1 }));
+          syncVariantDraftFromForm();
+        });
+      }
+      if (editorEls.variantUnlockExtraList) {
+        editorEls.variantUnlockExtraList.addEventListener('click', function (event) {
+          var removeBtn = event.target.closest('.pm-unlock-extra-remove');
+          if (!removeBtn) return;
+          var rowEl = removeBtn.closest('.pm-unlock-extra-row');
+          if (rowEl) rowEl.remove();
+          syncVariantDraftFromForm();
+        });
+        editorEls.variantUnlockExtraList.addEventListener('change', syncVariantDraftFromForm);
+        editorEls.variantUnlockExtraList.addEventListener('input', syncVariantDraftFromForm);
+      }
       if (editorEls.variantUnlockTopic) editorEls.variantUnlockTopic.addEventListener('change', syncVariantDraftFromForm);
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
@@ -2152,10 +2385,12 @@
           if (parsed.length > 0) state.topics = parsed;
           populateTopicOptions();
           syncVariantTopicOptions();
+          refreshUnlockExtraTopicOptions();
         })
         .withFailureHandler(function () {
           populateTopicOptions();
           syncVariantTopicOptions();
+          refreshUnlockExtraTopicOptions();
         })
         .getAllTopicsForAdmin();
     }

@@ -147,7 +147,7 @@
     const PET_NAME_MAX_LENGTH = 24;
     const NO_ACCESSORY_VALUE = "";
     const MAX_ACCESSORIES_PER_PET = 2;
-    const MAX_OWNED_PET_VARIANTS = 2;
+    const MAX_OWNED_PET_VARIANTS = 999;
     const DEFAULT_STAGE_BACKGROUNDS = [
       { id: "bg1", name: "Nền 1", fileName: "bg-1.svg" },
       { id: "bg2", name: "Nền 2", fileName: "bg-2.svg" },
@@ -233,8 +233,7 @@
       backgroundPanelOpen: false,
       selectedStageBackgroundIndex: 0,
       petDisplayName: DEFAULT_PET_NAME,
-      petNameLoadedUserId: "",
-      petNameLoading: false,
+      petNamesByVariantId: {},
       totalXQP: 0,
       posBaseX: 0,
       posBaseY: 0,
@@ -242,8 +241,9 @@
       lastSavedConfig: null,
       isPaused: false,
       pauseTimeout: null,
-      originalPetName: "",
-      progressionXP: 0, // Total accumulated XP
+      progressionXP: 0,
+      petProgressByVariantId: {},
+      feedingInProgress: false,
       isRolling: false,
       autoSaveTimeoutId: null,
       catalogLoaded: false,
@@ -287,34 +287,167 @@
       return petTooltipEl;
     }
 
+    function normalizeUnlockConditionEntry(condition) {
+      const safeCondition = condition || {};
+      const unlockType = String(safeCondition.type || "level").trim() || "level";
+      let unlockValue = safeCondition.value;
+
+      if (unlockType === "level") {
+        unlockValue = Math.max(1, toNonNegativeNumber(unlockValue, 1));
+        return {
+          type: "level",
+          value: unlockValue,
+        };
+      }
+
+      unlockValue = String(unlockValue || "").trim();
+      if (!unlockValue) return null;
+
+      return {
+        type: unlockType,
+        value: unlockValue,
+      };
+    }
+
+    function normalizeUnlockMode(mode) {
+      return String(mode || "all") === "any" ? "any" : "all";
+    }
+
+    function normalizeUnlockCondition(condition) {
+      const raw = condition || {};
+
+      if (raw && Array.isArray(raw.conditions)) {
+        const mode = normalizeUnlockMode(raw.mode);
+        const conditions = raw.conditions
+          .map(normalizeUnlockConditionEntry)
+          .filter(Boolean);
+
+        if (conditions.length === 0) {
+          return { type: "level", value: 1 };
+        }
+        if (conditions.length === 1) {
+          return conditions[0];
+        }
+
+        return {
+          mode: mode,
+          conditions: conditions,
+        };
+      }
+
+      return normalizeUnlockConditionEntry(raw) || { type: "level", value: 1 };
+    }
+
+    function getUnlockConditionMeta(condition) {
+      const normalized = normalizeUnlockCondition(condition);
+      if (Array.isArray(normalized.conditions)) {
+        return {
+          mode: normalizeUnlockMode(normalized.mode),
+          conditions: normalized.conditions.slice(),
+        };
+      }
+
+      return {
+        mode: "all",
+        conditions: [normalized],
+      };
+    }
+
+    function unlockConditionToList(condition) {
+      return getUnlockConditionMeta(condition).conditions;
+    }
+
+    function describeUnlockConditionEntry(condition) {
+      const safeCondition = normalizeUnlockConditionEntry(condition) || {
+        type: "level",
+        value: 1,
+      };
+      const unlockType = String(safeCondition.type || "level");
+      const unlockValue = safeCondition.value;
+
+      if (unlockType === "level") {
+        return "Level tiến độ " + unlockValue;
+      }
+      if (unlockType === "topic") {
+        return "Hoàn thành bài học của topic " + unlockValue;
+      }
+      if (unlockType === "topic_quiz") {
+        return "Hoàn thành Quiz của topic " + unlockValue;
+      }
+      if (unlockType === "topic_matching") {
+        return "Hoàn thành Matching của topic " + unlockValue;
+      }
+
+      return unlockType + " " + unlockValue;
+    }
+
+    function describeUnlockCondition(condition) {
+      const meta = getUnlockConditionMeta(condition);
+      const separator = meta.mode === "any" ? " HOẶC " : " VÀ ";
+      return meta.conditions.map(describeUnlockConditionEntry).join(separator);
+    }
+
+    function isSingleUnlockConditionSatisfied(condition) {
+      const safeCondition = normalizeUnlockConditionEntry(condition);
+      if (!safeCondition) return false;
+
+      const unlockType = String(safeCondition.type || "level");
+      if (unlockType === "level") {
+        return getCurrentProgressLevel() >= Math.max(1, toNonNegativeNumber(safeCondition.value, 1));
+      }
+
+      const topicId = String(safeCondition.value || "").trim();
+      if (!topicId) return false;
+
+      const progress = getTopicProgressFromCache(topicId);
+      if (!progress) return false;
+
+      if (unlockType === "topic") {
+        return !!(progress.completed || progress.lessonCompleted);
+      }
+      if (unlockType === "topic_quiz") {
+        return !!(progress.quizDone || progress.completed);
+      }
+      if (unlockType === "topic_matching") {
+        return !!(progress.matchingDone || progress.completed);
+      }
+
+      return false;
+    }
+
+    function isUnlockConditionSatisfied(condition) {
+      const meta = getUnlockConditionMeta(condition);
+      if (meta.mode === "any") {
+        return meta.conditions.some(isSingleUnlockConditionSatisfied);
+      }
+      return meta.conditions.every(isSingleUnlockConditionSatisfied);
+    }
+
     function showPetTooltip(e, itemData, itemType) {
       const tooltip = getPetTooltip();
       const isVariantTooltip = itemType === "variant";
+      const isLockedInfoOnly = !!(itemData && itemData.isLocked);
+      const unlockText = itemData && itemData.unlockCondition
+        ? describeUnlockCondition(itemData.unlockCondition)
+        : "";
       tooltip.classList.toggle("is-variant-tooltip", isVariantTooltip);
 
-      let html = `<div class="tooltip-img-wrap"><img /></div>`;
+      let html = "";
+      if (!isLockedInfoOnly) {
+        html += `<div class="tooltip-img-wrap"><img /></div>`;
+      }
       html += `<div class="tooltip-info-wrap"><h4>${itemData.name}</h4>`;
-      
-      if (itemData.priceXqp > 0) {
+
+      if (!isLockedInfoOnly && itemData.priceXqp > 0) {
         html += `<div class="tooltip-meta tooltip-price"><span>Giá mua:</span> <strong>${itemData.priceXqp} XQP</strong></div>`;
       }
-      if (itemType === 'food' && itemData.petXpGain) {
+      if (!isLockedInfoOnly && itemType === 'food' && itemData.petXpGain) {
         html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${itemData.petXpGain} XP</strong></div>`;
       }
-      if (itemData.unlockCondition) {
-        const unlockType = String(itemData.unlockCondition.type || "level");
-        const unlockValue = itemData.unlockCondition.value;
-        const hasUnlockInfo = unlockType === "level"
-          ? toNonNegativeNumber(unlockValue, 0) > 0
-          : String(unlockValue || "").trim().length > 0;
-        if (hasUnlockInfo) {
-        let condText = "";
-        if (unlockType === 'level') condText = `Level tiến độ ${unlockValue}`;
-        else condText = `${unlockType} ${unlockValue}`;
-        html += `<div class="tooltip-meta tooltip-unlock"><span>Mở khóa:</span> <strong>${condText}</strong></div>`;
-        }
+      if (unlockText) {
+        html += `<div class="tooltip-meta tooltip-unlock"><span>Điều kiện mở khóa:</span> <strong>${unlockText}</strong></div>`;
       }
-      if (isVariantTooltip) {
+      if (!isLockedInfoOnly && isVariantTooltip) {
         const secondPetPrice = Math.max(0, toNonNegativeNumber(itemData.secondPetPriceXqp, 500));
         if (itemData.isOwned) {
           html += `<div class="tooltip-meta"><span>Trạng thái:</span> <strong>Đã sở hữu</strong></div>`;
@@ -326,9 +459,9 @@
       html += `</div>`;
       tooltip.innerHTML = html;
       tooltip.classList.add("visible");
-      
+
       const img = tooltip.querySelector("img");
-      if (img) {
+      if (img && !isLockedInfoOnly) {
          const previewFile = itemData.file || itemData.level2 || itemData.level1 || "";
          fetchAssetUrl(previewFile).then(u => { if(u) img.src = u; });
       }
@@ -365,8 +498,78 @@
       return parsed;
     }
 
-    function getCurrentProgressLevel() {
-      return Math.floor((state.progressionXP || 0) / 100) + 1;
+    function getActiveVariantId() {
+      const byIndex = String(getVariantIdByIndex(state.currentIndex) || "").trim();
+      if (byIndex) return byIndex;
+      return String((state.lockedVariantId || "")).trim();
+    }
+
+    function getPetDisplayNameByVariantId(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      const fromMap = safeVariantId ? state.petNamesByVariantId[safeVariantId] : "";
+      return sanitizePetName(fromMap || DEFAULT_PET_NAME);
+    }
+
+    function setPetDisplayNameByVariantId(variantId, nextName) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      state.petNamesByVariantId[safeVariantId] = sanitizePetName(nextName);
+      if (safeVariantId === getActiveVariantId()) {
+        state.petDisplayName = state.petNamesByVariantId[safeVariantId];
+      }
+    }
+
+    function getPetProgressXP(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return 0;
+      const raw = state.petProgressByVariantId[safeVariantId];
+      const parsed = parseInt(raw, 10);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    }
+
+    function setPetProgressXP(variantId, xpValue) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      const safeXP = Math.max(0, toNonNegativeNumber(xpValue, 0));
+      state.petProgressByVariantId[safeVariantId] = safeXP;
+      if (safeVariantId === getActiveVariantId()) {
+        state.progressionXP = safeXP;
+      }
+    }
+
+    function getProgressLevelByXP(xpValue) {
+      const safeXP = Math.max(0, toNonNegativeNumber(xpValue, 0));
+      return Math.floor(safeXP / 100) + 1;
+    }
+
+    function getCurrentProgressLevel(variantId) {
+      const targetVariantId = String(variantId || getActiveVariantId() || "").trim();
+      const xp = getPetProgressXP(targetVariantId);
+      return getProgressLevelByXP(xp);
+    }
+
+    function ensurePetProgressAndNamesMaps() {
+      const ownedIds = Array.isArray(state.ownedVariantIds) ? state.ownedVariantIds : [];
+      ownedIds.forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+
+        if (typeof state.petProgressByVariantId[safeVariantId] === "undefined") {
+          state.petProgressByVariantId[safeVariantId] = 0;
+        }
+
+        if (typeof state.petNamesByVariantId[safeVariantId] === "undefined") {
+          const variantIndex = getVariantIndexById(safeVariantId);
+          const variant = variantIndex >= 0 ? PET_VARIANTS[variantIndex] : null;
+          state.petNamesByVariantId[safeVariantId] = sanitizePetName((variant && variant.name) || DEFAULT_PET_NAME);
+        }
+      });
+
+      const activeVariantId = getActiveVariantId();
+      if (activeVariantId) {
+        state.progressionXP = getPetProgressXP(activeVariantId);
+        state.petDisplayName = getPetDisplayNameByVariantId(activeVariantId);
+      }
     }
 
     function canEquipAccessories() {
@@ -377,12 +580,7 @@
       const condition = item && item.unlockCondition
         ? item.unlockCondition
         : { type: "level", value: 1 };
-
-      if (String(condition.type || "level") !== "level") {
-        return false;
-      }
-
-      return getCurrentProgressLevel() < toNonNegativeNumber(condition.value, 1);
+      return !isUnlockConditionSatisfied(condition);
     }
 
     function normalizeAccessoryPositionMode(positionMode) {
@@ -447,7 +645,7 @@
             scalePercent: Math.max(40, Math.min(220, toNonNegativeNumber(safe.scalePercent, 100))),
             positionMode: normalizeAccessoryPositionMode(String(safe.positionMode || 'center')),
             positionProfiles: normalizeAccessoryPositionProfiles(safe.positionProfiles, safe),
-            unlockCondition: safe.unlockCondition || { type: 'level', value: 1 }
+            unlockCondition: normalizeUnlockCondition(safe.unlockCondition || { type: 'level', value: 1 })
           };
 
           if (!normalized.id || !normalized.file) return null;
@@ -471,20 +669,11 @@
           const fileName = String(safe.file || safe.fileName || fallback.fileName || "").trim();
           if (!fileName) return null;
 
-          const rawUnlock = safe.unlockCondition || { type: "level", value: 1 };
-          const unlockType = String(rawUnlock.type || "level");
-          const unlockValue = unlockType === "level"
-            ? Math.max(1, toNonNegativeNumber(rawUnlock.value, 1))
-            : String(rawUnlock.value || "");
-
           return {
             id: String(safe.id || fallback.id || ("bg" + (index + 1))),
             name: String(safe.name || fallback.name || ("Nền " + (index + 1))),
             fileName: fileName,
-            unlockCondition: {
-              type: unlockType,
-              value: unlockValue,
-            },
+            unlockCondition: normalizeUnlockCondition(safe.unlockCondition || { type: "level", value: 1 }),
           };
         })
         .filter(Boolean);
@@ -494,12 +683,7 @@
       const condition = background && background.unlockCondition
         ? background.unlockCondition
         : { type: "level", value: 1 };
-
-      if (String(condition.type || "level") !== "level") {
-        return true;
-      }
-
-      return getCurrentProgressLevel() >= toNonNegativeNumber(condition.value, 1);
+      return isUnlockConditionSatisfied(condition);
     }
 
     function firstUnlockedBackgroundIndex() {
@@ -531,20 +715,7 @@
     }
 
     function normalizeVariantUnlockCondition(unlockCondition) {
-      const raw = unlockCondition || {};
-      const unlockType = String(raw.type || "level");
-
-      if (unlockType === "level") {
-        return {
-          type: "level",
-          value: Math.max(1, toNonNegativeNumber(raw.value, 1)),
-        };
-      }
-
-      return {
-        type: unlockType,
-        value: String(raw.value || ""),
-      };
+      return normalizeUnlockCondition(unlockCondition);
     }
 
     function normalizePetVariantsFromServer(items) {
@@ -612,7 +783,8 @@
         unique.unshift(safeFallback);
       }
 
-      return unique.slice(0, MAX_OWNED_PET_VARIANTS);
+      const maxOwned = Math.max(1, Math.min(MAX_OWNED_PET_VARIANTS, PET_VARIANTS.length || MAX_OWNED_PET_VARIANTS));
+      return unique.slice(0, maxOwned);
     }
 
     function isVariantOwned(variantId) {
@@ -622,7 +794,9 @@
     }
 
     function canOwnMoreVariants() {
-      return (state.ownedVariantIds || []).length < MAX_OWNED_PET_VARIANTS;
+      const totalVariants = Array.isArray(PET_VARIANTS) ? PET_VARIANTS.length : 0;
+      if (totalVariants <= 0) return false;
+      return (state.ownedVariantIds || []).length < totalVariants;
     }
 
     function syncLockedVariantByCurrentIndex() {
@@ -669,29 +843,7 @@
 
     function isPetVariantUnlocked(variant) {
       const condition = variant && variant.unlockCondition ? variant.unlockCondition : { type: "level", value: 1 };
-      const type = String(condition.type || "level");
-
-      if (type === "level") {
-        return getCurrentProgressLevel() >= toNonNegativeNumber(condition.value, 1);
-      }
-
-      const topicId = String(condition.value || "").trim();
-      if (!topicId) return false;
-
-      const progress = getTopicProgressFromCache(topicId);
-      if (!progress) return false;
-
-      if (type === "topic") {
-        return !!(progress.completed || progress.lessonCompleted);
-      }
-      if (type === "topic_quiz") {
-        return !!(progress.quizDone || progress.completed);
-      }
-      if (type === "topic_matching") {
-        return !!(progress.matchingDone || progress.completed);
-      }
-
-      return false;
+      return isUnlockConditionSatisfied(condition);
     }
 
     function updatePetCatalogHints() {
@@ -1034,8 +1186,7 @@
     }
 
     function applyLevel1TiltByPointer(clientX) {
-      const xp = state.progressionXP || 0;
-      const progressionLevel = Math.floor(xp / 100) + 1;
+      const progressionLevel = getCurrentProgressLevel();
       if (progressionLevel !== 1 || state.isPressing || state.isRolling) return;
 
       const visualEl = document.getElementById("petVisual");
@@ -1127,12 +1278,9 @@
     }
 
     function updatePetNameTagUI() {
-      const nameEl = document.getElementById("petNameTagValue");
-      const safeName = sanitizePetName(state.petDisplayName);
-
-      if (nameEl) {
-        nameEl.textContent = safeName;
-      }
+      const activeVariantId = getActiveVariantId();
+      const safeName = getPetDisplayNameByVariantId(activeVariantId);
+      state.petDisplayName = safeName;
 
       const headerNameEl = document.getElementById("petHeaderPetName");
       if (headerNameEl) {
@@ -1142,9 +1290,132 @@
       updateSaveButtonUI(); // Check if name change makes it dirty
     }
 
-    function updatePetLevelProgressUI() {
-      const xp = state.progressionXP || 0;
-      const level = Math.floor(xp / 100) + 1;
+    function showHoverPetName(nameValue) {
+      const hoverEl = document.getElementById("petHoverName");
+      if (!hoverEl) return;
+      hoverEl.textContent = sanitizePetName(nameValue);
+      hoverEl.classList.add("visible");
+    }
+
+    function hideHoverPetName() {
+      const hoverEl = document.getElementById("petHoverName");
+      if (!hoverEl) return;
+      hoverEl.classList.remove("visible");
+      hoverEl.textContent = "";
+    }
+
+    async function renamePetByVariantId(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+
+      const currentName = getPetDisplayNameByVariantId(safeVariantId);
+      let input = null;
+
+      if (typeof window.showAppPrompt === "function") {
+        input = await window.showAppPrompt("Nhập tên PET mới", currentName, {
+          title: "Đổi Tên PET",
+          confirmText: "Lưu",
+          cancelText: "Hủy",
+          inputType: "text",
+        });
+      } else {
+        input = window.prompt("Nhập tên PET mới", currentName);
+      }
+
+      if (input === null) return;
+      const nextName = sanitizePetName(input);
+      setPetDisplayNameByVariantId(safeVariantId, nextName);
+      showHoverPetName(nextName);
+      renderPetMultiGrid();
+      updatePetNameTagUI();
+      queuePetConfigAutoSave();
+    }
+
+    function renderPetMultiGrid() {
+      const gridEl = document.getElementById("petMultiGrid");
+      if (!gridEl) return;
+
+      const activeVariantId = getActiveVariantId();
+      gridEl.innerHTML = "";
+
+      (state.ownedVariantIds || []).forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        const variantIndex = getVariantIndexById(safeVariantId);
+        const variant = variantIndex >= 0 ? PET_VARIANTS[variantIndex] : null;
+        if (!variant) return;
+
+        const petXP = getPetProgressXP(safeVariantId);
+        const petLevel = getProgressLevelByXP(petXP);
+        const petProgress = petXP % 100;
+        const displayImage = petLevel >= 3 ? (variant.level2 || variant.level1) : variant.level1;
+
+        const slotEl = document.createElement("div");
+        slotEl.className = "pet-slot" + (safeVariantId === activeVariantId ? " active" : "");
+        slotEl.setAttribute("data-variant-id", safeVariantId);
+        slotEl.setAttribute("title", getPetDisplayNameByVariantId(safeVariantId));
+
+        const thumbWrapEl = document.createElement("div");
+        thumbWrapEl.className = "pet-slot-thumb-wrap";
+
+        const thumbEl = document.createElement("img");
+        thumbEl.className = "pet-slot-thumb";
+        thumbEl.alt = getPetDisplayNameByVariantId(safeVariantId);
+        thumbEl.loading = "lazy";
+        applySrcAsync(thumbEl, displayImage);
+
+        const progressWrapEl = document.createElement("div");
+        progressWrapEl.className = "pet-slot-progress";
+        progressWrapEl.innerHTML =
+          '<div class="pet-slot-progress-track"><span class="pet-slot-progress-fill" style="width:' + petProgress + '%"></span></div>' +
+          '<span class="pet-slot-progress-text">Lv ' + petLevel + ' • ' + petProgress + '/100 XP</span>';
+
+        thumbWrapEl.appendChild(thumbEl);
+        slotEl.appendChild(thumbWrapEl);
+        slotEl.appendChild(progressWrapEl);
+
+        slotEl.addEventListener("mouseenter", function () {
+          showHoverPetName(getPetDisplayNameByVariantId(safeVariantId));
+        });
+        slotEl.addEventListener("mouseleave", function () {
+          hideHoverPetName();
+        });
+        slotEl.addEventListener("click", function () {
+          state.currentIndex = variantIndex;
+          renderPet();
+          queuePetConfigAutoSave();
+        });
+        slotEl.addEventListener("dblclick", function (event) {
+          event.preventDefault();
+          renamePetByVariantId(safeVariantId);
+        });
+
+        slotEl.addEventListener("dragover", function (event) {
+          event.preventDefault();
+          slotEl.classList.add("is-drop-target");
+        });
+        slotEl.addEventListener("dragleave", function () {
+          slotEl.classList.remove("is-drop-target");
+        });
+        slotEl.addEventListener("drop", function (event) {
+          event.preventDefault();
+          slotEl.classList.remove("is-drop-target");
+          const foodFile = String(event.dataTransfer && event.dataTransfer.getData("text/pet-food-file") || "").trim();
+          if (!foodFile) return;
+          const foodItem = FOOD_ITEMS.find(function (item) {
+            return String((item && item.file) || "").trim() === foodFile;
+          });
+          if (!foodItem) return;
+          feedPetVariant(safeVariantId, foodItem);
+        });
+
+        gridEl.appendChild(slotEl);
+      });
+    }
+
+    function updatePetLevelProgressUI(variantId) {
+      const activeVariantId = String(variantId || getActiveVariantId() || "").trim();
+      const xp = getPetProgressXP(activeVariantId);
+      const level = getProgressLevelByXP(xp);
       const currentXPProgress = xp % 100;
 
       const levelTextEl = document.getElementById("petHeaderLevelText");
@@ -1163,27 +1434,154 @@
       }
     }
 
-    function feedPet(xpGain, foodName) {
-      const gainedXP = Math.max(0, toNonNegativeNumber(xpGain, 20));
-      const previousXP = state.progressionXP || 0;
-      state.progressionXP = previousXP + gainedXP;
+    function showPetLevelUpPopup(variantId, newLevel) {
+      const safeVariantId = String(variantId || "").trim();
+      const variantIndex = getVariantIndexById(safeVariantId);
+      const variant = variantIndex >= 0 ? PET_VARIANTS[variantIndex] : null;
+      if (!variant) return;
 
-      // Level up feedback
-      const currentLevel = Math.floor(state.progressionXP / 100) + 1;
-      const prevLevel = Math.floor(previousXP / 100) + 1;
-      
-      if (currentLevel > prevLevel) {
+      const unlockedImageFile = newLevel >= 3
+        ? (variant.level2 || variant.level1)
+        : variant.level1;
+
+      const existing = document.getElementById("petLevelUpOverlay");
+      if (existing) existing.remove();
+
+      const overlayEl = document.createElement("div");
+      overlayEl.id = "petLevelUpOverlay";
+      overlayEl.className = "pet-levelup-overlay";
+      overlayEl.innerHTML =
+        '<div class="pet-levelup-dialog" role="dialog" aria-modal="true">' +
+          '<h3 class="pet-levelup-title">' + sanitizePetName(getPetDisplayNameByVariantId(safeVariantId)) + ' đã lên Level ' + newLevel + '!</h3>' +
+          '<p class="pet-levelup-subtitle">Hình dạng mới của PET vừa được mở khóa.</p>' +
+          '<div class="pet-levelup-preview"><img id="petLevelUpPreviewImg" alt="Unlocked form"></div>' +
+          '<button type="button" class="pet-levelup-close" id="petLevelUpCloseBtn">Đã hiểu</button>' +
+        '</div>';
+
+      document.body.appendChild(overlayEl);
+
+      const previewImgEl = document.getElementById("petLevelUpPreviewImg");
+      if (previewImgEl) {
+        applySrcAsync(previewImgEl, unlockedImageFile);
+      }
+
+      const closeBtn = document.getElementById("petLevelUpCloseBtn");
+      if (closeBtn) {
+        closeBtn.addEventListener("click", function () {
+          overlayEl.remove();
+        });
+      }
+
+      overlayEl.addEventListener("click", function (event) {
+        if (event.target === overlayEl) {
+          overlayEl.remove();
+        }
+      });
+    }
+
+    function deductXQPForFood(priceXqp) {
+      return new Promise(function (resolve) {
+        const cost = Math.max(0, toNonNegativeNumber(priceXqp, 0));
+        if (cost <= 0) {
+          resolve({ success: true, newTotalXQP: state.totalXQP });
+          return;
+        }
+
+        const userEmail = window.currentUser && window.currentUser.email
+          ? String(window.currentUser.email).trim()
+          : "";
+        if (!userEmail || typeof google === "undefined" || !google.script || !google.script.run) {
+          resolve({ success: false, message: "Không thể kết nối server để trừ XQP" });
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            resolve(result || { success: false, message: "Không thể trừ XQP" });
+          })
+          .withFailureHandler(function (error) {
+            resolve({ success: false, message: error && error.message ? error.message : String(error) });
+          })
+          .updateUserXQP(userEmail, -cost, "pet_food");
+      });
+    }
+
+    async function feedPetVariant(variantId, foodItem) {
+      const safeVariantId = String(variantId || getActiveVariantId() || "").trim();
+      if (!safeVariantId || !foodItem) return;
+      if (state.feedingInProgress) return;
+
+      const lockedNow = isProgressLevelLocked(foodItem);
+      if (lockedNow) {
+        if (typeof showToast === "function") {
+          showToast(
+            "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(foodItem.unlockCondition),
+            "warning",
+          );
+        }
+        return;
+      }
+
+      const gainedXP = Math.max(0, toNonNegativeNumber(foodItem.petXpGain, 20));
+      const foodCost = Math.max(0, toNonNegativeNumber(foodItem.priceXqp, 0));
+      const safeFoodName = String(foodItem.name || "Food");
+
+      if ((state.totalXQP || 0) < foodCost) {
+        if (typeof showToast === "function") {
+          showToast("Không đủ XQP để cho ăn " + safeFoodName, "warning");
+        }
+        return;
+      }
+
+      state.feedingInProgress = true;
+      const deductionResult = await deductXQPForFood(foodCost);
+      state.feedingInProgress = false;
+
+      if (!deductionResult || deductionResult.success !== true) {
+        if (typeof showToast === "function") {
+          showToast((deductionResult && deductionResult.message) || "Không thể trừ XQP", "error");
+        }
+        return;
+      }
+
+      state.totalXQP = Math.max(0, toNonNegativeNumber(deductionResult.newTotalXQP, state.totalXQP - foodCost));
+      if (window.currentUser) {
+        window.currentUser.totalXQP = state.totalXQP;
+      }
+
+      const xqpDisplay = document.getElementById("petXQPBalance");
+      if (xqpDisplay) {
+        xqpDisplay.textContent = Number(state.totalXQP).toLocaleString();
+      }
+
+      const previousXP = getPetProgressXP(safeVariantId);
+      const previousLevel = getProgressLevelByXP(previousXP);
+      const nextXP = previousXP + gainedXP;
+      setPetProgressXP(safeVariantId, nextXP);
+      const currentLevel = getProgressLevelByXP(nextXP);
+
+      if (currentLevel > previousLevel) {
+        showPetLevelUpPopup(safeVariantId, currentLevel);
         if (typeof showToast === "function") {
           showToast("PET đã lên Level " + currentLevel + "!", "success");
         }
       } else if (typeof showToast === "function") {
-        const safeFoodName = String(foodName || "Food");
-        showToast("PET ăn " + safeFoodName + " và nhận +" + gainedXP + " XP", "info");
+        showToast("PET ăn " + safeFoodName + " (+" + gainedXP + " XP, -" + foodCost + " XQP)", "info");
       }
 
       renderPet();
-      updateSaveButtonUI();
       queuePetConfigAutoSave();
+    }
+
+    function feedPet(xpGain, foodName) {
+      const activeVariantId = getActiveVariantId();
+      if (!activeVariantId) return;
+      feedPetVariant(activeVariantId, {
+        name: foodName || "Food",
+        petXpGain: xpGain,
+        priceXqp: 0,
+        unlockCondition: { type: "level", value: 1 },
+      });
     }
 
     function resetPetProgression() {
@@ -1199,6 +1597,10 @@
       state.selectionLocked = false;
       state.ownedVariantIds = normalizeOwnedVariantIds([], nextVariantId);
       state.lockedVariantId = state.ownedVariantIds[0] || nextVariantId;
+      state.petProgressByVariantId = {};
+      state.petNamesByVariantId = {};
+      ensurePetProgressAndNamesMaps();
+      setPetProgressXP(nextVariantId, 0);
       
       if (typeof showToast === "function") {
         showToast("Đã reset PET về Level 1 và chọn ngẫu nhiên trứng mới", "info");
@@ -1210,12 +1612,28 @@
     }
 
     function buildPersistedConfig() {
-      const progressionXP = state.progressionXP || 0;
+      ensurePetProgressAndNamesMaps();
+      const progressionXP = getPetProgressXP(getActiveVariantId());
       const currentVariantId = String(getVariantIdByIndex(state.currentIndex) || state.lockedVariantId || "").trim();
       const ownedVariantIds = normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId);
       const lockedVariantId = String(
         ownedVariantIds[0] || currentVariantId,
       ).trim();
+
+      const safeProgressByVariant = {};
+      ownedVariantIds.forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+        safeProgressByVariant[safeVariantId] = getPetProgressXP(safeVariantId);
+      });
+
+      const safeNamesByVariant = {};
+      ownedVariantIds.forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+        safeNamesByVariant[safeVariantId] = getPetDisplayNameByVariantId(safeVariantId);
+      });
+
       return {
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
@@ -1228,88 +1646,10 @@
         currentVariantId: currentVariantId,
         ownedVariantIds: ownedVariantIds,
         lockedVariantId: lockedVariantId,
+        petProgressByVariantId: safeProgressByVariant,
+        petNamesByVariantId: safeNamesByVariant,
         petConfigVersion: PET_CONFIG_VERSION,
       };
-    }
-
-    function savePetNameToServer(newPetName) {
-      if (!window.currentUser?.userId) return;
-      if (
-        typeof google === "undefined" ||
-        !google.script ||
-        !google.script.run
-      )
-        return;
-
-      google.script.run
-        .withSuccessHandler(function (result) {
-          if (!result || !result.success) {
-            if (typeof showToast === "function") {
-              showToast((result && result.message) || "Không lưu được tên PET", "error");
-            }
-            return;
-          }
-
-          state.petDisplayName = sanitizePetName(result.petName || newPetName);
-          state.originalPetName = state.petDisplayName; // Update original name on successful save
-          updatePetNameTagUI();
-
-          if (typeof showToast === "function") {
-            showToast("Đã lưu tên PET", "success");
-          }
-        })
-        .withFailureHandler(function (error) {
-          if (typeof showToast === "function") {
-            showToast("Lỗi lưu tên PET: " + (error && error.message ? error.message : error), "error");
-          }
-        })
-        .savePetName({
-          userId: window.currentUser.userId,
-          petName: newPetName,
-        });
-    }
-
-    function loadPetNameFromServer() {
-      const userId = window.currentUser?.userId
-        ? String(window.currentUser.userId).trim()
-        : "";
-
-      if (!userId) {
-        updatePetNameTagUI();
-        return;
-      }
-
-      if (state.petNameLoading || state.petNameLoadedUserId === userId) {
-        updatePetNameTagUI();
-        return;
-      }
-
-      if (
-        typeof google === "undefined" ||
-        !google.script ||
-        !google.script.run
-      ) {
-        updatePetNameTagUI();
-        return;
-      }
-
-      state.petNameLoading = true;
-
-      google.script.run
-        .withSuccessHandler(function (result) {
-          if (result && result.success && result.petName) {
-            state.petDisplayName = sanitizePetName(result.petName);
-            state.originalPetName = state.petDisplayName; // Store original name
-          }
-          state.petNameLoadedUserId = userId;
-          state.petNameLoading = false;
-          updatePetNameTagUI();
-        })
-        .withFailureHandler(function () {
-          state.petNameLoading = false;
-          updatePetNameTagUI();
-        })
-        .getPetName(userId);
     }
 
     function isDirty() {
@@ -1317,7 +1657,7 @@
 
       const currentSelected = JSON.stringify(getPersistedSelectedAccessories());
       const savedSelected = JSON.stringify(Array.isArray(state.lastSavedConfig.selectedAccessories) ? state.lastSavedConfig.selectedAccessories : []);
-      const currentXP = toNonNegativeNumber(state.progressionXP, 0);
+      const currentXP = toNonNegativeNumber(getPetProgressXP(getActiveVariantId()), 0);
       const savedXP = toNonNegativeNumber(state.lastSavedConfig.progressionXP, 0);
       const currentVariantId = String(getVariantIdByIndex(state.currentIndex) || "").trim();
       const savedVariantId = String(
@@ -1335,6 +1675,20 @@
           savedVariantId,
         ),
       );
+      const currentPetProgressByVariant = {};
+      normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId).forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+        currentPetProgressByVariant[safeVariantId] = getPetProgressXP(safeVariantId);
+      });
+      const savedPetProgressByVariant = state.lastSavedConfig.petProgressByVariantId || {};
+      const currentPetNamesByVariant = {};
+      normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId).forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+        currentPetNamesByVariant[safeVariantId] = getPetDisplayNameByVariantId(safeVariantId);
+      });
+      const savedPetNamesByVariant = state.lastSavedConfig.petNamesByVariantId || {};
       
       return state.currentIndex !== state.lastSavedConfig.currentIndex ||
              state.isLevelTwo !== state.lastSavedConfig.isLevelTwo ||
@@ -1343,7 +1697,8 @@
              currentXP !== savedXP ||
              currentVariantId !== savedVariantId ||
              currentOwnedVariantIds !== savedOwnedVariantIds ||
-             state.petDisplayName !== state.originalPetName;
+             JSON.stringify(currentPetProgressByVariant) !== JSON.stringify(savedPetProgressByVariant) ||
+             JSON.stringify(currentPetNamesByVariant) !== JSON.stringify(savedPetNamesByVariant);
     }
 
     function updateSaveButtonUI() {
@@ -1438,22 +1793,57 @@
             state.selectedStageBackgroundIndex = Number.isFinite(loadedBackgroundIndex)
               ? Math.max(0, loadedBackgroundIndex)
               : 0;
-            const loadedXP = parseInt(config.progressionXP, 10);
-            if (Number.isFinite(loadedXP) && loadedXP >= 0) {
-              state.progressionXP = loadedXP;
-            } else {
-              const loadedLevel = parseInt(config.progressionLevel, 10);
-              const loadedProgress = parseInt(config.progressionXPProgress, 10);
-              if (Number.isFinite(loadedLevel)) {
-                const safeLevel = Math.max(1, loadedLevel);
-                const safeProgress = Number.isFinite(loadedProgress)
-                  ? Math.max(0, Math.min(99, loadedProgress))
-                  : 0;
-                state.progressionXP = (safeLevel - 1) * 100 + safeProgress;
-              } else {
-                state.progressionXP = state.progressionXP || 0;
+
+            const loadedProgressMap =
+              config.petProgressByVariantId && typeof config.petProgressByVariantId === "object"
+                ? config.petProgressByVariantId
+                : {};
+            const loadedNamesMap =
+              config.petNamesByVariantId && typeof config.petNamesByVariantId === "object"
+                ? config.petNamesByVariantId
+                : {};
+
+            state.petProgressByVariantId = {};
+            state.petNamesByVariantId = {};
+
+            state.ownedVariantIds.forEach(function (variantId) {
+              const safeVariantId = String(variantId || "").trim();
+              if (!safeVariantId) return;
+
+              const variantXP = parseInt(loadedProgressMap[safeVariantId], 10);
+              if (Number.isFinite(variantXP) && variantXP >= 0) {
+                state.petProgressByVariantId[safeVariantId] = variantXP;
+              }
+
+              const variantName = loadedNamesMap[safeVariantId];
+              if (typeof variantName === "string" && variantName.trim()) {
+                state.petNamesByVariantId[safeVariantId] = sanitizePetName(variantName);
+              }
+            });
+
+            // Backward compatibility for old single-progression schema.
+            if (Object.keys(state.petProgressByVariantId).length === 0) {
+              let fallbackXP = parseInt(config.progressionXP, 10);
+              if (!(Number.isFinite(fallbackXP) && fallbackXP >= 0)) {
+                const loadedLevel = parseInt(config.progressionLevel, 10);
+                const loadedProgress = parseInt(config.progressionXPProgress, 10);
+                if (Number.isFinite(loadedLevel)) {
+                  const safeLevel = Math.max(1, loadedLevel);
+                  const safeProgress = Number.isFinite(loadedProgress)
+                    ? Math.max(0, Math.min(99, loadedProgress))
+                    : 0;
+                  fallbackXP = (safeLevel - 1) * 100 + safeProgress;
+                } else {
+                  fallbackXP = 0;
+                }
+              }
+              const fallbackVariantId = state.ownedVariantIds[0] || loadedCurrentVariantId || getVariantIdByIndex(state.currentIndex);
+              if (fallbackVariantId) {
+                state.petProgressByVariantId[String(fallbackVariantId).trim()] = Math.max(0, toNonNegativeNumber(fallbackXP, 0));
               }
             }
+
+            ensurePetProgressAndNamesMaps();
 
             enforceLockedVariantSelection();
             syncLockedVariantByCurrentIndex();
@@ -1660,31 +2050,7 @@
     }
 
     function bindPetNameEditor() {
-      const tagBtn = document.getElementById("petNameTagButton");
-      if (!tagBtn) return;
-
-      tagBtn.addEventListener("click", async function () {
-        const currentName = sanitizePetName(state.petDisplayName);
-        let input = null;
-
-        if (typeof window.showAppPrompt === "function") {
-          input = await window.showAppPrompt("Nhập tên PET mới", currentName, {
-            title: "Đổi Tên PET",
-            confirmText: "Lưu",
-            cancelText: "Hủy",
-            inputType: "text",
-          });
-        } else {
-          input = window.prompt("Nhập tên PET mới", currentName);
-        }
-
-        if (input === null) return;
-
-        const nextName = sanitizePetName(input);
-        state.petDisplayName = nextName;
-         updatePetNameTagUI();
-        savePetNameToServer(nextName);
-      });
+      // PET rename is handled by double-clicking each pet card in the stage.
     }
 
     function getAccessoryRule(fileName) {
@@ -1891,11 +2257,14 @@
       enforceLockedVariantSelection();
       ensureCurrentVariantAccessible();
       ensureValidBackgroundSelection();
-      const xp = state.progressionXP || 0;
-      const progressionLevel = Math.floor(xp / 100) + 1;
+      ensurePetProgressAndNamesMaps();
+
+      const activeVariantId = getActiveVariantId();
+      const xp = getPetProgressXP(activeVariantId);
+      const progressionLevel = getProgressLevelByXP(xp);
       
       // Update visual level state: Progression Level 3+ is Mature (Level 2 visuals)
-      state.isLevelTwo = canEquipAccessories();
+      state.isLevelTwo = progressionLevel >= 3;
 
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
@@ -1913,7 +2282,7 @@
         levelBadgeEl.textContent = levelText;
       }
 
-      updatePetLevelProgressUI();
+      updatePetLevelProgressUI(activeVariantId);
 
       if (stageEl) {
         stageEl.style.boxShadow = "inset 0 0 0 1px " + variant.tone + "44";
@@ -1948,6 +2317,8 @@
         renderEyes();
         renderAccessory();
       }, 50);
+
+      renderPetMultiGrid();
 
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
@@ -2020,25 +2391,46 @@
       state.currentIndex = firstOwnedIndex >= 0 ? firstOwnedIndex : 0;
     }
 
-    function purchaseSecondPetVariant(variant, index) {
+    function requestPurchaseConfirmation(variantName, priceXqp) {
+      return new Promise(function (resolve) {
+        const safeName = String(variantName || "PET");
+        const safePrice = Math.max(0, toNonNegativeNumber(priceXqp, 0));
+        const message = "Bạn có chắc muốn mua " + safeName + " với giá " + safePrice + " XQP không?";
+
+        if (typeof window.showAppConfirm === "function") {
+          window.showAppConfirm(message, {
+            title: "Xác nhận mua PET",
+            confirmText: "Mua ngay",
+            cancelText: "Hủy",
+          }).then(function (ok) {
+            resolve(!!ok);
+          }).catch(function () {
+            resolve(false);
+          });
+          return;
+        }
+
+        resolve(window.confirm(message));
+      });
+    }
+
+    async function purchaseSecondPetVariant(variant, index) {
       const targetVariantId = String((variant && variant.id) || "").trim();
       if (!targetVariantId) return;
 
       if (!canOwnMoreVariants()) {
         if (typeof showToast === "function") {
-          showToast("Bạn chỉ có thể sở hữu tối đa 2 pet", "warning");
+          showToast("Bạn đã sở hữu toàn bộ PET hiện có", "info");
         }
         return;
       }
 
       if (!isPetVariantUnlocked(variant)) {
         if (typeof showToast === "function") {
-          const cond = variant.unlockCondition || { type: "level", value: 1 };
-          if (cond.type === "level") {
-            showToast("Pet này yêu cầu Level tiến độ " + cond.value, "warning");
-          } else {
-            showToast("Pet này chưa đủ điều kiện mở khóa", "warning");
-          }
+          showToast(
+            "Pet này chưa mở khóa. Cần: " + describeUnlockCondition(variant.unlockCondition),
+            "warning",
+          );
         }
         return;
       }
@@ -2048,6 +2440,11 @@
         if (typeof showToast === "function") {
           showToast("Không đủ XQP để mua pet này", "warning");
         }
+        return;
+      }
+
+      const userConfirmed = await requestPurchaseConfirmation(variant.name, secondPetPrice);
+      if (!userConfirmed) {
         return;
       }
 
@@ -2095,9 +2492,24 @@
             );
             state.selectionLocked = false;
             state.lockedVariantId = String(result.config.lockedVariantId || state.ownedVariantIds[0] || "").trim();
+
+            if (result.config.petProgressByVariantId && typeof result.config.petProgressByVariantId === "object") {
+              state.petProgressByVariantId = Object.assign({}, result.config.petProgressByVariantId);
+            }
+            if (result.config.petNamesByVariantId && typeof result.config.petNamesByVariantId === "object") {
+              state.petNamesByVariantId = Object.assign({}, result.config.petNamesByVariantId);
+            }
           } else {
             state.ownedVariantIds = normalizeOwnedVariantIds(state.ownedVariantIds, targetVariantId);
             state.currentIndex = index;
+          }
+
+          ensurePetProgressAndNamesMaps();
+          if (typeof state.petProgressByVariantId[targetVariantId] === "undefined") {
+            state.petProgressByVariantId[targetVariantId] = 0;
+          }
+          if (typeof state.petNamesByVariantId[targetVariantId] === "undefined") {
+            state.petNamesByVariantId[targetVariantId] = sanitizePetName((variant && variant.name) || DEFAULT_PET_NAME);
           }
 
           state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
@@ -2169,6 +2581,7 @@
               secondPetPriceXqp: variant.secondPetPriceXqp,
               unlockCondition: variant.unlockCondition,
               isOwned: owned,
+              isLocked: !unlocked && !owned,
             },
             "variant",
           );
@@ -2249,8 +2662,10 @@
           const unlocked = isBackgroundUnlocked(background);
           if (!unlocked) {
             if (typeof showToast === "function") {
-              const cond = background.unlockCondition || { type: "level", value: 1 };
-              showToast("Nền yêu cầu Level tiến độ " + toNonNegativeNumber(cond.value, 1), "warning");
+              showToast(
+                "Nền chưa mở khóa. Cần: " + describeUnlockCondition(background.unlockCondition),
+                "warning",
+              );
             }
             return;
           }
@@ -2320,7 +2735,10 @@
         btn.appendChild(thumb);
         
         btn.addEventListener("mouseenter", function(e) {
-          showPetTooltip(e, catalogItem, 'accessory');
+          const tooltipData = Object.assign({}, catalogItem, {
+            isLocked: isProgressLevelLocked(catalogItem),
+          });
+          showPetTooltip(e, tooltipData, 'accessory');
         });
         btn.addEventListener("mouseleave", hidePetTooltip);
 
@@ -2328,7 +2746,10 @@
           const lockedNow = isProgressLevelLocked(catalogItem);
           if (lockedNow) {
             if (typeof showToast === "function") {
-              showToast("Vật phẩm yêu cầu Level tiến độ " + catalogItem.unlockCondition.value, "warning");
+              showToast(
+                "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(catalogItem.unlockCondition),
+                "warning",
+              );
             }
             return;
           }
@@ -2438,6 +2859,7 @@
         item.type = "button";
         item.className = "pet-food-item";
         item.setAttribute("data-file", fileName);
+        item.setAttribute("draggable", "true");
 
         const img = document.createElement("img");
         img.className = "pet-food-thumb";
@@ -2462,7 +2884,10 @@
         item.appendChild(missingLabel);
         
         item.addEventListener("mouseenter", function(e) {
-          showPetTooltip(e, foodItem, 'food');
+          const tooltipData = Object.assign({}, foodItem, {
+            isLocked: isProgressLevelLocked(foodItem),
+          });
+          showPetTooltip(e, tooltipData, 'food');
         });
         item.addEventListener("mouseleave", hidePetTooltip);
 
@@ -2470,11 +2895,22 @@
           const lockedNow = isProgressLevelLocked(foodItem);
           if (lockedNow) {
             if (typeof showToast === "function") {
-              showToast("Vật phẩm yêu cầu Level tiến độ " + foodItem.unlockCondition.value, "warning");
+              showToast(
+                "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(foodItem.unlockCondition),
+                "warning",
+              );
             }
             return;
           }
-          feedPet(foodItem.petXpGain, displayName);
+          const activeVariantId = getActiveVariantId();
+          if (!activeVariantId) return;
+          feedPetVariant(activeVariantId, foodItem);
+        });
+
+        item.addEventListener("dragstart", function (event) {
+          if (!event.dataTransfer) return;
+          event.dataTransfer.setData("text/pet-food-file", fileName);
+          event.dataTransfer.effectAllowed = "copy";
         });
         gridEl.appendChild(item);
       });
@@ -2542,8 +2978,11 @@
       });
 
       stageEl.addEventListener("mousedown", function (event) {
-        const xp = state.progressionXP || 0;
-        const progressionLevel = Math.floor(xp / 100) + 1;
+        if (event.target && event.target.closest && event.target.closest(".pet-slot")) {
+          return;
+        }
+
+        const progressionLevel = getCurrentProgressLevel();
         const visualEl = document.getElementById("petVisual");
 
         // Level 2: Roll away
@@ -2663,8 +3102,7 @@
       let hopCount = 0;
       
       const routine = function() {
-        const xp = state.progressionXP || 0;
-        const progressionLevel = Math.floor(xp / 100) + 1;
+        const progressionLevel = getCurrentProgressLevel();
 
         // Only jump if level >= 2 and not paused
         if (progressionLevel < 2 || state.isPaused || state.isRolling) {
@@ -2920,7 +3358,6 @@
       }
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
-      loadPetNameFromServer();
       loadTopicProgressCacheForPet();
       loadPetConfigFromServer();
       updateXQPUI();

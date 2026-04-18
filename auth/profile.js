@@ -324,7 +324,8 @@ const PET_GLOBAL_RESET_VERSION = "2026-04-17-lv1-random-egg-v1";
 const PET_GLOBAL_RESET_PROPERTY_KEY = "PET_GLOBAL_RESET_VERSION";
 const PET_EGG_VARIANT_COUNT = 12;
 const PET_EGG_VARIANT_BASE_ID = 12;
-const PET_MAX_OWNED_VARIANTS = 2;
+const PET_MAX_OWNED_VARIANTS = 999;
+const PET_DEFAULT_NAME = "NAMEPET";
 
 function pickRandomPetEggIndex_() {
   return Math.floor(Math.random() * PET_EGG_VARIANT_COUNT);
@@ -368,6 +369,200 @@ function normalizeOwnedVariantIds_(ownedVariantIds, fallbackVariantId) {
   return uniqueIds.slice(0, PET_MAX_OWNED_VARIANTS);
 }
 
+function normalizePetNameValue_(value) {
+  var safe = String(value || "").trim();
+  if (!safe) return PET_DEFAULT_NAME;
+  return safe.slice(0, 24);
+}
+
+function normalizePetUnlockConditionEntry_(entry) {
+  var safeEntry = entry || {};
+  var type = String(safeEntry.type || "level").trim() || "level";
+  var value = safeEntry.value;
+
+  if (type === "level") {
+    value = parseInt(value, 10);
+    if (!Number.isFinite(value) || value < 1) value = 1;
+    return { type: "level", value: value };
+  }
+
+  value = String(value || "").trim();
+  if (!value) return null;
+
+  return { type: type, value: value };
+}
+
+function normalizePetUnlockMode_(mode) {
+  return String(mode || "all") === "any" ? "any" : "all";
+}
+
+function normalizePetUnlockCondition_(unlockCondition) {
+  var raw = unlockCondition || {};
+
+  if (raw && Array.isArray(raw.conditions)) {
+    var mode = normalizePetUnlockMode_(raw.mode);
+    var normalizedConditions = raw.conditions
+      .map(normalizePetUnlockConditionEntry_)
+      .filter(Boolean);
+
+    if (normalizedConditions.length === 0) {
+      return { type: "level", value: 1 };
+    }
+    if (normalizedConditions.length === 1) {
+      return normalizedConditions[0];
+    }
+
+    return {
+      mode: mode,
+      conditions: normalizedConditions,
+    };
+  }
+
+  return normalizePetUnlockConditionEntry_(raw) || { type: "level", value: 1 };
+}
+
+function describePetUnlockConditionEntry_(condition) {
+  var safe = normalizePetUnlockConditionEntry_(condition) || { type: "level", value: 1 };
+  var type = String(safe.type || "level");
+
+  if (type === "level") {
+    return "Level tiến độ " + String(safe.value || 1);
+  }
+  if (type === "topic") {
+    return "Hoàn thành bài học của topic " + String(safe.value || "");
+  }
+  if (type === "topic_quiz") {
+    return "Hoàn thành Quiz của topic " + String(safe.value || "");
+  }
+  if (type === "topic_matching") {
+    return "Hoàn thành Matching của topic " + String(safe.value || "");
+  }
+
+  return type + " " + String(safe.value || "");
+}
+
+function describePetUnlockCondition_(unlockCondition) {
+  var normalized = normalizePetUnlockCondition_(unlockCondition);
+  var conditions = Array.isArray(normalized.conditions)
+    ? normalized.conditions
+    : [normalized];
+  var mode = Array.isArray(normalized.conditions)
+    ? normalizePetUnlockMode_(normalized.mode)
+    : "all";
+  var separator = mode === "any" ? " HOẶC " : " VÀ ";
+
+  return conditions.map(describePetUnlockConditionEntry_).join(separator);
+}
+
+function evaluateSinglePetUnlockCondition_(condition, context) {
+  var safeCondition = normalizePetUnlockConditionEntry_(condition);
+  if (!safeCondition) {
+    return {
+      success: false,
+      message: "Điều kiện mở khóa pet không hợp lệ",
+    };
+  }
+
+  var unlockType = String(safeCondition.type || "level");
+  if (unlockType === "level") {
+    var requiredLevel = Math.max(1, parseInt(safeCondition.value, 10) || 1);
+    if (context.userLevel < requiredLevel) {
+      return {
+        success: false,
+        message: "Pet này yêu cầu Level tiến độ " + requiredLevel,
+        requiredLevel: requiredLevel,
+        currentLevel: context.userLevel,
+      };
+    }
+
+    return { success: true };
+  }
+
+  var requiredTopicId = String(safeCondition.value || "").trim();
+  if (!requiredTopicId) {
+    return {
+      success: false,
+      message: "Điều kiện mở khóa pet không hợp lệ",
+    };
+  }
+
+  var topicProgress = context.progressMap[requiredTopicId] || null;
+  var isUnlockedByTopic = false;
+  if (topicProgress) {
+    if (unlockType === "topic") {
+      isUnlockedByTopic = !!(topicProgress.completed || topicProgress.lessonCompleted);
+    } else if (unlockType === "topic_quiz") {
+      isUnlockedByTopic = !!(topicProgress.quizDone || topicProgress.completed);
+    } else if (unlockType === "topic_matching") {
+      isUnlockedByTopic = !!(topicProgress.matchingDone || topicProgress.completed);
+    }
+  }
+
+  if (!isUnlockedByTopic) {
+    return {
+      success: false,
+      message: "Bạn chưa đạt điều kiện mở khóa pet này: " + describePetUnlockConditionEntry_(safeCondition),
+    };
+  }
+
+  return { success: true };
+}
+
+function evaluatePetUnlockConditionForPurchase_(unlockCondition, config) {
+  var normalizedUnlock = normalizePetUnlockCondition_(unlockCondition);
+  var progressionXP = parseInt(config && config.progressionXP, 10) || 0;
+  var context = {
+    userLevel: Math.floor(progressionXP / 100) + 1,
+    progressMap: {},
+  };
+
+  var conditions = Array.isArray(normalizedUnlock.conditions)
+    ? normalizedUnlock.conditions
+    : [normalizedUnlock];
+  var unlockMode = Array.isArray(normalizedUnlock.conditions)
+    ? normalizePetUnlockMode_(normalizedUnlock.mode)
+    : "all";
+
+  var requiresTopicProgress = conditions.some(function (condition) {
+    var normalized = normalizePetUnlockConditionEntry_(condition);
+    return normalized && String(normalized.type || "level") !== "level";
+  });
+
+  if (requiresTopicProgress) {
+    var topicProgressResult = getUserTopicProgress();
+    if (!topicProgressResult || topicProgressResult.success !== true) {
+      return {
+        success: false,
+        message: "Không thể kiểm tra tiến độ topic của user",
+      };
+    }
+    context.progressMap = topicProgressResult.progress || {};
+  }
+
+  for (var i = 0; i < conditions.length; i++) {
+    var singleResult = evaluateSinglePetUnlockCondition_(conditions[i], context);
+    if (unlockMode === "any") {
+      if (singleResult.success) {
+        return { success: true };
+      }
+      continue;
+    }
+
+    if (!singleResult.success) {
+      return singleResult;
+    }
+  }
+
+  if (unlockMode === "any") {
+    return {
+      success: false,
+      message: "Bạn chưa đạt bất kỳ điều kiện mở khóa nào: " + describePetUnlockCondition_(unlockCondition),
+    };
+  }
+
+  return { success: true };
+}
+
 function buildFreshPetConfig_(forcedIndex) {
   var defaultIndex = normalizePetEggIndex_(forcedIndex, pickRandomPetEggIndex_());
   var defaultVariantId = getPetVariantIdByEggIndex_(defaultIndex);
@@ -383,6 +578,16 @@ function buildFreshPetConfig_(forcedIndex) {
     lockedVariantId: defaultVariantId,
     currentVariantId: defaultVariantId,
     ownedVariantIds: [defaultVariantId],
+    petProgressByVariantId: (function () {
+      var map = {};
+      map[defaultVariantId] = 0;
+      return map;
+    })(),
+    petNamesByVariantId: (function () {
+      var map = {};
+      map[defaultVariantId] = PET_DEFAULT_NAME;
+      return map;
+    })(),
     petConfigVersion: PET_GLOBAL_RESET_VERSION,
   };
 }
@@ -685,16 +890,71 @@ function getUserPetConfig(userId) {
       parsedConfig.ownedVariantIds,
       normalizedCurrentVariantId,
     );
+    parsedConfig.currentVariantId = normalizedCurrentVariantId || ownedVariantIds[0] || "";
     parsedConfig.ownedVariantIds = ownedVariantIds;
     parsedConfig.selectionLocked = false;
-    parsedConfig.lockedVariantId = ownedVariantIds[0] || normalizedCurrentVariantId || "";
+    parsedConfig.lockedVariantId = ownedVariantIds[0] || parsedConfig.currentVariantId || "";
+
+    const rawProgressMap =
+      parsedConfig.petProgressByVariantId && typeof parsedConfig.petProgressByVariantId === "object"
+        ? parsedConfig.petProgressByVariantId
+        : {};
+    const rawNamesMap =
+      parsedConfig.petNamesByVariantId && typeof parsedConfig.petNamesByVariantId === "object"
+        ? parsedConfig.petNamesByVariantId
+        : {};
+
+    const normalizedProgressByVariant = {};
+    ownedVariantIds.forEach(function (variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      const mapXP = parseInt(rawProgressMap[safeVariantId], 10);
+      if (Number.isFinite(mapXP) && mapXP >= 0) {
+        normalizedProgressByVariant[safeVariantId] = mapXP;
+      }
+    });
+
+    if (!Object.keys(normalizedProgressByVariant).length) {
+      const fallbackVariantId = String(parsedConfig.currentVariantId || parsedConfig.lockedVariantId || "").trim();
+      if (fallbackVariantId) {
+        normalizedProgressByVariant[fallbackVariantId] = normalizedXP;
+      }
+    }
+
+    ownedVariantIds.forEach(function (variantId) {
+      var safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      if (!Number.isFinite(parseInt(normalizedProgressByVariant[safeVariantId], 10))) {
+        normalizedProgressByVariant[safeVariantId] = 0;
+      }
+    });
+
+    const activeVariantId = String(parsedConfig.currentVariantId || parsedConfig.lockedVariantId || ownedVariantIds[0] || "").trim();
+    parsedConfig.progressionXP = parseInt(normalizedProgressByVariant[activeVariantId], 10);
+    if (!Number.isFinite(parsedConfig.progressionXP) || parsedConfig.progressionXP < 0) {
+      parsedConfig.progressionXP = normalizedXP;
+    }
+    parsedConfig.progressionLevel = Math.floor(parsedConfig.progressionXP / 100) + 1;
+    parsedConfig.progressionXPProgress = parsedConfig.progressionXP % 100;
+
+    const normalizedNamesByVariant = {};
+    ownedVariantIds.forEach(function (variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      normalizedNamesByVariant[safeVariantId] = normalizePetNameValue_(rawNamesMap[safeVariantId]);
+    });
+
+    parsedConfig.petProgressByVariantId = normalizedProgressByVariant;
+    parsedConfig.petNamesByVariantId = normalizedNamesByVariant;
 
     if (
       rawSelectionLocked !== false ||
       !Array.isArray(rawOwnedVariantIds) ||
       !rawOwnedVariantIds.length ||
       rawLockedVariantId !== String((ownedVariantIds[0] || normalizedCurrentVariantId || "")).trim() ||
-      rawCurrentVariantId !== normalizedCurrentVariantId
+      rawCurrentVariantId !== normalizedCurrentVariantId ||
+      JSON.stringify(rawProgressMap) !== JSON.stringify(normalizedProgressByVariant) ||
+      JSON.stringify(rawNamesMap) !== JSON.stringify(normalizedNamesByVariant)
     ) {
       shouldPersist = true;
     }
@@ -749,8 +1009,6 @@ function saveUserPetConfig(userId, config) {
     const normalizedIndex = normalizePetVariantIndex_(safeConfig.currentIndex, 0);
     const progressionXP = parseInt(safeConfig.progressionXP, 10);
     const normalizedXP = Number.isFinite(progressionXP) ? Math.max(0, progressionXP) : 0;
-    const normalizedLevel = Math.floor(normalizedXP / 100) + 1;
-    const normalizedProgress = normalizedXP % 100;
     let currentVariantId = String(safeConfig.currentVariantId || "").trim();
     if (!currentVariantId) {
       currentVariantId =
@@ -762,15 +1020,55 @@ function saveUserPetConfig(userId, config) {
     const ownedVariantIds = normalizeOwnedVariantIds_(safeConfig.ownedVariantIds, currentVariantId);
     const lockedVariantId = ownedVariantIds[0] || currentVariantId || "";
 
+    const rawProgressByVariant =
+      safeConfig.petProgressByVariantId && typeof safeConfig.petProgressByVariantId === "object"
+        ? safeConfig.petProgressByVariantId
+        : {};
+    const rawNamesByVariant =
+      safeConfig.petNamesByVariantId && typeof safeConfig.petNamesByVariantId === "object"
+        ? safeConfig.petNamesByVariantId
+        : {};
+
+    const normalizedProgressByVariant = {};
+    ownedVariantIds.forEach(function (variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      const mapXP = parseInt(rawProgressByVariant[safeVariantId], 10);
+      if (Number.isFinite(mapXP) && mapXP >= 0) {
+        normalizedProgressByVariant[safeVariantId] = mapXP;
+      }
+    });
+
+    if (!Object.keys(normalizedProgressByVariant).length && currentVariantId) {
+      normalizedProgressByVariant[currentVariantId] = normalizedXP;
+    }
+
+    const effectiveXP = Number.isFinite(parseInt(normalizedProgressByVariant[currentVariantId], 10))
+      ? parseInt(normalizedProgressByVariant[currentVariantId], 10)
+      : normalizedXP;
+    normalizedProgressByVariant[currentVariantId] = Math.max(0, effectiveXP);
+
+    const normalizedLevel = Math.floor(normalizedProgressByVariant[currentVariantId] / 100) + 1;
+    const normalizedProgress = normalizedProgressByVariant[currentVariantId] % 100;
+
+    const normalizedNamesByVariant = {};
+    ownedVariantIds.forEach(function (variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+      normalizedNamesByVariant[safeVariantId] = normalizePetNameValue_(rawNamesByVariant[safeVariantId]);
+    });
+
     const normalizedConfig = Object.assign({}, safeConfig, {
       currentIndex: normalizedIndex,
-      progressionXP: normalizedXP,
+      progressionXP: normalizedProgressByVariant[currentVariantId],
       progressionLevel: normalizedLevel,
       progressionXPProgress: normalizedProgress,
       selectionLocked: false,
       currentVariantId: currentVariantId,
       ownedVariantIds: ownedVariantIds,
       lockedVariantId: lockedVariantId,
+      petProgressByVariantId: normalizedProgressByVariant,
+      petNamesByVariantId: normalizedNamesByVariant,
       petConfigVersion: PET_GLOBAL_RESET_VERSION,
     });
 
@@ -895,65 +1193,23 @@ function purchaseUserPetVariant(payload) {
       };
     }
 
-    if (ownedVariantIds.length >= PET_MAX_OWNED_VARIANTS) {
+    var maxOwned = Math.max(1, Math.min(PET_MAX_OWNED_VARIANTS, (variantsResult.variants || []).length || PET_MAX_OWNED_VARIANTS));
+    if (ownedVariantIds.length >= maxOwned) {
       return {
         success: false,
-        message: "Mỗi user chỉ sở hữu tối đa 2 pet",
-        maxOwned: PET_MAX_OWNED_VARIANTS,
+        message: "Bạn đã sở hữu toàn bộ PET hiện có",
+        maxOwned: maxOwned,
       };
     }
 
-    var unlock = variant.unlockCondition || { type: "level", value: 1 };
-    var unlockType = String(unlock.type || "level");
-    if (unlockType === "level") {
-      var requiredLevel = Math.max(1, parseInt(unlock.value, 10) || 1);
-      var progressionXP = parseInt(config.progressionXP, 10) || 0;
-      var userLevel = Math.floor(progressionXP / 100) + 1;
-      if (userLevel < requiredLevel) {
-        return {
-          success: false,
-          message: "Pet này yêu cầu Level tiến độ " + requiredLevel,
-          requiredLevel: requiredLevel,
-          currentLevel: userLevel,
-        };
-      }
-    } else {
-      var requiredTopicId = String(unlock.value || "").trim();
-      if (!requiredTopicId) {
-        return {
-          success: false,
-          message: "Điều kiện mở khóa pet không hợp lệ",
-        };
-      }
-
-      var topicProgressResult = getUserTopicProgress();
-      if (!topicProgressResult || topicProgressResult.success !== true) {
-        return {
-          success: false,
-          message: "Không thể kiểm tra tiến độ topic của user",
-        };
-      }
-
-      var progressMap = topicProgressResult.progress || {};
-      var topicProgress = progressMap[requiredTopicId] || null;
-      var isUnlockedByTopic = false;
-
-      if (topicProgress) {
-        if (unlockType === "topic") {
-          isUnlockedByTopic = !!(topicProgress.completed || topicProgress.lessonCompleted);
-        } else if (unlockType === "topic_quiz") {
-          isUnlockedByTopic = !!(topicProgress.quizDone || topicProgress.completed);
-        } else if (unlockType === "topic_matching") {
-          isUnlockedByTopic = !!(topicProgress.matchingDone || topicProgress.completed);
-        }
-      }
-
-      if (!isUnlockedByTopic) {
-        return {
-          success: false,
-          message: "Bạn chưa đạt điều kiện mở khóa pet này",
-        };
-      }
+    var unlockCheck = evaluatePetUnlockConditionForPurchase_(variant.unlockCondition, config);
+    if (!unlockCheck.success) {
+      return {
+        success: false,
+        message: unlockCheck.message || "Bạn chưa đạt điều kiện mở khóa pet này",
+        requiredLevel: unlockCheck.requiredLevel,
+        currentLevel: unlockCheck.currentLevel,
+      };
     }
 
     var priceXqp = Math.max(0, parseInt(variant.secondPetPriceXqp, 10) || 0);
@@ -978,6 +1234,20 @@ function purchaseUserPetVariant(payload) {
     config.selectionLocked = false;
     config.lockedVariantId = ownedVariantIds[0] || variantId;
     config.petConfigVersion = PET_GLOBAL_RESET_VERSION;
+
+    config.petProgressByVariantId =
+      config.petProgressByVariantId && typeof config.petProgressByVariantId === "object"
+        ? config.petProgressByVariantId
+        : {};
+    config.petNamesByVariantId =
+      config.petNamesByVariantId && typeof config.petNamesByVariantId === "object"
+        ? config.petNamesByVariantId
+        : {};
+
+    if (!Number.isFinite(parseInt(config.petProgressByVariantId[variantId], 10))) {
+      config.petProgressByVariantId[variantId] = 0;
+    }
+    config.petNamesByVariantId[variantId] = normalizePetNameValue_(variant.name);
 
     var variantNumericId = parseInt(String(variantId).replace(/^pet-/i, ""), 10);
     if (Number.isFinite(variantNumericId)) {

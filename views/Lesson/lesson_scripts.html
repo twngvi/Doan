@@ -4802,11 +4802,67 @@ sys.stderr = sys.__stderr__
     return window.globalTopicsCache.progress[topicId] || null;
   }
 
-  function canSwitchToTopic(topicId, isActive) {
+  function isTopicMarkedCompleted(progress) {
+    return !!(progress && (progress.lessonCompleted || progress.completed));
+  }
+
+  function getSortedTopicsFromCache() {
+    if (!window.globalTopicsCache || !Array.isArray(window.globalTopicsCache.data)) {
+      return [];
+    }
+
+    return [...window.globalTopicsCache.data].sort(
+      (a, b) => (a.order || 0) - (b.order || 0),
+    );
+  }
+
+  function getLastCompletedTopicIndex(sortedTopics) {
+    let lastCompletedIndex = -1;
+
+    sortedTopics.forEach(function (topic, index) {
+      if (isTopicMarkedCompleted(getTopicProgress(topic.topicId))) {
+        lastCompletedIndex = index;
+      }
+    });
+
+    return lastCompletedIndex;
+  }
+
+  function getNextUnlockableTopicIndex(sortedTopics) {
+    if (!Array.isArray(sortedTopics) || sortedTopics.length === 0) {
+      return -1;
+    }
+
+    const lastCompletedIndex = getLastCompletedTopicIndex(sortedTopics);
+    if (lastCompletedIndex < 0) {
+      return 0;
+    }
+
+    return Math.min(sortedTopics.length - 1, lastCompletedIndex + 1);
+  }
+
+  function canSwitchToTopic(topicId, isActive, sortedTopics) {
     if (isActive) return true;
 
-    const progress = getTopicProgress(topicId);
-    return !!(progress && (progress.lessonCompleted || progress.completed));
+    const safeTopicId = String(topicId || "").trim();
+    if (!safeTopicId) return false;
+
+    if (isTopicMarkedCompleted(getTopicProgress(safeTopicId))) {
+      return true;
+    }
+
+    const sorted =
+      Array.isArray(sortedTopics) && sortedTopics.length > 0
+        ? sortedTopics
+        : getSortedTopicsFromCache();
+    if (sorted.length === 0) return false;
+
+    const targetIndex = sorted.findIndex(function (topic) {
+      return String(topic.topicId || "").trim() === safeTopicId;
+    });
+    if (targetIndex < 0) return false;
+
+    return targetIndex === getNextUnlockableTopicIndex(sorted);
   }
 
   /**
@@ -4878,7 +4934,8 @@ sys.stderr = sys.__stderr__
       const isActive = topic.topicId === currentTopicId;
       const contentDocId = resolveTopicContentDocId(topic);
       const hasContent = !!contentDocId;
-      const canSwitch = hasContent && canSwitchToTopic(topic.topicId, isActive);
+      const canSwitch =
+        hasContent && canSwitchToTopic(topic.topicId, isActive, sorted);
 
       let statusIcon = "";
       if (isActive) {

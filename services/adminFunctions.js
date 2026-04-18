@@ -1736,6 +1736,96 @@ const DEFAULT_LEVEL1_FILE = "level1-yellow.svg";
 
 const LEGACY_PET_VARIANT_IDS = ["pink", "yellow", "blue", "green"];
 
+function normalizePetUnlockConditionEntry_(entry) {
+  const safeEntry = entry || {};
+  const type = String(safeEntry.type || "level").trim() || "level";
+  let value = safeEntry.value;
+
+  if (type === "level") {
+    value = parseInt(value, 10);
+    if (isNaN(value) || value < 1) value = 1;
+    return { type: "level", value: value };
+  }
+
+  value = String(value || "").trim();
+  if (!value) return null;
+
+  return { type: type, value: value };
+}
+
+function normalizePetUnlockMode_(mode) {
+  return String(mode || "all") === "any" ? "any" : "all";
+}
+
+function normalizePetUnlockCondition_(unlockCondition) {
+  const raw = unlockCondition || {};
+
+  if (raw && Array.isArray(raw.conditions)) {
+    const mode = normalizePetUnlockMode_(raw.mode);
+    const normalizedConditions = raw.conditions
+      .map(normalizePetUnlockConditionEntry_)
+      .filter(Boolean);
+
+    if (normalizedConditions.length === 0) {
+      return { type: "level", value: 1 };
+    }
+    if (normalizedConditions.length === 1) {
+      return normalizedConditions[0];
+    }
+
+    return {
+      mode: mode,
+      conditions: normalizedConditions,
+    };
+  }
+
+  return normalizePetUnlockConditionEntry_(raw) || { type: "level", value: 1 };
+}
+
+function serializePetUnlockConditionForSheet_(unlockCondition) {
+  const normalized = normalizePetUnlockCondition_(unlockCondition);
+
+  if (Array.isArray(normalized.conditions)) {
+    return {
+      unlockType: "multi",
+      unlockValue: JSON.stringify({
+        mode: normalizePetUnlockMode_(normalized.mode),
+        conditions: normalized.conditions,
+      }),
+    };
+  }
+
+  return {
+    unlockType: String(normalized.type || "level"),
+    unlockValue: normalized.value,
+  };
+}
+
+function parsePetUnlockConditionFromSheet_(unlockTypeCell, unlockValueCell) {
+  const unlockType = String(unlockTypeCell || "level").trim() || "level";
+
+  if (unlockType === "multi") {
+    let parsed = null;
+
+    if (unlockValueCell && typeof unlockValueCell === "string") {
+      try {
+        parsed = JSON.parse(unlockValueCell);
+      } catch (e) {
+        parsed = null;
+      }
+    } else if (unlockValueCell && typeof unlockValueCell === "object") {
+      parsed = unlockValueCell;
+    }
+
+    return normalizePetUnlockCondition_(parsed || { type: "level", value: 1 });
+  }
+
+  return normalizePetUnlockCondition_({
+    type: unlockType,
+    value: unlockValueCell,
+  });
+}
+
 function enforcePetVariantLevel1Egg_(variant) {
   const safeVariant = variant || {};
   return Object.assign({}, safeVariant, {
@@ -1743,6 +1833,7 @@ function enforcePetVariantLevel1Egg_(variant) {
     level2: String(safeVariant.level2 || ""),
     eyeOpen: String(safeVariant.eyeOpen || ""),
     eyeClosed: String(safeVariant.eyeClosed || ""),
+    unlockCondition: normalizePetUnlockCondition_(safeVariant.unlockCondition),
     tiltDeg: Math.max(-45, Math.min(45, parseInt(safeVariant.tiltDeg, 10) || 0)),
     secondPetPriceXqp: Math.max(0, parseInt(safeVariant.secondPetPriceXqp, 10) || 500),
   });
@@ -1870,16 +1961,7 @@ function normalizePetItemType_(itemType) {
 
 function toPetItemRow_(item, itemType, orderIndex) {
   const safeItem = item || {};
-  const unlock = safeItem.unlockCondition || {};
-  const unlockType = unlock.type || "level";
-  let unlockValue = unlock.value;
-
-  if (unlockType === "level") {
-    unlockValue = parseInt(unlockValue, 10);
-    if (isNaN(unlockValue) || unlockValue < 1) unlockValue = 1;
-  } else {
-    unlockValue = String(unlockValue || "");
-  }
+  const unlock = serializePetUnlockConditionForSheet_(safeItem.unlockCondition);
 
   const normalizedType = normalizePetItemType_(itemType);
   const isFood = normalizedType === "food";
@@ -1897,8 +1979,8 @@ function toPetItemRow_(item, itemType, orderIndex) {
     String(safeItem.name || ""),
     String(safeItem.file || ""),
     parseInt(safeItem.priceXqp, 10) || 0,
-    unlockType,
-    unlockValue,
+    unlock.unlockType,
+    unlock.unlockValue,
     isFood ? parseInt(safeItem.petXpGain, 10) || 0 : 0,
     isAccessory ? parseInt(safeItem.offsetX, 10) || 0 : 0,
     isAccessory ? parseInt(safeItem.offsetY, 10) || 0 : 0,
@@ -1912,16 +1994,7 @@ function toPetItemRow_(item, itemType, orderIndex) {
 
 function toPetVariantRow_(variant, orderIndex) {
   const safeVariant = enforcePetVariantLevel1Egg_(variant || {});
-  const unlock = safeVariant.unlockCondition || {};
-  const unlockType = unlock.type || "level";
-  let unlockValue = unlock.value;
-
-  if (unlockType === "level") {
-    unlockValue = parseInt(unlockValue, 10);
-    if (isNaN(unlockValue) || unlockValue < 1) unlockValue = 1;
-  } else {
-    unlockValue = String(unlockValue || "");
-  }
+  const unlock = serializePetUnlockConditionForSheet_(safeVariant.unlockCondition);
 
   let scalePercent = parseInt(safeVariant.scalePercent, 10);
   if (isNaN(scalePercent)) scalePercent = 100;
@@ -1940,8 +2013,8 @@ function toPetVariantRow_(variant, orderIndex) {
     String(safeVariant.level2 || ""),
     String(safeVariant.eyeOpen || ""),
     String(safeVariant.eyeClosed || ""),
-    unlockType,
-    unlockValue,
+    unlock.unlockType,
+    unlock.unlockValue,
     scalePercent,
     tiltDeg,
     parseInt(orderIndex, 10) || 0,
@@ -1994,16 +2067,10 @@ function parsePetVariantRows_(data) {
     const variantId = row[variantIdIdx];
     if (!variantId) continue;
 
-    const unlockType = String(row[unlockTypeIdx] || "level");
-    const rawUnlockValue = row[unlockValueIdx];
-    let unlockValue;
-
-    if (unlockType === "level") {
-      const parsedLevel = parseInt(rawUnlockValue, 10);
-      unlockValue = isNaN(parsedLevel) || parsedLevel < 1 ? 1 : parsedLevel;
-    } else {
-      unlockValue = String(rawUnlockValue || "");
-    }
+    const unlockCondition = parsePetUnlockConditionFromSheet_(
+      row[unlockTypeIdx],
+      row[unlockValueIdx],
+    );
 
     let scalePercent = parseInt(row[scalePercentIdx], 10);
     if (isNaN(scalePercent)) scalePercent = 100;
@@ -2032,10 +2099,7 @@ function parsePetVariantRows_(data) {
       level2: String(row[level2Idx] || ""),
       eyeOpen: String(row[eyeOpenIdx] || ""),
       eyeClosed: String(row[eyeClosedIdx] || ""),
-      unlockCondition: {
-        type: unlockType,
-        value: unlockValue,
-      },
+      unlockCondition: unlockCondition,
       scalePercent: scalePercent,
       tiltDeg: tiltDeg,
       secondPetPriceXqp: secondPetPriceXqp,
@@ -2116,16 +2180,10 @@ function getPetItemsForAdmin() {
       if (!itemId) continue;
 
       const itemType = normalizePetItemType_(row[itemTypeIdx]);
-      const unlockType = String(row[unlockTypeIdx] || "level");
-      const rawUnlockValue = row[unlockValueIdx];
-
-      let unlockValue;
-      if (unlockType === "level") {
-        const parsedLevel = parseInt(rawUnlockValue, 10);
-        unlockValue = isNaN(parsedLevel) || parsedLevel < 1 ? 1 : parsedLevel;
-      } else {
-        unlockValue = String(rawUnlockValue || "");
-      }
+      const unlockCondition = parsePetUnlockConditionFromSheet_(
+        row[unlockTypeIdx],
+        row[unlockValueIdx],
+      );
 
       let orderIndex = parseInt(row[orderIdx], 10);
       if (isNaN(orderIndex) && positionProfilesIdx >= 0) {
@@ -2141,10 +2199,7 @@ function getPetItemsForAdmin() {
         name: String(row[nameIdx] || ""),
         file: String(row[fileIdx] || ""),
         priceXqp: parseInt(row[priceIdx], 10) || 0,
-        unlockCondition: {
-          type: unlockType,
-          value: unlockValue,
-        },
+        unlockCondition: unlockCondition,
         _orderIndex: isNaN(orderIndex) ? 0 : orderIndex,
       };
 
