@@ -45,6 +45,23 @@
       </div>
     </div>
 
+    <!-- Background Segment -->
+    <div class="pm-segment" id="segment-backgrounds">
+      <button class="pm-segment-header" onclick="togglePmSegment('backgrounds')">
+        <div class="header-left">
+          <span class="material-symbols-sharp icon-main">wallpaper</span>
+          <span class="header-label">Quản lý Nền PET</span>
+          <span class="header-count" id="background-count">0</span>
+        </div>
+        <span class="material-symbols-sharp icon-chevron">expand_more</span>
+      </button>
+      <div class="pm-segment-content">
+        <div class="pm-items-grid" id="backgrounds-grid">
+          <!-- Background items will be loaded here -->
+        </div>
+      </div>
+    </div>
+
     <!-- Pet Variants Segment -->
     <div class="pm-segment" id="segment-variants">
       <button class="pm-segment-header" onclick="togglePmSegment('variants')">
@@ -103,7 +120,7 @@
       <div class="pm-form-group">
         <label for="pm-field-unlock-type">Điều kiện mở khóa</label>
         <select id="pm-field-unlock-type">
-          <option value="level">Level pet</option>
+          <option value="level">Level thanh tiến độ</option>
           <option value="topic">Topic</option>
           <option value="topic_quiz">Topic của Quiz</option>
           <option value="topic_matching">Topic của Matching</option>
@@ -111,7 +128,7 @@
       </div>
 
       <div class="pm-form-group" id="pm-unlock-level-wrap">
-        <label for="pm-field-unlock-level">Level pet cần đạt</label>
+        <label for="pm-field-unlock-level">Level thanh tiến độ cần đạt</label>
         <input type="number" id="pm-field-unlock-level" min="1" step="1" placeholder="1">
       </div>
 
@@ -133,7 +150,14 @@
           <button type="button" class="pm-accessory-profile-tab active" data-accessory-pos="center">Giữa đầu</button>
           <button type="button" class="pm-accessory-profile-tab" data-accessory-pos="right">Phải đầu</button>
         </div>
-        <button type="button" class="pm-accessory-reset-btn" id="pm-accessory-reset-profiles">Reset nhanh trái/giữa/phải</button>
+        <button type="button" class="pm-accessory-reset-btn" id="pm-accessory-reset-profiles">Reset nhanh trái/giữa/phải</button>       
+        <div class="pm-form-group" id="pm-accessory-preview-wrap" style="display:none;">
+          <label>Khung test hiển thị</label>
+          <div class="pm-accessory-preview-box" id="pm-accessory-preview-box">
+            <img class="pm-accessory-preview-base" id="pm-accessory-preview-base" alt="Pet preview">
+            <img class="pm-accessory-preview-item" id="pm-accessory-preview-item" alt="Accessory preview">
+          </div>
+        </div>
         <div class="pm-accessory-nudge-panel is-open" id="pm-accessory-nudge-panel">
           <div class="pm-accessory-nudge-label-row">
             <span id="pm-accessory-active-profile">Đang chỉnh: Giữa đầu</span>
@@ -163,23 +187,14 @@
               <button type="button" class="pm-size-btn" id="pm-accessory-rotate-right">↻</button>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div class="pm-form-group" id="pm-accessory-scale-wrap" style="display:none;">
-        <label>Kích thước cho tag đang chọn</label>
-        <div class="pm-size-control-row">
-          <button type="button" class="pm-size-btn" id="pm-accessory-scale-down">-</button>
-          <span class="pm-size-value" id="pm-accessory-scale-value">100%</span>
-          <button type="button" class="pm-size-btn" id="pm-accessory-scale-up">+</button>
-        </div>
-      </div>
-
-      <div class="pm-form-group" id="pm-accessory-preview-wrap" style="display:none;">
-        <label>Khung test hiển thị</label>
-        <div class="pm-accessory-preview-box" id="pm-accessory-preview-box">
-          <img class="pm-accessory-preview-base" id="pm-accessory-preview-base" alt="Pet preview">
-          <img class="pm-accessory-preview-item" id="pm-accessory-preview-item" alt="Accessory preview">
+          <div class="pm-form-group" id="pm-accessory-scale-wrap" style="display:none;">
+            <label>Kích thước cho tag đang chọn</label>
+            <div class="pm-size-control-row">
+              <button type="button" class="pm-size-btn" id="pm-accessory-scale-down">-</button>
+              <span class="pm-size-value" id="pm-accessory-scale-value">100%</span>
+              <button type="button" class="pm-size-btn" id="pm-accessory-scale-up">+</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -190,7 +205,7 @@
     </div>
   </aside>
 
-  <div class="pm-editor-backdrop" id="pm-variant-editor-backdrop" onclick="closePmVariantEditor()"></div>
+  <div class="pm-editor-backdrop" id="pm-variant-editor-backdrop"></div>
 
   <aside class="pm-variant-editor-sidebar" id="pm-variant-editor-sidebar" aria-hidden="true">
     <div class="pm-editor-header">
@@ -204,19 +219,14 @@
         <input type="text" id="pm-variant-name" placeholder="VD: Pet Galaxy">
       </div>
 
-      <!-- Color Picker Section -->
-      <div class="pm-form-group">
-        <label>Màu đại diện</label>
-        <div class="pm-color-picker-container">
-          <div class="pm-color-swatch" id="pm-variant-color-swatch" style="background-color: #7c8cff;"></div>
-          <input type="color" id="pm-variant-tone" value="#7c8cff" class="pm-color-input">
-          <input type="text" id="pm-variant-tone-hex" placeholder="#7c8cff" class="pm-hex-input" maxlength="7">
-        </div>
-      </div>
-
       <div class="pm-form-group">
         <label for="pm-variant-description">Mô tả</label>
         <input type="text" id="pm-variant-description" placeholder="Mô tả ngắn cho pet">
+      </div>
+
+      <div class="pm-form-group">
+        <label for="pm-variant-second-price">Giá mua pet thứ 2 (XQP)</label>
+        <input type="number" id="pm-variant-second-price" min="0" step="1" value="500">
       </div>
 
       <div class="pm-form-group">
@@ -269,7 +279,7 @@
       <div class="pm-form-group">
         <label for="pm-variant-unlock-type">Điều kiện mở khóa</label>
         <select id="pm-variant-unlock-type">
-          <option value="level">Level pet</option>
+          <option value="level">Level thanh tiến độ</option>
           <option value="topic">Hoàn thành topic</option>
           <option value="topic_quiz">Hoàn thành Quiz của topic</option>
           <option value="topic_matching">Hoàn thành Matching của topic</option>
@@ -277,7 +287,7 @@
       </div>
 
       <div class="pm-form-group" id="pm-variant-unlock-level-wrap">
-        <label for="pm-variant-unlock-level">Level cần đạt</label>
+        <label for="pm-variant-unlock-level">Level thanh tiến độ cần đạt</label>
         <input type="number" id="pm-variant-unlock-level" min="1" step="1" value="1">
       </div>
 

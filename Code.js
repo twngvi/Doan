@@ -194,6 +194,10 @@ function savePetConfig(userId, config) {
   return saveUserPetConfig(userId, config);
 }
 
+function purchasePetVariant(payload) {
+  return purchaseUserPetVariant(payload);
+}
+
 function updateUserXQP(userEmail, amount, source) {
   return updateUserPoints(userEmail, amount, source);
 }

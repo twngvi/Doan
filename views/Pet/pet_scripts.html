@@ -147,11 +147,13 @@
     const PET_NAME_MAX_LENGTH = 24;
     const NO_ACCESSORY_VALUE = "";
     const MAX_ACCESSORIES_PER_PET = 2;
-    const STAGE_BACKGROUNDS = [
+    const MAX_OWNED_PET_VARIANTS = 2;
+    const DEFAULT_STAGE_BACKGROUNDS = [
       { id: "bg1", name: "Nền 1", fileName: "bg-1.svg" },
       { id: "bg2", name: "Nền 2", fileName: "bg-2.svg" },
       { id: "bg3", name: "Nền 3", fileName: "bg-3.svg" },
     ];
+    let STAGE_BACKGROUNDS = DEFAULT_STAGE_BACKGROUNDS.slice();
     const DEFAULT_ACCESSORY_ITEMS = Array.from({ length: 25 }, function (_, index) {
       const idx = (index + 1).toString().padStart(2, '0');
       return {
@@ -245,8 +247,9 @@
       isRolling: false,
       autoSaveTimeoutId: null,
       catalogLoaded: false,
-      selectionLocked: true,
-      lockedVariantId: "",
+      selectionLocked: false,
+      lockedVariantId: DEFAULT_PET_VARIANTS[0].id,
+      ownedVariantIds: [DEFAULT_PET_VARIANTS[0].id],
     };
 
     let petMeteorInterval = null;
@@ -286,6 +289,9 @@
 
     function showPetTooltip(e, itemData, itemType) {
       const tooltip = getPetTooltip();
+      const isVariantTooltip = itemType === "variant";
+      tooltip.classList.toggle("is-variant-tooltip", isVariantTooltip);
+
       let html = `<div class="tooltip-img-wrap"><img /></div>`;
       html += `<div class="tooltip-info-wrap"><h4>${itemData.name}</h4>`;
       
@@ -295,11 +301,27 @@
       if (itemType === 'food' && itemData.petXpGain) {
         html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${itemData.petXpGain} XP</strong></div>`;
       }
-      if (itemData.unlockCondition && itemData.unlockCondition.value && itemData.unlockCondition.value > 0) {
+      if (itemData.unlockCondition) {
+        const unlockType = String(itemData.unlockCondition.type || "level");
+        const unlockValue = itemData.unlockCondition.value;
+        const hasUnlockInfo = unlockType === "level"
+          ? toNonNegativeNumber(unlockValue, 0) > 0
+          : String(unlockValue || "").trim().length > 0;
+        if (hasUnlockInfo) {
         let condText = "";
-        if (itemData.unlockCondition.type === 'level') condText = `Level PET ${itemData.unlockCondition.value}`;
-        else condText = `${itemData.unlockCondition.type} ${itemData.unlockCondition.value}`;
+        if (unlockType === 'level') condText = `Level tiến độ ${unlockValue}`;
+        else condText = `${unlockType} ${unlockValue}`;
         html += `<div class="tooltip-meta tooltip-unlock"><span>Mở khóa:</span> <strong>${condText}</strong></div>`;
+        }
+      }
+      if (isVariantTooltip) {
+        const secondPetPrice = Math.max(0, toNonNegativeNumber(itemData.secondPetPriceXqp, 500));
+        if (itemData.isOwned) {
+          html += `<div class="tooltip-meta"><span>Trạng thái:</span> <strong>Đã sở hữu</strong></div>`;
+        } else {
+          html += `<div class="tooltip-meta tooltip-price"><span>Giá pet thứ 2:</span> <strong>${secondPetPrice} XQP</strong></div>`;
+          html += `<div class="tooltip-meta"><span>Trạng thái:</span> <strong>Chưa sở hữu</strong></div>`;
+        }
       }
       html += `</div>`;
       tooltip.innerHTML = html;
@@ -307,10 +329,13 @@
       
       const img = tooltip.querySelector("img");
       if (img) {
-         fetchAssetUrl(itemData.file).then(u => { if(u) img.src = u; });
+         const previewFile = itemData.file || itemData.level2 || itemData.level1 || "";
+         fetchAssetUrl(previewFile).then(u => { if(u) img.src = u; });
       }
 
-      const rect = e.target.closest('button').getBoundingClientRect();
+      const triggerBtn = e.target.closest('button');
+      if (!triggerBtn) return;
+      const rect = triggerBtn.getBoundingClientRect();
       const tooltipRect = tooltip.getBoundingClientRect();
       let top = rect.top - tooltipRect.height - 15;
       let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
@@ -338,6 +363,26 @@
       const parsed = parseInt(value, 10);
       if (!Number.isFinite(parsed)) return fallback;
       return parsed;
+    }
+
+    function getCurrentProgressLevel() {
+      return Math.floor((state.progressionXP || 0) / 100) + 1;
+    }
+
+    function canEquipAccessories() {
+      return getCurrentProgressLevel() >= 3;
+    }
+
+    function isProgressLevelLocked(item) {
+      const condition = item && item.unlockCondition
+        ? item.unlockCondition
+        : { type: "level", value: 1 };
+
+      if (String(condition.type || "level") !== "level") {
+        return false;
+      }
+
+      return getCurrentProgressLevel() < toNonNegativeNumber(condition.value, 1);
     }
 
     function normalizeAccessoryPositionMode(positionMode) {
@@ -416,6 +461,75 @@
         .filter(Boolean);
     }
 
+    function normalizePetBackgroundCatalog(items) {
+      if (!Array.isArray(items)) return [];
+
+      return items
+        .map(function (item, index) {
+          const safe = item || {};
+          const fallback = DEFAULT_STAGE_BACKGROUNDS[index] || DEFAULT_STAGE_BACKGROUNDS[0] || {};
+          const fileName = String(safe.file || safe.fileName || fallback.fileName || "").trim();
+          if (!fileName) return null;
+
+          const rawUnlock = safe.unlockCondition || { type: "level", value: 1 };
+          const unlockType = String(rawUnlock.type || "level");
+          const unlockValue = unlockType === "level"
+            ? Math.max(1, toNonNegativeNumber(rawUnlock.value, 1))
+            : String(rawUnlock.value || "");
+
+          return {
+            id: String(safe.id || fallback.id || ("bg" + (index + 1))),
+            name: String(safe.name || fallback.name || ("Nền " + (index + 1))),
+            fileName: fileName,
+            unlockCondition: {
+              type: unlockType,
+              value: unlockValue,
+            },
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function isBackgroundUnlocked(background) {
+      const condition = background && background.unlockCondition
+        ? background.unlockCondition
+        : { type: "level", value: 1 };
+
+      if (String(condition.type || "level") !== "level") {
+        return true;
+      }
+
+      return getCurrentProgressLevel() >= toNonNegativeNumber(condition.value, 1);
+    }
+
+    function firstUnlockedBackgroundIndex() {
+      for (let i = 0; i < STAGE_BACKGROUNDS.length; i++) {
+        if (isBackgroundUnlocked(STAGE_BACKGROUNDS[i])) {
+          return i;
+        }
+      }
+      return 0;
+    }
+
+    function ensureValidBackgroundSelection() {
+      if (!Array.isArray(STAGE_BACKGROUNDS) || STAGE_BACKGROUNDS.length === 0) {
+        STAGE_BACKGROUNDS = DEFAULT_STAGE_BACKGROUNDS.slice();
+      }
+
+      const maxIndex = STAGE_BACKGROUNDS.length - 1;
+      let nextIndex = parseInt(state.selectedStageBackgroundIndex, 10);
+      if (!Number.isFinite(nextIndex)) {
+        nextIndex = 0;
+      }
+      nextIndex = Math.max(0, Math.min(maxIndex, nextIndex));
+
+      if (!isBackgroundUnlocked(STAGE_BACKGROUNDS[nextIndex])) {
+        nextIndex = firstUnlockedBackgroundIndex();
+      }
+
+      state.selectedStageBackgroundIndex = nextIndex;
+    }
+
     function normalizeVariantUnlockCondition(unlockCondition) {
       const raw = unlockCondition || {};
       const unlockType = String(raw.type || "level");
@@ -460,6 +574,7 @@
             description: String(safe.description || fallback.description || ""),
             unlockCondition: normalizeVariantUnlockCondition(safe.unlockCondition),
             scalePercent: scalePercent,
+            secondPetPriceXqp: Math.max(0, toNonNegativeNumber(safe.secondPetPriceXqp, 500)),
           };
         })
         .filter(Boolean);
@@ -481,29 +596,67 @@
       });
     }
 
+    function normalizeOwnedVariantIds(rawOwnedVariantIds, fallbackVariantId) {
+      const unique = [];
+      if (Array.isArray(rawOwnedVariantIds)) {
+        rawOwnedVariantIds.forEach(function (id) {
+          const safeId = String(id || "").trim();
+          if (!safeId) return;
+          if (unique.indexOf(safeId) >= 0) return;
+          unique.push(safeId);
+        });
+      }
+
+      const safeFallback = String(fallbackVariantId || "").trim();
+      if (safeFallback && unique.indexOf(safeFallback) < 0) {
+        unique.unshift(safeFallback);
+      }
+
+      return unique.slice(0, MAX_OWNED_PET_VARIANTS);
+    }
+
+    function isVariantOwned(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return false;
+      return state.ownedVariantIds.indexOf(safeVariantId) >= 0;
+    }
+
+    function canOwnMoreVariants() {
+      return (state.ownedVariantIds || []).length < MAX_OWNED_PET_VARIANTS;
+    }
+
     function syncLockedVariantByCurrentIndex() {
       const currentVariantId = getVariantIdByIndex(state.currentIndex);
       if (!currentVariantId) return;
 
-      if (state.lockedVariantId !== currentVariantId) {
-        state.lockedVariantId = currentVariantId;
+      state.ownedVariantIds = normalizeOwnedVariantIds(
+        state.ownedVariantIds,
+        currentVariantId,
+      );
+      const firstOwnedVariantId = state.ownedVariantIds[0] || "";
+      if (state.lockedVariantId !== firstOwnedVariantId) {
+        state.lockedVariantId = firstOwnedVariantId;
         queuePetConfigAutoSave();
       }
     }
 
     function enforceLockedVariantSelection() {
-      if (!state.selectionLocked) return;
+      const currentVariantId = getVariantIdByIndex(state.currentIndex);
+      state.ownedVariantIds = normalizeOwnedVariantIds(
+        state.ownedVariantIds,
+        currentVariantId || state.lockedVariantId,
+      );
 
-      const lockedVariantId = String(state.lockedVariantId || "").trim();
-      if (!lockedVariantId) {
-        syncLockedVariantByCurrentIndex();
-        return;
+      if (!isVariantOwned(currentVariantId)) {
+        const fallbackOwnedId = state.ownedVariantIds[0] || "";
+        const ownedIndex = getVariantIndexById(fallbackOwnedId);
+        if (ownedIndex >= 0) {
+          state.currentIndex = ownedIndex;
+        }
       }
 
-      const lockedIndex = getVariantIndexById(lockedVariantId);
-      if (lockedIndex >= 0 && state.currentIndex !== lockedIndex) {
-        state.currentIndex = lockedIndex;
-      }
+      state.selectionLocked = false;
+      state.lockedVariantId = state.ownedVariantIds[0] || currentVariantId || "";
     }
 
     function getTopicProgressFromCache(topicId) {
@@ -519,8 +672,7 @@
       const type = String(condition.type || "level");
 
       if (type === "level") {
-        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
-        return currentLevel >= toNonNegativeNumber(condition.value, 1);
+        return getCurrentProgressLevel() >= toNonNegativeNumber(condition.value, 1);
       }
 
       const topicId = String(condition.value || "").trim();
@@ -656,9 +808,16 @@
 
           const loadedAccessories = normalizePetItemCatalog(result.accessories, "accessories");
           const loadedFood = normalizePetItemCatalog(result.food, "food");
+          const loadedBackgrounds = normalizePetBackgroundCatalog(result.backgrounds);
           const loadedVariants = normalizePetVariantsFromServer(result.variants);
-          const hasAnyData = loadedAccessories.length > 0 || loadedFood.length > 0;
+          const hasAnyData = loadedAccessories.length > 0 || loadedFood.length > 0 || loadedBackgrounds.length > 0;
           state.catalogLoaded = true;
+
+          STAGE_BACKGROUNDS = loadedBackgrounds.length > 0
+            ? loadedBackgrounds
+            : DEFAULT_STAGE_BACKGROUNDS.slice();
+          ensureValidBackgroundSelection();
+          buildBackgroundButtons();
 
           if (!hasAnyData) {
             if (loadedVariants.length > 0) {
@@ -666,7 +825,7 @@
               if (state.currentIndex >= PET_VARIANTS.length) state.currentIndex = 0;
               enforceLockedVariantSelection();
               syncLockedVariantByCurrentIndex();
-              buildColorButtons();
+              buildVariantButtons();
               renderPet();
             }
             updatePetCatalogHints();
@@ -682,10 +841,11 @@
           enforceLockedVariantSelection();
           syncLockedVariantByCurrentIndex();
           syncSelectedAccessoriesWithCatalog();
-          buildColorButtons();
+          buildVariantButtons();
           buildAccessoryButtons();
           buildFoodButtons();
           updateAccessoryButtons();
+          updateBackgroundButtons(state.selectedStageBackgroundIndex);
           renderAccessory();
           renderPet();
           updatePetCatalogHints();
@@ -710,7 +870,7 @@
           if (!response || response.success !== true) return;
           if (!window.globalTopicsCache) window.globalTopicsCache = {};
           window.globalTopicsCache.progress = response.progress || {};
-          updateColorButtons(state.currentIndex);
+          updateVariantButtons(state.currentIndex);
         })
         .withFailureHandler(function () {})
         .getUserTopicProgress();
@@ -942,17 +1102,21 @@
       // Entrance animations removed as requested
     }
 
-    function updateColorButtons(activeIndex) {
-      const buttonsWrap = document.getElementById("petColorButtons");
+    function updateVariantButtons(activeIndex) {
+      const buttonsWrap = document.getElementById("petVariantButtons");
       if (!buttonsWrap) return;
 
-      const buttons = buttonsWrap.querySelectorAll(".pet-color-btn");
+      const buttons = buttonsWrap.querySelectorAll(".pet-variant-btn");
       buttons.forEach((button, index) => {
         const variant = PET_VARIANTS[index];
+        const variantId = String((variant && variant.id) || "").trim();
         const unlocked = !!variant && isPetVariantUnlocked(variant);
-        button.classList.toggle("active", index === activeIndex && unlocked);
-        button.classList.toggle("is-locked", !unlocked);
-        button.setAttribute("aria-disabled", unlocked ? "false" : "true");
+        const owned = isVariantOwned(variantId);
+        button.classList.toggle("active", index === activeIndex && owned);
+        button.classList.toggle("is-owned", owned);
+        button.classList.toggle("is-not-owned", !owned);
+        button.classList.toggle("is-locked", !owned && !unlocked);
+        button.setAttribute("aria-disabled", !owned && !unlocked ? "true" : "false");
       });
     }
 
@@ -1026,13 +1190,15 @@
       const nextEggIndex = PET_VARIANTS.length
         ? Math.floor(Math.random() * PET_VARIANTS.length)
         : 0;
+      const nextVariantId = getVariantIdByIndex(nextEggIndex);
 
       state.progressionXP = 0;
       state.currentIndex = nextEggIndex;
       state.selectedAccessories = [];
       state.selectedStageBackgroundIndex = 0;
-      state.selectionLocked = true;
-      state.lockedVariantId = getVariantIdByIndex(nextEggIndex);
+      state.selectionLocked = false;
+      state.ownedVariantIds = normalizeOwnedVariantIds([], nextVariantId);
+      state.lockedVariantId = state.ownedVariantIds[0] || nextVariantId;
       
       if (typeof showToast === "function") {
         showToast("Đã reset PET về Level 1 và chọn ngẫu nhiên trứng mới", "info");
@@ -1045,8 +1211,10 @@
 
     function buildPersistedConfig() {
       const progressionXP = state.progressionXP || 0;
+      const currentVariantId = String(getVariantIdByIndex(state.currentIndex) || state.lockedVariantId || "").trim();
+      const ownedVariantIds = normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId);
       const lockedVariantId = String(
-        state.lockedVariantId || getVariantIdByIndex(state.currentIndex) || "",
+        ownedVariantIds[0] || currentVariantId,
       ).trim();
       return {
         currentIndex: state.currentIndex,
@@ -1056,7 +1224,9 @@
         progressionXP: progressionXP,
         progressionLevel: Math.floor(progressionXP / 100) + 1,
         progressionXPProgress: progressionXP % 100,
-        selectionLocked: true,
+        selectionLocked: false,
+        currentVariantId: currentVariantId,
+        ownedVariantIds: ownedVariantIds,
         lockedVariantId: lockedVariantId,
         petConfigVersion: PET_CONFIG_VERSION,
       };
@@ -1145,13 +1315,34 @@
     function isDirty() {
       if (!state.lastSavedConfig) return false;
 
-          const currentSelected = JSON.stringify(getPersistedSelectedAccessories());
-          const savedSelected = JSON.stringify(Array.isArray(state.lastSavedConfig.selectedAccessories) ? state.lastSavedConfig.selectedAccessories : []);
+      const currentSelected = JSON.stringify(getPersistedSelectedAccessories());
+      const savedSelected = JSON.stringify(Array.isArray(state.lastSavedConfig.selectedAccessories) ? state.lastSavedConfig.selectedAccessories : []);
+      const currentXP = toNonNegativeNumber(state.progressionXP, 0);
+      const savedXP = toNonNegativeNumber(state.lastSavedConfig.progressionXP, 0);
+      const currentVariantId = String(getVariantIdByIndex(state.currentIndex) || "").trim();
+      const savedVariantId = String(
+        state.lastSavedConfig.currentVariantId ||
+          getVariantIdByIndex(state.lastSavedConfig.currentIndex) ||
+          state.lastSavedConfig.lockedVariantId ||
+          "",
+      ).trim();
+      const currentOwnedVariantIds = JSON.stringify(
+        normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId),
+      );
+      const savedOwnedVariantIds = JSON.stringify(
+        normalizeOwnedVariantIds(
+          state.lastSavedConfig.ownedVariantIds,
+          savedVariantId,
+        ),
+      );
       
       return state.currentIndex !== state.lastSavedConfig.currentIndex ||
              state.isLevelTwo !== state.lastSavedConfig.isLevelTwo ||
             currentSelected !== savedSelected ||
              state.selectedStageBackgroundIndex !== state.lastSavedConfig.selectedStageBackgroundIndex ||
+             currentXP !== savedXP ||
+             currentVariantId !== savedVariantId ||
+             currentOwnedVariantIds !== savedOwnedVariantIds ||
              state.petDisplayName !== state.originalPetName;
     }
 
@@ -1219,17 +1410,37 @@
         .withSuccessHandler(function(result) {
           if (result && result.success && result.config) {
             const config = result.config;
-            state.currentIndex = typeof config.currentIndex === 'number' ? config.currentIndex : state.currentIndex;
+            const loadedIndex = parseInt(config.currentIndex, 10);
+            if (Number.isFinite(loadedIndex) && loadedIndex >= 0) {
+              state.currentIndex = loadedIndex;
+            }
             state.isLevelTwo = !!config.isLevelTwo;
-            state.selectionLocked = config.selectionLocked !== false;
-            state.lockedVariantId = String(config.lockedVariantId || '').trim();
+            const loadedCurrentVariantId = String(
+              config.currentVariantId || config.lockedVariantId || getVariantIdByIndex(state.currentIndex) || "",
+            ).trim();
+            const currentIndexById = getVariantIndexById(loadedCurrentVariantId);
+            if (currentIndexById >= 0) {
+              state.currentIndex = currentIndexById;
+            }
+            state.selectionLocked = false;
+            state.ownedVariantIds = normalizeOwnedVariantIds(
+              config.ownedVariantIds,
+              loadedCurrentVariantId || getVariantIdByIndex(state.currentIndex),
+            );
+            state.lockedVariantId = String(
+              config.lockedVariantId || state.ownedVariantIds[0] || loadedCurrentVariantId || "",
+            ).trim();
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             if (state.catalogLoaded) {
               syncSelectedAccessoriesWithCatalog();
             }
-            state.selectedStageBackgroundIndex = typeof config.selectedStageBackgroundIndex === 'number' ? config.selectedStageBackgroundIndex : 0;
-            if (typeof config.progressionXP === 'number') {
-              state.progressionXP = config.progressionXP;
+            const loadedBackgroundIndex = parseInt(config.selectedStageBackgroundIndex, 10);
+            state.selectedStageBackgroundIndex = Number.isFinite(loadedBackgroundIndex)
+              ? Math.max(0, loadedBackgroundIndex)
+              : 0;
+            const loadedXP = parseInt(config.progressionXP, 10);
+            if (Number.isFinite(loadedXP) && loadedXP >= 0) {
+              state.progressionXP = loadedXP;
             } else {
               const loadedLevel = parseInt(config.progressionLevel, 10);
               const loadedProgress = parseInt(config.progressionXPProgress, 10);
@@ -1384,7 +1595,7 @@
 
       container.addEventListener("click", function (e) {
         const btn = e.target.closest(".pet-pill-btn");
-        if (!btn || btn.disabled || !state.isLevelTwo) return;
+        if (!btn || btn.disabled || !canEquipAccessories()) return;
 
         const pos = btn.getAttribute("data-pos");
         if (!pos) return;
@@ -1398,6 +1609,7 @@
 
         updateAccessoryPositionButtons();
         renderAccessory();
+        queuePetConfigAutoSave();
       });
     }
 
@@ -1573,12 +1785,12 @@
       const panelEl = document.getElementById("petAccessoryPanel");
       if (!panelEl) return;
 
-      panelEl.classList.toggle("disabled", !state.isLevelTwo);
-      panelEl.setAttribute("aria-disabled", state.isLevelTwo ? "false" : "true");
+      panelEl.classList.toggle("disabled", !canEquipAccessories());
+      panelEl.setAttribute("aria-disabled", canEquipAccessories() ? "false" : "true");
 
       const accessoryButtons = panelEl.querySelectorAll(".pet-accessory-btn");
       accessoryButtons.forEach(function (button) {
-        button.disabled = !state.isLevelTwo;
+        button.disabled = !canEquipAccessories();
       });
     }
 
@@ -1598,6 +1810,22 @@
           button.classList.toggle("active", state.selectedAccessories.length === 0);
           return;
         }
+
+        const catalogItem = getAccessoryItemByFileName(fileName);
+        const locked = !!catalogItem && isProgressLevelLocked(catalogItem);
+        button.classList.toggle("is-locked", locked);
+        button.setAttribute("aria-disabled", locked ? "true" : "false");
+
+        let lockOverlay = button.querySelector(".pet-item-lock-icon");
+        if (locked && !lockOverlay) {
+          lockOverlay = document.createElement("div");
+          lockOverlay.className = "pet-item-lock-icon";
+          lockOverlay.innerHTML = '<span class="material-symbols-sharp">lock</span>';
+          button.appendChild(lockOverlay);
+        } else if (!locked && lockOverlay) {
+          lockOverlay.remove();
+        }
+
         button.classList.toggle("active", Boolean(selectedMap[fileName]));
       });
     }
@@ -1617,7 +1845,7 @@
       const buttons = container.querySelectorAll(".pet-pill-btn");
       buttons.forEach(function (button) {
         const pos = button.getAttribute("data-pos") || "";
-        const isAllowed = state.isLevelTwo && allowed.indexOf(pos) >= 0;
+        const isAllowed = canEquipAccessories() && allowed.indexOf(pos) >= 0;
         button.disabled = !isAllowed;
         button.classList.toggle("active", isAllowed && pos === activePosition);
       });
@@ -1635,7 +1863,7 @@
       const accessoryImageEls = getAccessoryImageElements();
       if (accessoryImageEls.length === 0) return;
 
-      if (!state.isLevelTwo) {
+      if (!canEquipAccessories()) {
         accessoryImageEls.forEach(clearAccessoryImage);
         return;
       }
@@ -1662,11 +1890,12 @@
     function renderPet() {
       enforceLockedVariantSelection();
       ensureCurrentVariantAccessible();
+      ensureValidBackgroundSelection();
       const xp = state.progressionXP || 0;
       const progressionLevel = Math.floor(xp / 100) + 1;
       
       // Update visual level state: Progression Level 3+ is Mature (Level 2 visuals)
-      state.isLevelTwo = (progressionLevel >= 3);
+      state.isLevelTwo = canEquipAccessories();
 
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
@@ -1690,7 +1919,9 @@
         stageEl.style.boxShadow = "inset 0 0 0 1px " + variant.tone + "44";
         const activeBackground =
           STAGE_BACKGROUNDS[state.selectedStageBackgroundIndex] || STAGE_BACKGROUNDS[0];
-        applyBgAsync(stageEl, activeBackground.fileName);
+        if (activeBackground && activeBackground.fileName) {
+          applyBgAsync(stageEl, activeBackground.fileName);
+        }
       }
 
       if (levelBtn) {
@@ -1724,15 +1955,16 @@
       updateSettingsPanelVisibility();
       updateBackgroundPanelVisibility();
 
-      updateColorButtons(state.currentIndex);
+      updateVariantButtons(state.currentIndex);
       updateBackgroundButtons(state.selectedStageBackgroundIndex);
       updateAccessoryButtons();
+      updateFoodButtons();
       updateAccessoryPositionButtons();
       updateSaveButtonUI();
     }
 
     function triggerBlink() {
-      if (!state.isLevelTwo || state.isPressing) return;
+      if (!canEquipAccessories() || state.isPressing) return;
 
       state.isEyesClosed = true;
       renderEyes();
@@ -1760,15 +1992,9 @@
     }
 
     function movePet(step) {
-      if (state.selectionLocked) {
-        if (typeof showToast === "function") {
-          showToast("PET da khoa theo trung da chon. Reset Level 1 de doi trung khac.", "info");
-        }
-        return;
-      }
-
       const total = PET_VARIANTS.length;
       state.currentIndex = (state.currentIndex + step + total) % total;
+      enforceLockedVariantSelection();
       releasePressState();
       renderPet();
     }
@@ -1781,66 +2007,184 @@
       }
 
       const currentVariant = PET_VARIANTS[state.currentIndex];
-      if (currentVariant && isPetVariantUnlocked(currentVariant)) {
+      const currentVariantId = String((currentVariant && currentVariant.id) || "").trim();
+      if (currentVariant && isVariantOwned(currentVariantId)) {
         return;
       }
 
-      const firstUnlockedIndex = PET_VARIANTS.findIndex(function (variant) {
-        return isPetVariantUnlocked(variant);
+      const firstOwnedIndex = PET_VARIANTS.findIndex(function (variant) {
+        const variantId = String((variant && variant.id) || "").trim();
+        return isVariantOwned(variantId);
       });
 
-      state.currentIndex = firstUnlockedIndex >= 0 ? firstUnlockedIndex : 0;
+      state.currentIndex = firstOwnedIndex >= 0 ? firstOwnedIndex : 0;
     }
 
-    function buildColorButtons() {
-      const buttonsWrap = document.getElementById("petColorButtons");
+    function purchaseSecondPetVariant(variant, index) {
+      const targetVariantId = String((variant && variant.id) || "").trim();
+      if (!targetVariantId) return;
+
+      if (!canOwnMoreVariants()) {
+        if (typeof showToast === "function") {
+          showToast("Bạn chỉ có thể sở hữu tối đa 2 pet", "warning");
+        }
+        return;
+      }
+
+      if (!isPetVariantUnlocked(variant)) {
+        if (typeof showToast === "function") {
+          const cond = variant.unlockCondition || { type: "level", value: 1 };
+          if (cond.type === "level") {
+            showToast("Pet này yêu cầu Level tiến độ " + cond.value, "warning");
+          } else {
+            showToast("Pet này chưa đủ điều kiện mở khóa", "warning");
+          }
+        }
+        return;
+      }
+
+      const secondPetPrice = Math.max(0, toNonNegativeNumber(variant.secondPetPriceXqp, 500));
+      if ((state.totalXQP || 0) < secondPetPrice) {
+        if (typeof showToast === "function") {
+          showToast("Không đủ XQP để mua pet này", "warning");
+        }
+        return;
+      }
+
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run ||
+        !window.currentUser ||
+        !window.currentUser.userId
+      ) {
+        if (typeof showToast === "function") {
+          showToast("Không thể mua pet lúc này", "error");
+        }
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          if (!result || result.success !== true) {
+            if (typeof showToast === "function") {
+              showToast((result && result.message) || "Mua pet thất bại", "error");
+            }
+            return;
+          }
+
+          state.totalXQP = Math.max(0, toNonNegativeNumber(result.newTotalXQP, state.totalXQP || 0));
+          if (window.currentUser) {
+            window.currentUser.totalXQP = state.totalXQP;
+          }
+          const xqpDisplay = document.getElementById("petXQPBalance");
+          if (xqpDisplay) {
+            xqpDisplay.textContent = Number(state.totalXQP).toLocaleString();
+          }
+
+          if (result.config && typeof result.config === "object") {
+            const configIndex = parseInt(result.config.currentIndex, 10);
+            if (Number.isFinite(configIndex) && configIndex >= 0 && configIndex < PET_VARIANTS.length) {
+              state.currentIndex = configIndex;
+            } else {
+              state.currentIndex = index;
+            }
+            state.ownedVariantIds = normalizeOwnedVariantIds(
+              result.config.ownedVariantIds,
+              targetVariantId,
+            );
+            state.selectionLocked = false;
+            state.lockedVariantId = String(result.config.lockedVariantId || state.ownedVariantIds[0] || "").trim();
+          } else {
+            state.ownedVariantIds = normalizeOwnedVariantIds(state.ownedVariantIds, targetVariantId);
+            state.currentIndex = index;
+          }
+
+          state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
+          releasePressState();
+          renderPet();
+          updateSaveButtonUI();
+
+          if (typeof showToast === "function") {
+            showToast("Mua pet thành công", "success");
+          }
+        })
+        .withFailureHandler(function (error) {
+          if (typeof showToast === "function") {
+            showToast("Lỗi mua pet: " + (error && error.message ? error.message : error), "error");
+          }
+        })
+        .purchasePetVariant({
+          userId: window.currentUser.userId,
+          variantId: targetVariantId,
+        });
+    }
+
+    function buildVariantButtons() {
+      const buttonsWrap = document.getElementById("petVariantButtons");
       if (!buttonsWrap) return;
 
       buttonsWrap.innerHTML = "";
       PET_VARIANTS.forEach((variant, index) => {
+        const targetVariantId = String((variant && variant.id) || "").trim();
         const unlocked = isPetVariantUnlocked(variant);
+        const owned = isVariantOwned(targetVariantId);
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "pet-color-btn";
+        btn.className = "pet-variant-btn";
         btn.title = variant.name;
         btn.setAttribute("aria-label", variant.name);
-        if (!unlocked) {
+        if (!unlocked && !owned) {
           btn.classList.add("is-locked");
           btn.setAttribute("aria-disabled", "true");
         }
-        btn.innerHTML =
-          '<span class="pet-color-dot" style="background:' +
-          variant.tone +
-          '"></span>';
+
+        btn.classList.toggle("is-owned", owned);
+        btn.classList.toggle("is-not-owned", !owned);
+
+        const thumb = document.createElement("img");
+        thumb.className = "pet-variant-thumb";
+        thumb.alt = variant.name;
+        thumb.loading = "lazy";
+        const previewFile = variant.level2 || variant.level1 || "";
+        thumb.src = resolvePetThumbSrc(previewFile);
+        thumb.onerror = function () {
+          this.src = "";
+          this.style.visibility = "hidden";
+        };
+        thumb.onload = function () {
+          this.style.visibility = "visible";
+        };
+        thumb.style.visibility = "hidden";
+        btn.appendChild(thumb);
+
+        btn.addEventListener("mouseenter", function (event) {
+          showPetTooltip(
+            event,
+            {
+              name: variant.name,
+              file: previewFile,
+              level1: variant.level1,
+              level2: variant.level2,
+              secondPetPriceXqp: variant.secondPetPriceXqp,
+              unlockCondition: variant.unlockCondition,
+              isOwned: owned,
+            },
+            "variant",
+          );
+        });
+        btn.addEventListener("mouseleave", hidePetTooltip);
+
         btn.addEventListener("click", function () {
-          const targetVariantId = String((variant && variant.id) || "").trim();
-          const isLockedToDifferentVariant =
-            state.selectionLocked &&
-            state.lockedVariantId &&
-            targetVariantId &&
-            state.lockedVariantId !== targetVariantId;
-
-          if (isLockedToDifferentVariant) {
-            if (typeof showToast === "function") {
-              showToast("PET da khoa theo trung da chon. Reset Level 1 de doi trung khac.", "info");
-            }
+          if (!owned) {
+            purchaseSecondPetVariant(variant, index);
             return;
           }
 
-          if (!unlocked) {
-            if (typeof showToast === "function") {
-              const cond = variant.unlockCondition || { type: "level", value: 1 };
-              if (cond.type === "level") {
-                showToast("Pet này yêu cầu Level " + cond.value, "warning");
-              } else {
-                showToast("Pet này chưa đủ điều kiện mở khóa", "warning");
-              }
-            }
-            return;
-          }
           state.currentIndex = index;
           releasePressState();
           renderPet();
+          queuePetConfigAutoSave();
         });
         buttonsWrap.appendChild(btn);
       });
@@ -1850,9 +2194,26 @@
       const buttonsWrap = document.getElementById("petBackgroundButtons");
       if (!buttonsWrap) return;
 
+      ensureValidBackgroundSelection();
+      const safeActiveIndex = state.selectedStageBackgroundIndex;
+
       const buttons = buttonsWrap.querySelectorAll(".pet-bg-btn");
       buttons.forEach((button, index) => {
-        button.classList.toggle("active", index === activeIndex);
+        const background = STAGE_BACKGROUNDS[index];
+        const unlocked = isBackgroundUnlocked(background);
+        button.classList.toggle("active", unlocked && index === safeActiveIndex);
+        button.classList.toggle("is-locked", !unlocked);
+        button.setAttribute("aria-disabled", unlocked ? "false" : "true");
+
+        let lockOverlay = button.querySelector(".pet-item-lock-icon");
+        if (!unlocked && !lockOverlay) {
+          lockOverlay = document.createElement("div");
+          lockOverlay.className = "pet-item-lock-icon";
+          lockOverlay.innerHTML = `<span class="material-symbols-sharp">lock</span>`;
+          button.appendChild(lockOverlay);
+        } else if (unlocked && lockOverlay) {
+          lockOverlay.remove();
+        }
       });
     }
 
@@ -1860,6 +2221,7 @@
       const buttonsWrap = document.getElementById("petBackgroundButtons");
       if (!buttonsWrap) return;
 
+      ensureValidBackgroundSelection();
       buttonsWrap.innerHTML = "";
 
       STAGE_BACKGROUNDS.forEach(function (background, index) {
@@ -1884,8 +2246,17 @@
         btn.appendChild(img);
         
         btn.addEventListener("click", function () {
+          const unlocked = isBackgroundUnlocked(background);
+          if (!unlocked) {
+            if (typeof showToast === "function") {
+              const cond = background.unlockCondition || { type: "level", value: 1 };
+              showToast("Nền yêu cầu Level tiến độ " + toNonNegativeNumber(cond.value, 1), "warning");
+            }
+            return;
+          }
           state.selectedStageBackgroundIndex = index;
           renderPet();
+          queuePetConfigAutoSave();
         });
         buttonsWrap.appendChild(btn);
       });
@@ -1911,7 +2282,7 @@
 
       noAccessoryBtn.appendChild(noAccessoryIcon);
       noAccessoryBtn.addEventListener("click", function () {
-        if (!state.isLevelTwo) return;
+        if (!canEquipAccessories()) return;
 
         state.selectedAccessories = [];
         state.selectedAccessory = NO_ACCESSORY_VALUE;
@@ -1919,6 +2290,7 @@
         renderAccessory();
         updateAccessoryButtons();
         updateAccessoryPositionButtons();
+        queuePetConfigAutoSave();
       });
       gridEl.appendChild(noAccessoryBtn);
 
@@ -1926,21 +2298,10 @@
         const fileName = catalogItem.file;
         const displayName = String(catalogItem.name || ("Phụ kiện " + (index + 1)));
 
-        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
-        const isLocked = catalogItem.unlockCondition && catalogItem.unlockCondition.type === 'level' && catalogItem.unlockCondition.value > currentLevel;
-
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "pet-accessory-btn";
         btn.setAttribute("data-file", fileName);
-
-        if (isLocked) {
-           btn.classList.add("is-locked");
-           const lockOverlay = document.createElement("div");
-           lockOverlay.className = "pet-item-lock-icon";
-           lockOverlay.innerHTML = `<span class="material-symbols-sharp">lock</span>`;
-           btn.appendChild(lockOverlay);
-        }
 
         const thumb = document.createElement("img");
         thumb.className = "pet-accessory-thumb";
@@ -1964,13 +2325,14 @@
         btn.addEventListener("mouseleave", hidePetTooltip);
 
         btn.addEventListener("click", function () {
-          if (isLocked) {
+          const lockedNow = isProgressLevelLocked(catalogItem);
+          if (lockedNow) {
             if (typeof showToast === "function") {
-              showToast("Vật phẩm yêu cầu Level " + catalogItem.unlockCondition.value, "warning");
+              showToast("Vật phẩm yêu cầu Level tiến độ " + catalogItem.unlockCondition.value, "warning");
             }
             return;
           }
-          if (!state.isLevelTwo) return;
+          if (!canEquipAccessories()) return;
 
           const selectedIndex = getSelectedAccessoryIndex(fileName);
           if (selectedIndex >= 0) {
@@ -1993,6 +2355,7 @@
             renderAccessory();
             updateAccessoryButtons();
             updateAccessoryPositionButtons();
+            queuePetConfigAutoSave();
             return;
           }
 
@@ -2024,9 +2387,12 @@
           renderAccessory();
           updateAccessoryButtons();
           updateAccessoryPositionButtons();
+          queuePetConfigAutoSave();
         });
         gridEl.appendChild(btn);
       });
+
+      updateAccessoryButtons();
     }
 
     function buildFoodButtons() {
@@ -2068,20 +2434,10 @@
         const fileName = foodItem.file;
         const displayName = String(foodItem.name || ("Food " + (index + 1)));
 
-        const currentLevel = Math.floor((state.progressionXP || 0) / 100) + 1;
-        const isLocked = foodItem.unlockCondition && foodItem.unlockCondition.type === 'level' && foodItem.unlockCondition.value > currentLevel;
-
         const item = document.createElement("button");
         item.type = "button";
         item.className = "pet-food-item";
-
-        if (isLocked) {
-           item.classList.add("is-locked");
-           const lockOverlay = document.createElement("div");
-           lockOverlay.className = "pet-item-lock-icon";
-           lockOverlay.innerHTML = `<span class="material-symbols-sharp">lock</span>`;
-           item.appendChild(lockOverlay);
-        }
+        item.setAttribute("data-file", fileName);
 
         const img = document.createElement("img");
         img.className = "pet-food-thumb";
@@ -2111,15 +2467,48 @@
         item.addEventListener("mouseleave", hidePetTooltip);
 
         item.addEventListener("click", function() {
-          if (isLocked) {
+          const lockedNow = isProgressLevelLocked(foodItem);
+          if (lockedNow) {
             if (typeof showToast === "function") {
-              showToast("Vật phẩm yêu cầu Level " + foodItem.unlockCondition.value, "warning");
+              showToast("Vật phẩm yêu cầu Level tiến độ " + foodItem.unlockCondition.value, "warning");
             }
             return;
           }
           feedPet(foodItem.petXpGain, displayName);
         });
         gridEl.appendChild(item);
+      });
+
+      updateFoodButtons();
+    }
+
+    function updateFoodButtons() {
+      const gridEl = document.getElementById("petFoodGrid");
+      if (!gridEl) return;
+
+      const buttons = gridEl.querySelectorAll(".pet-food-item");
+      buttons.forEach(function (button) {
+        const fileName = button.getAttribute("data-file") || "";
+        if (!fileName) return;
+
+        const foodItem = FOOD_ITEMS.find(function (item) {
+          return item.file === fileName;
+        });
+        if (!foodItem) return;
+
+        const locked = isProgressLevelLocked(foodItem);
+        button.classList.toggle("is-locked", locked);
+        button.setAttribute("aria-disabled", locked ? "true" : "false");
+
+        let lockOverlay = button.querySelector(".pet-item-lock-icon");
+        if (locked && !lockOverlay) {
+          lockOverlay = document.createElement("div");
+          lockOverlay.className = "pet-item-lock-icon";
+          lockOverlay.innerHTML = '<span class="material-symbols-sharp">lock</span>';
+          button.appendChild(lockOverlay);
+        } else if (!locked && lockOverlay) {
+          lockOverlay.remove();
+        }
       });
     }
 
@@ -2128,7 +2517,7 @@
       if (!positionContainer) return;
 
       positionContainer.addEventListener("click", function (event) {
-        if (!state.isLevelTwo) return;
+        if (!canEquipAccessories()) return;
 
         const target = event.target.closest(".pet-pill-btn[data-pos]");
         if (!target) return;
@@ -2439,6 +2828,7 @@
     }
 
     function preloadMainAssets() {
+      ensureValidBackgroundSelection();
         const variant = PET_VARIANTS[state.currentIndex];
         const bg = STAGE_BACKGROUNDS[state.selectedStageBackgroundIndex] || STAGE_BACKGROUNDS[0];
         if (variant && bg) {
@@ -2497,7 +2887,7 @@
         bindPetNameEditor();
         bindControls();
         bindStageInteractions();
-        buildColorButtons();
+        buildVariantButtons();
         buildBackgroundButtons();
         buildAccessoryButtons();
         buildFoodButtons();

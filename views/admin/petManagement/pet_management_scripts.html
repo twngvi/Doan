@@ -11,6 +11,11 @@
 
     var ACCESSORY_LIST = [];
     var FOOD_LIST = [];
+    var BACKGROUND_LIST = [
+      { id: "bg-1", name: "Nen 1", file: "bg-1.svg" },
+      { id: "bg-2", name: "Nen 2", file: "bg-2.svg" },
+      { id: "bg-3", name: "Nen 3", file: "bg-3.svg" },
+    ];
     var PET_VARIANT_LIST = [
       {
         id: "pet-12",
@@ -181,6 +186,7 @@
     var state = {
       accessories: [],
       food: [],
+      backgrounds: [],
       petVariants: [],
       topics: TOPIC_FALLBACK.slice(),
       initialized: false,
@@ -339,6 +345,7 @@
         description: String(safe.description || ""),
         level1: String(safe.level1 || DEFAULT_LEVEL1_FILE),
         level2: String(safe.level2 || ""),
+        secondPetPriceXqp: parseNonNegative(safe.secondPetPriceXqp, 500),
         unlockCondition: {
           type: unlockType,
           value: unlockValue,
@@ -382,6 +389,18 @@
         });
       }
 
+      if (state.backgrounds.length === 0) {
+        state.backgrounds = BACKGROUND_LIST.map(function (item) {
+          return {
+            id: item.id,
+            name: item.name,
+            file: item.file,
+            priceXqp: 0,
+            unlockCondition: { type: "level", value: 1 }
+          };
+        });
+      }
+
       if (state.petVariants.length === 0) {
         state.petVariants = PET_VARIANT_LIST.map(function (variant) {
           return cloneVariant(variant);
@@ -420,6 +439,8 @@
           var fallbackId =
             type === 'food'
               ? ('food-' + (31 + index))
+              : type === 'backgrounds'
+                ? ('bg-' + (index + 1))
               : ('acc-' + (index + 1 < 10 ? '0' + (index + 1) : String(index + 1)));
 
           var normalized = {
@@ -474,6 +495,9 @@
           return cloneItem(item);
         }),
         food: state.food.map(function (item) {
+          return cloneItem(item);
+        }),
+        backgrounds: state.backgrounds.map(function (item) {
           return cloneItem(item);
         }),
       };
@@ -622,19 +646,29 @@
 
           var loadedAccessories = normalizeLoadedItems(result.accessories, 'accessories');
           var loadedFood = normalizeLoadedItems(result.food, 'food');
+          var loadedBackgrounds = normalizeLoadedItems(result.backgrounds, 'backgrounds');
           var loadedVariants = normalizeLoadedVariants(result.variants);
-          var hasPersistedData = loadedAccessories.length > 0 || loadedFood.length > 0;
+          var hasPersistedData = loadedAccessories.length > 0 || loadedFood.length > 0 || loadedBackgrounds.length > 0;
+          var hasBackgroundData = loadedBackgrounds.length > 0;
           var hasVariantData = loadedVariants.length > 0;
 
           if (hasPersistedData) {
             state.accessories = loadedAccessories;
             state.food = loadedFood;
+            if (hasBackgroundData) {
+              state.backgrounds = loadedBackgrounds;
+            }
             if (hasVariantData) {
               state.petVariants = loadedVariants;
             }
             ensureVariantFallbackState();
             updateCounts();
             renderAllPmItems();
+
+            if (!hasBackgroundData) {
+              // Backfill legacy sheets with default backgrounds.
+              persistPetItemsToBackend(false);
+            }
             return;
           }
 
@@ -707,10 +741,8 @@
       editorEls.variantSidebar = document.getElementById('pm-variant-editor-sidebar');
       editorEls.variantTitle = document.getElementById('pm-variant-editor-title');
       editorEls.variantName = document.getElementById('pm-variant-name');
-      editorEls.variantTone = document.getElementById('pm-variant-tone');
-      editorEls.variantToneHex = document.getElementById('pm-variant-tone-hex');
-      editorEls.variantColorSwatch = document.getElementById('pm-variant-color-swatch');
       editorEls.variantDescription = document.getElementById('pm-variant-description');
+      editorEls.variantSecondPrice = document.getElementById('pm-variant-second-price');
       editorEls.variantEditLevelTabs = document.getElementById('pm-variant-edit-level-tabs');
       editorEls.variantLevel1Wrap = document.getElementById('pm-variant-level1-wrap');
       editorEls.variantLevel2Wrap = document.getElementById('pm-variant-level2-wrap');
@@ -737,16 +769,20 @@
     }
 
     function getItemsByType(type) {
-      return type === 'food' ? state.food : state.accessories;
+      if (type === 'food') return state.food;
+      if (type === 'backgrounds') return state.backgrounds;
+      return state.accessories;
     }
 
     function updateCounts() {
       var accCountEl = document.getElementById('accessory-count');
       var foodCountEl = document.getElementById('food-count');
+      var bgCountEl = document.getElementById('background-count');
       var variantCountEl = document.getElementById('variant-count');
       var variantCount = Array.isArray(state.petVariants) ? state.petVariants.length * 2 : 0;
       if (accCountEl) accCountEl.textContent = String(state.accessories.length);
       if (foodCountEl) foodCountEl.textContent = String(state.food.length);
+      if (bgCountEl) bgCountEl.textContent = String(state.backgrounds.length);
       if (variantCountEl) variantCountEl.textContent = String(variantCount);
     }
 
@@ -798,6 +834,7 @@
     function renderAllPmItems() {
       renderPmItems('accessories-grid', state.accessories, 'accessories');
       renderPmItems('food-grid', state.food, 'food');
+      renderPmItems('backgrounds-grid', state.backgrounds, 'backgrounds');
       renderPetVariantItems();
     }
 
@@ -814,7 +851,7 @@
 
       state.petVariants.forEach(function (variant, index) {
         var safeName = escapeHtml(variant.name || ('Pet ' + (index + 1)));
-        var tone = escapeHtml(variant.tone || '#7c8cff');
+        var secondPetPriceXqp = parseNonNegative(variant.secondPetPriceXqp, 500);
         [1, 2].forEach(function (level) {
           var src = resolveAssetSrc(level === 1 ? (variant.level1 || DEFAULT_LEVEL1_FILE) : (variant.level2 || ''));
           var levelLabel = level === 1 ? 'Level 1' : 'Level 2';
@@ -829,7 +866,7 @@
             '  <span class="pm-item-name">' + safeName + '</span>' +
             '  <div class="pm-variant-meta">' +
             '    <span class="pm-variant-level-pill">' + levelLabel + '</span>' +
-            '    <span class="pm-variant-color-dot" style="background:' + tone + '"></span>' +
+            '    <span class="pm-variant-price-pill">Pet 2: ' + secondPetPriceXqp + ' XQP</span>' +
             '  </div>' +
             '</div>';
         });
@@ -943,6 +980,7 @@
           description: '',
           level1: DEFAULT_LEVEL1_FILE,
           level2: '',
+          secondPetPriceXqp: 500,
           unlockCondition: { type: 'level', value: 1 },
           scalePercent: 100,
         };
@@ -963,9 +1001,8 @@
         editorEls.variantTitle.textContent = isNew ? 'Thêm hình dạng PET mới' : 'Chỉnh sửa hình dạng PET';
       }
       if (editorEls.variantName) editorEls.variantName.value = draft.name || '';
-      syncColorPickerFromHex(draft.tone || '#7c8cff');
-      syncColorHexToInput(draft.tone || '#7c8cff');
       if (editorEls.variantDescription) editorEls.variantDescription.value = draft.description || '';
+      if (editorEls.variantSecondPrice) editorEls.variantSecondPrice.value = String(parseNonNegative(draft.secondPetPriceXqp, 500));
       if (editorEls.variantLevel1) {
         editorEls.variantLevel1.value = draft.level1 || DEFAULT_LEVEL1_FILE;
         editorEls.variantLevel1.readOnly = false;
@@ -996,10 +1033,10 @@
       if (!draft) return;
 
       draft.name = editorEls.variantName ? editorEls.variantName.value.trim() : draft.name;
-      draft.tone = editorEls.variantTone ? editorEls.variantTone.value : draft.tone;
       draft.description = editorEls.variantDescription ? editorEls.variantDescription.value.trim() : draft.description;
       draft.level1 = editorEls.variantLevel1 ? editorEls.variantLevel1.value.trim() : draft.level1;
       draft.level2 = editorEls.variantLevel2 ? editorEls.variantLevel2.value.trim() : draft.level2;
+      draft.secondPetPriceXqp = parseNonNegative(editorEls.variantSecondPrice ? editorEls.variantSecondPrice.value : draft.secondPetPriceXqp, 500);
 
       var unlockType = editorEls.variantUnlockType ? editorEls.variantUnlockType.value : 'level';
       var unlockValue = unlockType === 'level'
@@ -1066,31 +1103,46 @@
         closePmVariantEditor();
       };
 
-      if (typeof window.showAppConfirm === 'function') {
+      requestDeleteConfirm('Ban chac chan muon xoa hinh dang PET nay?', {
+        title: 'Xac nhan xoa',
+        confirmText: 'Xoa',
+        cancelText: 'Huy'
+      }).then(function (ok) {
+        if (ok) deleteVariant();
+      });
+    }
+
+    function hasAppDialogElements() {
+      return !!(
+        document.getElementById('app-dialog-overlay') &&
+        document.getElementById('app-dialog-title') &&
+        document.getElementById('app-dialog-message') &&
+        document.getElementById('app-dialog-ok') &&
+        document.getElementById('app-dialog-cancel')
+      );
+    }
+
+    function requestDeleteConfirm(message, options) {
+      var text = String(message || 'Ban chac chan muon xoa item nay?');
+      var opts = options || {};
+
+      if (typeof window.showAppConfirm === 'function' && hasAppDialogElements()) {
         try {
-          var result = window.showAppConfirm('Ban chac chan muon xoa hinh dang PET nay?', {
-            title: 'Xac nhan xoa',
-            confirmText: 'Xoa',
-            cancelText: 'Huy'
-          });
-
+          var result = window.showAppConfirm(text, opts);
           if (result && typeof result.then === 'function') {
-            result.then(function (ok) {
-              if (ok) deleteVariant();
-            }).catch(function () {});
-            return;
+            return result
+              .then(function (ok) { return !!ok; })
+              .catch(function () { return window.confirm(text); });
           }
-
-          if (result) deleteVariant();
-          return;
+          if (typeof result === 'boolean') {
+            return Promise.resolve(result);
+          }
         } catch (e) {
           // Fall back to native confirm below.
         }
       }
 
-      if (window.confirm('Ban chac chan muon xoa hinh dang PET nay?')) {
-        deleteVariant();
-      }
+      return Promise.resolve(window.confirm(text));
     }
 
     function populateTopicOptions() {
@@ -1216,11 +1268,17 @@
       var isNew = state.editor.isNew;
       var draft = state.editor.draft;
       var isFood = type === 'food';
+      var isAccessory = type === 'accessories';
+      var isBackground = type === 'backgrounds';
 
       if (editorEls.title) {
-        editorEls.title.textContent = isNew
-          ? (isFood ? 'Them Food moi' : 'Them Phu kien moi')
-          : (isFood ? 'Chinh sua Food' : 'Chinh sua Phu kien');
+        if (isBackground) {
+          editorEls.title.textContent = isNew ? 'Them Nen PET moi' : 'Chinh sua Nen PET';
+        } else {
+          editorEls.title.textContent = isNew
+            ? (isFood ? 'Them Food moi' : 'Them Phu kien moi')
+            : (isFood ? 'Chinh sua Food' : 'Chinh sua Phu kien');
+        }
       }
 
       if (editorEls.name) editorEls.name.value = isNew ? '' : (draft.name || '');
@@ -1232,7 +1290,9 @@
         editorEls.unlockType.value = (draft.unlockCondition && draft.unlockCondition.type) || 'level';
       }
       if (editorEls.unlockLevel) {
-        editorEls.unlockLevel.value = isNew ? '' : String(draft.unlockCondition.value || 1);
+        editorEls.unlockLevel.value = (isBackground || !isNew)
+          ? String((draft.unlockCondition && draft.unlockCondition.value) || 1)
+          : '';
       }
 
       populateTopicOptions();
@@ -1242,19 +1302,26 @@
 
       if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
-      
-      // Accessory position and scale
-      draft.positionProfiles = buildDefaultAccessoryProfiles(draft);
-      draft.positionMode = normalizeAccessoryPositionMode(draft.positionMode || 'center');
-      if (editorEls.accessoryPreviewWrap) editorEls.accessoryPreviewWrap.style.display = isFood ? 'none' : 'flex';
-      setActiveAccessoryProfileTab(draft.positionMode);
+
+      if (isAccessory) {
+        draft.positionProfiles = buildDefaultAccessoryProfiles(draft);
+        draft.positionMode = normalizeAccessoryPositionMode(draft.positionMode || 'center');
+        setActiveAccessoryProfileTab(draft.positionMode);
+      }
       
       if (editorEls.deleteBtn) editorEls.deleteBtn.textContent = isNew ? 'Huy them moi' : 'Xoa item';
 
       updateAccessoryFieldVisibility();
-      syncUnlockFieldVisibility();
+      if (isBackground) {
+        if (editorEls.unlockLevelWrap) editorEls.unlockLevelWrap.style.display = 'flex';
+        if (editorEls.unlockTopicWrap) editorEls.unlockTopicWrap.style.display = 'none';
+      } else {
+        syncUnlockFieldVisibility();
+      }
       updateEditorImagePreview();
-      updateAccessoryPreview();
+      if (isAccessory) {
+        updateAccessoryPreview();
+      }
     }
 
     function openSidebar() {
@@ -1287,6 +1354,7 @@
 
       var next = maxNum + 1;
       if (type === 'food') return 'food-' + next;
+      if (type === 'backgrounds') return 'bg-' + next;
       return 'acc-' + (next < 10 ? '0' + next : String(next));
     }
 
@@ -1316,6 +1384,11 @@
           unlockCondition: { type: 'level', value: '' }
         }
       };
+
+      if (type === 'backgrounds') {
+        state.editor.draft.priceXqp = 0;
+        state.editor.draft.unlockCondition = { type: 'level', value: 1 };
+      }
 
       fillEditorForm();
       openSidebar();
@@ -1498,21 +1571,6 @@
       }
     }
 
-    function syncColorHexToInput(hexValue) {
-      if (editorEls.variantToneHex) {
-        editorEls.variantToneHex.value = hexValue;
-      }
-    }
-
-    function syncColorPickerFromHex(hexValue) {
-      if (editorEls.variantTone) {
-        editorEls.variantTone.value = hexValue;
-      }
-      if (editorEls.variantColorSwatch) {
-        editorEls.variantColorSwatch.style.backgroundColor = hexValue;
-      }
-    }
-
     function setupLevelFileInputHandler(fileInputId, imageInputId, fileNameId, previewId) {
       var fileInput = document.getElementById(fileInputId);
       if (!fileInput) return;
@@ -1609,6 +1667,13 @@
       if (editorEls.accessoryPreviewWrap) {
         editorEls.accessoryPreviewWrap.style.display = isAccessory ? 'flex' : 'none';
       }
+
+      if (editorEls.unlockType && editorEls.unlockType.parentElement) {
+        editorEls.unlockType.parentElement.style.display = state.editor.type === 'backgrounds' ? 'none' : 'flex';
+      }
+      if (editorEls.price && editorEls.price.parentElement) {
+        editorEls.price.parentElement.style.display = state.editor.type === 'backgrounds' ? 'none' : 'flex';
+      }
     }
 
     function handleSaveEditor() {
@@ -1633,7 +1698,10 @@
         return;
       }
 
-      if (unlockType === 'level') {
+      if (type === 'backgrounds') {
+        unlockType = 'level';
+        unlockValue = Math.max(1, parseNonNegative(editorEls.unlockLevel ? editorEls.unlockLevel.value : 1, 1));
+      } else if (unlockType === 'level') {
         unlockValue = Math.max(1, parseNonNegative(editorEls.unlockLevel ? editorEls.unlockLevel.value : 1, 1));
       } else {
         unlockValue = editorEls.unlockTopic ? editorEls.unlockTopic.value : '';
@@ -1642,7 +1710,7 @@
       var payload = cloneItem(state.editor.draft);
       payload.name = name;
       payload.file = file;
-      payload.priceXqp = priceXqp;
+      payload.priceXqp = type === 'backgrounds' ? 0 : priceXqp;
       payload.unlockCondition = {
         type: unlockType,
         value: unlockValue
@@ -1698,31 +1766,13 @@
     }
 
     function handleDeleteItem() {
-      if (typeof window.showAppConfirm === 'function') {
-        try {
-          var result = window.showAppConfirm('Ban chac chan muon xoa item nay?', {
-            title: 'Xac nhan xoa',
-            confirmText: 'Xoa',
-            cancelText: 'Huy'
-          });
-
-          if (result && typeof result.then === 'function') {
-            result.then(function (ok) {
-              if (ok) performDelete();
-            }).catch(function () {});
-            return;
-          }
-
-          if (result) performDelete();
-          return;
-        } catch (e) {
-          // fall back to native confirm
-        }
-      }
-
-      if (window.confirm('Ban chac chan muon xoa item nay?')) {
-        performDelete();
-      }
+      requestDeleteConfirm('Ban chac chan muon xoa item nay?', {
+        title: 'Xac nhan xoa',
+        confirmText: 'Xoa',
+        cancelText: 'Huy'
+      }).then(function (ok) {
+        if (ok) performDelete();
+      });
     }
 
     function isClickSuppressed() {
@@ -1956,13 +2006,16 @@
 
       var accessoriesGrid = document.getElementById('accessories-grid');
       var foodGrid = document.getElementById('food-grid');
+      var backgroundsGrid = document.getElementById('backgrounds-grid');
       var variantGrid = document.getElementById('pet-variants-grid');
 
       if (accessoriesGrid) accessoriesGrid.addEventListener('click', handleGridClick);
       if (foodGrid) foodGrid.addEventListener('click', handleGridClick);
+      if (backgroundsGrid) backgroundsGrid.addEventListener('click', handleGridClick);
       if (variantGrid) variantGrid.addEventListener('click', handleVariantGridClick);
       bindSortableGrid(accessoriesGrid, 'accessories');
       bindSortableGrid(foodGrid, 'food');
+      bindSortableGrid(backgroundsGrid, 'backgrounds');
       bindSortableGrid(variantGrid, 'variants');
 
       if (editorEls.unlockType) editorEls.unlockType.addEventListener('change', syncUnlockFieldVisibility);
@@ -2029,30 +2082,6 @@
         });
       }
 
-      // Color picker events
-      if (editorEls.variantTone) {
-        editorEls.variantTone.addEventListener('input', function () {
-          var color = this.value;
-          if (editorEls.variantColorSwatch) {
-            editorEls.variantColorSwatch.style.backgroundColor = color;
-          }
-          syncColorHexToInput(color);
-          syncVariantDraftFromForm();
-          updateVariantPreview();
-        });
-      }
-
-      if (editorEls.variantToneHex) {
-        editorEls.variantToneHex.addEventListener('input', function () {
-          var hex = this.value;
-          if (/^#[0-9A-F]{6}$/i.test(hex)) {
-            syncColorPickerFromHex(hex);
-            syncVariantDraftFromForm();
-            updateVariantPreview();
-          }
-        });
-      }
-
       // File upload handlers for level images
       setupLevelFileInputHandler('pm-variant-level1-file', 'pm-variant-level1', 'pm-level1-file-name', 'pm-variant-level1-preview');
       setupLevelFileInputHandler('pm-variant-level2-file', 'pm-variant-level2', 'pm-level2-file-name', 'pm-variant-level2-preview');
@@ -2065,6 +2094,7 @@
       if (editorEls.variantUnlockLevel) editorEls.variantUnlockLevel.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantName) editorEls.variantName.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantDescription) editorEls.variantDescription.addEventListener('input', syncVariantDraftFromForm);
+      if (editorEls.variantSecondPrice) editorEls.variantSecondPrice.addEventListener('input', syncVariantDraftFromForm);
       if (editorEls.variantLevel1) editorEls.variantLevel1.addEventListener('input', function () {
         syncVariantDraftFromForm();
         if (state.variantEditor.previewLevel === 1) updateVariantPreview();

@@ -324,6 +324,7 @@ const PET_GLOBAL_RESET_VERSION = "2026-04-17-lv1-random-egg-v1";
 const PET_GLOBAL_RESET_PROPERTY_KEY = "PET_GLOBAL_RESET_VERSION";
 const PET_EGG_VARIANT_COUNT = 12;
 const PET_EGG_VARIANT_BASE_ID = 12;
+const PET_MAX_OWNED_VARIANTS = 2;
 
 function pickRandomPetEggIndex_() {
   return Math.floor(Math.random() * PET_EGG_VARIANT_COUNT);
@@ -336,13 +337,40 @@ function normalizePetEggIndex_(value, fallback) {
   return n;
 }
 
+function normalizePetVariantIndex_(value, fallback) {
+  var n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return n;
+}
+
 function getPetVariantIdByEggIndex_(index) {
   var normalizedIndex = normalizePetEggIndex_(index, 0);
   return "pet-" + String(PET_EGG_VARIANT_BASE_ID + normalizedIndex);
 }
 
+function normalizeOwnedVariantIds_(ownedVariantIds, fallbackVariantId) {
+  var uniqueIds = [];
+
+  if (Array.isArray(ownedVariantIds)) {
+    ownedVariantIds.forEach(function (id) {
+      var safeId = String(id || "").trim();
+      if (!safeId) return;
+      if (uniqueIds.indexOf(safeId) !== -1) return;
+      uniqueIds.push(safeId);
+    });
+  }
+
+  var safeFallback = String(fallbackVariantId || "").trim();
+  if (safeFallback && uniqueIds.indexOf(safeFallback) === -1) {
+    uniqueIds.unshift(safeFallback);
+  }
+
+  return uniqueIds.slice(0, PET_MAX_OWNED_VARIANTS);
+}
+
 function buildFreshPetConfig_(forcedIndex) {
   var defaultIndex = normalizePetEggIndex_(forcedIndex, pickRandomPetEggIndex_());
+  var defaultVariantId = getPetVariantIdByEggIndex_(defaultIndex);
   return {
     currentIndex: defaultIndex,
     isLevelTwo: false,
@@ -351,8 +379,10 @@ function buildFreshPetConfig_(forcedIndex) {
     progressionXP: 0,
     progressionLevel: 1,
     progressionXPProgress: 0,
-    selectionLocked: true,
-    lockedVariantId: getPetVariantIdByEggIndex_(defaultIndex),
+    selectionLocked: false,
+    lockedVariantId: defaultVariantId,
+    currentVariantId: defaultVariantId,
+    ownedVariantIds: [defaultVariantId],
     petConfigVersion: PET_GLOBAL_RESET_VERSION,
   };
 }
@@ -560,6 +590,7 @@ function saveUserPetName(payload) {
 function getUserPetConfig(userId) {
   try {
     if (!userId) return { success: false, message: "User ID is required" };
+    const safeUserId = String(userId).trim();
     const usersSheet = getSheet("Users");
     if (!usersSheet) return { success: false, message: "Users sheet not found" };
 
@@ -571,7 +602,7 @@ function getUserPetConfig(userId) {
     let userRow = -1;
 
     for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === userId) {
+      if (String(data[i][0] || "").trim() === safeUserId) {
             userRow = i;
             break;
         }
@@ -606,7 +637,7 @@ function getUserPetConfig(userId) {
       shouldPersist = true;
     }
 
-    const normalizedIndex = normalizePetEggIndex_(parsedConfig.currentIndex, pickRandomPetEggIndex_());
+    const normalizedIndex = normalizePetVariantIndex_(parsedConfig.currentIndex, pickRandomPetEggIndex_());
     if (normalizedIndex !== parsedConfig.currentIndex) {
       shouldPersist = true;
     }
@@ -633,17 +664,39 @@ function getUserPetConfig(userId) {
     parsedConfig.progressionLevel = normalizedLevel;
     parsedConfig.progressionXPProgress = normalizedProgress;
 
-    if (parsedConfig.selectionLocked !== true) {
-      parsedConfig.selectionLocked = true;
-      shouldPersist = true;
-    }
+    const rawSelectionLocked = parsedConfig.selectionLocked;
+    const rawOwnedVariantIds = parsedConfig.ownedVariantIds;
+    const rawLockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
+    const rawCurrentVariantId = String(parsedConfig.currentVariantId || "").trim();
 
-    const lockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
-    if (!lockedVariantId) {
-      parsedConfig.lockedVariantId = getPetVariantIdByEggIndex_(normalizedIndex);
+    const inferredVariantId =
+      normalizedIndex >= 0 && normalizedIndex < PET_EGG_VARIANT_COUNT
+        ? getPetVariantIdByEggIndex_(normalizedIndex)
+        : "";
+    const legacyLockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
+    const currentVariantId = String(
+      parsedConfig.currentVariantId || legacyLockedVariantId || inferredVariantId,
+    ).trim();
+
+    const normalizedCurrentVariantId = currentVariantId || inferredVariantId;
+    parsedConfig.currentVariantId = normalizedCurrentVariantId;
+
+    const ownedVariantIds = normalizeOwnedVariantIds_(
+      parsedConfig.ownedVariantIds,
+      normalizedCurrentVariantId,
+    );
+    parsedConfig.ownedVariantIds = ownedVariantIds;
+    parsedConfig.selectionLocked = false;
+    parsedConfig.lockedVariantId = ownedVariantIds[0] || normalizedCurrentVariantId || "";
+
+    if (
+      rawSelectionLocked !== false ||
+      !Array.isArray(rawOwnedVariantIds) ||
+      !rawOwnedVariantIds.length ||
+      rawLockedVariantId !== String((ownedVariantIds[0] || normalizedCurrentVariantId || "")).trim() ||
+      rawCurrentVariantId !== normalizedCurrentVariantId
+    ) {
       shouldPersist = true;
-    } else {
-      parsedConfig.lockedVariantId = lockedVariantId;
     }
 
     if (parsedConfig.petConfigVersion !== PET_GLOBAL_RESET_VERSION) {
@@ -668,6 +721,7 @@ function getUserPetConfig(userId) {
 function saveUserPetConfig(userId, config) {
   try {
     if (!userId) return { success: false, message: "User ID is required" };
+    const safeUserId = String(userId).trim();
     const usersSheet = getSheet("Users");
     if (!usersSheet) return { success: false, message: "Users sheet not found" };
 
@@ -678,7 +732,7 @@ function saveUserPetConfig(userId, config) {
     let userRow = -1;
 
     for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === userId) {
+      if (String(data[i][0] || "").trim() === safeUserId) {
             userRow = i;
             break;
         }
@@ -692,22 +746,30 @@ function saveUserPetConfig(userId, config) {
     }
 
     const safeConfig = config && typeof config === "object" ? config : {};
-    const normalizedIndex = normalizePetEggIndex_(safeConfig.currentIndex, 0);
+    const normalizedIndex = normalizePetVariantIndex_(safeConfig.currentIndex, 0);
     const progressionXP = parseInt(safeConfig.progressionXP, 10);
-    const normalizedXP = Number.isFinite(progressionXP) ? progressionXP : 0;
+    const normalizedXP = Number.isFinite(progressionXP) ? Math.max(0, progressionXP) : 0;
     const normalizedLevel = Math.floor(normalizedXP / 100) + 1;
     const normalizedProgress = normalizedXP % 100;
-    let lockedVariantId = String(safeConfig.lockedVariantId || "").trim();
-    if (!lockedVariantId) {
-      lockedVariantId = getPetVariantIdByEggIndex_(normalizedIndex);
+    let currentVariantId = String(safeConfig.currentVariantId || "").trim();
+    if (!currentVariantId) {
+      currentVariantId =
+        normalizedIndex >= 0 && normalizedIndex < PET_EGG_VARIANT_COUNT
+          ? getPetVariantIdByEggIndex_(normalizedIndex)
+          : "";
     }
+
+    const ownedVariantIds = normalizeOwnedVariantIds_(safeConfig.ownedVariantIds, currentVariantId);
+    const lockedVariantId = ownedVariantIds[0] || currentVariantId || "";
 
     const normalizedConfig = Object.assign({}, safeConfig, {
       currentIndex: normalizedIndex,
       progressionXP: normalizedXP,
       progressionLevel: normalizedLevel,
       progressionXPProgress: normalizedProgress,
-      selectionLocked: true,
+      selectionLocked: false,
+      currentVariantId: currentVariantId,
+      ownedVariantIds: ownedVariantIds,
       lockedVariantId: lockedVariantId,
       petConfigVersion: PET_GLOBAL_RESET_VERSION,
     });
@@ -746,6 +808,197 @@ function saveUserPetConfig(userId, config) {
     return { success: true, message: "Đã lưu cấu hình PET" };
   } catch (error) {
     Logger.log("Error in saveUserPetConfig: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+function purchaseUserPetVariant(payload) {
+  try {
+    var safePayload = payload && typeof payload === "object" ? payload : {};
+    var userId = String(safePayload.userId || "").trim();
+    var variantId = String(safePayload.variantId || "").trim();
+
+    if (!userId) return { success: false, message: "User ID is required" };
+    if (!variantId) return { success: false, message: "Variant ID is required" };
+
+    var usersSheet = getSheet("Users");
+    if (!usersSheet) return { success: false, message: "Users sheet not found" };
+
+    var data = usersSheet.getDataRange().getValues();
+    var headers = data[0] || [];
+    var userRow = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === userId) {
+        userRow = i;
+        break;
+      }
+    }
+    if (userRow === -1) return { success: false, message: "User not found" };
+
+    var xqpIdx = headers.indexOf("totalXQP");
+    var xpIdx = headers.indexOf("totalXP");
+    if (xqpIdx === -1) {
+      usersSheet.getRange(1, headers.length + 1).setValue("totalXQP");
+      xqpIdx = headers.length;
+      headers.push("totalXQP");
+
+      if (data.length > 1) {
+        var fillValues = [];
+        for (var r = 1; r < data.length; r++) {
+          var backfillXP = xpIdx >= 0 ? parseInt(data[r][xpIdx], 10) || 0 : 0;
+          fillValues.push([backfillXP]);
+        }
+        usersSheet.getRange(2, xqpIdx + 1, fillValues.length, 1).setValues(fillValues);
+      }
+
+      data = usersSheet.getDataRange().getValues();
+      headers = data[0] || [];
+    }
+
+    var variantsResult = getPetVariantsForAdmin();
+    if (!variantsResult || variantsResult.success !== true) {
+      return {
+        success: false,
+        message:
+          (variantsResult && variantsResult.message) ||
+          "Không tải được danh sách pet variants",
+      };
+    }
+
+    var variant = (variantsResult.variants || []).find(function (item) {
+      return String((item && item.id) || "").trim() === variantId;
+    });
+    if (!variant) return { success: false, message: "Pet không tồn tại" };
+
+    var configResult = getUserPetConfig(userId);
+    if (!configResult || configResult.success !== true || !configResult.config) {
+      return {
+        success: false,
+        message:
+          (configResult && configResult.message) || "Không tải được cấu hình pet của user",
+      };
+    }
+
+    var config = configResult.config;
+    var ownedVariantIds = normalizeOwnedVariantIds_(
+      config.ownedVariantIds,
+      String(config.currentVariantId || config.lockedVariantId || "").trim(),
+    );
+
+    if (ownedVariantIds.indexOf(variantId) !== -1) {
+      return {
+        success: true,
+        message: "Bạn đã sở hữu pet này",
+        alreadyOwned: true,
+        newTotalXQP: parseInt(data[userRow][xqpIdx], 10) || 0,
+        config: config,
+      };
+    }
+
+    if (ownedVariantIds.length >= PET_MAX_OWNED_VARIANTS) {
+      return {
+        success: false,
+        message: "Mỗi user chỉ sở hữu tối đa 2 pet",
+        maxOwned: PET_MAX_OWNED_VARIANTS,
+      };
+    }
+
+    var unlock = variant.unlockCondition || { type: "level", value: 1 };
+    var unlockType = String(unlock.type || "level");
+    if (unlockType === "level") {
+      var requiredLevel = Math.max(1, parseInt(unlock.value, 10) || 1);
+      var progressionXP = parseInt(config.progressionXP, 10) || 0;
+      var userLevel = Math.floor(progressionXP / 100) + 1;
+      if (userLevel < requiredLevel) {
+        return {
+          success: false,
+          message: "Pet này yêu cầu Level tiến độ " + requiredLevel,
+          requiredLevel: requiredLevel,
+          currentLevel: userLevel,
+        };
+      }
+    } else {
+      var requiredTopicId = String(unlock.value || "").trim();
+      if (!requiredTopicId) {
+        return {
+          success: false,
+          message: "Điều kiện mở khóa pet không hợp lệ",
+        };
+      }
+
+      var topicProgressResult = getUserTopicProgress();
+      if (!topicProgressResult || topicProgressResult.success !== true) {
+        return {
+          success: false,
+          message: "Không thể kiểm tra tiến độ topic của user",
+        };
+      }
+
+      var progressMap = topicProgressResult.progress || {};
+      var topicProgress = progressMap[requiredTopicId] || null;
+      var isUnlockedByTopic = false;
+
+      if (topicProgress) {
+        if (unlockType === "topic") {
+          isUnlockedByTopic = !!(topicProgress.completed || topicProgress.lessonCompleted);
+        } else if (unlockType === "topic_quiz") {
+          isUnlockedByTopic = !!(topicProgress.quizDone || topicProgress.completed);
+        } else if (unlockType === "topic_matching") {
+          isUnlockedByTopic = !!(topicProgress.matchingDone || topicProgress.completed);
+        }
+      }
+
+      if (!isUnlockedByTopic) {
+        return {
+          success: false,
+          message: "Bạn chưa đạt điều kiện mở khóa pet này",
+        };
+      }
+    }
+
+    var priceXqp = Math.max(0, parseInt(variant.secondPetPriceXqp, 10) || 0);
+    var currentXQP = parseInt(data[userRow][xqpIdx], 10) || 0;
+    if (currentXQP < priceXqp) {
+      return {
+        success: false,
+        message: "Không đủ XQP để mua pet này",
+        requiredXQP: priceXqp,
+        currentXQP: currentXQP,
+      };
+    }
+
+    var newTotalXQP = currentXQP - priceXqp;
+    usersSheet.getRange(userRow + 1, xqpIdx + 1).setValue(newTotalXQP);
+
+    ownedVariantIds.push(variantId);
+    ownedVariantIds = normalizeOwnedVariantIds_(ownedVariantIds, variantId);
+
+    config.currentVariantId = variantId;
+    config.ownedVariantIds = ownedVariantIds;
+    config.selectionLocked = false;
+    config.lockedVariantId = ownedVariantIds[0] || variantId;
+    config.petConfigVersion = PET_GLOBAL_RESET_VERSION;
+
+    var variantNumericId = parseInt(String(variantId).replace(/^pet-/i, ""), 10);
+    if (Number.isFinite(variantNumericId)) {
+      var mappedIndex = variantNumericId - PET_EGG_VARIANT_BASE_ID;
+      if (mappedIndex >= 0) {
+        config.currentIndex = mappedIndex;
+      }
+    }
+
+    saveUserPetConfig(userId, config);
+
+    return {
+      success: true,
+      message: "Mua pet thành công",
+      variantId: variantId,
+      priceXqp: priceXqp,
+      newTotalXQP: newTotalXQP,
+      config: config,
+    };
+  } catch (error) {
+    Logger.log("Error in purchaseUserPetVariant: " + error.toString());
     return { success: false, message: error.toString() };
   }
 }

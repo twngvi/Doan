@@ -1152,6 +1152,7 @@ const PET_VARIANTS_HEADERS = [
   "tiltDeg",
   "orderIndex",
   "updatedAt",
+  "secondPetPriceXqp",
 ];
 
 const DEFAULT_PET_VARIANTS = [
@@ -1325,6 +1326,7 @@ function enforcePetVariantLevel1Egg_(variant) {
     eyeOpen: String(safeVariant.eyeOpen || ""),
     eyeClosed: String(safeVariant.eyeClosed || ""),
     tiltDeg: Math.max(-45, Math.min(45, parseInt(safeVariant.tiltDeg, 10) || 0)),
+    secondPetPriceXqp: Math.max(0, parseInt(safeVariant.secondPetPriceXqp, 10) || 500),
   });
 }
 
@@ -1439,6 +1441,15 @@ function ensurePetVariantsSheet_() {
   return sheet;
 }
 
+function normalizePetItemType_(itemType) {
+  const safeType = String(itemType || "").toLowerCase().trim();
+  if (safeType === "food") return "food";
+  if (safeType === "backgrounds" || safeType === "background" || safeType === "bg") {
+    return "backgrounds";
+  }
+  return "accessories";
+}
+
 function toPetItemRow_(item, itemType, orderIndex) {
   const safeItem = item || {};
   const unlock = safeItem.unlockCondition || {};
@@ -1452,15 +1463,15 @@ function toPetItemRow_(item, itemType, orderIndex) {
     unlockValue = String(unlockValue || "");
   }
 
-  const normalizedType = itemType === "food" ? "food" : "accessories";
+  const normalizedType = normalizePetItemType_(itemType);
+  const isFood = normalizedType === "food";
+  const isAccessory = normalizedType === "accessories";
   let scalePercent = parseInt(safeItem.scalePercent, 10);
   if (isNaN(scalePercent)) scalePercent = 100;
   scalePercent = Math.max(40, Math.min(220, scalePercent));
-  const positionMode = normalizedType === "food" ? "center" : String(safeItem.positionMode || "center");
+  const positionMode = isAccessory ? String(safeItem.positionMode || "center") : "center";
   const positionProfilesJson =
-    normalizedType === "food"
-      ? ""
-      : JSON.stringify(safeItem.positionProfiles || {});
+    isAccessory ? JSON.stringify(safeItem.positionProfiles || {}) : "";
 
   return [
     String(safeItem.id || ""),
@@ -1470,10 +1481,10 @@ function toPetItemRow_(item, itemType, orderIndex) {
     parseInt(safeItem.priceXqp, 10) || 0,
     unlockType,
     unlockValue,
-    normalizedType === "food" ? parseInt(safeItem.petXpGain, 10) || 0 : 0,
-    normalizedType === "food" ? 0 : parseInt(safeItem.offsetX, 10) || 0,
-    normalizedType === "food" ? 0 : parseInt(safeItem.offsetY, 10) || 0,
-    normalizedType === "food" ? 100 : scalePercent,
+    isFood ? parseInt(safeItem.petXpGain, 10) || 0 : 0,
+    isAccessory ? parseInt(safeItem.offsetX, 10) || 0 : 0,
+    isAccessory ? parseInt(safeItem.offsetY, 10) || 0 : 0,
+    isAccessory ? scalePercent : 100,
     positionMode,
     positionProfilesJson,
     parseInt(orderIndex, 10) || 0,
@@ -1500,6 +1511,7 @@ function toPetVariantRow_(variant, orderIndex) {
   let tiltDeg = parseInt(safeVariant.tiltDeg, 10);
   if (isNaN(tiltDeg)) tiltDeg = 0;
   tiltDeg = Math.max(-45, Math.min(45, tiltDeg));
+  const secondPetPriceXqp = Math.max(0, parseInt(safeVariant.secondPetPriceXqp, 10) || 500);
 
   return [
     String(safeVariant.id || ""),
@@ -1516,6 +1528,7 @@ function toPetVariantRow_(variant, orderIndex) {
     tiltDeg,
     parseInt(orderIndex, 10) || 0,
     new Date(),
+    secondPetPriceXqp,
   ];
 }
 
@@ -1542,6 +1555,7 @@ function parsePetVariantRows_(data) {
   const scalePercentIdx = idx("scalePercent");
   const tiltDegIdx = idx("tiltDeg");
   const orderIdx = idx("orderIndex");
+  const secondPetPriceIdx = idx("secondPetPriceXqp");
 
   if (
     variantIdIdx < 0 ||
@@ -1586,6 +1600,10 @@ function parsePetVariantRows_(data) {
     }
     if (isNaN(tiltDeg)) tiltDeg = 0;
     tiltDeg = Math.max(-45, Math.min(45, tiltDeg));
+    let secondPetPriceXqp =
+      secondPetPriceIdx >= 0 ? parseInt(row[secondPetPriceIdx], 10) : NaN;
+    if (isNaN(secondPetPriceXqp)) secondPetPriceXqp = 500;
+    secondPetPriceXqp = Math.max(0, secondPetPriceXqp);
 
     variants.push({
       id: String(variantId),
@@ -1602,6 +1620,7 @@ function parsePetVariantRows_(data) {
       },
       scalePercent: scalePercent,
       tiltDeg: tiltDeg,
+      secondPetPriceXqp: secondPetPriceXqp,
       _orderIndex: isNaN(orderIndex) ? 0 : orderIndex,
     });
   }
@@ -1644,6 +1663,7 @@ function getPetItemsForAdmin() {
         success: true,
         accessories: [],
         food: [],
+        backgrounds: [],
         variants: variants,
       };
     }
@@ -1670,14 +1690,14 @@ function getPetItemsForAdmin() {
 
     const accessories = [];
     const food = [];
+    const backgrounds = [];
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const itemId = row[itemIdIdx];
       if (!itemId) continue;
 
-      const typeRaw = String(row[itemTypeIdx] || "").toLowerCase();
-      const itemType = typeRaw === "food" ? "food" : "accessories";
+      const itemType = normalizePetItemType_(row[itemTypeIdx]);
       const unlockType = String(row[unlockTypeIdx] || "level");
       const rawUnlockValue = row[unlockValueIdx];
 
@@ -1713,6 +1733,8 @@ function getPetItemsForAdmin() {
       if (itemType === "food") {
         item.petXpGain = parseInt(row[petXpIdx], 10) || 0;
         food.push(item);
+      } else if (itemType === "backgrounds") {
+        backgrounds.push(item);
       } else {
         let parsedProfiles = {};
         if (positionProfilesIdx >= 0) {
@@ -1746,6 +1768,7 @@ function getPetItemsForAdmin() {
 
     accessories.sort(sortByOrder);
     food.sort(sortByOrder);
+    backgrounds.sort(sortByOrder);
 
     accessories.forEach(function (item) {
       delete item._orderIndex;
@@ -1753,11 +1776,15 @@ function getPetItemsForAdmin() {
     food.forEach(function (item) {
       delete item._orderIndex;
     });
+    backgrounds.forEach(function (item) {
+      delete item._orderIndex;
+    });
 
     return {
       success: true,
       accessories: accessories,
       food: food,
+      backgrounds: backgrounds,
       variants: variants,
     };
   } catch (error) {
@@ -1767,6 +1794,7 @@ function getPetItemsForAdmin() {
       message: error.toString(),
       accessories: [],
       food: [],
+      backgrounds: [],
       variants: [],
     };
   }
@@ -1798,6 +1826,7 @@ function getPetVariantsForAdmin() {
           },
           scalePercent: variant.scalePercent,
           tiltDeg: variant.tiltDeg || 0,
+          secondPetPriceXqp: variant.secondPetPriceXqp,
         };
       });
     }
@@ -1941,6 +1970,9 @@ function savePetItemsForAdmin(payloadJson) {
       ? payload.accessories
       : [];
     const food = Array.isArray(payload.food) ? payload.food : [];
+    const backgrounds = Array.isArray(payload.backgrounds)
+      ? payload.backgrounds
+      : [];
 
     const rows = [];
     accessories.forEach(function (item, index) {
@@ -1949,6 +1981,10 @@ function savePetItemsForAdmin(payloadJson) {
 
     food.forEach(function (item, index) {
       rows.push(toPetItemRow_(item, "food", index));
+    });
+
+    backgrounds.forEach(function (item, index) {
+      rows.push(toPetItemRow_(item, "backgrounds", index));
     });
 
     const sheet = ensurePetItemsSheet_();
