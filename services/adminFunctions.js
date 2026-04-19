@@ -814,6 +814,7 @@ function getAdminUserLearningStats(options) {
           const qData = quizSheet.getDataRange().getValues();
           const qHeaders = qData[0];
           const qCols = {
+            id: qHeaders.indexOf("id"),
             topicId: qHeaders.indexOf("topicId"),
             topicTitle: qHeaders.indexOf("topicTitle"),
             score: qHeaders.indexOf("score"),
@@ -822,6 +823,7 @@ function getAdminUserLearningStats(options) {
             status: qHeaders.indexOf("status"),
             completedAt: qHeaders.indexOf("completedAt"),
             gameMode: qHeaders.indexOf("gameMode"),
+            questionDetails: qHeaders.indexOf("questionDetails"),
           };
 
           for (let r = 1; r < qData.length; r++) {
@@ -851,6 +853,7 @@ function getAdminUserLearningStats(options) {
             const completedAtIso = completedAtDate ? completedAtDate.toISOString() : "";
 
             rawAttempts.push({
+              resultId: qCols.id >= 0 ? String(qRow[qCols.id] || "") : "",
               topicId: topicId,
               lessonTitle: topicTitle,
               score: percentage,
@@ -858,6 +861,8 @@ function getAdminUserLearningStats(options) {
               totalQuestions: totalQuestions,
               activityType: "quiz",
               quizMode: quizMode,
+              detailRaw:
+                qCols.questionDetails >= 0 ? qRow[qCols.questionDetails] : null,
               completedAt: completedAtIso,
             });
 
@@ -909,6 +914,7 @@ function getAdminUserLearningStats(options) {
           const mData = matchingSheet.getDataRange().getValues();
           const mHeaders = mData[0];
           const mCols = {
+            id: mHeaders.indexOf("id"),
             topicId: mHeaders.indexOf("topicId"),
             topicTitle: mHeaders.indexOf("topicTitle"),
             totalPairs: mHeaders.indexOf("totalPairs"),
@@ -917,6 +923,7 @@ function getAdminUserLearningStats(options) {
             completed: mHeaders.indexOf("completed"),
             accuracy: mHeaders.indexOf("accuracy"),
             playedAt: mHeaders.indexOf("playedAt"),
+            pairDetails: mHeaders.indexOf("pairDetails"),
           };
 
           for (let r = 1; r < mData.length; r++) {
@@ -940,6 +947,7 @@ function getAdminUserLearningStats(options) {
             const playedAtIso = playedAtDate ? playedAtDate.toISOString() : "";
 
             rawAttempts.push({
+              resultId: mCols.id >= 0 ? String(mRow[mCols.id] || "") : "",
               topicId: topicId,
               lessonTitle: topicTitle,
               score: score,
@@ -948,6 +956,7 @@ function getAdminUserLearningStats(options) {
               activityType: "matching",
               quizMode: "matching",
               accuracy: accuracy,
+              detailRaw: mCols.pairDetails >= 0 ? mRow[mCols.pairDetails] : null,
               completedAt: playedAtIso,
             });
 
@@ -1003,6 +1012,7 @@ function getAdminUserLearningStats(options) {
             const key = attempt.topicId || attempt.lessonTitle || "UNKNOWN";
             attemptNumberByTopic[key] = (attemptNumberByTopic[key] || 0) + 1;
             return {
+              resultId: attempt.resultId || "",
               completedAt: attempt.completedAt,
               lessonId: attempt.topicId || "",
               lessonTitle: attempt.lessonTitle || attempt.topicId || "Quiz",
@@ -1013,6 +1023,10 @@ function getAdminUserLearningStats(options) {
               activityType: attempt.activityType || "quiz",
               quizMode: attempt.quizMode,
               accuracy: attempt.accuracy,
+              detail: parseAdminAttemptDetail_(
+                attempt.detailRaw,
+                attempt.activityType,
+              ),
             };
           })
           .sort(function (a, b) {
@@ -1207,6 +1221,51 @@ function parseAdminSheetDate(value) {
   }
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseAdminAttemptDetail_(value, activityType) {
+  if (!value) return null;
+
+  let parsedValue = value;
+  if (typeof parsedValue === "string") {
+    const raw = parsedValue.trim();
+    if (!raw) return null;
+    try {
+      parsedValue = JSON.parse(raw);
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  const type = String(activityType || "").toLowerCase();
+
+  if (type === "quiz" && Array.isArray(parsedValue)) {
+    return parsedValue.slice(0, 200).map(function (item) {
+      const safe = item || {};
+      return {
+        question: safe.question || "",
+        userAnswer: safe.userAnswer,
+        userAnswerText: safe.userAnswerText || "",
+        correctAnswer: safe.correctAnswer,
+        correctAnswerText: safe.correctAnswerText || "",
+        isCorrect: safe.isCorrect === true,
+      };
+    });
+  }
+
+  if (type === "matching" && Array.isArray(parsedValue)) {
+    return parsedValue.slice(0, 200).map(function (item) {
+      const safe = item || {};
+      return {
+        leftText: safe.leftText || safe.left || safe.term || "",
+        userMatch: safe.userMatch || safe.userAnswer || safe.selected || "",
+        correctMatch: safe.correctMatch || safe.correctAnswer || safe.correct || "",
+        isCorrect: safe.isCorrect === true,
+      };
+    });
+  }
+
+  return parsedValue;
 }
 
 /**

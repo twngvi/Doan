@@ -32,6 +32,8 @@
     const refreshBtn = document.getElementById('userStatsRefreshBtn');
     const topicHistoryCloseBtn = document.getElementById('userStatsTopicHistoryCloseBtn');
     const topicHistoryBackdrop = document.getElementById('userStatsTopicHistoryBackdrop');
+    const attemptDetailCloseBtn = document.getElementById('userStatsAttemptDetailCloseBtn');
+    const attemptDetailBackdrop = document.getElementById('userStatsAttemptDetailBackdrop');
 
     if (searchInput) {
       searchInput.addEventListener('input', debounce((event) => {
@@ -59,8 +61,21 @@
       topicHistoryBackdrop.addEventListener('click', closeTopicLearningHistoryModal);
     }
 
+    if (attemptDetailCloseBtn) {
+      attemptDetailCloseBtn.addEventListener('click', closeAttemptDetailModal);
+    }
+
+    if (attemptDetailBackdrop) {
+      attemptDetailBackdrop.addEventListener('click', closeAttemptDetailModal);
+    }
+
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
+        const attemptDetailModal = document.getElementById('userStatsAttemptDetailModal');
+        if (attemptDetailModal && attemptDetailModal.style.display !== 'none') {
+          closeAttemptDetailModal();
+          return;
+        }
         closeTopicLearningHistoryModal();
       }
     });
@@ -307,6 +322,7 @@
     const modal = document.getElementById('userStatsTopicHistoryModal');
     if (!modal || modal.style.display === 'none') return;
 
+    closeAttemptDetailModal();
     modal.style.display = 'none';
     modal.setAttribute('aria-hidden', 'true');
   }
@@ -338,16 +354,19 @@
       return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
     });
 
-    container.innerHTML = lessonAttempts.map((attempt) => `
-      <article class="topic-history-item">
+    container.innerHTML = lessonAttempts.map((attempt, index) => `
+      <article class="topic-history-item clickable" data-attempt-index="${index}">
         <div class="topic-history-top">
           <p class="lesson-name">${formatAttemptActionLabel(attempt)}: ${escapeHtml(attempt.lessonTitle || attempt.lessonId || lessonName)}</p>
           <p class="topic-history-score">${Number(attempt.score || 0)} điểm</p>
         </div>
         <p class="lesson-meta">Kết quả: ${formatAttemptCorrectTotal(attempt)} • Loại: ${normalizeQuizModeLabel(attempt.quizMode)}</p>
         <p class="lesson-meta">Thời gian làm: ${formatDateTime(attempt.completedAt)}</p>
+        <p class="lesson-meta attempt-hint">Nhấn để xem chi tiết lần làm</p>
       </article>
     `).join('');
+
+    bindAttemptDetailEvents(container, lessonAttempts);
   }
 
   function openUserQuizHistoryModal(user) {
@@ -378,16 +397,114 @@
       return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
     });
 
-    container.innerHTML = attempts.map((attempt) => `
-      <article class="topic-history-item">
+    container.innerHTML = attempts.map((attempt, index) => `
+      <article class="topic-history-item clickable" data-attempt-index="${index}">
         <div class="topic-history-top">
           <p class="lesson-name">${formatAttemptActionLabel(attempt)}: ${escapeHtml(attempt.lessonTitle || attempt.lessonId || 'Quiz')}</p>
           <p class="topic-history-score">${Number(attempt.score || 0)} điểm</p>
         </div>
         <p class="lesson-meta">Kết quả: ${formatAttemptCorrectTotal(attempt)} • Loại: ${normalizeQuizModeLabel(attempt.quizMode)}</p>
         <p class="lesson-meta">Thời gian làm: ${formatDateTime(attempt.completedAt)}</p>
+        <p class="lesson-meta attempt-hint">Nhấn để xem chi tiết lần làm</p>
       </article>
     `).join('');
+
+    bindAttemptDetailEvents(container, attempts);
+  }
+
+  function bindAttemptDetailEvents(container, attempts) {
+    if (!container) return;
+
+    container.querySelectorAll('.topic-history-item.clickable').forEach((item) => {
+      item.addEventListener('click', () => {
+        const index = parseInt(item.dataset.attemptIndex || '-1', 10);
+        if (index < 0 || !attempts[index]) return;
+        openAttemptDetailModal(attempts[index]);
+      });
+    });
+  }
+
+  function openAttemptDetailModal(attempt) {
+    const modal = document.getElementById('userStatsAttemptDetailModal');
+    const title = document.getElementById('userStatsAttemptDetailModalTitle');
+    const list = document.getElementById('userStatsAttemptDetailModalList');
+    if (!modal || !title || !list) return;
+
+    title.textContent = `Chi tiết lần làm: ${formatAttemptActionLabel(attempt)} - ${attempt.lessonTitle || attempt.lessonId || 'Bài làm'}`;
+    list.innerHTML = buildAttemptDetailMarkup(attempt);
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeAttemptDetailModal() {
+    const modal = document.getElementById('userStatsAttemptDetailModal');
+    const list = document.getElementById('userStatsAttemptDetailModalList');
+    if (!modal || modal.style.display === 'none') return;
+
+    if (list) list.innerHTML = '';
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function buildAttemptDetailMarkup(attempt) {
+    const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
+    const detail = attempt && attempt.detail ? attempt.detail : null;
+
+    if (!detail) {
+      return '<p class="lesson-meta">Chưa có dữ liệu chi tiết cho lần làm này.</p>';
+    }
+
+    if (activityType === 'quiz' && Array.isArray(detail)) {
+      const rows = detail.map((item, idx) => {
+        const question = escapeHtml(item.question || `Câu ${idx + 1}`);
+        const userAnswer = escapeHtml(
+          item.userAnswerText || item.userAnswer || 'Chưa trả lời',
+        );
+        const correctAnswer = escapeHtml(
+          item.correctAnswerText || item.correctAnswer || '-',
+        );
+        const status = item.isCorrect ? 'Đúng' : 'Sai';
+
+        return `
+          <div class="attempt-detail-row">
+            <p class="attempt-detail-question">${idx + 1}. ${question}</p>
+            <p class="lesson-meta">Bạn chọn: ${userAnswer}</p>
+            <p class="lesson-meta">Đáp án đúng: ${correctAnswer}</p>
+            <p class="lesson-meta">Kết quả: ${status}</p>
+          </div>
+        `;
+      }).join('');
+
+      return `<div class="attempt-detail-list">${rows}</div>`;
+    }
+
+    if (activityType === 'matching' && Array.isArray(detail)) {
+      const rows = detail.map((item, idx) => {
+        const leftText = escapeHtml(
+          item.leftText || item.left || item.term || item.word || `Cặp ${idx + 1}`,
+        );
+        const userMatch = escapeHtml(
+          item.userMatch || item.userAnswer || item.selected || item.right || '-',
+        );
+        const correctMatch = escapeHtml(
+          item.correctMatch || item.correctAnswer || item.correct || '-',
+        );
+        const isCorrect = item.isCorrect === true || userMatch === correctMatch;
+
+        return `
+          <div class="attempt-detail-row">
+            <p class="attempt-detail-question">${idx + 1}. ${leftText}</p>
+            <p class="lesson-meta">Bạn ghép: ${userMatch}</p>
+            <p class="lesson-meta">Đáp án đúng: ${correctMatch}</p>
+            <p class="lesson-meta">Kết quả: ${isCorrect ? 'Đúng' : 'Sai'}</p>
+          </div>
+        `;
+      }).join('');
+
+      return `<div class="attempt-detail-list">${rows}</div>`;
+    }
+
+    return `<pre class="attempt-detail-pre">${escapeHtml(JSON.stringify(detail, null, 2))}</pre>`;
   }
 
   function formatAttemptActionLabel(attempt) {
