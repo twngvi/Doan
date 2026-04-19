@@ -250,6 +250,7 @@
       selectionLocked: false,
       lockedVariantId: DEFAULT_PET_VARIANTS[0].id,
       ownedVariantIds: [DEFAULT_PET_VARIANTS[0].id],
+      petEntities: [], // Track positions and states of all pets in the world
     };
 
     let petMeteorInterval = null;
@@ -1325,18 +1326,19 @@
       if (input === null) return;
       const nextName = sanitizePetName(input);
       setPetDisplayNameByVariantId(safeVariantId, nextName);
-      showHoverPetName(nextName);
-      renderPetMultiGrid();
+      renderPetEntities();
       updatePetNameTagUI();
       queuePetConfigAutoSave();
     }
 
-    function renderPetMultiGrid() {
-      const gridEl = document.getElementById("petMultiGrid");
-      if (!gridEl) return;
+    function renderPetEntities() {
+      const worldEl = document.getElementById("petStageWorld");
+      if (!worldEl) return;
+
+      worldEl.innerHTML = "";
+      state.petEntities = [];
 
       const activeVariantId = getActiveVariantId();
-      gridEl.innerHTML = "";
 
       (state.ownedVariantIds || []).forEach(function (variantId) {
         const safeVariantId = String(variantId || "").trim();
@@ -1344,72 +1346,303 @@
         const variant = variantIndex >= 0 ? PET_VARIANTS[variantIndex] : null;
         if (!variant) return;
 
-        const petXP = getPetProgressXP(safeVariantId);
-        const petLevel = getProgressLevelByXP(petXP);
-        const petProgress = petXP % 100;
-        const displayImage = petLevel >= 3 ? (variant.level2 || variant.level1) : variant.level1;
+        const xp = getPetProgressXP(safeVariantId);
+        const level = getProgressLevelByXP(xp);
+        const progress = xp % 100;
+        const displayImage = level >= 3 ? (variant.level2 || variant.level1) : variant.level1;
 
-        const slotEl = document.createElement("div");
-        slotEl.className = "pet-slot" + (safeVariantId === activeVariantId ? " active" : "");
-        slotEl.setAttribute("data-variant-id", safeVariantId);
-        slotEl.setAttribute("title", getPetDisplayNameByVariantId(safeVariantId));
+        // Create entity element
+        const entityEl = document.createElement("div");
+        entityEl.className = "pet-entity";
+        if (level === 1) entityEl.classList.add("pet-lvl-1");
+        if (safeVariantId === activeVariantId) entityEl.classList.add("is-active");
+        entityEl.setAttribute("data-variant-id", safeVariantId);
 
-        const thumbWrapEl = document.createElement("div");
-        thumbWrapEl.className = "pet-slot-thumb-wrap";
+        // Tooltip (Simplified: Name • Lv X • XP)
+        const tooltipEl = document.createElement("div");
+        tooltipEl.className = "pet-entity-tooltip";
+        tooltipEl.innerHTML = `
+          <span class="pet-entity-name">${getPetDisplayNameByVariantId(safeVariantId)} • Lv ${level} • ${progress}/100 XP</span>
+        `;
+        entityEl.appendChild(tooltipEl);
 
-        const thumbEl = document.createElement("img");
-        thumbEl.className = "pet-slot-thumb";
-        thumbEl.alt = getPetDisplayNameByVariantId(safeVariantId);
-        thumbEl.loading = "lazy";
-        applySrcAsync(thumbEl, displayImage);
+        // Body
+        const bodyEl = document.createElement("div");
+        bodyEl.className = "pet-entity-body";
+        
+        const imgEl = document.createElement("img");
+        imgEl.className = "pet-entity-img";
+        applySrcAsync(imgEl, displayImage);
+        bodyEl.appendChild(imgEl);
 
-        const progressWrapEl = document.createElement("div");
-        progressWrapEl.className = "pet-slot-progress";
-        progressWrapEl.innerHTML =
-          '<div class="pet-slot-progress-track"><span class="pet-slot-progress-fill" style="width:' + petProgress + '%"></span></div>' +
-          '<span class="pet-slot-progress-text">Lv ' + petLevel + ' • ' + petProgress + '/100 XP</span>';
+        // Accessories (only for level 3+)
+        if (level >= 3) {
+          const accessories = state.selectedAccessories || [];
+          accessories.forEach((acc) => {
+            const accImg = document.createElement("img");
+            accImg.className = "pet-entity-accessory";
+            applySrcAsync(accImg, acc.fileName);
+            
+            // Get full accessory data from catalog to ensure we have positionProfiles
+            const catalogItem = getAccessoryItemByFileName(acc.fileName);
+            const activePos = acc.position || 'center';
+            const profile = (catalogItem && catalogItem.positionProfiles) ? catalogItem.positionProfiles[activePos] : {};
+            
+            const baseLeft = activePos === 'left' ? 42 : (activePos === 'right' ? 58 : 50);
+            accImg.style.left = baseLeft + "%";
+            
+            if (profile.offsetX) accImg.style.marginLeft = profile.offsetX + "px";
+            if (profile.offsetY) accImg.style.marginTop = profile.offsetY + "px";
+            
+            const scaleVal = (profile.scalePercent || 100) / 100;
+            const rotVal = profile.rotDeg || 0;
+            accImg.style.transform = `translate(-50%, -50%) scale(${scaleVal}) rotate(${rotVal}deg)`;
+            
+            bodyEl.appendChild(accImg);
+          });
+        }
 
-        thumbWrapEl.appendChild(thumbEl);
-        slotEl.appendChild(thumbWrapEl);
-        slotEl.appendChild(progressWrapEl);
+        entityEl.appendChild(bodyEl);
+        worldEl.appendChild(entityEl);
 
-        slotEl.addEventListener("mouseenter", function () {
-          showHoverPetName(getPetDisplayNameByVariantId(safeVariantId));
+        // Initial position (randomized within the bottom 3/4 area)
+        const stageWidth = worldEl.clientWidth || 400;
+        const stageHeight = worldEl.clientHeight || 400;
+        const startX = Math.random() * (stageWidth - 100);
+        const startY = (stageHeight * 0.25) + Math.random() * (stageHeight * 0.75 - 100);
+        
+        entityEl.style.left = startX + "px";
+        entityEl.style.top = startY + "px";
+
+        const petState = {
+          id: safeVariantId,
+          el: entityEl,
+          level: level,
+          x: startX,
+          y: startY,
+          vx: (Math.random() - 0.5) * 1, // Slowed down
+          vy: (Math.random() - 0.5) * 0.5,
+          isHovered: false,
+          isRolling: false, // This is for the CLICK roll
+          isPressed: false,
+          flip: 1,
+          lastJumpTime: Date.now() + Math.random() * 4000 // Slowed down
+        };
+
+        state.petEntities.push(petState);
+
+        // Events
+        entityEl.addEventListener("mouseenter", () => { petState.isHovered = true; });
+        entityEl.addEventListener("mouseleave", () => { petState.isHovered = false; });
+        
+        entityEl.addEventListener("click", () => {
+          // Focus this pet in header
+          state.currentIndex = variantIndex; 
+          updatePetLevelProgressUI(safeVariantId);
+          
+          if (petState.level === 2 && !petState.isTripleJumping) {
+            triggerTripleJump(petState);
+          }
         });
-        slotEl.addEventListener("mouseleave", function () {
-          hideHoverPetName();
+
+        // Drag & Drop Feeding
+        entityEl.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          entityEl.classList.add("drag-over");
         });
-        slotEl.addEventListener("click", function () {
+
+        entityEl.addEventListener("dragleave", () => {
+          entityEl.classList.remove("drag-over");
+        });
+
+        entityEl.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          entityEl.classList.remove("drag-over");
+          
+          const foodFile = e.dataTransfer.getData("text/pet-food-file");
+          if (!foodFile) return;
+          
+          const foodItem = FOOD_ITEMS.find(f => f.file === foodFile);
+          if (foodItem) {
+            feedPetVariant(safeVariantId, foodItem);
+          }
+        });
+
+        entityEl.addEventListener("mousedown", (e) => {
+          if (petState.level >= 3) {
+            petState.isPressed = true;
+            entityEl.classList.add("is-pressed");
+          }
+        });
+
+        entityEl.addEventListener("dblclick", (e) => {
+          e.preventDefault();
           state.currentIndex = variantIndex;
-          renderPet();
-          queuePetConfigAutoSave();
-        });
-        slotEl.addEventListener("dblclick", function (event) {
-          event.preventDefault();
+          renderPet(); // Re-renders the world and updates active state
           renamePetByVariantId(safeVariantId);
         });
-
-        slotEl.addEventListener("dragover", function (event) {
-          event.preventDefault();
-          slotEl.classList.add("is-drop-target");
-        });
-        slotEl.addEventListener("dragleave", function () {
-          slotEl.classList.remove("is-drop-target");
-        });
-        slotEl.addEventListener("drop", function (event) {
-          event.preventDefault();
-          slotEl.classList.remove("is-drop-target");
-          const foodFile = String(event.dataTransfer && event.dataTransfer.getData("text/pet-food-file") || "").trim();
-          if (!foodFile) return;
-          const foodItem = FOOD_ITEMS.find(function (item) {
-            return String((item && item.file) || "").trim() === foodFile;
-          });
-          if (!foodItem) return;
-          feedPetVariant(safeVariantId, foodItem);
-        });
-
-        gridEl.appendChild(slotEl);
       });
+    }
+
+    function triggerTripleJump(petState) {
+      petState.isTripleJumping = true;
+      petState.el.classList.add("pet-triple-jump");
+      
+      setTimeout(() => {
+        petState.el.classList.remove("pet-triple-jump");
+        petState.isTripleJumping = false;
+      }, 1200);
+    }
+
+    function updatePetWorld() {
+      if (!state.petEntities || state.petEntities.length === 0) return;
+
+      const worldEl = document.getElementById("petStageWorld");
+      if (!worldEl) return;
+
+      const stageWidth = worldEl.clientWidth;
+      const stageHeight = worldEl.clientHeight;
+      const now = Date.now();
+
+      state.petEntities.forEach(pet => {
+        if (pet.isHovered || pet.isPressed) return;
+
+        // Level 1: Repulsion (Don't overlap)
+        if (pet.level === 1) {
+          applyRepulsion(pet);
+          return;
+        }
+
+        // Level 2: Roll 3x faster with wrapping
+        if (pet.level === 2) {
+          if (pet.isTripleJumping) return;
+
+          pet.x += 1.8; // Faster roll speed (3x of 0.6)
+          if (pet.x > stageWidth) {
+            pet.x = -100;
+          }
+          pet.el.style.left = pet.x + "px";
+          pet.el.style.top = pet.y + "px";
+          
+          const rotation = (pet.x % 360) * 3;
+          pet.el.querySelector('.pet-entity-body').style.transform = `rotate(${rotation}deg)`;
+          return;
+        }
+
+        // Level 3+: Jump around (Frequent step-by-step)
+        const jumpDelay = 1500 + Math.random() * 2000; // More frequent
+        if (now - pet.lastJumpTime > jumpDelay) {
+          pet.lastJumpTime = now;
+          
+          const moveRange = 60 + Math.random() * 60; // Step-by-step distance
+          const angle = Math.random() * Math.PI * 2;
+          const targetX = Math.max(0, Math.min(stageWidth - 100, pet.x + Math.cos(angle) * moveRange));
+          const targetY = Math.max(stageHeight * 0.25, Math.min(stageHeight - 100, pet.y + Math.sin(angle) * moveRange));
+
+          const newFlip = targetX > pet.x ? -1 : 1;
+          
+          // If flipping, do a "jump flip"
+          if (newFlip !== pet.flip) {
+            pet.flip = newFlip;
+            triggerJumpFlip(pet, targetX, targetY);
+          } else {
+            pet.x = targetX;
+            pet.y = targetY;
+            pet.el.style.left = pet.x + "px";
+            pet.el.style.top = pet.y + "px";
+            pet.el.classList.remove("pet-jump");
+            void pet.el.offsetWidth;
+            pet.el.classList.add("pet-jump");
+          }
+        }
+      });
+
+      checkCollisions();
+    }
+
+    function triggerJumpFlip(pet, targetX, targetY) {
+      // Disappear/Jump out effect
+      pet.el.style.opacity = "0";
+      pet.el.style.transform = "scale(0.5) translateY(-50px)";
+      
+      setTimeout(() => {
+        pet.x = targetX;
+        pet.y = targetY;
+        pet.el.style.left = pet.x + "px";
+        pet.el.style.top = pet.y + "px";
+        pet.el.style.setProperty("--pet-flip", pet.flip);
+        
+        // Reappear
+        pet.el.style.opacity = "1";
+        pet.el.style.transform = "scale(1) translateY(0)";
+        
+        pet.el.classList.remove("pet-jump");
+        void pet.el.offsetWidth;
+        pet.el.classList.add("pet-jump");
+      }, 300);
+    }
+
+    function applyRepulsion(pet) {
+      state.petEntities.forEach(other => {
+        if (pet === other || other.level !== 1) return;
+        
+        const dx = pet.x - other.x;
+        const dy = pet.y - other.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const minVal = 80;
+
+        if (dist < minVal) {
+          const force = (minVal - dist) / 20;
+          const angle = Math.atan2(dy, dx);
+          pet.x += Math.cos(angle) * force;
+          pet.y += Math.sin(angle) * force;
+          
+          // Keep within stage
+          const stageWidth = 400; // Approximate
+          const stageHeight = 400;
+          pet.x = Math.max(0, Math.min(stageWidth - 100, pet.x));
+          pet.y = Math.max(stageHeight * 0.25, Math.min(stageHeight - 100, pet.y));
+          
+          pet.el.style.left = pet.x + "px";
+          pet.el.style.top = pet.y + "px";
+        }
+      });
+    }
+
+    function checkCollisions() {
+      const entities = state.petEntities;
+      for (let i = 0; i < entities.length; i++) {
+        for (let j = i + 1; j < entities.length; j++) {
+          const p1 = entities[i];
+          const p2 = entities[j];
+
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < 70) { // Collision threshold
+            // Reverse directions
+            p1.vx *= -1;
+            p2.vx *= -1;
+            
+            // Push apart slightly to prevent sticking
+            p1.x += p1.vx * 2;
+            p2.x += p2.vx * 2;
+
+            triggerCollisionDoubleJump(p1);
+            triggerCollisionDoubleJump(p2);
+          }
+        }
+      }
+    }
+
+    function triggerCollisionDoubleJump(pet) {
+      if (pet.el.classList.contains("pet-collision-double-jump")) return;
+      
+      pet.el.classList.add("pet-collision-double-jump");
+      setTimeout(() => {
+        pet.el.classList.remove("pet-collision-double-jump");
+      }, 800);
     }
 
     function updatePetLevelProgressUI(variantId) {
@@ -1417,24 +1650,17 @@
       const xp = getPetProgressXP(activeVariantId);
       const level = getProgressLevelByXP(xp);
       const currentXPProgress = xp % 100;
+      const petName = getPetDisplayNameByVariantId(activeVariantId);
 
       const levelTextEl = document.getElementById("petHeaderLevelText");
       if (levelTextEl) {
-        levelTextEl.textContent = "Level " + level;
-      }
-
-      const progressFillEl = document.getElementById("petLevelProgressFill");
-      if (progressFillEl) {
-        progressFillEl.style.width = currentXPProgress + "%";
-      }
-
-      const progressValueEl = document.getElementById("petLevelProgressValue");
-      if (progressValueEl) {
-        progressValueEl.textContent = currentXPProgress + "/100 XP";
+        levelTextEl.textContent = `${petName} • Lv ${level} • ${currentXPProgress}/100 XP`;
       }
     }
 
     function showPetLevelUpPopup(variantId, newLevel) {
+      if (newLevel > 3) return; // Only notify for levels 1, 2, 3
+
       const safeVariantId = String(variantId || "").trim();
       const variantIndex = getVariantIndexById(safeVariantId);
       const variant = variantIndex >= 0 ? PET_VARIANTS[variantIndex] : null;
@@ -2217,41 +2443,6 @@
       });
     }
 
-    function renderEyes() {
-      const eyesImageEl = document.getElementById("petEyesImage");
-      if (!eyesImageEl) return;
-
-      eyesImageEl.style.display = "none";
-      eyesImageEl.src = "";
-    }
-
-    function renderAccessory() {
-      const accessoryImageEls = getAccessoryImageElements();
-      if (accessoryImageEls.length === 0) return;
-
-      if (!canEquipAccessories()) {
-        accessoryImageEls.forEach(clearAccessoryImage);
-        return;
-      }
-
-      accessoryImageEls.forEach(function (accessoryImageEl, index) {
-        const selected = state.selectedAccessories[index];
-        if (!selected) {
-          clearAccessoryImage(accessoryImageEl);
-          return;
-        }
-
-        selected.position = updateAccessoryPositionClasses(
-          accessoryImageEl,
-          selected.fileName,
-          selected.position,
-          selected,
-        );
-
-        applySrcAsync(accessoryImageEl, selected.fileName);
-      });
-      updateSaveButtonUI();
-    }
 
     function renderPet() {
       enforceLockedVariantSelection();
@@ -2263,15 +2454,12 @@
       const xp = getPetProgressXP(activeVariantId);
       const progressionLevel = getProgressLevelByXP(xp);
       
-      // Update visual level state: Progression Level 3+ is Mature (Level 2 visuals)
       state.isLevelTwo = progressionLevel >= 3;
 
       const variant = PET_VARIANTS[state.currentIndex];
       if (!variant) return;
 
       const levelBadgeEl = document.getElementById("petLevelBadge");
-      const previewImageEl = document.getElementById("petPreviewImage");
-      const errorEl = document.getElementById("petImageError");
       const stageEl = document.getElementById("petStage");
       const levelBtn = document.getElementById("petToggleLevelBtn");
 
@@ -2294,31 +2482,10 @@
       }
 
       if (levelBtn) {
-        levelBtn.style.display = "none"; // Hide explicit level toggle as it's now XP-based
+        levelBtn.style.display = "none";
       }
 
-      clearInteractionClasses();
-      if (progressionLevel < 2) {
-        state.isPressing = false;
-        state.pressZone = null;
-      }
-
-      const imageName = state.isLevelTwo ? variant.level2 : variant.level1;
-      const variantScale = Math.max(40, Math.min(200, toNonNegativeNumber(variant.scalePercent, 100))) / 100;
-      if (previewImageEl) {
-        previewImageEl.style.transform = "scale(" + variantScale + ")";
-        previewImageEl.style.transformOrigin = "center bottom";
-      }
-      applySrcAsync(previewImageEl, imageName);
-      if (errorEl) errorEl.style.display = "none";
-      
-      // Force render eyes and accessories after main image
-      setTimeout(() => {
-        renderEyes();
-        renderAccessory();
-      }, 50);
-
-      renderPetMultiGrid();
+      renderPetEntities();
 
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
@@ -2907,8 +3074,8 @@
           feedPetVariant(activeVariantId, foodItem);
         });
 
+        item.draggable = true;
         item.addEventListener("dragstart", function (event) {
-          if (!event.dataTransfer) return;
           event.dataTransfer.setData("text/pet-food-file", fileName);
           event.dataTransfer.effectAllowed = "copy";
         });
@@ -2965,71 +3132,16 @@
 
     function bindStageInteractions() {
       const stageEl = document.getElementById("petStage");
-      const animatorEl = document.getElementById("petAnimator");
-      if (!stageEl || !animatorEl) return;
-
-      stageEl.addEventListener("mousemove", function (event) {
-        applyLevel1TiltByPointer(event.clientX);
-      });
-
-      stageEl.addEventListener("mouseleave", function () {
-        clearInteractionClasses();
-        clearLevel1Tilt();
-      });
-
-      stageEl.addEventListener("mousedown", function (event) {
-        if (event.target && event.target.closest && event.target.closest(".pet-slot")) {
-          return;
-        }
-
-        const progressionLevel = getCurrentProgressLevel();
-        const visualEl = document.getElementById("petVisual");
-
-        // Level 2: Roll away
-        if (progressionLevel === 2) {
-          if (state.isRolling) return;
-          state.isRolling = true;
-          
-          const mover = document.getElementById("petMover");
-          if (mover) {
-            mover.classList.add("pet-rolling-out");
-            
-            setTimeout(() => {
-              mover.classList.remove("pet-rolling-out");
-              mover.classList.add("pet-rolling-in");
-              
-              setTimeout(() => {
-                mover.classList.remove("pet-rolling-in");
-                state.isRolling = false;
-              }, 600);
-            }, 600);
-          }
-        } 
-        // Level 3: Squash and hold
-        else if (progressionLevel >= 3 && visualEl) {
-          state.isPressing = true;
-          state.isPaused = true; // Pause jumping
-
-          visualEl.classList.remove("is-jumping");
-          visualEl.classList.add("is-pressed");
-          
-          renderEyes();
-        }
-
-        event.preventDefault();
-      });
+      if (!stageEl) return;
 
       document.addEventListener("mouseup", function() {
-        if (state.isPressing) {
-          state.isPressing = false;
-          state.isPaused = false; // Resume jumping
-          
-          const visualEl = document.getElementById("petVisual");
-          if (visualEl) {
-            visualEl.classList.remove("is-pressed");
-          }
-          
-          renderEyes();
+        if (state.petEntities) {
+          state.petEntities.forEach(pet => {
+            if (pet.isPressed) {
+              pet.isPressed = false;
+              pet.el.classList.remove("is-pressed");
+            }
+          });
         }
       });
     }
@@ -3075,77 +3187,16 @@
       }
     }
 
-    function performJump(targetX, targetY) {
-      if (state.isPaused) return;
-
-      const mover = document.getElementById("petMover");
-      const visual = document.getElementById("petVisual");
-      if (!mover || !visual) return;
-
-      // Trigger jump animation
-      visual.classList.remove("is-jumping");
-      void visual.offsetWidth; 
-      visual.classList.add("is-jumping");
-
-      // Update internal state
-      state.posBaseX = targetX;
-      state.posBaseY = targetY;
-
-      // Move the element
-      mover.style.setProperty("--pet-pos-x", targetX + "px");
-      mover.style.setProperty("--pet-pos-y", targetY + "px");
-    }
 
     function startJumpingRoutine() {
       if (state.jumpIntervalId) return;
 
-      let hopCount = 0;
-      
       const routine = function() {
-        const progressionLevel = getCurrentProgressLevel();
-
-        // Only jump if level >= 2 and not paused
-        if (progressionLevel < 2 || state.isPaused || state.isRolling) {
-          state.jumpIntervalId = setTimeout(routine, 1500);
-          return;
-        }
-
-        const stage = document.getElementById("petStage");
-        if (!stage) return;
-
-        const stageWidth = stage.clientWidth;
-        const stageHeight = stage.clientHeight;
-        
-        hopCount++;
-
-        // Every 6 hops, do a big random relocation leap
-        if (hopCount >= 6) {
-          hopCount = 0;
-          const maxX = (stageWidth - 230) * 0.4;
-          const maxY = (stageHeight - 202) * 0.3;
-          const targetX = (Math.random() - 0.5) * maxX * 2;
-          const targetY = (Math.random() - 0.5) * maxY * 2;
-          performJump(targetX, targetY);
-        } else {
-          // Normal small hop back and forth
-          const dir = Math.sin(Date.now() / 1500) > 0 ? 1 : -1;
-          const smallHopX = state.posBaseX + (dir * 40);
-          const smallHopY = state.posBaseY + (Math.random() - 0.5) * 10;
-          
-          // Constrain within stage
-          const boundX = (stageWidth - 230) * 0.45;
-          const safeX = Math.max(-boundX, Math.min(boundX, smallHopX));
-          
-          performJump(safeX, smallHopY);
-        }
-        
-        // Schedule next hop with random delay
-        const nextDelay = 1800 + Math.random() * 1500;
-        state.jumpIntervalId = setTimeout(routine, nextDelay);
+        updatePetWorld();
+        state.jumpIntervalId = setTimeout(routine, 100); // Physics/behavior tick
       };
 
-      // Initial kick-off
-      state.jumpIntervalId = setTimeout(routine, 1000);
+      state.jumpIntervalId = setTimeout(routine, 100);
     }
 
     function bindNavigationGuard() {

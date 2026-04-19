@@ -129,6 +129,7 @@
       0 12px 40px rgba(0, 0, 0, 0.15),
       inset 0 1px 1px rgba(255, 255, 255, 0.1);
     transition: all 0.3s ease;
+    margin-bottom: -20px; /* Reducing effective height/visual space */
   }
 
   .ptl-right {
@@ -148,6 +149,7 @@
       0 12px 40px rgba(0, 0, 0, 0.15),
       inset 0 1px 1px rgba(255, 255, 255, 0.1);
     transition: all 0.3s ease;
+    min-height: 400px; /* Adjusted down */
   }
 
   @media (max-width: 992px) {
@@ -722,194 +724,162 @@
     box-shadow: 0 6px 14px rgba(244, 63, 94, 0.3);
   }
 
-  .pet-animator {
+  .pet-stage-world {
     position: absolute;
     inset: 0;
-    width: min(100%, var(--pet-admin-preview-width));
-    height: min(100%, var(--pet-admin-preview-height));
     z-index: 2;
-    opacity: 0;
-    pointer-events: none;
+    overflow: hidden;
+    pointer-events: auto;
   }
 
-  .pet-multi-grid {
-    position: relative;
-    z-index: 4;
-    width: 100%;
-    height: 100%;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-    gap: 10px;
-    align-content: center;
-    align-items: stretch;
-  }
-
-  .pet-slot {
-    position: relative;
-    border-radius: 14px;
-    border: 1px solid color-mix(in srgb, var(--pet-card-border) 85%, transparent);
-    background: color-mix(in srgb, var(--pet-soft-surface) 86%, transparent);
-    backdrop-filter: blur(4px);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 8px;
-    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  .pet-entity {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    transform-origin: center bottom;
+    transition: 
+      left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), 
+      top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 0.3s ease,
+      transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     cursor: pointer;
     user-select: none;
-  }
-
-  .pet-slot:hover {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--pet-accent) 64%, var(--pet-card-border));
-    box-shadow: 0 8px 16px color-mix(in srgb, var(--pet-accent) 20%, transparent);
-  }
-
-  .pet-slot.active {
-    border-color: color-mix(in srgb, var(--pet-accent) 72%, var(--pet-card-border));
-    box-shadow: 0 10px 20px color-mix(in srgb, var(--pet-accent) 24%, transparent);
-  }
-
-  .pet-slot.is-drop-target {
-    border-color: color-mix(in srgb, #22c55e 70%, var(--pet-card-border));
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25), 0 10px 18px rgba(34, 197, 94, 0.2);
-  }
-
-  .pet-slot-thumb-wrap {
-    width: 100%;
-    aspect-ratio: 1;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--pet-soft-surface) 72%, transparent);
+    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 8px;
+    will-change: transform, left, top, opacity;
   }
 
-  .pet-slot-thumb {
-    width: 88%;
-    height: 88%;
-    object-fit: contain;
-    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.2));
-    pointer-events: none;
+  .pet-entity.drag-over {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 15px var(--pet-accent));
   }
 
-  .pet-slot-progress {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  .pet-entity.is-active {
+    z-index: 15;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
   }
 
-  .pet-slot-progress-track {
-    width: 100%;
-    height: 8px;
-    border-radius: 999px;
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-  }
-
-  .pet-slot-progress-fill {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
-    box-shadow: 0 0 12px rgba(0, 242, 254, 0.4);
-  }
-
-  .pet-slot-progress-text {
-    font-size: 0.7rem;
-    font-weight: 800;
-    color: var(--pet-text-secondary);
-    text-align: center;
-  }
-
-  .pet-hover-name {
-    position: absolute;
-    top: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 7;
-    min-height: 30px;
-    border-radius: 999px;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--pet-card-bg) 90%, transparent);
-    border: 1px solid color-mix(in srgb, var(--pet-accent) 30%, var(--pet-card-border));
-    color: var(--pet-text);
-    font-size: 0.78rem;
-    font-weight: 800;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 18px color-mix(in srgb, var(--pet-accent) 15%, transparent);
-    pointer-events: none;
-  }
-
-  .pet-hover-name.visible {
-    display: inline-flex;
-  }
-
-  .pet-animator.anim-level1-roll {
-    animation: petRollFromLeft 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  }
-
-  .pet-mover {
-    position: absolute;
-    inset: 0;
-    transform: translate(var(--pet-pos-x, 0), var(--pet-pos-y, 0)) scaleX(var(--pet-flip, 1));
-    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-    will-change: transform;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-  }
-
-  .pet-visual {
+  .pet-entity-body {
     position: relative;
     width: 100%;
     height: 100%;
     transform-origin: center bottom;
-    transition: transform 0.15s ease-out;
-    cursor: pointer;
+    pointer-events: none;
   }
 
-  .pet-visual.is-jumping {
+  .pet-entity-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .pet-entity-tooltip {
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.98);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .pet-entity:hover .pet-entity-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(-8px);
+  }
+
+  .pet-entity-name {
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.02em;
+  }
+
+  /* Level 1: Wobble */
+  .pet-lvl-1 .pet-entity-body {
+    animation: petWobble 3s ease-in-out infinite;
+  }
+
+  @keyframes petWobble {
+    0%, 100% { transform: rotate(-5deg); }
+    50% { transform: rotate(5deg); }
+  }
+
+  /* Level 2+: Jump */
+  .pet-jump .pet-entity-body {
     animation: petJumpCycle 0.6s cubic-bezier(0.45, 0, 0.55, 1) forwards;
   }
 
-  @keyframes petJumpCycle {
-    0% { transform: translateY(0) scale(1, 1); }
-    20% { transform: translateY(0) scale(1.2, 0.8); }
-    50% { transform: translateY(-65px) scale(0.9, 1.1); }
-    80% { transform: translateY(0) scale(1.2, 0.82); }
-    100% { transform: translateY(0) scale(1, 1); }
+  /* Level 2: Roll */
+  .pet-entity.is-rolling {
+    transition: left 1s linear !important;
+  }
+  .pet-entity.is-rolling .pet-entity-body {
+    animation: petRoll 1s linear infinite !important;
   }
 
-  /* Level 1 tilt is now applied via inline transform in JS for smooth mouse-follow */
-
-  .pet-visual.level2-press-left {
-    transform-origin: 25% 76%;
-    transform: translateY(14px) scaleX(1.08) scaleY(0.72) skewX(-8deg);
+  @keyframes petRoll {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
-  .pet-visual.level2-press-right {
-    transform-origin: 75% 76%;
-    transform: translateY(14px) scaleX(1.08) scaleY(0.72) skewX(8deg);
+  /* Level 3+: Press - Stronger squash */
+  .pet-entity.is-pressed .pet-entity-body {
+    transform: scale(1.3, 0.55) translateY(30%) !important;
+    transition: transform 0.08s cubic-bezier(0.1, 0.7, 0.1, 1);
   }
 
-  .pet-visual.level2-press-center {
-    transform-origin: 50% 86%;
-    transform: translateY(18px) scaleX(1.18) scaleY(0.62);
+  /* Collision Double Jump */
+  .pet-collision-double-jump .pet-entity-body {
+    animation: petDoubleJump 0.8s ease-in-out forwards;
   }
 
-  /* Squash effect when clicked */
-  .pet-visual.is-pressed {
-    transform: scale(1.18, 0.72) translateY(18%) !important;
-    transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  @keyframes petDoubleJump {
+    0%, 100% { transform: translateY(0); }
+    25% { transform: translateY(-40px); }
+    50% { transform: translateY(0); }
+    75% { transform: translateY(-40px); }
+  }
+
+  /* Triple Jump for Level 2 click */
+  .pet-triple-jump .pet-entity-body {
+    animation: petTripleJump 1.2s ease-in-out forwards;
+  }
+
+  @keyframes petTripleJump {
+    0%, 100% { transform: translateY(0); }
+    16% { transform: translateY(-35px); }
+    33% { transform: translateY(0); }
+    50% { transform: translateY(-35px); }
+    66% { transform: translateY(0); }
+    83% { transform: translateY(-35px); }
+  }
+
+  .pet-entity-accessory {
+    position: absolute;
+    top: 27%;
+    left: 50%;
+    width: 34%;
+    height: auto;
+    transform: translate(-50%, -50%);
+    object-fit: contain;
+    z-index: 10;
   }
 
   .pet-preview-image {
@@ -1434,9 +1404,9 @@
     width: min(420px, 95vw);
     border-radius: 18px;
     border: 1px solid color-mix(in srgb, var(--pet-accent) 35%, var(--pet-card-border));
-    background: color-mix(in srgb, var(--pet-card-bg) 94%, transparent);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
-    padding: 16px;
+    background: #0f172a; /* Non-transparent */
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+    padding: 24px;
     text-align: center;
   }
 
