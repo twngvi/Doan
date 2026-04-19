@@ -8,6 +8,7 @@
     users: [],
     filteredUsers: [],
     selectedUserId: null,
+    selectedLessonByUser: {},
     searchQuery: '',
     sortBy: 'progress-desc',
     initialized: false,
@@ -29,6 +30,8 @@
     const searchInput = document.getElementById('userStatsSearchInput');
     const sortSelect = document.getElementById('userStatsSortSelect');
     const refreshBtn = document.getElementById('userStatsRefreshBtn');
+    const topicHistoryCloseBtn = document.getElementById('userStatsTopicHistoryCloseBtn');
+    const topicHistoryBackdrop = document.getElementById('userStatsTopicHistoryBackdrop');
 
     if (searchInput) {
       searchInput.addEventListener('input', debounce((event) => {
@@ -47,6 +50,20 @@
     if (refreshBtn) {
       refreshBtn.addEventListener('click', loadUserStatsData);
     }
+
+    if (topicHistoryCloseBtn) {
+      topicHistoryCloseBtn.addEventListener('click', closeTopicLearningHistoryModal);
+    }
+
+    if (topicHistoryBackdrop) {
+      topicHistoryBackdrop.addEventListener('click', closeTopicLearningHistoryModal);
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeTopicLearningHistoryModal();
+      }
+    });
   }
 
   async function loadUserStatsData() {
@@ -182,6 +199,7 @@
     if (!user) {
       placeholder.style.display = 'flex';
       content.style.display = 'none';
+      closeTopicLearningHistoryModal();
       return;
     }
 
@@ -191,7 +209,6 @@
     renderDetailHeader(user);
     renderSummaryCards(user);
     renderLessonProgress(user);
-    renderAttemptTable(user);
     renderPlaysList(user);
   }
 
@@ -232,13 +249,21 @@
     const lessons = Array.isArray(user.lessons) ? user.lessons : [];
     if (!lessons.length) {
       container.innerHTML = '<div class="lesson-progress-item"><p class="lesson-meta">Chưa có dữ liệu bài học</p></div>';
+      closeTopicLearningHistoryModal();
       return;
+    }
+
+    const selectedKey = userStatsState.selectedLessonByUser[user.id] || getLessonKey(lessons[0]);
+    if (!userStatsState.selectedLessonByUser[user.id]) {
+      userStatsState.selectedLessonByUser[user.id] = selectedKey;
     }
 
     container.innerHTML = lessons.map((lesson) => {
       const progress = normalizePercent(lesson.progressPercent);
+      const lessonKey = getLessonKey(lesson);
+      const isSelected = lessonKey === userStatsState.selectedLessonByUser[user.id];
       return `
-        <article class="lesson-progress-item">
+        <button class="lesson-progress-item lesson-progress-button ${isSelected ? 'active' : ''}" type="button" data-lesson-key="${escapeHtml(lessonKey)}">
           <div class="lesson-progress-top">
             <p class="lesson-name">${escapeHtml(lesson.lessonTitle || lesson.lessonId || 'Bài học')}</p>
             <p class="lesson-meta">${progress}%</p>
@@ -247,29 +272,91 @@
             <div class="progress-fill" style="width: ${progress}%;"></div>
           </div>
           <p class="lesson-meta">Học ${Number(lesson.attemptCount || 0)} lần • Điểm TB: ${Number(lesson.avgScore || 0)}</p>
-        </article>
+        </button>
       `;
     }).join('');
+
+    container.querySelectorAll('.lesson-progress-button').forEach((item) => {
+      item.addEventListener('click', () => {
+        userStatsState.selectedLessonByUser[user.id] = item.dataset.lessonKey || '';
+        renderLessonProgress(user);
+        const selectedLesson = lessons.find((lesson) => getLessonKey(lesson) === userStatsState.selectedLessonByUser[user.id]) || lessons[0];
+        openTopicLearningHistoryModal(user, selectedLesson);
+      });
+    });
   }
 
-  function renderAttemptTable(user) {
-    const tbody = document.getElementById('userStatsAttemptTableBody');
-    if (!tbody) return;
+  function openTopicLearningHistoryModal(user, lesson) {
+    const modal = document.getElementById('userStatsTopicHistoryModal');
+    if (!modal) return;
 
-    const attempts = Array.isArray(user.attempts) ? user.attempts : [];
-    if (!attempts.length) {
-      tbody.innerHTML = '<tr><td colspan="4">Chưa có dữ liệu điểm từng lần</td></tr>';
+    renderTopicLearningHistoryModal(user, lesson);
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeTopicLearningHistoryModal() {
+    const modal = document.getElementById('userStatsTopicHistoryModal');
+    if (!modal || modal.style.display === 'none') return;
+
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderTopicLearningHistoryModal(user, lesson) {
+    const title = document.getElementById('userStatsTopicHistoryModalTitle');
+    const container = document.getElementById('userStatsTopicHistoryModalList');
+    if (!container || !title) return;
+
+    if (!lesson) {
+      title.textContent = 'Lịch sử học';
+      container.innerHTML = '<div class="topic-history-item"><p class="lesson-meta">Chưa có bài học để hiển thị lịch sử</p></div>';
       return;
     }
 
-    tbody.innerHTML = attempts.map((attempt) => `
-      <tr>
-        <td>${formatDateTime(attempt.completedAt)}</td>
-        <td>${escapeHtml(attempt.lessonTitle || attempt.lessonId || '')}</td>
-        <td>#${Number(attempt.attemptNumber || 0)}</td>
-        <td class="score">${Number(attempt.score || 0)}</td>
-      </tr>
+    const lessonName = lesson.lessonTitle || lesson.lessonId || 'Bài học';
+    title.textContent = `Lịch sử học: ${lessonName}`;
+    const attempts = Array.isArray(user.attempts) ? user.attempts : [];
+    const lessonAttempts = attempts.filter((attempt) => isSameLesson(attempt, lesson));
+
+    if (!lessonAttempts.length) {
+      container.innerHTML = '<div class="topic-history-item"><p class="lesson-meta">Chưa có lịch sử học cho bài này</p></div>';
+      return;
+    }
+
+    lessonAttempts.sort((a, b) => {
+      const aTime = new Date(a.completedAt || 0).getTime();
+      const bTime = new Date(b.completedAt || 0).getTime();
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    });
+
+    container.innerHTML = lessonAttempts.map((attempt) => `
+      <article class="topic-history-item">
+        <div class="topic-history-top">
+          <p class="lesson-name">Lần học #${Number(attempt.attemptNumber || 0)}</p>
+          <p class="topic-history-score">${Number(attempt.score || 0)} điểm</p>
+        </div>
+        <p class="lesson-meta">Thời gian: ${formatDateTime(attempt.completedAt)}</p>
+      </article>
     `).join('');
+  }
+
+  function getLessonKey(lesson) {
+    return String(lesson.lessonId || lesson.lessonTitle || '').trim().toLowerCase();
+  }
+
+  function isSameLesson(attempt, lesson) {
+    const attemptId = String(attempt.lessonId || '').trim().toLowerCase();
+    const attemptTitle = String(attempt.lessonTitle || '').trim().toLowerCase();
+    const lessonId = String(lesson.lessonId || '').trim().toLowerCase();
+    const lessonTitle = String(lesson.lessonTitle || '').trim().toLowerCase();
+
+    return Boolean(
+      (lessonId && attemptId && lessonId === attemptId) ||
+      (lessonTitle && attemptTitle && lessonTitle === attemptTitle) ||
+      (lessonId && attemptTitle && lessonId === attemptTitle) ||
+      (lessonTitle && attemptId && lessonTitle === attemptId)
+    );
   }
 
   function renderPlaysList(user) {
