@@ -1291,6 +1291,18 @@
       updateSaveButtonUI(); // Check if name change makes it dirty
     }
 
+    function updateOwnedPetSummaryUI() {
+      const summaryEl = document.getElementById("petOwnedSummary");
+      if (!summaryEl) return;
+
+      const ownedCount = normalizeOwnedVariantIds(
+        state.ownedVariantIds,
+        getActiveVariantId() || getVariantIdByIndex(state.currentIndex),
+      ).length;
+      const totalCount = Array.isArray(PET_VARIANTS) ? PET_VARIANTS.length : ownedCount;
+      summaryEl.textContent = "Sở hữu: " + ownedCount + "/" + Math.max(ownedCount, totalCount) + " PET";
+    }
+
     function showHoverPetName(nameValue) {
       const hoverEl = document.getElementById("petHoverName");
       if (!hoverEl) return;
@@ -1356,6 +1368,7 @@
         const entityEl = document.createElement("div");
         entityEl.className = "pet-entity";
         if (level === 1) entityEl.classList.add("pet-lvl-1");
+        if (level === 2) entityEl.classList.add("pet-lvl-2");
         if (level >= 3) entityEl.classList.add("pet-lvl-3");
         if (safeVariantId === activeVariantId) entityEl.classList.add("is-active");
         entityEl.setAttribute("data-variant-id", safeVariantId);
@@ -1435,6 +1448,7 @@
           rollPhase: "",
           rollReturnX: startX,
           rollReturnY: startY,
+          laneY: startY,
           rollVelocity: 0,
           lastJumpTime: Date.now() + Math.random() * 1600,
           lastHopTime: Date.now() + Math.random() * 900,
@@ -1545,8 +1559,9 @@
       pet.rollPhase = "to-left";
       pet.rollReturnX = pet.x;
       pet.rollReturnY = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
+      pet.laneY = pet.rollReturnY;
       pet.rollVelocity = Math.max(9, bounds.width / 22);
-      pet.y = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
+      pet.y = pet.rollReturnY;
       pet.el.classList.add("is-rolling");
       pet.el.style.left = pet.x + "px";
       pet.el.style.top = pet.y + "px";
@@ -1589,6 +1604,7 @@
                 pet.el.classList.remove("is-rolling");
                 pet.x = pet.rollReturnX;
                 pet.y = pet.rollReturnY;
+                pet.laneY = pet.rollReturnY;
                 triggerPetHop(pet);
               }
             }
@@ -1598,11 +1614,10 @@
             return;
           }
 
+          pet.y = Math.max(bounds.minY, Math.min(bounds.maxY, pet.laneY));
+
           if (now - pet.lastHopTime > 850) {
             pet.lastHopTime = now;
-            pet.x += (Math.random() - 0.5) * 18;
-            pet.y += (Math.random() - 0.5) * 14;
-            clampPetToBounds(pet, bounds);
             triggerPetHop(pet);
           }
 
@@ -1926,6 +1941,7 @@
         selectionLocked: false,
         currentVariantId: currentVariantId,
         ownedVariantIds: ownedVariantIds,
+        ownedPetCount: ownedVariantIds.length,
         lockedVariantId: lockedVariantId,
         petProgressByVariantId: safeProgressByVariant,
         petNamesByVariantId: safeNamesByVariant,
@@ -2554,6 +2570,7 @@
       updateAccessoryButtons();
       updateFoodButtons();
       updateAccessoryPositionButtons();
+      updateOwnedPetSummaryUI();
       updateSaveButtonUI();
     }
 

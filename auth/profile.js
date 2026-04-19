@@ -848,6 +848,16 @@ function getUserPetConfig(userId) {
     }
     parsedConfig.currentIndex = normalizedIndex;
 
+    const rawBackgroundIndex = parsedConfig.selectedStageBackgroundIndex;
+    const parsedBackgroundIndex = parseInt(rawBackgroundIndex, 10);
+    const normalizedBackgroundIndex = Number.isFinite(parsedBackgroundIndex)
+      ? Math.max(0, parsedBackgroundIndex)
+      : 0;
+    if (rawBackgroundIndex !== normalizedBackgroundIndex) {
+      shouldPersist = true;
+    }
+    parsedConfig.selectedStageBackgroundIndex = normalizedBackgroundIndex;
+
     const progressionXP = parseInt(parsedConfig.progressionXP, 10);
     const legacyLevel = parseInt(parsedConfig.progressionLevel, 10);
     const legacyProgress = parseInt(parsedConfig.progressionXPProgress, 10);
@@ -871,6 +881,7 @@ function getUserPetConfig(userId) {
 
     const rawSelectionLocked = parsedConfig.selectionLocked;
     const rawOwnedVariantIds = parsedConfig.ownedVariantIds;
+    const rawOwnedPetCount = parseInt(parsedConfig.ownedPetCount, 10);
     const rawLockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
     const rawCurrentVariantId = String(parsedConfig.currentVariantId || "").trim();
 
@@ -892,6 +903,7 @@ function getUserPetConfig(userId) {
     );
     parsedConfig.currentVariantId = normalizedCurrentVariantId || ownedVariantIds[0] || "";
     parsedConfig.ownedVariantIds = ownedVariantIds;
+    parsedConfig.ownedPetCount = ownedVariantIds.length;
     parsedConfig.selectionLocked = false;
     parsedConfig.lockedVariantId = ownedVariantIds[0] || parsedConfig.currentVariantId || "";
 
@@ -951,6 +963,8 @@ function getUserPetConfig(userId) {
       rawSelectionLocked !== false ||
       !Array.isArray(rawOwnedVariantIds) ||
       !rawOwnedVariantIds.length ||
+      !Number.isFinite(rawOwnedPetCount) ||
+      rawOwnedPetCount !== ownedVariantIds.length ||
       rawLockedVariantId !== String((ownedVariantIds[0] || normalizedCurrentVariantId || "")).trim() ||
       rawCurrentVariantId !== normalizedCurrentVariantId ||
       JSON.stringify(rawProgressMap) !== JSON.stringify(normalizedProgressByVariant) ||
@@ -1007,6 +1021,10 @@ function saveUserPetConfig(userId, config) {
 
     const safeConfig = config && typeof config === "object" ? config : {};
     const normalizedIndex = normalizePetVariantIndex_(safeConfig.currentIndex, 0);
+    const parsedBackgroundIndex = parseInt(safeConfig.selectedStageBackgroundIndex, 10);
+    const normalizedBackgroundIndex = Number.isFinite(parsedBackgroundIndex)
+      ? Math.max(0, parsedBackgroundIndex)
+      : 0;
     const progressionXP = parseInt(safeConfig.progressionXP, 10);
     const normalizedXP = Number.isFinite(progressionXP) ? Math.max(0, progressionXP) : 0;
     let currentVariantId = String(safeConfig.currentVariantId || "").trim();
@@ -1060,12 +1078,14 @@ function saveUserPetConfig(userId, config) {
 
     const normalizedConfig = Object.assign({}, safeConfig, {
       currentIndex: normalizedIndex,
+      selectedStageBackgroundIndex: normalizedBackgroundIndex,
       progressionXP: normalizedProgressByVariant[currentVariantId],
       progressionLevel: normalizedLevel,
       progressionXPProgress: normalizedProgress,
       selectionLocked: false,
       currentVariantId: currentVariantId,
       ownedVariantIds: ownedVariantIds,
+      ownedPetCount: ownedVariantIds.length,
       lockedVariantId: lockedVariantId,
       petProgressByVariantId: normalizedProgressByVariant,
       petNamesByVariantId: normalizedNamesByVariant,
