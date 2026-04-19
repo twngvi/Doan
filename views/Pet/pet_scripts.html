@@ -1349,12 +1349,14 @@
         const xp = getPetProgressXP(safeVariantId);
         const level = getProgressLevelByXP(xp);
         const progress = xp % 100;
+        const progressPercent = Math.max(0, Math.min(100, Math.round((progress / 100) * 100)));
         const displayImage = level >= 3 ? (variant.level2 || variant.level1) : variant.level1;
 
         // Create entity element
         const entityEl = document.createElement("div");
         entityEl.className = "pet-entity";
         if (level === 1) entityEl.classList.add("pet-lvl-1");
+        if (level >= 3) entityEl.classList.add("pet-lvl-3");
         if (safeVariantId === activeVariantId) entityEl.classList.add("is-active");
         entityEl.setAttribute("data-variant-id", safeVariantId);
 
@@ -1363,6 +1365,9 @@
         tooltipEl.className = "pet-entity-tooltip";
         tooltipEl.innerHTML = `
           <span class="pet-entity-name">${getPetDisplayNameByVariantId(safeVariantId)} • Lv ${level} • ${progress}/100 XP</span>
+          <span class="pet-entity-tooltip-progress-track" aria-hidden="true">
+            <span class="pet-entity-tooltip-progress-fill" style="width:${progressPercent}%"></span>
+          </span>
         `;
         entityEl.appendChild(tooltipEl);
 
@@ -1420,28 +1425,53 @@
           level: level,
           x: startX,
           y: startY,
-          vx: (Math.random() - 0.5) * 1, // Slowed down
+          vx: (Math.random() - 0.5) * 1,
           vy: (Math.random() - 0.5) * 0.5,
           isHovered: false,
-          isRolling: false, // This is for the CLICK roll
+          isRolling: false,
           isPressed: false,
-          flip: 1,
-          lastJumpTime: Date.now() + Math.random() * 4000 // Slowed down
+          direction: Math.random() >= 0.5 ? 1 : -1,
+          speed: level >= 3 ? 1.15 : 1.05,
+          rollPhase: "",
+          rollReturnX: startX,
+          rollReturnY: startY,
+          rollVelocity: 0,
+          lastJumpTime: Date.now() + Math.random() * 1600,
+          lastHopTime: Date.now() + Math.random() * 900,
         };
 
         state.petEntities.push(petState);
 
         // Events
-        entityEl.addEventListener("mouseenter", () => { petState.isHovered = true; });
-        entityEl.addEventListener("mouseleave", () => { petState.isHovered = false; });
+        entityEl.addEventListener("mouseenter", () => {
+          petState.isHovered = true;
+          showHeaderProgressCard(safeVariantId);
+        });
+        entityEl.addEventListener("mouseleave", () => {
+          petState.isHovered = false;
+          entityEl.classList.remove("tilt-left", "tilt-right");
+          hideHeaderProgressCard();
+        });
+
+        entityEl.addEventListener("mousemove", (event) => {
+          if (petState.level !== 1) return;
+          const rect = entityEl.getBoundingClientRect();
+          if (!rect.width) return;
+
+          const isOnLeftSide = (event.clientX - rect.left) < rect.width / 2;
+          entityEl.classList.toggle("tilt-right", isOnLeftSide);
+          entityEl.classList.toggle("tilt-left", !isOnLeftSide);
+        });
         
         entityEl.addEventListener("click", () => {
           // Focus this pet in header
           state.currentIndex = variantIndex; 
           updatePetLevelProgressUI(safeVariantId);
-          
-          if (petState.level === 2 && !petState.isTripleJumping) {
-            triggerTripleJump(petState);
+
+          if (petState.level === 2 && !petState.isRolling) {
+            petState.isHovered = false;
+            hideHeaderProgressCard();
+            startLevel2RollAcrossStage(petState, worldEl);
           }
         });
 
@@ -1484,14 +1514,42 @@
       });
     }
 
-    function triggerTripleJump(petState) {
-      petState.isTripleJumping = true;
-      petState.el.classList.add("pet-triple-jump");
-      
-      setTimeout(() => {
-        petState.el.classList.remove("pet-triple-jump");
-        petState.isTripleJumping = false;
-      }, 1200);
+    function getPetStageBounds(worldEl) {
+      const width = Math.max(0, worldEl ? worldEl.clientWidth : 0);
+      const height = Math.max(0, worldEl ? worldEl.clientHeight : 0);
+      const petSize = 100;
+
+      return {
+        minX: 0,
+        maxX: Math.max(0, width - petSize),
+        minY: Math.max(0, Math.round(height * 0.25)),
+        maxY: Math.max(0, height - petSize),
+        width: width,
+      };
+    }
+
+    function clampPetToBounds(pet, bounds) {
+      pet.x = Math.max(bounds.minX, Math.min(bounds.maxX, pet.x));
+      pet.y = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
+    }
+
+    function triggerPetHop(pet) {
+      pet.el.classList.remove("pet-jump");
+      void pet.el.offsetWidth;
+      pet.el.classList.add("pet-jump");
+    }
+
+    function startLevel2RollAcrossStage(pet, worldEl) {
+      const bounds = getPetStageBounds(worldEl);
+      pet.isRolling = true;
+      pet.rollPhase = "to-left";
+      pet.rollReturnX = pet.x;
+      pet.rollReturnY = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
+      pet.rollVelocity = Math.max(9, bounds.width / 22);
+      pet.y = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
+      pet.el.classList.add("is-rolling");
+      pet.el.style.left = pet.x + "px";
+      pet.el.style.top = pet.y + "px";
     }
 
     function updatePetWorld() {
@@ -1500,113 +1558,81 @@
       const worldEl = document.getElementById("petStageWorld");
       if (!worldEl) return;
 
-      const stageWidth = worldEl.clientWidth;
-      const stageHeight = worldEl.clientHeight;
       const now = Date.now();
+      const bounds = getPetStageBounds(worldEl);
 
       state.petEntities.forEach(pet => {
         if (pet.isHovered || pet.isPressed) return;
 
-        // Level 1: Repulsion (Don't overlap)
+        // Enforce movement area: lower 3/4 of pet stage.
+        clampPetToBounds(pet, bounds);
+
         if (pet.level === 1) {
-          applyRepulsion(pet);
-          return;
-        }
-
-        // Level 2: Roll 3x faster with wrapping
-        if (pet.level === 2) {
-          if (pet.isTripleJumping) return;
-
-          pet.x += 1.8; // Faster roll speed (3x of 0.6)
-          if (pet.x > stageWidth) {
-            pet.x = -100;
-          }
           pet.el.style.left = pet.x + "px";
           pet.el.style.top = pet.y + "px";
-          
-          const rotation = (pet.x % 360) * 3;
-          pet.el.querySelector('.pet-entity-body').style.transform = `rotate(${rotation}deg)`;
           return;
         }
 
-        // Level 3+: Jump around (Frequent step-by-step)
-        const jumpDelay = 1500 + Math.random() * 2000; // More frequent
-        if (now - pet.lastJumpTime > jumpDelay) {
-          pet.lastJumpTime = now;
-          
-          const moveRange = 60 + Math.random() * 60; // Step-by-step distance
-          const angle = Math.random() * Math.PI * 2;
-          const targetX = Math.max(0, Math.min(stageWidth - 100, pet.x + Math.cos(angle) * moveRange));
-          const targetY = Math.max(stageHeight * 0.25, Math.min(stageHeight - 100, pet.y + Math.sin(angle) * moveRange));
+        if (pet.level === 2) {
+          if (pet.isRolling) {
+            if (pet.rollPhase === "to-left") {
+              pet.x -= pet.rollVelocity;
+              if (pet.x <= bounds.minX - 100) {
+                pet.rollPhase = "from-right";
+                pet.x = bounds.maxX + 100;
+              }
+            } else {
+              pet.x -= pet.rollVelocity;
+              if (pet.x <= pet.rollReturnX) {
+                pet.isRolling = false;
+                pet.rollPhase = "";
+                pet.el.classList.remove("is-rolling");
+                pet.x = pet.rollReturnX;
+                pet.y = pet.rollReturnY;
+                triggerPetHop(pet);
+              }
+            }
 
-          const newFlip = targetX > pet.x ? -1 : 1;
-          
-          // If flipping, do a "jump flip"
-          if (newFlip !== pet.flip) {
-            pet.flip = newFlip;
-            triggerJumpFlip(pet, targetX, targetY);
-          } else {
-            pet.x = targetX;
-            pet.y = targetY;
             pet.el.style.left = pet.x + "px";
             pet.el.style.top = pet.y + "px";
-            pet.el.classList.remove("pet-jump");
-            void pet.el.offsetWidth;
-            pet.el.classList.add("pet-jump");
+            return;
           }
+
+          if (now - pet.lastHopTime > 850) {
+            pet.lastHopTime = now;
+            pet.x += (Math.random() - 0.5) * 18;
+            pet.y += (Math.random() - 0.5) * 14;
+            clampPetToBounds(pet, bounds);
+            triggerPetHop(pet);
+          }
+
+          pet.el.style.left = pet.x + "px";
+          pet.el.style.top = pet.y + "px";
+          return;
         }
+
+        // Level 3+: jump forward/backward inside lower 3/4.
+        const jumpDelay = 900 + Math.random() * 1100;
+        if (now - pet.lastJumpTime > jumpDelay) {
+          pet.lastJumpTime = now;
+
+          const moveX = pet.direction * (26 + Math.random() * 42);
+          const moveY = (Math.random() - 0.5) * 32;
+          pet.x += moveX;
+          pet.y += moveY;
+
+          if (pet.x <= bounds.minX || pet.x >= bounds.maxX) {
+            pet.direction *= -1;
+          }
+          clampPetToBounds(pet, bounds);
+          triggerPetHop(pet);
+        }
+
+        pet.el.style.left = pet.x + "px";
+        pet.el.style.top = pet.y + "px";
       });
 
       checkCollisions();
-    }
-
-    function triggerJumpFlip(pet, targetX, targetY) {
-      // Disappear/Jump out effect
-      pet.el.style.opacity = "0";
-      pet.el.style.transform = "scale(0.5) translateY(-50px)";
-      
-      setTimeout(() => {
-        pet.x = targetX;
-        pet.y = targetY;
-        pet.el.style.left = pet.x + "px";
-        pet.el.style.top = pet.y + "px";
-        pet.el.style.setProperty("--pet-flip", pet.flip);
-        
-        // Reappear
-        pet.el.style.opacity = "1";
-        pet.el.style.transform = "scale(1) translateY(0)";
-        
-        pet.el.classList.remove("pet-jump");
-        void pet.el.offsetWidth;
-        pet.el.classList.add("pet-jump");
-      }, 300);
-    }
-
-    function applyRepulsion(pet) {
-      state.petEntities.forEach(other => {
-        if (pet === other || other.level !== 1) return;
-        
-        const dx = pet.x - other.x;
-        const dy = pet.y - other.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const minVal = 80;
-
-        if (dist < minVal) {
-          const force = (minVal - dist) / 20;
-          const angle = Math.atan2(dy, dx);
-          pet.x += Math.cos(angle) * force;
-          pet.y += Math.sin(angle) * force;
-          
-          // Keep within stage
-          const stageWidth = 400; // Approximate
-          const stageHeight = 400;
-          pet.x = Math.max(0, Math.min(stageWidth - 100, pet.x));
-          pet.y = Math.max(stageHeight * 0.25, Math.min(stageHeight - 100, pet.y));
-          
-          pet.el.style.left = pet.x + "px";
-          pet.el.style.top = pet.y + "px";
-        }
-      });
     }
 
     function checkCollisions() {
@@ -1615,6 +1641,9 @@
         for (let j = i + 1; j < entities.length; j++) {
           const p1 = entities[i];
           const p2 = entities[j];
+
+          if (p1.level < 2 || p2.level < 2) continue;
+          if (p1.isRolling || p2.isRolling) continue;
 
           const dx = p1.x - p2.x;
           const dy = p1.y - p2.y;
@@ -1645,16 +1674,42 @@
       }, 800);
     }
 
+    function showHeaderProgressCard(variantId) {
+      const cardEl = document.querySelector(".pet-level-progress-card");
+      if (cardEl) {
+        cardEl.classList.add("is-hover-visible");
+      }
+      updatePetLevelProgressUI(variantId);
+    }
+
+    function hideHeaderProgressCard() {
+      const cardEl = document.querySelector(".pet-level-progress-card");
+      if (cardEl) {
+        cardEl.classList.remove("is-hover-visible");
+      }
+    }
+
     function updatePetLevelProgressUI(variantId) {
       const activeVariantId = String(variantId || getActiveVariantId() || "").trim();
       const xp = getPetProgressXP(activeVariantId);
       const level = getProgressLevelByXP(xp);
       const currentXPProgress = xp % 100;
+      const progressPercent = Math.max(0, Math.min(100, Math.round((currentXPProgress / 100) * 100)));
       const petName = getPetDisplayNameByVariantId(activeVariantId);
 
       const levelTextEl = document.getElementById("petHeaderLevelText");
       if (levelTextEl) {
         levelTextEl.textContent = `${petName} • Lv ${level} • ${currentXPProgress}/100 XP`;
+      }
+
+      const progressFillEl = document.getElementById("petHeaderLevelProgressFill");
+      if (progressFillEl) {
+        progressFillEl.style.width = progressPercent + "%";
+      }
+
+      const progressValueEl = document.getElementById("petHeaderLevelProgressValue");
+      if (progressValueEl) {
+        progressValueEl.textContent = progressPercent + "%";
       }
     }
 
@@ -2486,6 +2541,7 @@
       }
 
       renderPetEntities();
+      hideHeaderProgressCard();
 
       playLevelTransitionAnimation();
       updateAccessoryPanelState();
