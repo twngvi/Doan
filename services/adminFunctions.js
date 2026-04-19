@@ -701,6 +701,7 @@ function getAdminUserLearningStats(options) {
 
     const topicTitleMap = getAdminTopicTitleMap_();
     const result = [];
+    const totalTopicsInDb = getAdminTotalTopicsCount_();
 
     for (let i = 1; i < usersData.length; i++) {
       if (result.length >= maxUsers) break;
@@ -1011,11 +1012,39 @@ function getAdminUserLearningStats(options) {
       data: result,
       meta: {
         totalUsers: result.length,
+        totalTopicsInDb: totalTopicsInDb,
       },
     };
   } catch (error) {
     Logger.log("Error getting admin user learning stats: " + error.toString());
     return { success: false, message: error.toString() };
+  }
+}
+
+function getAdminTotalTopicsCount_() {
+  try {
+    const topicsSheet = getSheet("Topics");
+    if (!topicsSheet || topicsSheet.getLastRow() <= 1) return 0;
+
+    const data = topicsSheet.getDataRange().getValues();
+    if (!data.length) return 0;
+
+    const headers = data[0];
+    const topicIdCol = headers.indexOf("topicId");
+    if (topicIdCol < 0) {
+      return Math.max(0, data.length - 1);
+    }
+
+    let count = 0;
+    for (let i = 1; i < data.length; i++) {
+      const topicId = String(data[i][topicIdCol] || "").trim();
+      if (topicId) count++;
+    }
+
+    return count;
+  } catch (error) {
+    Logger.log("Error counting total topics: " + error.toString());
+    return 0;
   }
 }
 

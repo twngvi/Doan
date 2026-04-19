@@ -5,6 +5,7 @@
     users: [],
     topicRows: [],
     matchingRows: [],
+    totalTopicsInDb: 0,
     timeRange: '30',
     selectedStatsType: '',
     selectedStatsKey: '',
@@ -117,7 +118,9 @@
     try {
       const result = await getCourseStatsFromServer();
       const users = result && result.success && Array.isArray(result.data) ? result.data : [];
+      const totalTopicsInDb = result && result.meta ? Math.max(0, Number(result.meta.totalTopicsInDb || 0)) : 0;
       courseStatsState.users = users;
+      courseStatsState.totalTopicsInDb = totalTopicsInDb;
 
       const aggregated = aggregateCourseStats(users, courseStatsState.timeRange);
       courseStatsState.topicRows = aggregated.topicRows;
@@ -130,6 +133,7 @@
       courseStatsState.users = [];
       courseStatsState.topicRows = [];
       courseStatsState.matchingRows = [];
+      courseStatsState.totalTopicsInDb = 0;
       renderAllCourseStats({ topicRows: [], matchingRows: [] });
     } finally {
       setCourseStatsLoading(false);
@@ -302,8 +306,10 @@
   }
 
   function renderCourseStatsSummary(aggregated) {
-    setTextContent('courseStatsTotalTopics', String((aggregated.topicRows || []).length));
-    setTextContent('courseStatsTopicsWithLearners', String(Number(aggregated.topicsWithLearners || 0)));
+    const learnedTopics = Number(aggregated.topicsWithLearners || 0);
+    const totalTopicsInDb = Math.max(0, Number(courseStatsState.totalTopicsInDb || 0));
+    const totalDisplay = totalTopicsInDb > 0 ? totalTopicsInDb : Number((aggregated.topicRows || []).length);
+    setTextContent('courseStatsTotalTopics', `${learnedTopics}/${totalDisplay}`);
     setTextContent('courseStatsTopTopic', formatTopCourseStatsText(aggregated.topTopic));
     setTextContent('courseStatsTopMatching', formatTopCourseStatsText(aggregated.topMatching));
   }
