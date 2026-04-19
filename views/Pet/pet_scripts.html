@@ -1343,6 +1343,56 @@
       queuePetConfigAutoSave();
     }
 
+    function renderAccessoryOverlays(bodyEl) {
+      if (!bodyEl) return;
+
+      bodyEl.querySelectorAll(".pet-entity-accessory").forEach(function (existing) {
+        existing.remove();
+      });
+
+      const accessories = state.selectedAccessories || [];
+      accessories.forEach((acc) => {
+        const accImg = document.createElement("img");
+        accImg.className = "pet-entity-accessory";
+        applySrcAsync(accImg, acc.fileName);
+
+        const catalogItem = getAccessoryItemByFileName(acc.fileName);
+        const activePos = acc.position || "center";
+        const profile = (catalogItem && catalogItem.positionProfiles)
+          ? catalogItem.positionProfiles[activePos]
+          : {};
+
+        const baseLeft = activePos === "left" ? 42 : (activePos === "right" ? 58 : 50);
+        accImg.style.left = baseLeft + "%";
+
+        if (profile.offsetX) accImg.style.marginLeft = profile.offsetX + "px";
+        if (profile.offsetY) accImg.style.marginTop = profile.offsetY + "px";
+
+        const scaleVal = (profile.scalePercent || 100) / 100;
+        const rotVal = profile.rotDeg || 0;
+        accImg.style.transform = `translate(-50%, -50%) scale(${scaleVal}) rotate(${rotVal}deg)`;
+
+        bodyEl.appendChild(accImg);
+      });
+    }
+
+    function renderAccessory() {
+      const world = document.getElementById("petStageWorld");
+      if (!world) return;
+
+      world.querySelectorAll(".pet-entity").forEach(function (entityEl) {
+        const bodyEl = entityEl.querySelector(".pet-entity-body");
+        if (!bodyEl) return;
+
+        bodyEl.querySelectorAll(".pet-entity-accessory").forEach(function (node) {
+          node.remove();
+        });
+
+        if (!entityEl.classList.contains("pet-lvl-3")) return;
+        renderAccessoryOverlays(bodyEl);
+      });
+    }
+
     function renderPetEntities() {
       const worldEl = document.getElementById("petStageWorld");
       if (!worldEl) return;
@@ -1393,31 +1443,8 @@
         applySrcAsync(imgEl, displayImage);
         bodyEl.appendChild(imgEl);
 
-        // Accessories (only for level 3+)
         if (level >= 3) {
-          const accessories = state.selectedAccessories || [];
-          accessories.forEach((acc) => {
-            const accImg = document.createElement("img");
-            accImg.className = "pet-entity-accessory";
-            applySrcAsync(accImg, acc.fileName);
-            
-            // Get full accessory data from catalog to ensure we have positionProfiles
-            const catalogItem = getAccessoryItemByFileName(acc.fileName);
-            const activePos = acc.position || 'center';
-            const profile = (catalogItem && catalogItem.positionProfiles) ? catalogItem.positionProfiles[activePos] : {};
-            
-            const baseLeft = activePos === 'left' ? 42 : (activePos === 'right' ? 58 : 50);
-            accImg.style.left = baseLeft + "%";
-            
-            if (profile.offsetX) accImg.style.marginLeft = profile.offsetX + "px";
-            if (profile.offsetY) accImg.style.marginTop = profile.offsetY + "px";
-            
-            const scaleVal = (profile.scalePercent || 100) / 100;
-            const rotVal = profile.rotDeg || 0;
-            accImg.style.transform = `translate(-50%, -50%) scale(${scaleVal}) rotate(${rotVal}deg)`;
-            
-            bodyEl.appendChild(accImg);
-          });
+          renderAccessoryOverlays(bodyEl);
         }
 
         entityEl.appendChild(bodyEl);
@@ -1450,6 +1477,8 @@
           rollReturnY: startY,
           laneY: startY,
           rollVelocity: 0,
+          isTripleHopping: false,
+          collisionCooldownUntil: 0,
           lastJumpTime: Date.now() + Math.random() * 1600,
           lastHopTime: Date.now() + Math.random() * 900,
         };
@@ -1482,7 +1511,7 @@
           state.currentIndex = variantIndex; 
           updatePetLevelProgressUI(safeVariantId);
 
-          if (petState.level === 2 && !petState.isRolling) {
+          if (petState.level === 2 && !petState.isTripleHopping) {
             petState.isHovered = false;
             hideHeaderProgressCard();
             startLevel2RollAcrossStage(petState, worldEl);
@@ -1526,6 +1555,7 @@
           renamePetByVariantId(safeVariantId);
         });
       });
+
     }
 
     function getPetStageBounds(worldEl) {
@@ -1555,14 +1585,31 @@
 
     function startLevel2RollAcrossStage(pet, worldEl) {
       const bounds = getPetStageBounds(worldEl);
-      pet.isRolling = true;
-      pet.rollPhase = "to-left";
+      pet.isTripleHopping = true;
+      pet.isRolling = false;
+      pet.rollPhase = "";
       pet.rollReturnX = pet.x;
       pet.rollReturnY = Math.max(bounds.minY, Math.min(bounds.maxY, pet.y));
       pet.laneY = pet.rollReturnY;
-      pet.rollVelocity = Math.max(9, bounds.width / 22);
       pet.y = pet.rollReturnY;
-      pet.el.classList.add("is-rolling");
+
+      triggerPetHop(pet);
+      setTimeout(function () { if (pet.isTripleHopping) triggerPetHop(pet); }, 220);
+      setTimeout(function () { if (pet.isTripleHopping) triggerPetHop(pet); }, 440);
+
+      setTimeout(function () {
+        const minDelta = 80;
+        let nextX = Math.random() * (bounds.maxX - bounds.minX) + bounds.minX;
+        if (Math.abs(nextX - pet.rollReturnX) < minDelta) {
+          nextX = Math.min(bounds.maxX, Math.max(bounds.minX, pet.rollReturnX + (nextX > pet.rollReturnX ? minDelta : -minDelta)));
+        }
+        pet.x = nextX;
+        pet.laneY = Math.max(bounds.minY, Math.min(bounds.maxY, pet.laneY + (Math.random() - 0.5) * 34));
+        pet.y = pet.laneY;
+        triggerPetHop(pet);
+        pet.isTripleHopping = false;
+      }, 680);
+
       pet.el.style.left = pet.x + "px";
       pet.el.style.top = pet.y + "px";
     }
@@ -1589,26 +1636,7 @@
         }
 
         if (pet.level === 2) {
-          if (pet.isRolling) {
-            if (pet.rollPhase === "to-left") {
-              pet.x -= pet.rollVelocity;
-              if (pet.x <= bounds.minX - 100) {
-                pet.rollPhase = "from-right";
-                pet.x = bounds.maxX + 100;
-              }
-            } else {
-              pet.x -= pet.rollVelocity;
-              if (pet.x <= pet.rollReturnX) {
-                pet.isRolling = false;
-                pet.rollPhase = "";
-                pet.el.classList.remove("is-rolling");
-                pet.x = pet.rollReturnX;
-                pet.y = pet.rollReturnY;
-                pet.laneY = pet.rollReturnY;
-                triggerPetHop(pet);
-              }
-            }
-
+          if (pet.isTripleHopping) {
             pet.el.style.left = pet.x + "px";
             pet.el.style.top = pet.y + "px";
             return;
@@ -1651,6 +1679,7 @@
     }
 
     function checkCollisions() {
+      const now = Date.now();
       const entities = state.petEntities;
       for (let i = 0; i < entities.length; i++) {
         for (let j = i + 1; j < entities.length; j++) {
@@ -1659,19 +1688,24 @@
 
           if (p1.level < 2 || p2.level < 2) continue;
           if (p1.isRolling || p2.isRolling) continue;
+          if (p1.isTripleHopping || p2.isTripleHopping) continue;
+          if ((p1.collisionCooldownUntil || 0) > now || (p2.collisionCooldownUntil || 0) > now) continue;
 
           const dx = p1.x - p2.x;
           const dy = p1.y - p2.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
           if (distance < 70) { // Collision threshold
-            // Reverse directions
-            p1.vx *= -1;
-            p2.vx *= -1;
-            
-            // Push apart slightly to prevent sticking
-            p1.x += p1.vx * 2;
-            p2.x += p2.vx * 2;
+            const safeDistance = Math.max(1, distance);
+            const nx = dx / safeDistance;
+            const push = (70 - safeDistance) / 2 + 34;
+
+            p1.x += nx * push;
+            p2.x -= nx * push;
+            p1.direction = nx >= 0 ? 1 : -1;
+            p2.direction = -p1.direction;
+            p1.collisionCooldownUntil = now + 900;
+            p2.collisionCooldownUntil = now + 900;
 
             triggerCollisionDoubleJump(p1);
             triggerCollisionDoubleJump(p2);
