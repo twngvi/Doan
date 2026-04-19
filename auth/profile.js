@@ -578,6 +578,7 @@ function buildFreshPetConfig_(forcedIndex) {
     lockedVariantId: defaultVariantId,
     currentVariantId: defaultVariantId,
     ownedVariantIds: [defaultVariantId],
+    petAccessoryByVariantId: {},
     petProgressByVariantId: (function () {
       var map = {};
       map[defaultVariantId] = 0;
@@ -590,6 +591,72 @@ function buildFreshPetConfig_(forcedIndex) {
     })(),
     petConfigVersion: PET_GLOBAL_RESET_VERSION,
   };
+}
+
+function normalizePetAccessoryPosition_(value) {
+  var safe = String(value || "").trim().toLowerCase();
+  return safe === "left" || safe === "right" || safe === "center" ? safe : "center";
+}
+
+function normalizePetAccessoryItem_(item) {
+  if (typeof item === "string") {
+    var fileNameFromString = String(item || "").trim();
+    return fileNameFromString ? { fileName: fileNameFromString, position: "center" } : null;
+  }
+
+  if (!item || typeof item !== "object") return null;
+  var fileName = String(item.fileName || "").trim();
+  if (!fileName) return null;
+
+  return {
+    fileName: fileName,
+    position: normalizePetAccessoryPosition_(item.position),
+  };
+}
+
+function normalizePetAccessoryByVariantMap_(rawMap, ownedVariantIds, activeVariantId, rawSelectedAccessories) {
+  var normalizedMap = {};
+  var usedFiles = {};
+
+  if (rawMap && typeof rawMap === "object") {
+    (ownedVariantIds || []).forEach(function (variantId) {
+      var safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return;
+
+      var normalizedItem = normalizePetAccessoryItem_(rawMap[safeVariantId]);
+      if (!normalizedItem || !normalizedItem.fileName) return;
+      if (usedFiles[normalizedItem.fileName]) return;
+
+      normalizedMap[safeVariantId] = normalizedItem;
+      usedFiles[normalizedItem.fileName] = true;
+    });
+  }
+
+  if (activeVariantId && !normalizedMap[activeVariantId]) {
+    var legacyItem = Array.isArray(rawSelectedAccessories)
+      ? normalizePetAccessoryItem_(rawSelectedAccessories[0])
+      : null;
+    if (legacyItem && !usedFiles[legacyItem.fileName]) {
+      normalizedMap[activeVariantId] = legacyItem;
+      usedFiles[legacyItem.fileName] = true;
+    }
+  }
+
+  return normalizedMap;
+}
+
+function buildLegacySelectedAccessoriesFromMap_(accessoryByVariantMap, activeVariantId) {
+  var safeActiveVariantId = String(activeVariantId || "").trim();
+  if (!safeActiveVariantId || !accessoryByVariantMap || typeof accessoryByVariantMap !== "object") {
+    return [];
+  }
+
+  var normalizedItem = normalizePetAccessoryItem_(accessoryByVariantMap[safeActiveVariantId]);
+  if (!normalizedItem || !normalizedItem.fileName) {
+    return [];
+  }
+
+  return [{ fileName: normalizedItem.fileName }];
 }
 
 function ensurePetGlobalResetApplied_(usersSheet) {
@@ -915,6 +982,13 @@ function getUserPetConfig(userId) {
       parsedConfig.petNamesByVariantId && typeof parsedConfig.petNamesByVariantId === "object"
         ? parsedConfig.petNamesByVariantId
         : {};
+    const rawAccessoryByVariantMap =
+      parsedConfig.petAccessoryByVariantId && typeof parsedConfig.petAccessoryByVariantId === "object"
+        ? parsedConfig.petAccessoryByVariantId
+        : {};
+    const rawSelectedAccessories = Array.isArray(parsedConfig.selectedAccessories)
+      ? parsedConfig.selectedAccessories
+      : [];
 
     const normalizedProgressByVariant = {};
     ownedVariantIds.forEach(function (variantId) {
@@ -958,6 +1032,16 @@ function getUserPetConfig(userId) {
 
     parsedConfig.petProgressByVariantId = normalizedProgressByVariant;
     parsedConfig.petNamesByVariantId = normalizedNamesByVariant;
+    parsedConfig.petAccessoryByVariantId = normalizePetAccessoryByVariantMap_(
+      rawAccessoryByVariantMap,
+      ownedVariantIds,
+      activeVariantId,
+      rawSelectedAccessories,
+    );
+    parsedConfig.selectedAccessories = buildLegacySelectedAccessoriesFromMap_(
+      parsedConfig.petAccessoryByVariantId,
+      activeVariantId,
+    );
 
     if (
       rawSelectionLocked !== false ||
@@ -968,7 +1052,9 @@ function getUserPetConfig(userId) {
       rawLockedVariantId !== String((ownedVariantIds[0] || normalizedCurrentVariantId || "")).trim() ||
       rawCurrentVariantId !== normalizedCurrentVariantId ||
       JSON.stringify(rawProgressMap) !== JSON.stringify(normalizedProgressByVariant) ||
-      JSON.stringify(rawNamesMap) !== JSON.stringify(normalizedNamesByVariant)
+      JSON.stringify(rawNamesMap) !== JSON.stringify(normalizedNamesByVariant) ||
+      JSON.stringify(rawAccessoryByVariantMap) !== JSON.stringify(parsedConfig.petAccessoryByVariantId) ||
+      JSON.stringify(rawSelectedAccessories) !== JSON.stringify(parsedConfig.selectedAccessories)
     ) {
       shouldPersist = true;
     }
@@ -1046,6 +1132,13 @@ function saveUserPetConfig(userId, config) {
       safeConfig.petNamesByVariantId && typeof safeConfig.petNamesByVariantId === "object"
         ? safeConfig.petNamesByVariantId
         : {};
+    const rawAccessoryByVariantMap =
+      safeConfig.petAccessoryByVariantId && typeof safeConfig.petAccessoryByVariantId === "object"
+        ? safeConfig.petAccessoryByVariantId
+        : {};
+    const rawSelectedAccessories = Array.isArray(safeConfig.selectedAccessories)
+      ? safeConfig.selectedAccessories
+      : [];
 
     const normalizedProgressByVariant = {};
     ownedVariantIds.forEach(function (variantId) {
@@ -1076,8 +1169,20 @@ function saveUserPetConfig(userId, config) {
       normalizedNamesByVariant[safeVariantId] = normalizePetNameValue_(rawNamesByVariant[safeVariantId]);
     });
 
+    const normalizedAccessoryByVariant = normalizePetAccessoryByVariantMap_(
+      rawAccessoryByVariantMap,
+      ownedVariantIds,
+      currentVariantId,
+      rawSelectedAccessories,
+    );
+    const normalizedSelectedAccessories = buildLegacySelectedAccessoriesFromMap_(
+      normalizedAccessoryByVariant,
+      currentVariantId,
+    );
+
     const normalizedConfig = Object.assign({}, safeConfig, {
       currentIndex: normalizedIndex,
+      selectedAccessories: normalizedSelectedAccessories,
       selectedStageBackgroundIndex: normalizedBackgroundIndex,
       progressionXP: normalizedProgressByVariant[currentVariantId],
       progressionLevel: normalizedLevel,
@@ -1087,6 +1192,7 @@ function saveUserPetConfig(userId, config) {
       ownedVariantIds: ownedVariantIds,
       ownedPetCount: ownedVariantIds.length,
       lockedVariantId: lockedVariantId,
+      petAccessoryByVariantId: normalizedAccessoryByVariant,
       petProgressByVariantId: normalizedProgressByVariant,
       petNamesByVariantId: normalizedNamesByVariant,
       petConfigVersion: PET_GLOBAL_RESET_VERSION,

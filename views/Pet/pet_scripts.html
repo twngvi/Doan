@@ -146,7 +146,9 @@
     const DEFAULT_PET_NAME = "NAMEPET";
     const PET_NAME_MAX_LENGTH = 24;
     const NO_ACCESSORY_VALUE = "";
-    const MAX_ACCESSORIES_PER_PET = 2;
+    const MAX_ACCESSORIES_PER_PET = 1;
+    const PET_ENTITY_SIZE = 180;
+    const PET_COLLISION_DISTANCE = Math.round(PET_ENTITY_SIZE * 0.62);
     const MAX_OWNED_PET_VARIANTS = 999;
     const DEFAULT_STAGE_BACKGROUNDS = [
       { id: "bg1", name: "Nền 1", fileName: "bg-1.svg" },
@@ -226,6 +228,7 @@
       pressZone: null,
       selectedAccessory: "",
       selectedAccessories: [],
+      petAccessoryByVariantId: {},
       accessoryPosition: "center",
       accessoryPanelOpen: false,
       foodPanelOpen: false,
@@ -577,6 +580,13 @@
       return getCurrentProgressLevel() >= 3;
     }
 
+    function canAnyOwnedPetEquipAccessories() {
+      const ownedPetStates = getOwnedPetStates();
+      return ownedPetStates.some(function (petState) {
+        return (petState && petState.level) >= 3;
+      });
+    }
+
     function isProgressLevelLocked(item) {
       const condition = item && item.unlockCondition
         ? item.unlockCondition
@@ -852,7 +862,7 @@
       const foodHint = document.querySelector("#petFoodPopover .pet-accessory-hint");
 
       if (accessoryHint) {
-        accessoryHint.textContent = "Tối đa 2 / " + ACCESSORY_ITEMS.length + " phụ kiện";
+        accessoryHint.textContent = "Mỗi PET tối đa 1 / " + ACCESSORY_ITEMS.length + " phụ kiện";
       }
       if (foodHint) {
         foodHint.textContent = FOOD_ITEMS.length + " món";
@@ -897,12 +907,165 @@
         });
     }
 
+    function getAccessoryOwnerVariantId(fileName) {
+      const safeFileName = String(fileName || "").trim();
+      if (!safeFileName) return "";
+
+      const map = state.petAccessoryByVariantId || {};
+      const variantIds = Object.keys(map);
+      for (let i = 0; i < variantIds.length; i++) {
+        const variantId = variantIds[i];
+        const item = map[variantId];
+        const assignedFile = String((item && item.fileName) || "").trim();
+        if (assignedFile === safeFileName) {
+          return variantId;
+        }
+      }
+      return "";
+    }
+
+    function buildAccessoryAssignmentItem(rawItem) {
+      const fileName =
+        typeof rawItem === "string"
+          ? String(rawItem || "").trim()
+          : String((rawItem && rawItem.fileName) || "").trim();
+      if (!fileName) return null;
+
+      let normalized = buildSelectedAccessoryFromCatalog(fileName);
+      if (!normalized) {
+        normalized = {
+          fileName: fileName,
+          position: "center",
+          positionMode: "center",
+          offsetX: 0,
+          offsetY: 0,
+          scalePercent: 100,
+          rotDeg: 0,
+          positionProfiles: normalizeAccessoryPositionProfiles({}, {}),
+        };
+      }
+
+      const desiredPosition =
+        typeof rawItem === "object" && rawItem
+          ? normalizeAccessoryPositionMode(rawItem.position || normalized.position)
+          : normalized.position;
+      const finalPosition = resolveAccessoryPosition(fileName, desiredPosition || "center");
+      const profiles = normalizeAccessoryPositionProfiles(normalized.positionProfiles, normalized);
+      const activeProfile = profiles[finalPosition] || profiles.center;
+
+      normalized.position = finalPosition;
+      normalized.positionProfiles = profiles;
+      normalized.offsetX = activeProfile.offsetX;
+      normalized.offsetY = activeProfile.offsetY;
+      normalized.scalePercent = activeProfile.scalePercent;
+      normalized.rotDeg = activeProfile.rotDeg || 0;
+
+      return normalized;
+    }
+
+    function syncSelectedAccessoriesFromActiveVariant() {
+      const activeVariantId = String(getActiveVariantId() || "").trim();
+      if (!activeVariantId) {
+        state.selectedAccessories = [];
+        state.selectedAccessory = "";
+        state.accessoryPosition = "center";
+        return;
+      }
+
+      const assigned = state.petAccessoryByVariantId && state.petAccessoryByVariantId[activeVariantId]
+        ? buildAccessoryAssignmentItem(state.petAccessoryByVariantId[activeVariantId])
+        : null;
+
+      if (!assigned) {
+        state.selectedAccessories = [];
+        state.selectedAccessory = "";
+        state.accessoryPosition = "center";
+        return;
+      }
+
+      state.selectedAccessories = [assigned];
+      state.selectedAccessory = assigned.fileName;
+      state.accessoryPosition = assigned.position || "center";
+      state.petAccessoryByVariantId[activeVariantId] = assigned;
+    }
+
+    function assignAccessoryToVariant(variantId, accessoryItem, options) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId) return false;
+
+      const opts = options || {};
+      const normalizedItem = buildAccessoryAssignmentItem(accessoryItem);
+      if (!normalizedItem) return false;
+
+      const ownerVariantId = getAccessoryOwnerVariantId(normalizedItem.fileName);
+      if (ownerVariantId && ownerVariantId !== safeVariantId) {
+        if (!opts.silent && typeof showToast === "function") {
+          showToast("Phụ kiện này đang được PET khác sử dụng", "warning");
+        }
+        return false;
+      }
+
+      if (!state.petAccessoryByVariantId || typeof state.petAccessoryByVariantId !== "object") {
+        state.petAccessoryByVariantId = {};
+      }
+
+      state.petAccessoryByVariantId[safeVariantId] = normalizedItem;
+      if (safeVariantId === String(getActiveVariantId() || "").trim()) {
+        syncSelectedAccessoriesFromActiveVariant();
+      }
+      return true;
+    }
+
+    function clearAccessoryFromVariant(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId || !state.petAccessoryByVariantId) return;
+      delete state.petAccessoryByVariantId[safeVariantId];
+      if (safeVariantId === String(getActiveVariantId() || "").trim()) {
+        syncSelectedAccessoriesFromActiveVariant();
+      }
+    }
+
     function syncSelectedAccessoriesWithCatalog() {
       const allowedFiles = new Set(
         ACCESSORY_ITEMS.map(function (item) {
           return item.file;
         })
       );
+
+      if (!state.petAccessoryByVariantId || typeof state.petAccessoryByVariantId !== "object") {
+        state.petAccessoryByVariantId = {};
+      }
+
+      const ownedVariantIds = normalizeOwnedVariantIds(
+        state.ownedVariantIds,
+        getActiveVariantId() || getVariantIdByIndex(state.currentIndex),
+      );
+      const ownedSet = new Set(ownedVariantIds);
+      const usedFiles = new Set();
+      const nextAccessoryMap = {};
+
+      Object.keys(state.petAccessoryByVariantId).forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId || !ownedSet.has(safeVariantId)) return;
+
+        const normalizedItem = buildAccessoryAssignmentItem(state.petAccessoryByVariantId[safeVariantId]);
+        if (!normalizedItem || !allowedFiles.has(normalizedItem.fileName)) return;
+        if (usedFiles.has(normalizedItem.fileName)) return;
+
+        usedFiles.add(normalizedItem.fileName);
+        nextAccessoryMap[safeVariantId] = normalizedItem;
+      });
+
+      const activeVariantId = String(getActiveVariantId() || "").trim();
+      if (activeVariantId && !nextAccessoryMap[activeVariantId] && Array.isArray(state.selectedAccessories)) {
+        const legacyItem = buildAccessoryAssignmentItem(state.selectedAccessories[0]);
+        if (legacyItem && allowedFiles.has(legacyItem.fileName) && !usedFiles.has(legacyItem.fileName)) {
+          usedFiles.add(legacyItem.fileName);
+          nextAccessoryMap[activeVariantId] = legacyItem;
+        }
+      }
+
+      state.petAccessoryByVariantId = nextAccessoryMap;
 
       const nextSelected = [];
       (state.selectedAccessories || []).forEach(function (item) {
@@ -920,25 +1083,7 @@
       });
 
       state.selectedAccessories = nextSelected.slice(0, MAX_ACCESSORIES_PER_PET);
-
-      if (!state.selectedAccessories.length) {
-        state.selectedAccessory = "";
-        state.accessoryPosition = "center";
-        return;
-      }
-
-      if (state.selectedAccessory && !allowedFiles.has(state.selectedAccessory)) {
-        state.selectedAccessory = state.selectedAccessories[0]
-          ? state.selectedAccessories[0].fileName
-          : "";
-      }
-
-      if (!state.selectedAccessory) {
-        state.selectedAccessory = state.selectedAccessories[0].fileName;
-      }
-
-      const activeAccessory = resolveActiveAccessory();
-      state.accessoryPosition = activeAccessory ? activeAccessory.position : "center";
+      syncSelectedAccessoriesFromActiveVariant();
     }
 
     function loadPetItemCatalogFromServer() {
@@ -1350,7 +1495,12 @@
         existing.remove();
       });
 
-      const accessories = state.selectedAccessories || [];
+      const variantId = String(bodyEl.getAttribute("data-variant-id") || "").trim();
+      const assignedAccessory =
+        variantId && state.petAccessoryByVariantId
+          ? state.petAccessoryByVariantId[variantId]
+          : null;
+      const accessories = assignedAccessory ? [assignedAccessory] : [];
       accessories.forEach((acc) => {
         const accImg = document.createElement("img");
         accImg.className = "pet-entity-accessory";
@@ -1437,6 +1587,7 @@
         // Body
         const bodyEl = document.createElement("div");
         bodyEl.className = "pet-entity-body";
+        bodyEl.setAttribute("data-variant-id", safeVariantId);
         
         const imgEl = document.createElement("img");
         imgEl.className = "pet-entity-img";
@@ -1453,8 +1604,8 @@
         // Initial position (randomized within the bottom 3/4 area)
         const stageWidth = worldEl.clientWidth || 400;
         const stageHeight = worldEl.clientHeight || 400;
-        const startX = Math.random() * (stageWidth - 100);
-        const startY = (stageHeight * 0.25) + Math.random() * (stageHeight * 0.75 - 100);
+        const startX = Math.random() * Math.max(0, stageWidth - PET_ENTITY_SIZE);
+        const startY = (stageHeight * 0.25) + Math.random() * Math.max(0, stageHeight * 0.75 - PET_ENTITY_SIZE);
         
         entityEl.style.left = startX + "px";
         entityEl.style.top = startY + "px";
@@ -1531,6 +1682,37 @@
         entityEl.addEventListener("drop", async (e) => {
           e.preventDefault();
           entityEl.classList.remove("drag-over");
+
+          const accessoryFile = e.dataTransfer.getData("text/pet-accessory-file");
+          if (accessoryFile) {
+            if (petState.level < 3) {
+              if (typeof showToast === "function") {
+                showToast("PET này chưa đủ Level để gắn phụ kiện", "warning");
+              }
+              return;
+            }
+
+            const accessoryCatalogItem = getAccessoryItemByFileName(accessoryFile);
+            if (!accessoryCatalogItem) return;
+
+            if (isProgressLevelLocked(accessoryCatalogItem)) {
+              if (typeof showToast === "function") {
+                showToast(
+                  "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(accessoryCatalogItem.unlockCondition),
+                  "warning",
+                );
+              }
+              return;
+            }
+
+            if (assignAccessoryToVariant(safeVariantId, { fileName: accessoryFile })) {
+              renderAccessory();
+              updateAccessoryButtons();
+              updateAccessoryPositionButtons();
+              queuePetConfigAutoSave();
+            }
+            return;
+          }
           
           const foodFile = e.dataTransfer.getData("text/pet-food-file");
           if (!foodFile) return;
@@ -1561,7 +1743,7 @@
     function getPetStageBounds(worldEl) {
       const width = Math.max(0, worldEl ? worldEl.clientWidth : 0);
       const height = Math.max(0, worldEl ? worldEl.clientHeight : 0);
-      const petSize = 100;
+      const petSize = PET_ENTITY_SIZE;
 
       return {
         minX: 0,
@@ -1696,10 +1878,10 @@
           const dy = p1.y - p2.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < 70) { // Collision threshold
+          if (distance < PET_COLLISION_DISTANCE) {
             const safeDistance = Math.max(1, distance);
             const nx = dx / safeDistance;
-            const push = (70 - safeDistance) / 2 + 34;
+            const push = (PET_COLLISION_DISTANCE - safeDistance) / 2 + 34;
 
             p1.x += nx * push;
             p2.x -= nx * push;
@@ -1924,6 +2106,7 @@
       state.progressionXP = 0;
       state.currentIndex = nextEggIndex;
       state.selectedAccessories = [];
+      state.petAccessoryByVariantId = {};
       state.selectedStageBackgroundIndex = 0;
       state.selectionLocked = false;
       state.ownedVariantIds = normalizeOwnedVariantIds([], nextVariantId);
@@ -1965,10 +2148,34 @@
         safeNamesByVariant[safeVariantId] = getPetDisplayNameByVariantId(safeVariantId);
       });
 
+      const safeAccessoryByVariant = {};
+      const usedAccessoryFiles = new Set();
+      ownedVariantIds.forEach(function (variantId) {
+        const safeVariantId = String(variantId || "").trim();
+        if (!safeVariantId) return;
+
+        const assignedItem = state.petAccessoryByVariantId
+          ? buildAccessoryAssignmentItem(state.petAccessoryByVariantId[safeVariantId])
+          : null;
+        if (!assignedItem || !assignedItem.fileName) return;
+        if (usedAccessoryFiles.has(assignedItem.fileName)) return;
+
+        usedAccessoryFiles.add(assignedItem.fileName);
+        safeAccessoryByVariant[safeVariantId] = {
+          fileName: assignedItem.fileName,
+          position: assignedItem.position || "center",
+        };
+      });
+
+      const activeSelectedAccessories = safeAccessoryByVariant[currentVariantId]
+        ? [{ fileName: safeAccessoryByVariant[currentVariantId].fileName }]
+        : [];
+
       return {
         currentIndex: state.currentIndex,
         isLevelTwo: state.isLevelTwo,
-        selectedAccessories: getPersistedSelectedAccessories(),
+        selectedAccessories: activeSelectedAccessories,
+        petAccessoryByVariantId: safeAccessoryByVariant,
         selectedStageBackgroundIndex: state.selectedStageBackgroundIndex,
         progressionXP: progressionXP,
         progressionLevel: Math.floor(progressionXP / 100) + 1,
@@ -1987,8 +2194,17 @@
     function isDirty() {
       if (!state.lastSavedConfig) return false;
 
-      const currentSelected = JSON.stringify(getPersistedSelectedAccessories());
+      const persistedSnapshot = buildPersistedConfig();
+      const currentSelected = JSON.stringify(
+        Array.isArray(persistedSnapshot.selectedAccessories) ? persistedSnapshot.selectedAccessories : []
+      );
       const savedSelected = JSON.stringify(Array.isArray(state.lastSavedConfig.selectedAccessories) ? state.lastSavedConfig.selectedAccessories : []);
+      const currentAccessoryByVariant = JSON.stringify(
+        persistedSnapshot.petAccessoryByVariantId || {}
+      );
+      const savedAccessoryByVariant = JSON.stringify(
+        state.lastSavedConfig.petAccessoryByVariantId || {}
+      );
       const currentXP = toNonNegativeNumber(getPetProgressXP(getActiveVariantId()), 0);
       const savedXP = toNonNegativeNumber(state.lastSavedConfig.progressionXP, 0);
       const currentVariantId = String(getVariantIdByIndex(state.currentIndex) || "").trim();
@@ -2025,6 +2241,7 @@
       return state.currentIndex !== state.lastSavedConfig.currentIndex ||
              state.isLevelTwo !== state.lastSavedConfig.isLevelTwo ||
             currentSelected !== savedSelected ||
+             currentAccessoryByVariant !== savedAccessoryByVariant ||
              state.selectedStageBackgroundIndex !== state.lastSavedConfig.selectedStageBackgroundIndex ||
              currentXP !== savedXP ||
              currentVariantId !== savedVariantId ||
@@ -2121,6 +2338,37 @@
             if (state.catalogLoaded) {
               syncSelectedAccessoriesWithCatalog();
             }
+            const loadedAccessoryMap =
+              config.petAccessoryByVariantId && typeof config.petAccessoryByVariantId === "object"
+                ? config.petAccessoryByVariantId
+                : {};
+
+            state.petAccessoryByVariantId = {};
+            const usedAccessoryFiles = new Set();
+            state.ownedVariantIds.forEach(function (variantId) {
+              const safeVariantId = String(variantId || "").trim();
+              if (!safeVariantId) return;
+
+              const normalizedAssignment = buildAccessoryAssignmentItem(loadedAccessoryMap[safeVariantId]);
+              if (!normalizedAssignment || !normalizedAssignment.fileName) return;
+              if (usedAccessoryFiles.has(normalizedAssignment.fileName)) return;
+
+              usedAccessoryFiles.add(normalizedAssignment.fileName);
+              state.petAccessoryByVariantId[safeVariantId] = normalizedAssignment;
+            });
+
+            if (Object.keys(state.petAccessoryByVariantId).length === 0 && Array.isArray(config.selectedAccessories)) {
+              const legacyItem = buildAccessoryAssignmentItem(config.selectedAccessories[0]);
+              const activeVariantIdForLegacy = String(
+                config.currentVariantId || config.lockedVariantId || loadedCurrentVariantId || "",
+              ).trim();
+              if (legacyItem && activeVariantIdForLegacy) {
+                state.petAccessoryByVariantId[activeVariantIdForLegacy] = legacyItem;
+              }
+            }
+
+            syncSelectedAccessoriesWithCatalog();
+            syncSelectedAccessoriesFromActiveVariant();
             const loadedBackgroundIndex = parseInt(config.selectedStageBackgroundIndex, 10);
             state.selectedStageBackgroundIndex = Number.isFinite(loadedBackgroundIndex)
               ? Math.max(0, loadedBackgroundIndex)
@@ -2483,12 +2731,13 @@
       const panelEl = document.getElementById("petAccessoryPanel");
       if (!panelEl) return;
 
-      panelEl.classList.toggle("disabled", !canEquipAccessories());
-      panelEl.setAttribute("aria-disabled", canEquipAccessories() ? "false" : "true");
+      const canAnyEquip = canAnyOwnedPetEquipAccessories();
+      panelEl.classList.toggle("disabled", !canAnyEquip);
+      panelEl.setAttribute("aria-disabled", canAnyEquip ? "false" : "true");
 
       const accessoryButtons = panelEl.querySelectorAll(".pet-accessory-btn");
       accessoryButtons.forEach(function (button) {
-        button.disabled = !canEquipAccessories();
+        button.disabled = !canAnyEquip;
       });
     }
 
@@ -2501,6 +2750,8 @@
         selectedMap[item.fileName] = true;
       });
 
+      const activeVariantId = String(getActiveVariantId() || "").trim();
+
       const buttons = gridEl.querySelectorAll(".pet-accessory-btn");
       buttons.forEach(function (button) {
         const fileName = button.getAttribute("data-file") || "";
@@ -2511,8 +2762,16 @@
 
         const catalogItem = getAccessoryItemByFileName(fileName);
         const locked = !!catalogItem && isProgressLevelLocked(catalogItem);
+        const ownerVariantId = getAccessoryOwnerVariantId(fileName);
+        const inUseByOther = !!ownerVariantId && ownerVariantId !== activeVariantId;
         button.classList.toggle("is-locked", locked);
+        button.classList.toggle("is-in-use", inUseByOther);
         button.setAttribute("aria-disabled", locked ? "true" : "false");
+        if (inUseByOther) {
+          button.setAttribute("title", "Phụ kiện này đã được PET khác sử dụng");
+        } else {
+          button.removeAttribute("title");
+        }
 
         let lockOverlay = button.querySelector(".pet-item-lock-icon");
         if (locked && !lockOverlay) {
@@ -2555,6 +2814,8 @@
       ensureCurrentVariantAccessible();
       ensureValidBackgroundSelection();
       ensurePetProgressAndNamesMaps();
+      syncSelectedAccessoriesWithCatalog();
+      syncSelectedAccessoriesFromActiveVariant();
 
       const activeVariantId = getActiveVariantId();
       const xp = getPetProgressXP(activeVariantId);
@@ -2972,11 +3233,9 @@
 
       noAccessoryBtn.appendChild(noAccessoryIcon);
       noAccessoryBtn.addEventListener("click", function () {
-        if (!canEquipAccessories()) return;
-
-        state.selectedAccessories = [];
-        state.selectedAccessory = NO_ACCESSORY_VALUE;
-        state.accessoryPosition = "center";
+        const activeVariantId = String(getActiveVariantId() || "").trim();
+        if (!activeVariantId) return;
+        clearAccessoryFromVariant(activeVariantId);
         renderAccessory();
         updateAccessoryButtons();
         updateAccessoryPositionButtons();
@@ -3008,6 +3267,18 @@
         thumb.style.visibility = "hidden";
 
         btn.appendChild(thumb);
+
+        btn.draggable = true;
+        btn.addEventListener("dragstart", function (event) {
+          const lockedNow = isProgressLevelLocked(catalogItem);
+          if (lockedNow) {
+            event.preventDefault();
+            return;
+          }
+          if (!event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "copyMove";
+          event.dataTransfer.setData("text/pet-accessory-file", fileName);
+        });
         
         btn.addEventListener("mouseenter", function(e) {
           const tooltipData = Object.assign({}, catalogItem, {
@@ -3028,26 +3299,23 @@
             }
             return;
           }
-          if (!canEquipAccessories()) return;
+          const activeVariantId = String(getActiveVariantId() || "").trim();
+          if (!activeVariantId) return;
 
-          const selectedIndex = getSelectedAccessoryIndex(fileName);
-          if (selectedIndex >= 0) {
-            if (state.selectedAccessory !== fileName) {
-              const selected = state.selectedAccessories[selectedIndex];
-              state.selectedAccessory = fileName;
-              state.accessoryPosition = selected.position;
-            } else {
-              state.selectedAccessories.splice(selectedIndex, 1);
-              const fallbackSelected =
-                state.selectedAccessories[selectedIndex] ||
-                state.selectedAccessories[selectedIndex - 1] ||
-                null;
-              state.selectedAccessory = fallbackSelected ? fallbackSelected.fileName : "";
-              if (fallbackSelected) {
-                state.accessoryPosition = fallbackSelected.position;
-              }
+          if (getCurrentProgressLevel(activeVariantId) < 3) {
+            if (typeof showToast === "function") {
+              showToast("PET hiện tại chưa đủ Level để gắn phụ kiện", "warning");
             }
+            return;
+          }
 
+          const activeAssigned =
+            state.petAccessoryByVariantId && state.petAccessoryByVariantId[activeVariantId]
+              ? state.petAccessoryByVariantId[activeVariantId]
+              : null;
+          const activeAssignedFile = String((activeAssigned && activeAssigned.fileName) || "").trim();
+          if (activeAssignedFile === fileName) {
+            clearAccessoryFromVariant(activeVariantId);
             renderAccessory();
             updateAccessoryButtons();
             updateAccessoryPositionButtons();
@@ -3055,30 +3323,9 @@
             return;
           }
 
-          if (state.selectedAccessories.length >= MAX_ACCESSORIES_PER_PET) {
-            if (typeof showToast === "function") {
-              showToast("Mỗi pet chỉ gắn tối đa 2 phụ kiện");
-            }
+          if (!assignAccessoryToVariant(activeVariantId, { fileName: fileName })) {
             return;
           }
-
-          const catalogItem = getAccessoryItemByFileName(fileName) || { offsetX: 0, offsetY: 0, scalePercent: 100, positionMode: 'center', positionProfiles: {} };
-          const defaultPosition = normalizeAccessoryPositionMode(catalogItem.positionMode || state.accessoryPosition);
-          const finalPosition = resolveAccessoryPosition(fileName, defaultPosition);
-          const profiles = normalizeAccessoryPositionProfiles(catalogItem.positionProfiles, catalogItem);
-          const activeProfile = profiles[finalPosition] || profiles.center;
-          state.selectedAccessories.push({
-            fileName: fileName,
-            position: finalPosition,
-            positionMode: defaultPosition,
-            offsetX: activeProfile.offsetX,
-            offsetY: activeProfile.offsetY,
-            scalePercent: activeProfile.scalePercent,
-            rotDeg: activeProfile.rotDeg || 0,
-            positionProfiles: profiles,
-          });
-          state.selectedAccessory = fileName;
-          state.accessoryPosition = finalPosition;
 
           renderAccessory();
           updateAccessoryButtons();
