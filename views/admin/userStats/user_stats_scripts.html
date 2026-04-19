@@ -140,7 +140,6 @@
     const bStats = getUserSummaryStats(b);
 
     if (sortBy === 'lessons-desc') return bStats.learnedLessons - aStats.learnedLessons;
-    if (sortBy === 'plays-desc') return bStats.totalPlays - aStats.totalPlays;
     if (sortBy === 'attempts-desc') return bStats.totalAttempts - aStats.totalAttempts;
 
     return bStats.overallProgress - aStats.overallProgress;
@@ -177,7 +176,7 @@
             <span class="user-item-chip">${stats.overallProgress}%</span>
           </div>
           <p class="user-item-email">${escapeHtml(user.email || '')}</p>
-          <p class="user-item-email">Học ${stats.learnedLessons} bài • ${stats.totalAttempts} lần học • ${stats.totalPlays} lượt chơi</p>
+          <p class="user-item-email">Học ${stats.learnedLessons} bài • Quiz ${stats.totalAttempts} lượt</p>
         </button>
       `;
     }).join('');
@@ -209,7 +208,6 @@
     renderDetailHeader(user);
     renderSummaryCards(user);
     renderLessonProgress(user);
-    renderPlaysList(user);
   }
 
   function renderDetailHeader(user) {
@@ -230,8 +228,11 @@
     const cards = [
       { label: 'Bài đã học', value: summary.learnedLessons },
       { label: 'Tiến độ tổng', value: `${summary.overallProgress}%` },
-      { label: 'Số lần học', value: summary.totalAttempts },
-      { label: 'Số lượt chơi', value: summary.totalPlays },
+      { label: 'Điểm trung bình', value: summary.avgQuizScore },
+      {
+        label: 'Chi tiết làm bài',
+        value: `<button type="button" class="summary-action-btn" id="userStatsQuizDetailBtn">Xem ${summary.totalAttempts} lượt làm</button>`,
+      },
     ];
 
     summaryCards.innerHTML = cards.map((card) => `
@@ -240,6 +241,13 @@
         <p class="summary-value">${card.value}</p>
       </article>
     `).join('');
+
+    const quizDetailBtn = document.getElementById('userStatsQuizDetailBtn');
+    if (quizDetailBtn) {
+      quizDetailBtn.addEventListener('click', () => {
+        openUserQuizHistoryModal(user);
+      });
+    }
   }
 
   function renderLessonProgress(user) {
@@ -333,12 +341,82 @@
     container.innerHTML = lessonAttempts.map((attempt) => `
       <article class="topic-history-item">
         <div class="topic-history-top">
-          <p class="lesson-name">Lần học #${Number(attempt.attemptNumber || 0)}</p>
+          <p class="lesson-name">${formatAttemptActionLabel(attempt)}: ${escapeHtml(attempt.lessonTitle || attempt.lessonId || lessonName)}</p>
           <p class="topic-history-score">${Number(attempt.score || 0)} điểm</p>
         </div>
-        <p class="lesson-meta">Thời gian: ${formatDateTime(attempt.completedAt)}</p>
+        <p class="lesson-meta">Kết quả: ${formatAttemptCorrectTotal(attempt)} • Loại: ${normalizeQuizModeLabel(attempt.quizMode)}</p>
+        <p class="lesson-meta">Thời gian làm: ${formatDateTime(attempt.completedAt)}</p>
       </article>
     `).join('');
+  }
+
+  function openUserQuizHistoryModal(user) {
+    const modal = document.getElementById('userStatsTopicHistoryModal');
+    if (!modal) return;
+
+    renderUserQuizHistoryModal(user);
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function renderUserQuizHistoryModal(user) {
+    const title = document.getElementById('userStatsTopicHistoryModalTitle');
+    const container = document.getElementById('userStatsTopicHistoryModalList');
+    if (!container || !title) return;
+
+    const attempts = Array.isArray(user.attempts) ? user.attempts.slice() : [];
+    title.textContent = `Chi tiết làm bài: ${user.name || user.email || 'Người dùng'}`;
+
+    if (!attempts.length) {
+      container.innerHTML = '<div class="topic-history-item"><p class="lesson-meta">Người dùng này chưa có lượt làm quiz hoặc matching nào</p></div>';
+      return;
+    }
+
+    attempts.sort((a, b) => {
+      const aTime = new Date(a.completedAt || 0).getTime();
+      const bTime = new Date(b.completedAt || 0).getTime();
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    });
+
+    container.innerHTML = attempts.map((attempt) => `
+      <article class="topic-history-item">
+        <div class="topic-history-top">
+          <p class="lesson-name">${formatAttemptActionLabel(attempt)}: ${escapeHtml(attempt.lessonTitle || attempt.lessonId || 'Quiz')}</p>
+          <p class="topic-history-score">${Number(attempt.score || 0)} điểm</p>
+        </div>
+        <p class="lesson-meta">Kết quả: ${formatAttemptCorrectTotal(attempt)} • Loại: ${normalizeQuizModeLabel(attempt.quizMode)}</p>
+        <p class="lesson-meta">Thời gian làm: ${formatDateTime(attempt.completedAt)}</p>
+      </article>
+    `).join('');
+  }
+
+  function formatAttemptActionLabel(attempt) {
+    const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
+    return activityType === 'matching' ? 'Làm matching' : 'Làm quiz';
+  }
+
+  function formatAttemptCorrectTotal(attempt) {
+    const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
+    if (activityType === 'matching') {
+      const accuracy = Math.max(0, parseInt(attempt && attempt.accuracy, 10) || 0);
+      const correct = Math.max(0, parseInt(attempt && attempt.correctAnswers, 10) || 0);
+      const total = Math.max(0, parseInt(attempt && attempt.totalQuestions, 10) || 0);
+      if (total) return `${correct}/${total} cặp đúng (${accuracy}%)`;
+      return `${accuracy}% chính xác`;
+    }
+
+    const correct = Math.max(0, parseInt(attempt && attempt.correctAnswers, 10) || 0);
+    const total = Math.max(0, parseInt(attempt && attempt.totalQuestions, 10) || 0);
+    if (!total) return '-';
+    return `${correct}/${total} câu đúng`;
+  }
+
+  function normalizeQuizModeLabel(mode) {
+    const value = String(mode || '').trim().toLowerCase();
+    if (value === 'matching') return 'matching';
+    if (value === 'review') return 'review';
+    if (value === 'instant') return 'instant';
+    return value || 'instant';
   }
 
   function getLessonKey(lesson) {
@@ -359,27 +437,6 @@
     );
   }
 
-  function renderPlaysList(user) {
-    const container = document.getElementById('userStatsPlaysList');
-    if (!container) return;
-
-    const plays = Array.isArray(user.plays) ? user.plays : [];
-    if (!plays.length) {
-      container.innerHTML = '<div class="play-item"><p class="play-meta">Chưa có lịch sử lượt chơi</p></div>';
-      return;
-    }
-
-    container.innerHTML = plays.map((play) => `
-      <article class="play-item">
-        <div class="play-item-top">
-          <p class="play-topic">${escapeHtml(play.mode || 'Chế độ')} - ${escapeHtml(play.topicTitle || play.topicId || 'Topic')}</p>
-          <p class="play-meta">${formatDateTime(play.playedAt)}</p>
-        </div>
-        <p class="play-meta">Số lượt: ${Number(play.playCount || 0)} • Điểm cao nhất: ${Number(play.bestScore || 0)}</p>
-      </article>
-    `).join('');
-  }
-
   function showUserStatsLoading(isLoading) {
     const loading = document.getElementById('userStatsLoadingState');
     const list = document.getElementById('userStatsUserList');
@@ -397,13 +454,15 @@
       : 0;
 
     const attempts = Array.isArray(user.attempts) ? user.attempts : [];
-    const plays = Array.isArray(user.plays) ? user.plays : [];
+    const avgQuizScore = attempts.length
+      ? Math.round((attempts.reduce((sum, attempt) => sum + Number(attempt.score || 0), 0) / attempts.length) * 100) / 100
+      : 0;
 
     return {
       learnedLessons,
       overallProgress,
       totalAttempts: attempts.length,
-      totalPlays: plays.reduce((sum, play) => sum + Number(play.playCount || 0), 0),
+      avgQuizScore,
     };
   }
 

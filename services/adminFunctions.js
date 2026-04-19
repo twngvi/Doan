@@ -751,7 +751,7 @@ function getAdminUserLearningStats(options) {
       try {
         const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
         const lessonMap = {};
-        const rawQuizAttempts = [];
+        const rawAttempts = [];
         const playsMap = {};
 
         // 1) Topic progress -> lessons base data
@@ -840,15 +840,24 @@ function getAdminUserLearningStats(options) {
               qCols.percentage >= 0
                 ? clampAdminPercent_(qRow[qCols.percentage])
                 : deriveQuizPercent_(qCols.score >= 0 ? qRow[qCols.score] : 0, qCols.totalQuestions >= 0 ? qRow[qCols.totalQuestions] : 0);
+            const correctAnswers = qCols.score >= 0 ? Math.max(0, parseInt(qRow[qCols.score], 10) || 0) : 0;
+            const totalQuestions = qCols.totalQuestions >= 0 ? Math.max(0, parseInt(qRow[qCols.totalQuestions], 10) || 0) : 0;
+            const quizMode = qCols.gameMode >= 0 && qRow[qCols.gameMode]
+              ? String(qRow[qCols.gameMode]).trim().toLowerCase()
+              : "instant";
 
             const completedAtDate =
               qCols.completedAt >= 0 ? parseAdminSheetDate(qRow[qCols.completedAt]) : null;
             const completedAtIso = completedAtDate ? completedAtDate.toISOString() : "";
 
-            rawQuizAttempts.push({
+            rawAttempts.push({
               topicId: topicId,
               lessonTitle: topicTitle,
               score: percentage,
+              correctAnswers: correctAnswers,
+              totalQuestions: totalQuestions,
+              activityType: "quiz",
+              quizMode: quizMode,
               completedAt: completedAtIso,
             });
 
@@ -902,6 +911,9 @@ function getAdminUserLearningStats(options) {
           const mCols = {
             topicId: mHeaders.indexOf("topicId"),
             topicTitle: mHeaders.indexOf("topicTitle"),
+            totalPairs: mHeaders.indexOf("totalPairs"),
+            correctPairs: mHeaders.indexOf("correctPairs"),
+            score: mHeaders.indexOf("score"),
             completed: mHeaders.indexOf("completed"),
             accuracy: mHeaders.indexOf("accuracy"),
             playedAt: mHeaders.indexOf("playedAt"),
@@ -920,9 +932,24 @@ function getAdminUserLearningStats(options) {
             const rowTopicTitle = mCols.topicTitle >= 0 ? String(mRow[mCols.topicTitle] || "").trim() : "";
             const topicTitle = rowTopicTitle || topicTitleMap[topicId] || topicId || "Matching";
             const accuracy = mCols.accuracy >= 0 ? clampAdminPercent_(mRow[mCols.accuracy]) : 0;
+            const totalPairs = mCols.totalPairs >= 0 ? Math.max(0, parseInt(mRow[mCols.totalPairs], 10) || 0) : 0;
+            const correctPairs = mCols.correctPairs >= 0 ? Math.max(0, parseInt(mRow[mCols.correctPairs], 10) || 0) : 0;
+            const score = mCols.score >= 0 ? Math.max(0, parseInt(mRow[mCols.score], 10) || 0) : accuracy;
 
             const playedAtDate = mCols.playedAt >= 0 ? parseAdminSheetDate(mRow[mCols.playedAt]) : null;
             const playedAtIso = playedAtDate ? playedAtDate.toISOString() : "";
+
+            rawAttempts.push({
+              topicId: topicId,
+              lessonTitle: topicTitle,
+              score: score,
+              correctAnswers: correctPairs,
+              totalQuestions: totalPairs,
+              activityType: "matching",
+              quizMode: "matching",
+              accuracy: accuracy,
+              completedAt: playedAtIso,
+            });
 
             const playKey = "matching|" + (topicId || topicTitle);
             if (!playsMap[playKey]) {
@@ -965,13 +992,13 @@ function getAdminUserLearningStats(options) {
             return String(a.lessonTitle || "").localeCompare(String(b.lessonTitle || ""));
           });
 
-        // Finalize attempts (quiz-based)
-        rawQuizAttempts.sort(function (a, b) {
+        // Finalize attempts timeline (quiz + matching)
+        rawAttempts.sort(function (a, b) {
           return new Date(a.completedAt || 0).getTime() - new Date(b.completedAt || 0).getTime();
         });
 
         const attemptNumberByTopic = {};
-        const attempts = rawQuizAttempts
+        const attempts = rawAttempts
           .map(function (attempt) {
             const key = attempt.topicId || attempt.lessonTitle || "UNKNOWN";
             attemptNumberByTopic[key] = (attemptNumberByTopic[key] || 0) + 1;
@@ -981,6 +1008,11 @@ function getAdminUserLearningStats(options) {
               lessonTitle: attempt.lessonTitle || attempt.topicId || "Quiz",
               attemptNumber: attemptNumberByTopic[key],
               score: attempt.score,
+              correctAnswers: attempt.correctAnswers,
+              totalQuestions: attempt.totalQuestions,
+              activityType: attempt.activityType || "quiz",
+              quizMode: attempt.quizMode,
+              accuracy: attempt.accuracy,
             };
           })
           .sort(function (a, b) {
