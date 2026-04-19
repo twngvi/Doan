@@ -6,6 +6,8 @@
     topicRows: [],
     matchingRows: [],
     timeRange: '30',
+    selectedStatsType: '',
+    selectedStatsKey: '',
   };
 
   function initCourseStatsPage() {
@@ -22,6 +24,10 @@
   function bindCourseStatsEvents() {
     const refreshBtn = document.getElementById('courseStatsRefreshBtn');
     const rangeSelect = document.getElementById('courseStatsRangeSelect');
+    const topicTableBody = document.getElementById('courseStatsTopicTableBody');
+    const matchingTableBody = document.getElementById('courseStatsMatchingTableBody');
+    const closeTopicUsersBtn = document.getElementById('courseStatsTopicUsersCloseBtn');
+    const topicUsersBackdrop = document.getElementById('courseStatsTopicUsersBackdrop');
 
     renderCurrentTimeframeLabel(courseStatsState.timeRange);
 
@@ -33,6 +39,7 @@
         const aggregated = aggregateCourseStats(courseStatsState.users, courseStatsState.timeRange);
         courseStatsState.topicRows = aggregated.topicRows;
         courseStatsState.matchingRows = aggregated.matchingRows;
+        ensureSelectedStatsExists();
         renderAllCourseStats(aggregated);
       });
     }
@@ -40,6 +47,68 @@
     if (refreshBtn) {
       refreshBtn.addEventListener('click', loadCourseStatsData);
     }
+
+    if (topicTableBody) {
+      topicTableBody.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-stats-key][data-stats-type]');
+        if (!row) return;
+
+        courseStatsState.selectedStatsType = String(row.dataset.statsType || '');
+        courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (matchingTableBody) {
+      matchingTableBody.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-stats-key][data-stats-type]');
+        if (!row) return;
+
+        courseStatsState.selectedStatsType = String(row.dataset.statsType || '');
+        courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (closeTopicUsersBtn) {
+      closeTopicUsersBtn.addEventListener('click', () => {
+        courseStatsState.selectedStatsType = '';
+        courseStatsState.selectedStatsKey = '';
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (topicUsersBackdrop) {
+      topicUsersBackdrop.addEventListener('click', () => {
+        courseStatsState.selectedStatsType = '';
+        courseStatsState.selectedStatsKey = '';
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      if (!courseStatsState.selectedStatsKey) return;
+
+      courseStatsState.selectedStatsType = '';
+      courseStatsState.selectedStatsKey = '';
+      renderCourseStatsTables({
+        topicRows: courseStatsState.topicRows,
+        matchingRows: courseStatsState.matchingRows,
+      });
+    });
   }
 
   async function loadCourseStatsData() {
@@ -53,6 +122,7 @@
       const aggregated = aggregateCourseStats(users, courseStatsState.timeRange);
       courseStatsState.topicRows = aggregated.topicRows;
       courseStatsState.matchingRows = aggregated.matchingRows;
+      ensureSelectedStatsExists();
 
       renderAllCourseStats(aggregated);
     } catch (error) {
@@ -84,6 +154,7 @@
 
     users.forEach((user) => {
       const userId = String(user.id || user.email || Math.random());
+      const learnerMeta = getCourseStatsLearnerMeta(user, userId);
       const engagedTopicKeys = {};
 
       const lessons = Array.isArray(user.lessons) ? user.lessons : [];
@@ -108,6 +179,12 @@
 
         const item = getOrCreateStatItem(topicMap, key, attempt.lessonTitle || attempt.lessonId || 'Topic');
         item.playCount += 1;
+        const learnerDetail = getOrCreateCourseStatsLearnerDetail(item, userId, learnerMeta);
+        learnerDetail.totalAttempts += 1;
+        addCourseStatsLearnerEvent(learnerDetail, {
+          time: completedAt,
+          text: buildCourseStatsAttemptEventText(attempt),
+        });
         engagedTopicKeys[key] = true;
       });
 
@@ -124,6 +201,14 @@
 
         const topicItem = getOrCreateStatItem(topicMap, key, title);
         topicItem.playCount += playCount;
+        const topicLearnerDetail = getOrCreateCourseStatsLearnerDetail(topicItem, userId, learnerMeta);
+        topicLearnerDetail.totalPlays += playCount;
+        if (playCount > 0) {
+          addCourseStatsLearnerEvent(topicLearnerDetail, {
+            time: playedAt,
+            text: buildCourseStatsPlayEventText(play, playCount),
+          });
+        }
 
         if (playCount > 0) {
           engagedTopicKeys[key] = true;
@@ -133,13 +218,20 @@
         if (mode === 'MATCHING') {
           const matchingItem = getOrCreateStatItem(matchingMap, key, title);
           matchingItem.playCount += playCount;
-          matchingItem.learners[userId] = true;
+          const matchingLearnerDetail = getOrCreateCourseStatsLearnerDetail(matchingItem, userId, learnerMeta);
+          matchingLearnerDetail.totalPlays += playCount;
+          if (playCount > 0) {
+            addCourseStatsLearnerEvent(matchingLearnerDetail, {
+              time: playedAt,
+              text: buildCourseStatsPlayEventText(play, playCount),
+            });
+          }
         }
       });
 
       Object.keys(engagedTopicKeys).forEach((key) => {
         if (topicMap[key]) {
-          topicMap[key].learners[userId] = true;
+          getOrCreateCourseStatsLearnerDetail(topicMap[key], userId, learnerMeta);
         }
       });
     });
@@ -184,6 +276,22 @@
           title: item.title,
           playCount: Math.max(0, Number(item.playCount || 0)),
           learnerCount: Object.keys(item.learners || {}).length,
+          learners: Object.keys(item.learners || {}).map((learnerId) => {
+            const learner = item.learners[learnerId] || {};
+            return {
+              id: String(learner.id || learnerId),
+              name: String(learner.name || learner.email || learnerId),
+              email: String(learner.email || ''),
+              totalAttempts: Math.max(0, Number(learner.totalAttempts || 0)),
+              totalPlays: Math.max(0, Number(learner.totalPlays || 0)),
+              lastLearnedAt: learner.lastLearnedAt || '',
+              events: Array.isArray(learner.events) ? learner.events.slice(0, 8) : [],
+            };
+          }).sort((a, b) => {
+            if (b.totalAttempts !== a.totalAttempts) return b.totalAttempts - a.totalAttempts;
+            if (b.totalPlays !== a.totalPlays) return b.totalPlays - a.totalPlays;
+            return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+          }),
         };
       })
       .sort((a, b) => {
@@ -207,8 +315,9 @@
     setTextContent('courseStatsTopicCount', `${topicRows.length} topic`);
     setTextContent('courseStatsMatchingCount', `${matchingRows.length} quiz`);
 
-    renderCourseStatsTable('courseStatsTopicTableBody', topicRows, 'Người học');
-    renderCourseStatsTable('courseStatsMatchingTableBody', matchingRows, 'Người chơi');
+    renderCourseStatsTable('courseStatsTopicTableBody', topicRows, { selectableType: 'topic' });
+    renderCourseStatsTable('courseStatsMatchingTableBody', matchingRows, { selectableType: 'matching' });
+    renderSelectedStatLearners(topicRows, matchingRows);
 
     const hasData = topicRows.length > 0 || matchingRows.length > 0;
     const emptyState = document.getElementById('courseStatsEmptyState');
@@ -217,9 +326,12 @@
     }
   }
 
-  function renderCourseStatsTable(tbodyId, rows) {
+  function renderCourseStatsTable(tbodyId, rows, options) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
+
+    const selectableType = options && typeof options === 'object' ? String(options.selectableType || '') : '';
+    const isSelectable = Boolean(selectableType);
 
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="4">Chưa có dữ liệu</td></tr>';
@@ -229,8 +341,11 @@
     const totalRows = rows.length;
     tbody.innerHTML = rows.map((row, index) => {
       const level = getCourseStatsActivityLevel(index, totalRows);
+      const isSelected = isSelectable
+        && row.key === courseStatsState.selectedStatsKey
+        && selectableType === courseStatsState.selectedStatsType;
       return `
-        <tr>
+        <tr${isSelectable ? ` data-stats-key="${escapeCourseStatsHtml(row.key)}" data-stats-type="${escapeCourseStatsHtml(selectableType)}"` : ''} class="${isSelected ? 'is-selected' : ''}">
           <td>${escapeCourseStatsHtml(row.title)}</td>
           <td>${Number(row.playCount || 0)}</td>
           <td>${Number(row.learnerCount || 0)}</td>
@@ -238,6 +353,140 @@
         </tr>
       `;
     }).join('');
+  }
+
+  function renderSelectedStatLearners(topicRows, matchingRows) {
+    const panel = document.getElementById('courseStatsTopicUsersPanel');
+    const title = document.getElementById('courseStatsTopicUsersTitle');
+    const subtitle = document.getElementById('courseStatsTopicUsersSubtitle');
+    const list = document.getElementById('courseStatsTopicUsersList');
+    if (!panel || !title || !subtitle || !list) return;
+
+    if (!courseStatsState.selectedStatsKey || !courseStatsState.selectedStatsType) {
+      panel.style.display = 'none';
+      document.body.classList.remove('course-stats-modal-open');
+      return;
+    }
+
+    const selectedRows = courseStatsState.selectedStatsType === 'matching' ? matchingRows : topicRows;
+    const selectedItem = (selectedRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
+    if (!selectedItem) {
+      panel.style.display = 'none';
+      document.body.classList.remove('course-stats-modal-open');
+      return;
+    }
+
+    const learners = Array.isArray(selectedItem.learners) ? selectedItem.learners : [];
+    panel.style.display = 'flex';
+    document.body.classList.add('course-stats-modal-open');
+    title.textContent = courseStatsState.selectedStatsType === 'matching'
+      ? `Người dùng đã chơi Matching: ${selectedItem.title}`
+      : `Người dùng đã học topic: ${selectedItem.title}`;
+    subtitle.textContent = courseStatsState.selectedStatsType === 'matching'
+      ? `${learners.length} người chơi`
+      : `${learners.length} người dùng`;
+
+    if (!learners.length) {
+      list.innerHTML = courseStatsState.selectedStatsType === 'matching'
+        ? '<p class="course-stats-topic-users-subtitle">Chưa có người chơi Matching cho topic này.</p>'
+        : '<p class="course-stats-topic-users-subtitle">Chưa có người dùng học topic này.</p>';
+      return;
+    }
+
+    list.innerHTML = learners.map((learner) => `
+      <article class="course-stats-topic-user-item">
+        <p class="course-stats-topic-user-name">${escapeCourseStatsHtml(learner.name || 'Người dùng')}</p>
+        <p class="course-stats-topic-user-email">${escapeCourseStatsHtml(learner.email || 'Không có email')}</p>
+        <p class="course-stats-topic-user-meta">Số lần học: ${Number(learner.totalAttempts || 0)} • Lượt chơi: ${Number(learner.totalPlays || 0)}${learner.lastLearnedAt ? ` • Gần nhất: ${escapeCourseStatsHtml(formatCourseStatsDateTime(learner.lastLearnedAt))}` : ''}</p>
+        <div class="course-stats-topic-user-events">
+          ${renderCourseStatsLearnerEvents(learner.events)}
+        </div>
+      </article>
+    `).join('');
+  }
+
+  function renderCourseStatsLearnerEvents(events) {
+    if (!Array.isArray(events) || !events.length) {
+      return '<span class="course-stats-topic-user-event">Chưa có chi tiết lần học trong khoảng thời gian này.</span>';
+    }
+
+    return events.map((eventItem) => {
+      const when = eventItem && eventItem.time ? `${formatCourseStatsDateTime(eventItem.time)} • ` : '';
+      const text = eventItem && eventItem.text ? String(eventItem.text) : 'Hoạt động học';
+      return `<span class="course-stats-topic-user-event">${escapeCourseStatsHtml(`${when}${text}`)}</span>`;
+    }).join('');
+  }
+
+  function ensureSelectedStatsExists() {
+    if (!courseStatsState.selectedStatsType || !courseStatsState.selectedStatsKey) return;
+
+    const targetRows = courseStatsState.selectedStatsType === 'matching'
+      ? courseStatsState.matchingRows
+      : courseStatsState.topicRows;
+    const exists = targetRows.some((row) => row.key === courseStatsState.selectedStatsKey);
+    if (!exists) {
+      courseStatsState.selectedStatsType = '';
+      courseStatsState.selectedStatsKey = '';
+    }
+  }
+
+  function getCourseStatsLearnerMeta(user, fallbackId) {
+    const id = String((user && (user.id || user.email)) || fallbackId || '');
+    const email = String((user && user.email) || '');
+    const name = String((user && user.name) || email || id || 'Người dùng');
+    return { id, name, email };
+  }
+
+  function getOrCreateCourseStatsLearnerDetail(item, userId, learnerMeta) {
+    if (!item || !item.learners) return { totalAttempts: 0, totalPlays: 0, events: [] };
+
+    if (!item.learners[userId]) {
+      item.learners[userId] = {
+        id: learnerMeta.id,
+        name: learnerMeta.name,
+        email: learnerMeta.email,
+        totalAttempts: 0,
+        totalPlays: 0,
+        lastLearnedAt: '',
+        events: [],
+      };
+    }
+
+    return item.learners[userId];
+  }
+
+  function addCourseStatsLearnerEvent(learnerDetail, eventData) {
+    if (!learnerDetail || !eventData) return;
+
+    const time = eventData.time instanceof Date ? eventData.time : parseCourseStatsDate(eventData.time);
+    const text = String(eventData.text || '').trim();
+    if (!text) return;
+
+    learnerDetail.events.push({
+      time: time ? time.toISOString() : '',
+      sortTime: time ? time.getTime() : 0,
+      text,
+    });
+
+    learnerDetail.events.sort((a, b) => Number(b.sortTime || 0) - Number(a.sortTime || 0));
+    if (learnerDetail.events.length > 12) {
+      learnerDetail.events = learnerDetail.events.slice(0, 12);
+    }
+
+    if (time && (!learnerDetail.lastLearnedAt || time.getTime() > new Date(learnerDetail.lastLearnedAt).getTime())) {
+      learnerDetail.lastLearnedAt = time.toISOString();
+    }
+  }
+
+  function buildCourseStatsAttemptEventText(attempt) {
+    const score = Number(attempt && (attempt.scorePercent || attempt.score || attempt.bestScore || 0));
+    return score > 0 ? `Quiz • Điểm ${Math.round(score)}%` : 'Quiz • Làm bài';
+  }
+
+  function buildCourseStatsPlayEventText(play, playCount) {
+    const mode = String((play && play.mode) || '').toUpperCase();
+    const label = mode === 'MATCHING' ? 'Matching' : 'Lượt chơi';
+    return `${label} • ${Math.max(0, Number(playCount || 0))} lượt`;
   }
 
   function setCourseStatsLoading(isLoading) {
@@ -256,6 +505,14 @@
 
       section.style.display = section.classList.contains('course-stats-summary') ? 'grid' : 'block';
     });
+
+    if (isLoading) {
+      const panel = document.getElementById('courseStatsTopicUsersPanel');
+      if (panel) {
+        panel.style.display = 'none';
+      }
+      document.body.classList.remove('course-stats-modal-open');
+    }
   }
 
   function getCourseStatsActivityLevel(index, totalRows) {
@@ -299,6 +556,20 @@
   function formatTopCourseStatsText(item) {
     if (!item) return '-';
     return `${item.title} (${item.playCount} lượt)`;
+  }
+
+  function formatCourseStatsDateTime(value) {
+    const date = parseCourseStatsDate(value);
+    if (!date) return 'Không rõ thời gian';
+
+    return date.toLocaleString('vi-VN', {
+      hour12: false,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   function resolveCourseStatsKey(topicId, topicTitle) {
