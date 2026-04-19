@@ -7,6 +7,8 @@
     matchingRows: [],
     totalTopicsInDb: 0,
     timeRange: '30',
+    topicSortOrder: 'desc',
+    matchingSortOrder: 'desc',
     selectedStatsType: '',
     selectedStatsKey: '',
   };
@@ -27,10 +29,13 @@
     const rangeSelect = document.getElementById('courseStatsRangeSelect');
     const topicTableBody = document.getElementById('courseStatsTopicTableBody');
     const matchingTableBody = document.getElementById('courseStatsMatchingTableBody');
+    const topicSortBtn = document.getElementById('courseStatsTopicSortBtn');
+    const matchingSortBtn = document.getElementById('courseStatsMatchingSortBtn');
     const closeTopicUsersBtn = document.getElementById('courseStatsTopicUsersCloseBtn');
     const topicUsersBackdrop = document.getElementById('courseStatsTopicUsersBackdrop');
 
     renderCurrentTimeframeLabel(courseStatsState.timeRange);
+    renderCourseStatsSortIndicators();
 
     if (rangeSelect) {
       rangeSelect.value = courseStatsState.timeRange;
@@ -47,6 +52,28 @@
 
     if (refreshBtn) {
       refreshBtn.addEventListener('click', loadCourseStatsData);
+    }
+
+    if (topicSortBtn) {
+      topicSortBtn.addEventListener('click', () => {
+        courseStatsState.topicSortOrder = courseStatsState.topicSortOrder === 'desc' ? 'asc' : 'desc';
+        renderCourseStatsSortIndicators();
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (matchingSortBtn) {
+      matchingSortBtn.addEventListener('click', () => {
+        courseStatsState.matchingSortOrder = courseStatsState.matchingSortOrder === 'desc' ? 'asc' : 'desc';
+        renderCourseStatsSortIndicators();
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
     }
 
     if (topicTableBody) {
@@ -315,11 +342,14 @@
   }
 
   function renderCourseStatsTables(aggregated) {
-    const topicRows = Array.isArray(aggregated.topicRows) ? aggregated.topicRows : [];
-    const matchingRows = Array.isArray(aggregated.matchingRows) ? aggregated.matchingRows : [];
+    const topicRowsRaw = Array.isArray(aggregated.topicRows) ? aggregated.topicRows : [];
+    const matchingRowsRaw = Array.isArray(aggregated.matchingRows) ? aggregated.matchingRows : [];
+    const topicRows = sortCourseStatsRows(topicRowsRaw, courseStatsState.topicSortOrder);
+    const matchingRows = sortCourseStatsRows(matchingRowsRaw, courseStatsState.matchingSortOrder);
 
-    setTextContent('courseStatsTopicCount', `${topicRows.length} topic`);
-    setTextContent('courseStatsMatchingCount', `${matchingRows.length} quiz`);
+    setTextContent('courseStatsTopicCount', `${topicRowsRaw.length} topic`);
+    setTextContent('courseStatsMatchingCount', `${matchingRowsRaw.length} quiz`);
+    renderCourseStatsSortIndicators();
 
     renderCourseStatsTable('courseStatsTopicTableBody', topicRows, { selectableType: 'topic' });
     renderCourseStatsTable('courseStatsMatchingTableBody', matchingRows, { selectableType: 'matching' });
@@ -340,13 +370,11 @@
     const isSelectable = Boolean(selectableType);
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4">Chưa có dữ liệu</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3">Chưa có dữ liệu</td></tr>';
       return;
     }
 
-    const totalRows = rows.length;
-    tbody.innerHTML = rows.map((row, index) => {
-      const level = getCourseStatsActivityLevel(index, totalRows);
+    tbody.innerHTML = rows.map((row) => {
       const isSelected = isSelectable
         && row.key === courseStatsState.selectedStatsKey
         && selectableType === courseStatsState.selectedStatsType;
@@ -355,10 +383,50 @@
           <td>${escapeCourseStatsHtml(row.title)}</td>
           <td>${Number(row.playCount || 0)}</td>
           <td>${Number(row.learnerCount || 0)}</td>
-          <td><span class="course-stats-badge ${level.className}">${level.label}</span></td>
         </tr>
       `;
     }).join('');
+  }
+
+  function sortCourseStatsRows(rows, order) {
+    const normalized = order === 'asc' ? 'asc' : 'desc';
+    const list = Array.isArray(rows) ? rows.slice() : [];
+
+    list.sort((a, b) => {
+      const playDelta = Number(b.playCount || 0) - Number(a.playCount || 0);
+      if (playDelta !== 0) return normalized === 'desc' ? playDelta : -playDelta;
+
+      const learnerDelta = Number(b.learnerCount || 0) - Number(a.learnerCount || 0);
+      if (learnerDelta !== 0) return normalized === 'desc' ? learnerDelta : -learnerDelta;
+
+      return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
+    });
+
+    return list;
+  }
+
+  function renderCourseStatsSortIndicators() {
+    const topicIcon = document.getElementById('courseStatsTopicSortIcon');
+    const matchingIcon = document.getElementById('courseStatsMatchingSortIcon');
+    const topicSortBtn = document.getElementById('courseStatsTopicSortBtn');
+    const matchingSortBtn = document.getElementById('courseStatsMatchingSortBtn');
+
+    const topicIsDesc = courseStatsState.topicSortOrder !== 'asc';
+    const matchingIsDesc = courseStatsState.matchingSortOrder !== 'asc';
+
+    if (topicIcon) {
+      topicIcon.textContent = topicIsDesc ? '↓' : '↑';
+    }
+    if (matchingIcon) {
+      matchingIcon.textContent = matchingIsDesc ? '↓' : '↑';
+    }
+
+    if (topicSortBtn) {
+      topicSortBtn.setAttribute('aria-label', topicIsDesc ? 'Sắp xếp lượt chơi giảm dần' : 'Sắp xếp lượt chơi tăng dần');
+    }
+    if (matchingSortBtn) {
+      matchingSortBtn.setAttribute('aria-label', matchingIsDesc ? 'Sắp xếp lượt chơi giảm dần' : 'Sắp xếp lượt chơi tăng dần');
+    }
   }
 
   function renderSelectedStatLearners(topicRows, matchingRows) {
@@ -519,22 +587,6 @@
       }
       document.body.classList.remove('course-stats-modal-open');
     }
-  }
-
-  function getCourseStatsActivityLevel(index, totalRows) {
-    if (totalRows <= 1) return { label: 'Trung bình', className: 'medium' };
-
-    const topThreshold = Math.ceil(totalRows * 0.3);
-    const lowThreshold = Math.floor(totalRows * 0.7);
-
-    if (index < topThreshold) {
-      return { label: 'Chơi nhiều', className: 'high' };
-    }
-    if (index >= lowThreshold) {
-      return { label: 'Chơi ít', className: 'low' };
-    }
-
-    return { label: 'Trung bình', className: 'medium' };
   }
 
   function getWindowStartDate(timeRange) {
