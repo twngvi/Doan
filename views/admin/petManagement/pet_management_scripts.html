@@ -1273,6 +1273,7 @@
       }
 
       var savedIndex = 0;
+      var currentPreviewLevel = state.variantEditor.previewLevel;
       if (state.variantEditor.isNew) {
         state.petVariants.push(cloneVariant(draft));
         savedIndex = state.petVariants.length - 1;
@@ -1284,7 +1285,16 @@
       updateCounts();
       renderAllPmItems();
       persistPetVariantsToBackend(true);
-      openPmVariantEditor(savedIndex, false, state.variantEditor.previewLevel);
+
+      if (state.variantEditor.isNew) {
+        openPmVariantEditor(-1, true, currentPreviewLevel);
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Da them hinh dang PET moi. San sang them tiep', 'success');
+        }
+        return;
+      }
+
+      openPmVariantEditor(savedIndex, false, currentPreviewLevel);
     }
 
     function handleDeleteVariantEditor() {
@@ -1971,6 +1981,13 @@
       renderAllPmItems();
       // closePmEditor(); - Bỏ đóng sidebar khi lưu theo yêu cầu
       persistPetItemsToBackend(true);
+
+      if (isNew) {
+        startCreateNewItem(type);
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Da them moi. San sang them tiep', 'success');
+        }
+      }
     }
 
     function performDelete() {
