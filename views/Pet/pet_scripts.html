@@ -392,13 +392,17 @@
       return meta.conditions.map(describeUnlockConditionEntry).join(separator);
     }
 
-    function isSingleUnlockConditionSatisfied(condition) {
+    function isSingleUnlockConditionSatisfied(condition, options) {
       const safeCondition = normalizeUnlockConditionEntry(condition);
       if (!safeCondition) return false;
 
       const unlockType = String(safeCondition.type || "level");
       if (unlockType === "level") {
-        return getCurrentProgressLevel() >= Math.max(1, toNonNegativeNumber(safeCondition.value, 1));
+        const context = options || {};
+        const progressLevel = Number.isFinite(context.progressLevel)
+          ? context.progressLevel
+          : getCurrentProgressLevel();
+        return progressLevel >= Math.max(1, toNonNegativeNumber(safeCondition.value, 1));
       }
 
       const topicId = String(safeCondition.value || "").trim();
@@ -420,12 +424,16 @@
       return false;
     }
 
-    function isUnlockConditionSatisfied(condition) {
+    function isUnlockConditionSatisfied(condition, options) {
       const meta = getUnlockConditionMeta(condition);
       if (meta.mode === "any") {
-        return meta.conditions.some(isSingleUnlockConditionSatisfied);
+        return meta.conditions.some(function (entry) {
+          return isSingleUnlockConditionSatisfied(entry, options);
+        });
       }
-      return meta.conditions.every(isSingleUnlockConditionSatisfied);
+      return meta.conditions.every(function (entry) {
+        return isSingleUnlockConditionSatisfied(entry, options);
+      });
     }
 
     function showPetTooltip(e, itemData, itemType) {
@@ -578,6 +586,21 @@
       return getProgressLevelByXP(xp);
     }
 
+    function getHighestOwnedPetProgressLevel() {
+      const ownedVariantIds = normalizeOwnedVariantIds(
+        state.ownedVariantIds,
+        getActiveVariantId() || getVariantIdByIndex(state.currentIndex),
+      );
+      let maxLevel = 1;
+      ownedVariantIds.forEach(function (variantId) {
+        const level = getCurrentProgressLevel(variantId);
+        if (level > maxLevel) {
+          maxLevel = level;
+        }
+      });
+      return maxLevel;
+    }
+
     function ensurePetProgressAndNamesMaps() {
       const ownedIds = Array.isArray(state.ownedVariantIds) ? state.ownedVariantIds : [];
       ownedIds.forEach(function (variantId) {
@@ -613,11 +636,11 @@
       });
     }
 
-    function isProgressLevelLocked(item) {
+    function isProgressLevelLocked(item, options) {
       const condition = item && item.unlockCondition
         ? item.unlockCondition
         : { type: "level", value: 1 };
-      return !isUnlockConditionSatisfied(condition);
+      return !isUnlockConditionSatisfied(condition, options);
     }
 
     function normalizeAccessoryPositionMode(positionMode) {
@@ -728,7 +751,9 @@
       const condition = background && background.unlockCondition
         ? background.unlockCondition
         : { type: "level", value: 1 };
-      return isUnlockConditionSatisfied(condition);
+      return isUnlockConditionSatisfied(condition, {
+        progressLevel: getHighestOwnedPetProgressLevel(),
+      });
     }
 
     function firstUnlockedBackgroundIndex() {
@@ -2117,7 +2142,9 @@
       if (!safeVariantId || !foodItem) return;
       if (state.feedingInProgress) return;
 
-      const lockedNow = isProgressLevelLocked(foodItem);
+      const lockedNow = isProgressLevelLocked(foodItem, {
+        progressLevel: getHighestOwnedPetProgressLevel(),
+      });
       if (lockedNow) {
         if (typeof showToast === "function") {
           showToast(
@@ -3517,14 +3544,18 @@
         
         item.addEventListener("mouseenter", function(e) {
           const tooltipData = Object.assign({}, foodItem, {
-            isLocked: isProgressLevelLocked(foodItem),
+            isLocked: isProgressLevelLocked(foodItem, {
+              progressLevel: getHighestOwnedPetProgressLevel(),
+            }),
           });
           showPetTooltip(e, tooltipData, 'food');
         });
         item.addEventListener("mouseleave", hidePetTooltip);
 
         item.addEventListener("click", function() {
-          const lockedNow = isProgressLevelLocked(foodItem);
+          const lockedNow = isProgressLevelLocked(foodItem, {
+            progressLevel: getHighestOwnedPetProgressLevel(),
+          });
           if (lockedNow) {
             if (typeof showToast === "function") {
               showToast(
@@ -3554,6 +3585,10 @@
       const gridEl = document.getElementById("petFoodGrid");
       if (!gridEl) return;
 
+      const unlockContext = {
+        progressLevel: getHighestOwnedPetProgressLevel(),
+      };
+
       const buttons = gridEl.querySelectorAll(".pet-food-item");
       buttons.forEach(function (button) {
         const fileName = button.getAttribute("data-file") || "";
@@ -3564,7 +3599,7 @@
         });
         if (!foodItem) return;
 
-        const locked = isProgressLevelLocked(foodItem);
+        const locked = isProgressLevelLocked(foodItem, unlockContext);
         button.classList.toggle("is-locked", locked);
         button.setAttribute("aria-disabled", locked ? "true" : "false");
 
