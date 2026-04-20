@@ -446,11 +446,13 @@
       }
       html += `<div class="tooltip-info-wrap"><h4>${itemData.name}</h4>`;
 
-      if (!isLockedInfoOnly && itemData.priceXqp > 0) {
-        html += `<div class="tooltip-meta tooltip-price"><span>Giá mua:</span> <strong>${itemData.priceXqp} XQP</strong></div>`;
+      const safePriceXqp = Math.max(0, toNonNegativeNumber(itemData && itemData.priceXqp, 0));
+      if (!isLockedInfoOnly && (itemType === "accessory" || itemType === "food")) {
+        html += `<div class="tooltip-meta tooltip-price"><span>Giá mua:</span> <strong>${safePriceXqp} XQP</strong></div>`;
       }
-      if (!isLockedInfoOnly && itemType === 'food' && itemData.petXpGain) {
-        html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${itemData.petXpGain} XP</strong></div>`;
+      if (!isLockedInfoOnly && itemType === 'food') {
+        const safeFoodXpGain = Math.max(0, toNonNegativeNumber(itemData && itemData.petXpGain, 0));
+        html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${safeFoodXpGain} XP</strong></div>`;
       }
       if (unlockConditions.length > 0) {
         const useBulletUnlockLayout =
@@ -1469,15 +1471,18 @@
     }
 
     function updateOwnedPetSummaryUI() {
-      const summaryEl = document.getElementById("petOwnedSummary");
-      if (!summaryEl) return;
-
       const ownedCount = normalizeOwnedVariantIds(
         state.ownedVariantIds,
         getActiveVariantId() || getVariantIdByIndex(state.currentIndex),
       ).length;
       const totalCount = Array.isArray(PET_VARIANTS) ? PET_VARIANTS.length : ownedCount;
-      summaryEl.textContent = "Sở hữu: " + ownedCount + "/" + Math.max(ownedCount, totalCount) + " PET";
+      const summaryText = "Sở hữu: " + ownedCount + "/" + Math.max(ownedCount, totalCount) + " PET";
+      ["petOwnedSummary", "petOwnedSummaryInPopover"].forEach(function (summaryId) {
+        const summaryEl = document.getElementById(summaryId);
+        if (summaryEl) {
+          summaryEl.textContent = summaryText;
+        }
+      });
     }
 
     function showHoverPetName(nameValue) {
@@ -2019,25 +2024,17 @@
 
     function updatePetLevelProgressUI(variantId) {
       const activeVariantId = String(variantId || getActiveVariantId() || "").trim();
-      const xp = getPetProgressXP(activeVariantId);
-      const level = getProgressLevelByXP(xp);
-      const currentXPProgress = xp % 100;
-      const progressPercent = Math.max(0, Math.min(100, Math.round((currentXPProgress / 100) * 100)));
       const petName = getPetDisplayNameByVariantId(activeVariantId);
 
+      const petNameEl = document.getElementById("petHeaderPetName");
+      if (petNameEl) {
+        petNameEl.textContent = petName;
+      }
+
+      // Fallback for old markup if cache serves stale HTML.
       const levelTextEl = document.getElementById("petHeaderLevelText");
-      if (levelTextEl) {
-        levelTextEl.textContent = `${petName} • Lv ${level} • ${currentXPProgress}/100 XP`;
-      }
-
-      const progressFillEl = document.getElementById("petHeaderLevelProgressFill");
-      if (progressFillEl) {
-        progressFillEl.style.width = progressPercent + "%";
-      }
-
-      const progressValueEl = document.getElementById("petHeaderLevelProgressValue");
-      if (progressValueEl) {
-        progressValueEl.textContent = progressPercent + "%";
+      if (levelTextEl && !petNameEl) {
+        levelTextEl.textContent = petName;
       }
     }
 
