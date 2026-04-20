@@ -294,7 +294,7 @@
           <div class="progress-track">
             <div class="progress-fill" style="width: ${progress}%;"></div>
           </div>
-          <p class="lesson-meta">Học ${Number(lesson.attemptCount || 0)} lần • Điểm TB: ${Number(lesson.avgScore || 0)}</p>
+          <p class="lesson-meta">Số lần làm bài ${Number(lesson.attemptCount || 0)} lần • Điểm TB: ${Number(lesson.avgScore || 0)}</p>
         </button>
       `;
     }).join('');
@@ -341,7 +341,7 @@
     const lessonName = lesson.lessonTitle || lesson.lessonId || 'Bài học';
     title.textContent = `Lịch sử học: ${lessonName}`;
     const attempts = Array.isArray(user.attempts) ? user.attempts : [];
-    const lessonAttempts = attempts.filter((attempt) => isSameLesson(attempt, lesson));
+    const lessonAttempts = attempts.filter((attempt) => isSameLesson(attempt, lesson) && isCountableUserAttempt(attempt));
 
     if (!lessonAttempts.length) {
       container.innerHTML = '<div class="topic-history-item"><p class="lesson-meta">Chưa có lịch sử học cho bài này</p></div>';
@@ -383,7 +383,9 @@
     const container = document.getElementById('userStatsTopicHistoryModalList');
     if (!container || !title) return;
 
-    const attempts = Array.isArray(user.attempts) ? user.attempts.slice() : [];
+    const attempts = Array.isArray(user.attempts)
+      ? user.attempts.filter((attempt) => isCountableUserAttempt(attempt)).slice()
+      : [];
     title.textContent = `Chi tiết làm bài: ${user.name || user.email || 'Người dùng'}`;
 
     if (!attempts.length) {
@@ -571,16 +573,32 @@
       : 0;
 
     const attempts = Array.isArray(user.attempts) ? user.attempts : [];
-    const avgQuizScore = attempts.length
-      ? Math.round((attempts.reduce((sum, attempt) => sum + Number(attempt.score || 0), 0) / attempts.length) * 100) / 100
+    const countableAttempts = attempts.filter((attempt) => isCountableUserAttempt(attempt));
+    const avgQuizScore = countableAttempts.length
+      ? Math.round((countableAttempts.reduce((sum, attempt) => sum + Number(attempt.score || 0), 0) / countableAttempts.length) * 100) / 100
       : 0;
 
     return {
       learnedLessons,
       overallProgress,
-      totalAttempts: attempts.length,
+      totalAttempts: countableAttempts.length,
       avgQuizScore,
     };
+  }
+
+  function isCountableUserAttempt(attempt) {
+    const activityType = String((attempt && attempt.activityType) || '').trim().toLowerCase();
+    const quizMode = String((attempt && attempt.quizMode) || '').trim().toLowerCase();
+
+    if (activityType === 'matching' || quizMode === 'matching') {
+      return true;
+    }
+
+    if (activityType === 'quiz') {
+      return quizMode === 'review' || quizMode === 'instant' || !quizMode;
+    }
+
+    return false;
   }
 
   function normalizePercent(value) {

@@ -794,13 +794,11 @@ function getAdminUserLearningStats(options) {
               progressPercent = clampAdminPercent_(tpRow[tpCols.progress]);
             }
 
-            const attemptCount = tpCols.attempts >= 0 ? Math.max(0, parseInt(tpRow[tpCols.attempts], 10) || 0) : 0;
-
             lessonMap[topicId] = {
               lessonId: topicId,
               lessonTitle: topicTitle,
               progressPercent: progressPercent,
-              attemptCount: attemptCount,
+              attemptCount: 0,
               avgScore: 0,
               _scoreSum: 0,
               _scoreCount: 0,
@@ -847,6 +845,8 @@ function getAdminUserLearningStats(options) {
             const quizMode = qCols.gameMode >= 0 && qRow[qCols.gameMode]
               ? String(qRow[qCols.gameMode]).trim().toLowerCase()
               : "instant";
+            const isCountableQuizAttempt =
+              quizMode === "review" || quizMode === "instant";
 
             const completedAtDate =
               qCols.completedAt >= 0 ? parseAdminSheetDate(qRow[qCols.completedAt]) : null;
@@ -878,7 +878,9 @@ function getAdminUserLearningStats(options) {
                   _scoreCount: 0,
                 };
               }
-              lessonMap[topicId].attemptCount++;
+              if (isCountableQuizAttempt) {
+                lessonMap[topicId].attemptCount++;
+              }
               lessonMap[topicId]._scoreSum += percentage;
               lessonMap[topicId]._scoreCount += 1;
             }
@@ -959,6 +961,21 @@ function getAdminUserLearningStats(options) {
               detailRaw: mCols.pairDetails >= 0 ? mRow[mCols.pairDetails] : null,
               completedAt: playedAtIso,
             });
+
+            if (topicId) {
+              if (!lessonMap[topicId]) {
+                lessonMap[topicId] = {
+                  lessonId: topicId,
+                  lessonTitle: topicTitle,
+                  progressPercent: 0,
+                  attemptCount: 0,
+                  avgScore: 0,
+                  _scoreSum: 0,
+                  _scoreCount: 0,
+                };
+              }
+              lessonMap[topicId].attemptCount++;
+            }
 
             const playKey = "matching|" + (topicId || topicTitle);
             if (!playsMap[playKey]) {
