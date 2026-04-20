@@ -432,9 +432,12 @@
       const tooltip = getPetTooltip();
       const isVariantTooltip = itemType === "variant";
       const isLockedInfoOnly = !!(itemData && itemData.isLocked);
-      const unlockText = itemData && itemData.unlockCondition
-        ? describeUnlockCondition(itemData.unlockCondition)
-        : "";
+      const unlockMeta = itemData && itemData.unlockCondition
+        ? getUnlockConditionMeta(itemData.unlockCondition)
+        : null;
+      const unlockConditions = unlockMeta && Array.isArray(unlockMeta.conditions)
+        ? unlockMeta.conditions
+        : [];
       tooltip.classList.toggle("is-variant-tooltip", isVariantTooltip);
 
       let html = "";
@@ -449,8 +452,28 @@
       if (!isLockedInfoOnly && itemType === 'food' && itemData.petXpGain) {
         html += `<div class="tooltip-meta tooltip-xp"><span>Dinh dưỡng:</span> <strong>+${itemData.petXpGain} XP</strong></div>`;
       }
-      if (unlockText) {
-        html += `<div class="tooltip-meta tooltip-unlock"><span>Điều kiện mở khóa:</span> <strong>${unlockText}</strong></div>`;
+      if (unlockConditions.length > 0) {
+        const useBulletUnlockLayout =
+          unlockConditions.length > 1 && (itemType === "accessory" || itemType === "food");
+
+        if (!useBulletUnlockLayout) {
+          const fallbackUnlockText =
+            unlockConditions.length === 1
+              ? describeUnlockConditionEntry(unlockConditions[0])
+              : describeUnlockCondition(itemData.unlockCondition);
+          html += `<div class="tooltip-meta tooltip-unlock"><span>Điều kiện mở khóa:</span> <strong>${fallbackUnlockText}</strong></div>`;
+        } else {
+          const unlockModeText = unlockMeta && unlockMeta.mode === "any"
+            ? "Đáp ứng 1 điều kiện bất kỳ"
+            : "Cần đáp ứng tất cả điều kiện";
+          const unlockBulletItems = unlockConditions
+            .map(function (condition) {
+              return `<li>${describeUnlockConditionEntry(condition)}</li>`;
+            })
+            .join("");
+
+          html += `<div class="tooltip-meta tooltip-unlock tooltip-unlock-group"><span class="tooltip-unlock-label">Điều kiện mở khóa</span><div class="tooltip-unlock-content"><div class="tooltip-unlock-mode">${unlockModeText}</div><ul class="tooltip-unlock-list">${unlockBulletItems}</ul></div></div>`;
+        }
       }
       if (!isLockedInfoOnly && isVariantTooltip) {
         const secondPetPrice = Math.max(0, toNonNegativeNumber(itemData.secondPetPriceXqp, 500));
@@ -871,7 +894,7 @@
       const foodHint = document.querySelector("#petFoodPopover .pet-accessory-hint");
 
       if (accessoryHint) {
-        accessoryHint.textContent = "Mỗi PET tối đa 1 / " + ACCESSORY_ITEMS.length + " phụ kiện";
+        accessoryHint.textContent = ACCESSORY_ITEMS.length + " phụ kiện";
       }
       if (foodHint) {
         foodHint.textContent = FOOD_ITEMS.length + " món";
@@ -1584,10 +1607,18 @@
       const worldEl = document.getElementById("petStageWorld");
       if (!worldEl) return;
 
+      const previousPetStateById = {};
+      (state.petEntities || []).forEach(function (pet) {
+        const petId = String((pet && pet.id) || "").trim();
+        if (!petId) return;
+        previousPetStateById[petId] = pet;
+      });
+
       worldEl.innerHTML = "";
       state.petEntities = [];
 
       const activeVariantId = getActiveVariantId();
+      const stageBounds = getPetStageBounds(worldEl);
 
       (state.ownedVariantIds || []).forEach(function (variantId) {
         const safeVariantId = String(variantId || "").trim();
@@ -1638,11 +1669,17 @@
         entityEl.appendChild(bodyEl);
         worldEl.appendChild(entityEl);
 
-        // Initial position (randomized within the bottom 3/4 area)
-        const stageWidth = worldEl.clientWidth || 400;
-        const stageHeight = worldEl.clientHeight || 400;
-        const startX = Math.random() * Math.max(0, stageWidth - PET_ENTITY_SIZE);
-        const startY = (stageHeight * 0.25) + Math.random() * Math.max(0, stageHeight * 0.75 - PET_ENTITY_SIZE);
+        // Preserve previous in-world position when re-rendering, so pets do not reshuffle.
+        const previousPetState = previousPetStateById[safeVariantId] || null;
+        const randomStartX = Math.random() * Math.max(0, stageBounds.maxX - stageBounds.minX) + stageBounds.minX;
+        const randomStartY = Math.random() * Math.max(0, stageBounds.maxY - stageBounds.minY) + stageBounds.minY;
+        const startX = previousPetState && Number.isFinite(previousPetState.x)
+          ? Math.max(stageBounds.minX, Math.min(stageBounds.maxX, previousPetState.x))
+          : randomStartX;
+        const startY = previousPetState && Number.isFinite(previousPetState.y)
+          ? Math.max(stageBounds.minY, Math.min(stageBounds.maxY, previousPetState.y))
+          : randomStartY;
+        const defaultSpeed = level >= 3 ? 1.15 : 1.05;
         
         entityEl.style.left = startX + "px";
         entityEl.style.top = startY + "px";
@@ -1653,22 +1690,46 @@
           level: level,
           x: startX,
           y: startY,
-          vx: (Math.random() - 0.5) * 1,
-          vy: (Math.random() - 0.5) * 0.5,
+          vx: previousPetState && Number.isFinite(previousPetState.vx)
+            ? previousPetState.vx
+            : (Math.random() - 0.5) * 1,
+          vy: previousPetState && Number.isFinite(previousPetState.vy)
+            ? previousPetState.vy
+            : (Math.random() - 0.5) * 0.5,
           isHovered: false,
-          isRolling: false,
+          isRolling: !!(previousPetState && previousPetState.isRolling),
           isPressed: false,
-          direction: Math.random() >= 0.5 ? 1 : -1,
-          speed: level >= 3 ? 1.15 : 1.05,
-          rollPhase: "",
-          rollReturnX: startX,
-          rollReturnY: startY,
-          laneY: startY,
-          rollVelocity: 0,
-          isTripleHopping: false,
-          collisionCooldownUntil: 0,
-          lastJumpTime: Date.now() + Math.random() * 1600,
-          lastHopTime: Date.now() + Math.random() * 900,
+          direction: previousPetState && (previousPetState.direction === 1 || previousPetState.direction === -1)
+            ? previousPetState.direction
+            : (Math.random() >= 0.5 ? 1 : -1),
+          speed: previousPetState && Number.isFinite(previousPetState.speed)
+            ? previousPetState.speed
+            : defaultSpeed,
+          rollPhase: previousPetState && typeof previousPetState.rollPhase === "string"
+            ? previousPetState.rollPhase
+            : "",
+          rollReturnX: previousPetState && Number.isFinite(previousPetState.rollReturnX)
+            ? previousPetState.rollReturnX
+            : startX,
+          rollReturnY: previousPetState && Number.isFinite(previousPetState.rollReturnY)
+            ? previousPetState.rollReturnY
+            : startY,
+          laneY: previousPetState && Number.isFinite(previousPetState.laneY)
+            ? previousPetState.laneY
+            : startY,
+          rollVelocity: previousPetState && Number.isFinite(previousPetState.rollVelocity)
+            ? previousPetState.rollVelocity
+            : 0,
+          isTripleHopping: !!(previousPetState && previousPetState.isTripleHopping),
+          collisionCooldownUntil: previousPetState && Number.isFinite(previousPetState.collisionCooldownUntil)
+            ? previousPetState.collisionCooldownUntil
+            : 0,
+          lastJumpTime: previousPetState && Number.isFinite(previousPetState.lastJumpTime)
+            ? previousPetState.lastJumpTime
+            : Date.now() + Math.random() * 1600,
+          lastHopTime: previousPetState && Number.isFinite(previousPetState.lastHopTime)
+            ? previousPetState.lastHopTime
+            : Date.now() + Math.random() * 900,
         };
 
         state.petEntities.push(petState);
@@ -1730,6 +1791,16 @@
 
             const accessoryCatalogItem = getAccessoryItemByFileName(accessoryFile);
             if (!accessoryCatalogItem) return;
+
+            if (isProgressLevelLocked(accessoryCatalogItem)) {
+              if (typeof showToast === "function") {
+                showToast(
+                  "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(accessoryCatalogItem.unlockCondition),
+                  "warning",
+                );
+              }
+              return;
+            }
 
             if (assignAccessoryToVariant(safeVariantId, { fileName: accessoryFile })) {
               renderAccessory();
@@ -2143,6 +2214,8 @@
       
       if (typeof showToast === "function") {
         showToast("Đã reset PET về Level 1 và chọn ngẫu nhiên trứng mới", "info");
+      } else if (typeof window.showNotification === "function") {
+        window.showNotification("Da reset PET ve Level 1 va chon ngau nhien trung moi", "info");
       }
       
       renderPet();
@@ -2809,28 +2882,19 @@
           return;
         }
 
-        const catalogItem = getAccessoryItemByFileName(fileName);
-        const locked = false;
         const ownerVariantId = getAccessoryOwnerVariantId(fileName);
         const inUseByOther = !!ownerVariantId && ownerVariantId !== activeVariantId;
-        button.classList.toggle("is-locked", locked);
+        button.classList.remove("is-locked");
         button.classList.toggle("is-in-use", inUseByOther);
-        button.setAttribute("aria-disabled", locked ? "true" : "false");
+        button.setAttribute("aria-disabled", "false");
         if (inUseByOther) {
           button.setAttribute("title", "Phụ kiện này đã được PET khác sử dụng");
         } else {
           button.removeAttribute("title");
         }
 
-        let lockOverlay = button.querySelector(".pet-item-lock-icon");
-        if (locked && !lockOverlay) {
-          lockOverlay = document.createElement("div");
-          lockOverlay.className = "pet-item-lock-icon";
-          lockOverlay.innerHTML = '<span class="material-symbols-sharp">lock</span>';
-          button.appendChild(lockOverlay);
-        } else if (!locked && lockOverlay) {
-          lockOverlay.remove();
-        }
+        const lockOverlay = button.querySelector(".pet-item-lock-icon");
+        if (lockOverlay) lockOverlay.remove();
 
         button.classList.toggle("active", Boolean(selectedMap[fileName]));
       });
@@ -3319,6 +3383,11 @@
 
         btn.draggable = true;
         btn.addEventListener("dragstart", function (event) {
+          const lockedNow = isProgressLevelLocked(catalogItem);
+          if (lockedNow) {
+            event.preventDefault();
+            return;
+          }
           if (!event.dataTransfer) return;
           event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData("text/pet-accessory-file", fileName);
@@ -3327,13 +3396,22 @@
         btn.addEventListener("mouseenter", function(e) {
           const tooltipData = Object.assign({}, catalogItem, {
             isLocked: false,
-            unlockCondition: null,
           });
           showPetTooltip(e, tooltipData, 'accessory');
         });
         btn.addEventListener("mouseleave", hidePetTooltip);
 
         btn.addEventListener("click", function () {
+          const lockedNow = isProgressLevelLocked(catalogItem);
+          if (lockedNow) {
+            if (typeof showToast === "function") {
+              showToast(
+                "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(catalogItem.unlockCondition),
+                "warning",
+              );
+            }
+            return;
+          }
           const activeVariantId = String(getActiveVariantId() || "").trim();
           if (!activeVariantId) return;
 
@@ -3560,7 +3638,26 @@
 
       const resetBtn = document.getElementById("petResetBtn");
       if (resetBtn) {
-        resetBtn.addEventListener("click", function () {
+        resetBtn.addEventListener("click", async function () {
+          const confirmMessage = "Ban co chac muon reset PET? Du lieu tien trinh hien tai se duoc dat lai.";
+          let confirmed = true;
+
+          if (typeof window.showAppConfirm === "function") {
+            try {
+              const result = await window.showAppConfirm(confirmMessage, {
+                title: "Xac nhan reset PET",
+                confirmText: "Reset",
+                cancelText: "Huy",
+              });
+              confirmed = result === true;
+            } catch (_) {
+              confirmed = window.confirm(confirmMessage);
+            }
+          } else {
+            confirmed = window.confirm(confirmMessage);
+          }
+
+          if (!confirmed) return;
           resetPetProgression();
         });
       }

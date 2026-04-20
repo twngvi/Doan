@@ -978,19 +978,26 @@
       var topicSelect = rowEl.querySelector('.pm-unlock-extra-topic');
       if (!typeSelect || !levelInput || !topicSelect) return;
 
-      var unlockType = String(typeSelect.value || 'level');
+      var defaultType = typeSelect.querySelector('option[value="level"]') ? 'level' : 'topic';
+      var unlockType = String(typeSelect.value || defaultType);
       var isLevel = unlockType === 'level';
       levelInput.style.display = isLevel ? 'block' : 'none';
       topicSelect.style.display = isLevel ? 'none' : 'block';
     }
 
-    function createUnlockExtraRow(condition) {
+    function createUnlockExtraRow(condition, options) {
+      var opts = options || {};
+      var allowLevel = opts.allowLevel !== false;
       var normalized = normalizeUnlockConditionEntry(condition) || { type: 'level', value: 1 };
+      if (!allowLevel && normalized.type === 'level') {
+        normalized = { type: 'topic', value: '' };
+      }
+
       var rowEl = document.createElement('div');
       rowEl.className = 'pm-unlock-extra-row';
       rowEl.innerHTML =
         '<select class="pm-unlock-extra-type">' +
-          '<option value="level">Đạt level thanh tiến độ</option>' +
+          (allowLevel ? '<option value="level">Đạt level thanh tiến độ</option>' : '') +
           '<option value="topic">Hoàn thành bài học của topic</option>' +
           '<option value="topic_quiz">Hoàn thành Quiz của topic</option>' +
           '<option value="topic_matching">Hoàn thành Matching của topic</option>' +
@@ -1008,8 +1015,11 @@
       }
       if (typeSelect) {
         typeSelect.value = normalized.type;
+        if (!typeSelect.value) {
+          typeSelect.value = allowLevel ? 'level' : 'topic';
+        }
       }
-      if (levelInput && normalized.type === 'level') {
+      if (levelInput && String(typeSelect && typeSelect.value || normalized.type) === 'level') {
         levelInput.value = String(Math.max(1, parseNonNegative(normalized.value, 1)));
       }
 
@@ -1023,17 +1033,27 @@
       return rowEl;
     }
 
-    function setUnlockExtraRows(listEl, conditions) {
+    function setUnlockExtraRows(listEl, conditions, options) {
       if (!listEl) return;
+      var opts = options || {};
+      var allowLevel = opts.allowLevel !== false;
       listEl.innerHTML = '';
 
-      (Array.isArray(conditions) ? conditions : []).forEach(function (condition) {
-        listEl.appendChild(createUnlockExtraRow(condition));
+      (Array.isArray(conditions) ? conditions : [])
+        .filter(function (condition) {
+          if (allowLevel) return true;
+          var normalized = normalizeUnlockConditionEntry(condition);
+          return !!normalized && normalized.type !== 'level';
+        })
+        .forEach(function (condition) {
+          listEl.appendChild(createUnlockExtraRow(condition, opts));
       });
     }
 
-    function collectUnlockExtraRows(listEl) {
+    function collectUnlockExtraRows(listEl, options) {
       if (!listEl) return [];
+      var opts = options || {};
+      var allowLevel = opts.allowLevel !== false;
 
       var conditions = [];
       listEl.querySelectorAll('.pm-unlock-extra-row').forEach(function (rowEl) {
@@ -1042,7 +1062,8 @@
         var topicSelect = rowEl.querySelector('.pm-unlock-extra-topic');
         if (!typeSelect) return;
 
-        var unlockType = String(typeSelect.value || 'level');
+        var unlockType = String(typeSelect.value || (allowLevel ? 'level' : 'topic'));
+        if (!allowLevel && unlockType === 'level') return;
         var unlockValue = unlockType === 'level'
           ? Math.max(1, parseNonNegative(levelInput ? levelInput.value : 1, 1))
           : String(topicSelect ? topicSelect.value || '' : '');
@@ -1276,11 +1297,17 @@
       if (index < 0 || index >= state.petVariants.length) return;
 
       var deleteVariant = function () {
+        var deletedVariant = state.petVariants[index];
+        var deletedVariantName = deletedVariant && deletedVariant.name ? String(deletedVariant.name) : 'hinh dang PET';
         state.petVariants.splice(index, 1);
         updateCounts();
         renderAllPmItems();
-        persistPetVariantsToBackend(true);
+        persistPetVariantsToBackend(false);
         closePmVariantEditor();
+
+        if (typeof window.showNotification === 'function') {
+          window.showNotification('Da xoa ' + deletedVariantName, 'success');
+        }
       };
 
       requestDeleteConfirm('Ban chac chan muon xoa hinh dang PET nay?', {
@@ -1482,7 +1509,11 @@
       if (editorEls.unlockTopic && primaryUnlock.type !== 'level') {
         editorEls.unlockTopic.value = String(primaryUnlock.value || '');
       }
-      setUnlockExtraRows(editorEls.unlockExtraList, isBackground ? [] : extraUnlockConditions);
+      setUnlockExtraRows(
+        editorEls.unlockExtraList,
+        isBackground ? [] : extraUnlockConditions,
+        { allowLevel: !isAccessory }
+      );
 
       if (editorEls.foodXpWrap) editorEls.foodXpWrap.style.display = isFood ? 'flex' : 'none';
       if (editorEls.foodXp) editorEls.foodXp.value = isNew ? '' : String(draft.petXpGain || 0);
@@ -1751,7 +1782,7 @@
       updateAccessoryPreview();
 
       if (typeof window.showNotification === 'function') {
-        window.showNotification('Da reset profile trai/giua/phai ve mac dinh', 'success');
+        window.showNotification('Da reset nhanh trai/giua/phai ve mac dinh', 'success');
       }
     }
 
@@ -1907,7 +1938,9 @@
         value: unlockValue
       }];
       if (type !== 'backgrounds') {
-        unlockConditions = unlockConditions.concat(collectUnlockExtraRows(editorEls.unlockExtraList));
+        unlockConditions = unlockConditions.concat(
+          collectUnlockExtraRows(editorEls.unlockExtraList, { allowLevel: type !== 'accessories' })
+        );
       }
       payload.unlockCondition = unlockConditionFromList(unlockConditions, unlockMode);
       
@@ -1953,11 +1986,17 @@
       var target = getItemsByType(type);
       if (index < 0 || index >= target.length) return;
 
+      var deletedItem = target[index];
+      var deletedName = deletedItem && deletedItem.name ? String(deletedItem.name) : 'item';
       target.splice(index, 1);
       updateCounts();
       renderAllPmItems();
       closePmEditor();
-      persistPetItemsToBackend(true);
+      persistPetItemsToBackend(false);
+
+      if (typeof window.showNotification === 'function') {
+        window.showNotification('Da xoa ' + deletedName, 'success');
+      }
     }
 
     function handleDeleteItem() {
@@ -2221,7 +2260,13 @@
       }
       if (editorEls.addUnlockConditionBtn && editorEls.unlockExtraList) {
         editorEls.addUnlockConditionBtn.addEventListener('click', function () {
-          editorEls.unlockExtraList.appendChild(createUnlockExtraRow({ type: 'level', value: 1 }));
+          var isAccessoryEditing = state.editor && state.editor.type === 'accessories';
+          var defaultCondition = isAccessoryEditing
+            ? { type: 'topic', value: '' }
+            : { type: 'level', value: 1 };
+          editorEls.unlockExtraList.appendChild(
+            createUnlockExtraRow(defaultCondition, { allowLevel: !isAccessoryEditing })
+          );
         });
       }
       if (editorEls.unlockExtraList) {
