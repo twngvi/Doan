@@ -2,13 +2,17 @@
 <style>
   .course-stats-page {
     min-height: 100vh;
+    height: 100vh;
     padding: 24px;
     background: var(--theme-dashboard-bg, #f4f6fb);
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .course-stats-container {
     max-width: 1200px;
     margin: 0 auto;
+    height: 100%;
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -119,12 +123,18 @@
     border: 1px solid var(--theme-card-border, #e5e7eb);
     border-radius: 16px;
     padding: 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .course-stats-tables-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   @media (max-width: 1024px) {
@@ -155,9 +165,32 @@
   .course-stats-table-wrap {
     overflow-x: auto;
     overflow-y: auto;
-    max-height: 420px;
+    flex: 1;
+    min-height: 0;
+    max-height: none;
     border: 1px solid var(--theme-border-subtle, #eef0f5);
     border-radius: 12px;
+  }
+
+  @media (max-width: 1024px) {
+    .course-stats-page {
+      height: auto;
+      overflow: visible;
+    }
+
+    .course-stats-container {
+      height: auto;
+    }
+
+    .course-stats-tables-grid {
+      overflow: visible;
+    }
+
+    .course-stats-table-wrap {
+      flex: initial;
+      min-height: 0;
+      max-height: 420px;
+    }
   }
 
   .course-stats-table {
@@ -250,7 +283,7 @@
   .course-stats-topic-users-modal {
     position: fixed;
     inset: 0;
-    z-index: 999;
+    z-index: 20000;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -328,6 +361,17 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
+    cursor: default;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .course-stats-topic-user-item.is-clickable {
+    cursor: pointer;
+  }
+
+  .course-stats-topic-user-item.is-clickable:hover {
+    border-color: #0e7490;
+    box-shadow: 0 8px 20px rgba(14, 116, 144, 0.18);
   }
 
   .course-stats-topic-user-left {
@@ -389,6 +433,101 @@
     background: #fee2e2;
   }
 
+  .course-stats-attempt-detail-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 20010;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .course-stats-attempt-detail-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(2, 6, 23, 0.56);
+    cursor: pointer;
+  }
+
+  .course-stats-attempt-detail-dialog {
+    position: relative;
+    width: min(760px, calc(100vw - 40px));
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    border: 1px solid var(--theme-border-subtle, #eef0f5);
+    border-radius: 14px;
+    padding: 16px;
+    background: var(--theme-card, #ffffff);
+    box-shadow: 0 24px 50px rgba(15, 23, 42, 0.35);
+  }
+
+  .course-stats-attempt-detail-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .course-stats-attempt-detail-head h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #ffffff;
+  }
+
+  .course-stats-attempt-detail-close {
+    border: 1px solid var(--theme-card-border, #d1d5db);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    font-size: 0.84rem;
+    font-weight: 600;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  .course-stats-attempt-detail-subtitle {
+    margin: 0 0 12px;
+    color: #ffffff;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .course-stats-attempt-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .course-stats-attempt-detail-item {
+    border: 1px solid var(--theme-border-subtle, #e5e7eb);
+    border-radius: 10px;
+    padding: 10px;
+    background: #ffffff;
+  }
+
+  .course-stats-attempt-detail-item-title {
+    margin: 0;
+    color: #111827;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .course-stats-attempt-detail-item-time {
+    margin: 4px 0 0;
+    color: #374151;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .course-stats-attempt-detail-empty {
+    margin: 0;
+    color: #6b7280;
+    font-size: 0.9rem;
+  }
+
   .course-stats-loading,
   .course-stats-empty {
     padding: 30px;
@@ -447,6 +586,16 @@
     }
 
     .course-stats-topic-users-dialog {
+      width: 100%;
+      max-height: calc(100vh - 24px);
+      padding: 14px;
+    }
+
+    .course-stats-attempt-detail-modal {
+      padding: 12px;
+    }
+
+    .course-stats-attempt-detail-dialog {
       width: 100%;
       max-height: calc(100vh - 24px);
       padding: 14px;
