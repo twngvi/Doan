@@ -148,6 +148,7 @@
     const NO_ACCESSORY_VALUE = "";
     const MAX_ACCESSORIES_PER_PET = 1;
     const PET_ENTITY_SIZE = 180;
+    const ACCESSORY_WIDTH_RATIO_TO_ENTITY = 34 / 56;
     const PET_COLLISION_DISTANCE = Math.round(PET_ENTITY_SIZE * 0.62);
     const MAX_OWNED_PET_VARIANTS = 999;
     const DEFAULT_STAGE_BACKGROUNDS = [
@@ -633,6 +634,14 @@
       const profiles = normalizeAccessoryPositionProfiles(safeItem.positionProfiles, safeItem);
       const mode = normalizeAccessoryPositionMode(position);
       return profiles[mode] || profiles.center;
+    }
+
+    function resolveAccessoryWidthPercent(item) {
+      const rawWidth = parseFloat(item && item.widthPercent);
+      if (Number.isFinite(rawWidth) && rawWidth > 0) {
+        return rawWidth;
+      }
+      return ACCESSORY_WIDTH_RATIO_TO_ENTITY * 100;
     }
 
     function normalizePetItemCatalog(items, itemType) {
@@ -1506,24 +1515,52 @@
         accImg.className = "pet-entity-accessory";
         applySrcAsync(accImg, acc.fileName);
 
-        const catalogItem = getAccessoryItemByFileName(acc.fileName);
-        const activePos = acc.position || "center";
-        const profile = (catalogItem && catalogItem.positionProfiles)
-          ? catalogItem.positionProfiles[activePos]
-          : {};
-
-        const baseLeft = activePos === "left" ? 42 : (activePos === "right" ? 58 : 50);
-        accImg.style.left = baseLeft + "%";
-
-        if (profile.offsetX) accImg.style.marginLeft = profile.offsetX + "px";
-        if (profile.offsetY) accImg.style.marginTop = profile.offsetY + "px";
-
-        const scaleVal = (profile.scalePercent || 100) / 100;
-        const rotVal = profile.rotDeg || 0;
-        accImg.style.transform = `translate(-50%, -50%) scale(${scaleVal}) rotate(${rotVal}deg)`;
+        const finalPosition = updateAccessoryPositionClasses(
+          accImg,
+          acc.fileName,
+          acc.position || "center",
+          acc,
+        );
+        acc.position = finalPosition;
+        if (variantId === String(getActiveVariantId() || "").trim()) {
+          state.accessoryPosition = finalPosition;
+        }
 
         bodyEl.appendChild(accImg);
       });
+    }
+
+    function focusPetVariantByIndex(index, options) {
+      const safeIndex = parseInt(index, 10);
+      if (!Number.isFinite(safeIndex)) return false;
+      if (!Array.isArray(PET_VARIANTS) || safeIndex < 0 || safeIndex >= PET_VARIANTS.length) {
+        return false;
+      }
+
+      const prevIndex = state.currentIndex;
+      state.currentIndex = safeIndex;
+      syncSelectedAccessoriesFromActiveVariant();
+
+      const activeVariantId = String(getActiveVariantId() || "").trim();
+      const worldEl = document.getElementById("petStageWorld");
+      if (worldEl) {
+        worldEl.querySelectorAll(".pet-entity").forEach(function (entityEl) {
+          const variantId = String(entityEl.getAttribute("data-variant-id") || "").trim();
+          entityEl.classList.toggle("is-active", !!activeVariantId && variantId === activeVariantId);
+        });
+      }
+
+      updatePetLevelProgressUI(activeVariantId);
+      updatePetNameTagUI();
+      updateVariantButtons(state.currentIndex);
+      updateAccessoryButtons();
+      updateAccessoryPositionButtons();
+      updateOwnedPetSummaryUI();
+
+      if (options && options.autoSave && prevIndex !== safeIndex) {
+        queuePetConfigAutoSave();
+      }
+      return true;
     }
 
     function renderAccessory() {
@@ -1658,9 +1695,8 @@
         });
         
         entityEl.addEventListener("click", () => {
-          // Focus this pet in header
-          state.currentIndex = variantIndex; 
-          updatePetLevelProgressUI(safeVariantId);
+          // Focus this pet in header with one click, without resetting stage effects.
+          focusPetVariantByIndex(variantIndex, { autoSave: true });
 
           if (petState.level === 2 && !petState.isTripleHopping) {
             petState.isHovered = false;
@@ -1695,16 +1731,6 @@
             const accessoryCatalogItem = getAccessoryItemByFileName(accessoryFile);
             if (!accessoryCatalogItem) return;
 
-            if (isProgressLevelLocked(accessoryCatalogItem)) {
-              if (typeof showToast === "function") {
-                showToast(
-                  "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(accessoryCatalogItem.unlockCondition),
-                  "warning",
-                );
-              }
-              return;
-            }
-
             if (assignAccessoryToVariant(safeVariantId, { fileName: accessoryFile })) {
               renderAccessory();
               updateAccessoryButtons();
@@ -1732,8 +1758,7 @@
 
         entityEl.addEventListener("dblclick", (e) => {
           e.preventDefault();
-          state.currentIndex = variantIndex;
-          renderPet(); // Re-renders the world and updates active state
+          focusPetVariantByIndex(variantIndex, { autoSave: false });
           renamePetByVariantId(safeVariantId);
         });
       });
@@ -2567,15 +2592,37 @@
         const btn = e.target.closest(".pet-pill-btn");
         if (!btn || btn.disabled || !canEquipAccessories()) return;
 
-        const pos = btn.getAttribute("data-pos");
-        if (!pos) return;
-
-        state.accessoryPosition = pos;
-
         const activeAccessory = resolveActiveAccessory();
-        if (activeAccessory) {
-          activeAccessory.position = pos;
+        if (!activeAccessory || !activeAccessory.fileName) return;
+
+        const desiredPos = String(btn.getAttribute("data-pos") || "").trim();
+        if (!desiredPos) return;
+
+        const finalPos = resolveAccessoryPosition(activeAccessory.fileName, desiredPos);
+        const catalogItem = getAccessoryItemByFileName(activeAccessory.fileName) || activeAccessory;
+        const normalizedProfiles = normalizeAccessoryPositionProfiles(
+          catalogItem.positionProfiles,
+          catalogItem,
+        );
+        const activeProfile = normalizedProfiles[finalPos] || normalizedProfiles.center;
+
+        activeAccessory.position = finalPos;
+        activeAccessory.positionProfiles = normalizedProfiles;
+        activeAccessory.offsetX = activeProfile.offsetX;
+        activeAccessory.offsetY = activeProfile.offsetY;
+        activeAccessory.scalePercent = activeProfile.scalePercent;
+        activeAccessory.rotDeg = activeProfile.rotDeg || 0;
+
+        const activeVariantId = String(getActiveVariantId() || "").trim();
+        if (
+          activeVariantId &&
+          state.petAccessoryByVariantId &&
+          state.petAccessoryByVariantId[activeVariantId]
+        ) {
+          state.petAccessoryByVariantId[activeVariantId] = activeAccessory;
         }
+
+        state.accessoryPosition = finalPos;
 
         updateAccessoryPositionButtons();
         renderAccessory();
@@ -2697,6 +2744,7 @@
       const positionMode = normalizeAccessoryPositionMode((accessoryCatalogItem && accessoryCatalogItem.positionMode) || "center");
       const finalPosition = resolveAccessoryPosition(fileName, desiredPosition || positionMode);
       const activeProfile = getAccessoryProfileByPosition(accessoryCatalogItem, finalPosition);
+      const widthPercent = resolveAccessoryWidthPercent(accessoryCatalogItem);
 
       const baseTop = 27;
       const baseLeftMap = {
@@ -2712,6 +2760,7 @@
 
       accessoryImageEl.style.setProperty("--pet-accessory-top", topValue + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-left", leftValue + "%");
+      accessoryImageEl.style.setProperty("--pet-accessory-width", widthPercent + "%");
       accessoryImageEl.style.setProperty("--pet-accessory-rot", rotValue + "deg");
       accessoryImageEl.style.setProperty("--pet-accessory-offset-x", (activeProfile.offsetX || 0) + "px");
       accessoryImageEl.style.setProperty("--pet-accessory-offset-y", (activeProfile.offsetY || 0) + "px");
@@ -2761,7 +2810,7 @@
         }
 
         const catalogItem = getAccessoryItemByFileName(fileName);
-        const locked = !!catalogItem && isProgressLevelLocked(catalogItem);
+        const locked = false;
         const ownerVariantId = getAccessoryOwnerVariantId(fileName);
         const inUseByOther = !!ownerVariantId && ownerVariantId !== activeVariantId;
         button.classList.toggle("is-locked", locked);
@@ -2795,9 +2844,9 @@
       const allowed = getAllowedAccessoryPositions(
         activeAccessory ? activeAccessory.fileName : "",
       );
-      const activePosition = activeAccessory
-        ? activeAccessory.position
-        : state.accessoryPosition;
+      const activePosition = normalizeAccessoryPositionMode(
+        activeAccessory ? activeAccessory.position : state.accessoryPosition,
+      );
 
       const buttons = container.querySelectorAll(".pet-pill-btn");
       buttons.forEach(function (button) {
@@ -3270,11 +3319,6 @@
 
         btn.draggable = true;
         btn.addEventListener("dragstart", function (event) {
-          const lockedNow = isProgressLevelLocked(catalogItem);
-          if (lockedNow) {
-            event.preventDefault();
-            return;
-          }
           if (!event.dataTransfer) return;
           event.dataTransfer.effectAllowed = "copyMove";
           event.dataTransfer.setData("text/pet-accessory-file", fileName);
@@ -3282,23 +3326,14 @@
         
         btn.addEventListener("mouseenter", function(e) {
           const tooltipData = Object.assign({}, catalogItem, {
-            isLocked: isProgressLevelLocked(catalogItem),
+            isLocked: false,
+            unlockCondition: null,
           });
           showPetTooltip(e, tooltipData, 'accessory');
         });
         btn.addEventListener("mouseleave", hidePetTooltip);
 
         btn.addEventListener("click", function () {
-          const lockedNow = isProgressLevelLocked(catalogItem);
-          if (lockedNow) {
-            if (typeof showToast === "function") {
-              showToast(
-                "Vật phẩm chưa mở khóa. Cần: " + describeUnlockCondition(catalogItem.unlockCondition),
-                "warning",
-              );
-            }
-            return;
-          }
           const activeVariantId = String(getActiveVariantId() || "").trim();
           if (!activeVariantId) return;
 
@@ -3471,18 +3506,7 @@
     }
 
     function bindAccessoryControls() {
-      const positionContainer = document.getElementById("petAccessoryPosition");
-      if (!positionContainer) return;
-
-      positionContainer.addEventListener("click", function (event) {
-        if (!canEquipAccessories()) return;
-
-        const target = event.target.closest(".pet-pill-btn[data-pos]");
-        if (!target) return;
-        if (typeof showToast === "function") {
-          showToast("Vị trí phụ kiện được quản lý trong Admin", "info");
-        }
-      });
+      // Accessory position interaction is handled by bindAccessoryPositionClick.
     }
 
     function bindStageInteractions() {
