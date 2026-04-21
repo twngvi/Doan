@@ -195,7 +195,7 @@ function saveUserTheme(userId, themeName) {
       return { success: false, message: "User ID is required" };
     }
 
-    var allowedThemes = ["default", "forest"];
+    var allowedThemes = ["forest"];
     if (allowedThemes.indexOf(themeName) === -1) {
       return { success: false, message: "Invalid theme name" };
     }

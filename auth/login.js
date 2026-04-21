@@ -144,7 +144,7 @@ function loginWithEmail(credentials) {
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
-                : "default",
+                : "forest",
           },
         };
       }
@@ -201,7 +201,7 @@ function getUserSession(userId) {
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
-                : "default",
+                : "forest",
           },
         };
       }

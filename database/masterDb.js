@@ -395,11 +395,11 @@ function processGoogleUserLogin(googleProfile) {
 
     userSheet.appendRow(newRow);
 
-    // Ensure theme default for newly created Google users if theme column exists.
+    // Ensure forest theme for newly created Google users if theme column exists.
     if (themeColIndex >= 0) {
       userSheet
         .getRange(userSheet.getLastRow(), themeColIndex + 1)
-        .setValue("default");
+        .setValue("forest");
     }
 
     // ⭐ Save first login to personal sheet & update streak
@@ -424,7 +424,7 @@ function processGoogleUserLogin(googleProfile) {
       totalXP: 0,
       totalXQP: 0,
       progressSheetId: progressSheetId,
-      theme: "default",
+      theme: "forest",
       status: "success",
       isNewUser: true,
     };

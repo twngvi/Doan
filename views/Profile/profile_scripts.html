@@ -695,7 +695,8 @@
     const email = document.getElementById("profile-email");
 
     if (fullname) {
-      fullname.textContent = user.displayName || user.username || "User";
+      fullname.textContent =
+        user.displayName || user.fullName || user.username || "User";
     }
 
     if (email) {
@@ -1205,14 +1206,22 @@
 
   // Hàm cập nhật tên ở tất cả các nơi
   function updateAllUserNames(displayName) {
+    const user = window.currentUser || profileData || {};
+    const resolvedName =
+      (displayName || "").trim() ||
+      user.displayName ||
+      user.fullName ||
+      user.username ||
+      "User";
+
     const nameElements = document.querySelectorAll(
       "#userName, #userNameWelcome, #dashboard-user-name, #profile-fullname, #sidebar-user-name, #sidebar-username, .sidebar-username, .user-name",
     );
 
     nameElements.forEach((el) => {
       if (el) {
-        el.textContent = displayName;
-        console.log("Updated element:", el.id || el.className, "→", displayName);
+        el.textContent = resolvedName;
+        console.log("Updated element:", el.id || el.className, "→", resolvedName);
       }
     });
   }
@@ -1477,7 +1486,7 @@
   // ⭐ THEME MANAGEMENT (delegates to ThemeManager)
   const AVAILABLE_THEMES = window.getAvailableThemes
     ? window.getAvailableThemes()
-    : ["default", "forest"];
+    : ["forest"];
 
   /**
    * Apply theme to the UI (delegates to ThemeManager)
@@ -1531,7 +1540,7 @@
   function loadUserTheme() {
     var theme = window.ThemeManager
       ? window.ThemeManager.getCurrentTheme()
-      : "default";
+      : "forest";
     applyTheme(theme);
     updateThemeCardUI(theme);
     return theme;
