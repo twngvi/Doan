@@ -156,41 +156,38 @@
     }, delay);
   }
 
-  // ===== METEOR SHOWER EFFECT =====
-  function createMeteorShower() {
+  // ===== FIREFLY EFFECT =====
+  function spawnFireflies() {
     const container = document.getElementById("meteor-shower");
     if (!container) return;
 
-    // Create 8-15 meteors per shower
-    const meteorCount = Math.floor(Math.random() * 8) + 8;
+    // Keep particle count bounded to avoid DOM buildup.
+    const activeFireflies = container.querySelectorAll(".firefly").length;
+    if (activeFireflies > 45) return;
 
-    for (let i = 0; i < meteorCount; i++) {
+    const spawnCount = Math.floor(Math.random() * 3) + 2;
+
+    for (let i = 0; i < spawnCount; i++) {
+      const firefly = document.createElement("div");
+      firefly.className = "firefly";
+
+      firefly.style.left = Math.random() * 100 + "%";
+      firefly.style.top = 30 + Math.random() * 60 + "%";
+      firefly.style.animationDelay = Math.random() * 0.4 + "s";
+      firefly.style.animationDuration = 4 + Math.random() * 3 + "s";
+
+      container.appendChild(firefly);
+
+      const ttl = 6500 + Math.random() * 2500;
       setTimeout(() => {
-        const meteor = document.createElement("div");
-        meteor.className = "meteor";
-
-        // Random position across the screen
-        meteor.style.left = Math.random() * 100 + "%";
-        meteor.style.top = Math.random() * 40 + "%";
-
-        // Random delay and duration
-        meteor.style.animationDelay = Math.random() * 0.5 + "s";
-        meteor.style.animationDuration = 0.8 + Math.random() * 0.5 + "s";
-
-        container.appendChild(meteor);
-
-        // Remove meteor after animation
-        setTimeout(() => {
-          meteor.remove();
-        }, 2000);
-      }, i * 100); // Stagger meteor creation
+        firefly.remove();
+      }, ttl);
     }
   }
 
-  // Start meteor shower every 10 seconds
-  setInterval(createMeteorShower, 10000);
-  // Initial shower after 2 seconds
-  setTimeout(createMeteorShower, 2000);
+  // Spawn fireflies continuously.
+  setInterval(spawnFireflies, 700);
+  setTimeout(spawnFireflies, 300);
 
   // ===== NAVIGATION FUNCTIONS =====
   function navigateToLogin() {
@@ -1291,22 +1288,23 @@
 
     if (!container || !line1 || !line2 || !line3) return;
 
-    // Lines to type with syntax highlighting
+    // Lines to type for code simulation
     const lines = [
       {
         el: line1,
-        html: '&lt;<span class="keyword-blue">Hello World</span>, Master <span class="highlight-cyan">C</span><span class="highlight-orange">OD</span><span class="highlight-lime">ARY</span> /&gt;',
-        speed: 40,
+        html: 'print("&lt;Hello World, Master CODARY /&gt;")\n\nknowledge = 0\nstreak = 0',
+        speed: 26,
       },
       {
         el: line2,
-        html: '<span class="keyword-blue">if</span> (<span class="var-white">knowledge</span> &lt; <span class="string-orange">100%</span>) { <span class="keyword-purple">return</span> <span class="string-lime">"Practice"</span>; }',
-        speed: 30,
+        html: 'while knowledge &lt; 100:\n    practice = 12 + streak * 3\n    knowledge += practice\n    streak += 1',
+        speed: 22,
       },
       {
         el: line3,
-        html: '<span class="ready-text">_Ready to Code?</span><span class="blink-cursor">█</span>',
-        speed: 50,
+        html:
+          '    print(\n        f"[session {streak:02d}] "\n        f"practice=+{practice} "\n        f"knowledge={min(knowledge, 100)}%"\n    )\n\nprint("return \'Ready to Code\';")',
+        speed: 20,
       },
     ];
 
