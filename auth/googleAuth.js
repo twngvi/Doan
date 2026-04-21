@@ -119,7 +119,7 @@ function handleGoogleCallback(authCode) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Đăng nhập thành công - O.Uiz</title>
+        <title>Đăng nhập thành công - CODARY</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Fredoka+One&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -315,9 +315,9 @@ function handleGoogleCallback(authCode) {
         <!-- Success Card -->
         <div class="success-card">
           <div class="logo">
-            <span class="logo-o">O</span>
-            <span class="logo-dot">.</span>
-            <span class="logo-text">uiz</span>
+            <span class="logo-o">C</span>
+            <span class="logo-dot">OD</span>
+            <span class="logo-text">ARY</span>
           </div>
             
           <h2>Chào mừng trở lại! 🎉</h2>
