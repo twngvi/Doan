@@ -181,16 +181,19 @@ function handleGoogleCallback(authCode) {
           
           /* Logo */
           .logo {
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
             display: flex;
             align-items: center;
             justify-content: center;
+            height: 60px; /* Fixed height container */
           }
           
           .logo img {
             height: 50px;
             width: auto;
-            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.1));
+            transform: scale(2.2);
+            transform-origin: center;
+            filter: drop-shadow(0 4px 15px rgba(0,0,0,0.15));
           }
           
           /* Success Icon */
@@ -202,7 +205,7 @@ function handleGoogleCallback(authCode) {
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 1.5rem;
+            margin: 1.5rem auto;
             animation: iconPop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both;
             box-shadow: 0 10px 30px rgba(34, 197, 94, 0.4);
           }
@@ -283,6 +286,36 @@ function handleGoogleCallback(authCode) {
           .btn-dashboard:hover svg {
             transform: translateX(4px);
           }
+
+          /* Fireflies */
+          .fireflies {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+          }
+
+          .firefly {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #eab308;
+            border-radius: 50%;
+            filter: blur(1px);
+            box-shadow: 0 0 10px 2px #facc15;
+            animation: fly 10s infinite ease-in-out;
+            opacity: 0;
+          }
+
+          @keyframes fly {
+            0% { transform: translate(0, 0) scale(1); opacity: 0; }
+            20% { opacity: 0.8; }
+            80% { opacity: 0.8; }
+            100% { transform: translate(var(--tw-tx), var(--tw-ty)) scale(0.5); opacity: 0; }
+          }
           
           /* Confetti */
           .confetti {
@@ -302,6 +335,9 @@ function handleGoogleCallback(authCode) {
       <body>
         <!-- Stars Background -->
         <div class="stars" id="stars"></div>
+        
+        <!-- Fireflies Background -->
+        <div class="fireflies" id="fireflies"></div>
         
         <!-- Confetti -->
         <div id="confetti"></div>
@@ -337,6 +373,35 @@ function handleGoogleCallback(authCode) {
             star.style.width = (Math.random() * 2 + 1) + 'px';
             star.style.height = star.style.width;
             starsContainer.appendChild(star);
+          }
+
+          // Create fireflies
+          const firefliesContainer = document.getElementById('fireflies');
+          function createFirefly() {
+            const f = document.createElement('div');
+            f.className = 'firefly';
+            f.style.left = Math.random() * 100 + '%';
+            f.style.top = Math.random() * 100 + '%';
+            
+            // Random destination
+            const tx = (Math.random() - 0.5) * 500;
+            const ty = (Math.random() - 0.5) * 500;
+            f.style.setProperty('--tw-tx', tx + 'px');
+            f.style.setProperty('--tw-ty', ty + 'px');
+            
+            f.style.animationDuration = (Math.random() * 5 + 8) + 's';
+            f.style.animationDelay = Math.random() * 5 + 's';
+            firefliesContainer.appendChild(f);
+            
+            // Cleanup and respawn
+            setTimeout(() => {
+              f.remove();
+              createFirefly();
+            }, 13000);
+          }
+          
+          for (let i = 0; i < 20; i++) {
+            setTimeout(createFirefly, Math.random() * 5000);
           }
           
           // Create confetti
