@@ -130,7 +130,7 @@ function handleGoogleCallback(authCode) {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #0b1220 0%, #0b2a6f 45%, #2563eb 100%);
+            background: linear-gradient(135deg, #1a3328 0%, #2d5a3d 30%, #1e4a2e 60%, #162e23 100%);
             position: relative;
             overflow: hidden;
           }
@@ -181,22 +181,16 @@ function handleGoogleCallback(authCode) {
           
           /* Logo */
           .logo {
-            font-family: 'Fredoka One', sans-serif;
-            font-size: 2rem;
             margin-bottom: 1.5rem;
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: center;
-            gap: 0;
           }
           
-          .logo-o { color: #2563eb; }
-          .logo-dot { color: #f59e0b; margin: 0 2px; animation: bounce 1s ease infinite; }
-          .logo-text { color: #2563eb; }
-          
-          @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
+          .logo img {
+            height: 50px;
+            width: auto;
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.1));
           }
           
           /* Success Icon */
@@ -254,7 +248,7 @@ function handleGoogleCallback(authCode) {
           }
           
           .welcome-text strong {
-            color: #2563eb;
+            color: #2d5a3d;
             font-weight: 600;
           }
           
@@ -264,7 +258,7 @@ function handleGoogleCallback(authCode) {
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, #2d5a3d 0%, #1a3328 100%);
             color: white;
             padding: 1rem 2rem;
             border-radius: 12px;
@@ -272,12 +266,12 @@ function handleGoogleCallback(authCode) {
             font-weight: 600;
             font-size: 1rem;
             transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+            box-shadow: 0 4px 15px rgba(45, 90, 61, 0.4);
           }
           
           .btn-dashboard:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(37, 99, 235, 0.5);
+            box-shadow: 0 8px 25px rgba(45, 90, 61, 0.5);
           }
           
           .btn-dashboard svg {
@@ -315,9 +309,7 @@ function handleGoogleCallback(authCode) {
         <!-- Success Card -->
         <div class="success-card">
           <div class="logo">
-            <span class="logo-o">C</span>
-            <span class="logo-dot">OD</span>
-            <span class="logo-text">ARY</span>
+            <img src="https://cdn.jsdelivr.net/gh/twngvi/Doan@main/assets/landing/logo.svg" alt="Logo" />
           </div>
             
           <h2>Chào mừng trở lại! 🎉</h2>
