@@ -3038,6 +3038,31 @@ function convertHtmlToDocContent(html, body) {
             }
             break;
 
+          case 'table':
+            if (block.rows && block.rows.length > 0) {
+              var table = body.appendTable(block.rows);
+
+              // Style header row when source table has <th> in first row
+              if (block.hasHeader && table.getNumRows() > 0) {
+                var headerRow = table.getRow(0);
+                for (var hc = 0; hc < headerRow.getNumCells(); hc++) {
+                  var headerCell = headerRow.getCell(hc);
+                  try {
+                    headerCell.setBackgroundColor('#eef3fb');
+                    var headerText = headerCell.editAsText();
+                    if (headerText) {
+                      headerText.setBold(true);
+                    }
+                  } catch (headerErr) {
+                    Logger.log('Header cell style error: ' + headerErr.toString());
+                  }
+                }
+              }
+
+              body.appendParagraph('');
+            }
+            break;
+
           case 'pre':
             var codePara = body.appendParagraph(block.text || '');
             codePara.setFontFamily('Consolas');
@@ -3506,6 +3531,7 @@ function parseHtmlBlocks(html) {
     { regex: /<div class="code-block"[^>]*data-language="([^"]*)"[^>]*>[\s\S]*?<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>[\s\S]*?<\/div>/gi, type: 'codeblock' },
     { regex: /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, type: 'pre' },
     { regex: /<pre[^>]*>([\s\S]*?)<\/pre>/gi, type: 'pre' },
+    { regex: /<table[^>]*>([\s\S]*?)<\/table>/gi, type: 'table' },
     { regex: /<ul[^>]*>([\s\S]*?)<\/ul>/gi, type: 'ul' },
     { regex: /<ol[^>]*>([\s\S]*?)<\/ol>/gi, type: 'ol' },
     // Callout blocks
@@ -3548,6 +3574,37 @@ function parseHtmlBlocks(html) {
           items.push(stripHtml(liMatch[1]));
         }
         matchData.items = items;
+      } else if (pattern.type === 'table') {
+        const tableInnerHtml = match[1] || '';
+        const rows = [];
+        let hasHeader = false;
+        const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        let trMatch;
+
+        while ((trMatch = trRegex.exec(tableInnerHtml)) !== null) {
+          const rowHtml = trMatch[1] || '';
+          const rowCells = [];
+          const cellRegex = /<(th|td)[^>]*>([\s\S]*?)<\/\1>/gi;
+          let cellMatch;
+          let rowHasTh = false;
+
+          while ((cellMatch = cellRegex.exec(rowHtml)) !== null) {
+            if ((cellMatch[1] || '').toLowerCase() === 'th') {
+              rowHasTh = true;
+            }
+            rowCells.push(stripHtml(cellMatch[2] || ''));
+          }
+
+          if (rowCells.length > 0) {
+            if (rows.length === 0 && rowHasTh) {
+              hasHeader = true;
+            }
+            rows.push(rowCells);
+          }
+        }
+
+        matchData.rows = rows;
+        matchData.hasHeader = hasHeader;
       } else if (pattern.type === 'codeblock') {
         // Code block with language
         matchData.language = match[1] || 'text';
@@ -3562,14 +3619,14 @@ function parseHtmlBlocks(html) {
       } else if (pattern.type === 'p') {
         const pInnerHtml = match[1] || "";
         // Tránh để <p> chứa ảnh/code/list bị parse thành text và làm rơi block con.
-        if (/<img\b|<ul\b|<ol\b|<pre\b|<div\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout)\b[^"']*\1/i.test(pInnerHtml)) {
+        if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<div\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(pInnerHtml)) {
           continue;
         }
         matchData.text = stripHtml(pInnerHtml);
       } else if (pattern.type === 'div') {
         const divInnerHtml = match[1] || "";
         // Tránh để generic div nuốt mất các block đặc thù (đặc biệt là ảnh).
-        if (/<img\b|<ul\b|<ol\b|<pre\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout)\b[^"']*\1/i.test(divInnerHtml)) {
+        if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(divInnerHtml)) {
           continue;
         }
         matchData.text = stripHtml(divInnerHtml);
@@ -3587,6 +3644,7 @@ function parseHtmlBlocks(html) {
     codeblock: 80,
     callout: 80,
     pre: 70,
+    table: 75,
     ul: 70,
     ol: 70,
     h1: 60,

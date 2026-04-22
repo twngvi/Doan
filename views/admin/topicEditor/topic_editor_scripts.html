@@ -447,6 +447,68 @@ function closeLinkModal() {
   restoreSelection();
 }
 
+function openTableModal() {
+  saveSelection();
+  document.getElementById('tableCols').value = '3';
+  document.getElementById('tableRows').value = '4';
+  document.getElementById('tableHasHeader').checked = true;
+  document.getElementById('tableModal').classList.add('active');
+  document.getElementById('tableCols').focus();
+}
+
+function closeTableModal() {
+  document.getElementById('tableModal').classList.remove('active');
+  restoreSelection();
+}
+
+function insertTable() {
+  const cols = parseInt(document.getElementById('tableCols').value, 10);
+  const rows = parseInt(document.getElementById('tableRows').value, 10);
+  const hasHeader = !!document.getElementById('tableHasHeader').checked;
+
+  if (!Number.isInteger(cols) || cols < 1 || cols > 8) {
+    showToast('Số cột phải từ 1 đến 8', 'warning');
+    return;
+  }
+  if (!Number.isInteger(rows) || rows < 1 || rows > 20) {
+    showToast('Số dòng phải từ 1 đến 20', 'warning');
+    return;
+  }
+
+  let thead = '';
+  if (hasHeader) {
+    let headerCells = '';
+    for (let c = 0; c < cols; c++) {
+      headerCells += '<th>Tiêu đề ' + (c + 1) + '</th>';
+    }
+    thead = '<thead><tr>' + headerCells + '</tr></thead>';
+  }
+
+  let bodyRows = '';
+  const bodyCount = hasHeader ? Math.max(rows - 1, 1) : rows;
+  for (let r = 0; r < bodyCount; r++) {
+    let cells = '';
+    for (let c = 0; c < cols; c++) {
+      cells += '<td><br></td>';
+    }
+    bodyRows += '<tr>' + cells + '</tr>';
+  }
+
+  const tableHtml =
+    '<div class="editor-table-wrapper">' +
+      '<table class="editor-content-table">' +
+        thead +
+        '<tbody>' + bodyRows + '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<p><br></p>';
+
+  closeTableModal();
+  restoreSelection();
+  document.execCommand('insertHTML', false, tableHtml);
+  document.getElementById('contentEditor').focus();
+}
+
 function insertLink() {
   const text = document.getElementById('linkText').value.trim();
   const url = document.getElementById('linkUrl').value.trim();
@@ -1343,6 +1405,8 @@ function populateEditForm(data) {
     forceNormalizeComputedLeftEdge(editor);
     // Restore list indentation/markers that may be stripped by imported inline styles
     normalizeListFormattingForEditor(editor);
+    // Normalize tables loaded from Doc to match web-created table styling
+    normalizeLoadedTablesForEditor(editor);
     // Strict guard: ensure color text after heading always starts on a new line
     enforceHeadingColorLineBreak(editor);
     // Force "Hết" text to left-align in editor (stays centered in Google Doc on save)
@@ -1674,6 +1738,48 @@ function normalizeListFormattingForEditor(editor) {
     li.style.setProperty('display', 'list-item', 'important');
     li.style.setProperty('list-style-position', 'outside', 'important');
     li.style.setProperty('margin', '5px 0', 'important');
+  }
+}
+
+/**
+ * Normalize imported tables so they look like tables created from web editor:
+ * - add editor classes/wrapper
+ * - ensure first row is header (th) when Doc HTML uses td only
+ */
+function normalizeLoadedTablesForEditor(editor) {
+  if (!editor) return;
+
+  var tables = editor.querySelectorAll('table');
+  for (var i = 0; i < tables.length; i++) {
+    var table = tables[i];
+
+    if (table.closest('.visual-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-color-block')) {
+      continue;
+    }
+
+    table.classList.add('editor-content-table');
+
+    var parent = table.parentElement;
+    if (!parent || !parent.classList || !parent.classList.contains('editor-table-wrapper')) {
+      var wrapper = document.createElement('div');
+      wrapper.className = 'editor-table-wrapper';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    }
+
+    var hasHeader = table.querySelector('th') !== null;
+    if (!hasHeader) {
+      var firstRow = table.querySelector('tr');
+      if (firstRow) {
+        var cells = firstRow.querySelectorAll('td');
+        for (var c = 0; c < cells.length; c++) {
+          var td = cells[c];
+          var th = document.createElement('th');
+          th.innerHTML = td.innerHTML;
+          td.parentNode.replaceChild(th, td);
+        }
+      }
+    }
   }
 }
 
