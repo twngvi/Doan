@@ -146,7 +146,7 @@
   }
 
   // ==================== Global Petal Effect ====================
-  let globalPetalStormInterval = null;
+  let globalPetalStormTimeout = null;
 
   function initGlobalPetalEffect() {
     const container = document.getElementById("petal-container");
@@ -157,7 +157,7 @@
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao2.png"
     ];
 
-    function createPetal(isStorm = false) {
+    function createPetal() {
       // Get current page from DOM instead of storage for real-time accuracy
       const visiblePage = getVisiblePageContent();
       const currentPageId = visiblePage ? visiblePage.id : "";
@@ -170,42 +170,50 @@
       const petal = document.createElement("div");
       const img = images[Math.floor(Math.random() * images.length)];
       
-      const size = Math.random() * 20 + 15 + "px";
-      const startX = Math.random() * 100 - 10; 
+      // Random size for variety
+      const sizeNum = Math.random() * 15 + 15;
+      const size = sizeNum + "px";
+      
+      // Start positions: mostly top-left area
+      // We want them to originate from the top-left corner or the top/left edges
+      const startX = Math.random() * 50 - 25; // -25vw to 25vw
+      const startY = Math.random() * 50 - 60; // -60px to -10px
+      
       const duration = Math.random() * 5 + 5 + "s";
-      const delay = isStorm ? Math.random() * 2 + "s" : "0s";
+      const delay = Math.random() * 3 + "s";
+      const rotation = Math.random() * 360 + "deg";
 
       petal.className = "petal";
       petal.style.backgroundImage = `url(${img})`;
       petal.style.width = size;
       petal.style.height = size;
       petal.style.left = startX + "vw";
-      petal.style.top = "-50px";
+      petal.style.top = startY + "px";
+      petal.style.setProperty('--initial-rotation', rotation);
       petal.style.animation = `petal-fall ${duration} linear ${delay} forwards`;
       
       container.appendChild(petal);
 
+      // Cleanup
       setTimeout(() => petal.remove(), (parseFloat(duration) + parseFloat(delay)) * 1000 + 100);
     }
 
-    if (globalPetalStormInterval) clearInterval(globalPetalStormInterval);
-    
-    // Initial batch
-    for (let i = 0; i < 10; i++) {
-      setTimeout(() => createPetal(true), Math.random() * 2000);
-    }
-
-    globalPetalStormInterval = setInterval(() => {
-      // Periodic storms or lone petals
-      if (Math.random() > 0.8) {
-        const stormCount = Math.floor(Math.random() * 6) + 4;
-        for (let i = 0; i < stormCount; i++) {
-          setTimeout(() => createPetal(true), Math.random() * 3000);
-        }
-      } else {
+    function triggerStorm() {
+      // Create a "storm" of petals (bão hoa)
+      const stormCount = Math.floor(Math.random() * 15) + 10; // 10-25 petals per storm
+      for (let i = 0; i < stormCount; i++) {
         createPetal();
       }
-    }, 3000);
+
+      // Schedule next random storm (8 to 20 seconds apart)
+      if (globalPetalStormTimeout) clearTimeout(globalPetalStormTimeout);
+      const nextDelay = Math.random() * 12000 + 8000;
+      globalPetalStormTimeout = setTimeout(triggerStorm, nextDelay);
+    }
+
+    // Initial trigger after a short delay
+    if (globalPetalStormTimeout) clearTimeout(globalPetalStormTimeout);
+    setTimeout(triggerStorm, 2000);
   }
 
   function resolveAppBackToTopScrollSource() {
