@@ -47,6 +47,10 @@ function initializeTopicEditor() {
 
 function formatText(command) {
   document.execCommand(command, false, null);
+  if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
+    const editor = document.getElementById('contentEditor');
+    normalizeListFormattingForEditor(editor);
+  }
   document.getElementById('contentEditor').focus();
 }
 
@@ -1337,6 +1341,8 @@ function populateEditForm(data) {
     normalizeLoadedDocTextColors(editor);
     // Final guard: remove any remaining effective left border/indent from normal text nodes
     forceNormalizeComputedLeftEdge(editor);
+    // Restore list indentation/markers that may be stripped by imported inline styles
+    normalizeListFormattingForEditor(editor);
     // Strict guard: ensure color text after heading always starts on a new line
     enforceHeadingColorLineBreak(editor);
     // Force "Hết" text to left-align in editor (stays centered in Google Doc on save)
@@ -1374,6 +1380,8 @@ function normalizeLoadedDocTextColors(editor) {
   var nodes = editor.querySelectorAll('[style], font[color]');
   for (var i = 0; i < nodes.length; i++) {
     var node = nodes[i];
+    var nodeTag = node.tagName ? node.tagName.toLowerCase() : '';
+    var isListNode = nodeTag === 'ul' || nodeTag === 'ol' || nodeTag === 'li';
 
     // Keep intentional code/terminal/output/cmd styling
     if (node.closest('pre, code, .code-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block')) {
@@ -1405,6 +1413,18 @@ function normalizeLoadedDocTextColors(editor) {
         'white-space',
         'display'
       ];
+      if (isListNode) {
+        stripProps = [
+          'border-left',
+          'background',
+          'background-color',
+          'font-family',
+          'font-size',
+          'line-height',
+          'white-space',
+          'display'
+        ];
+      }
       for (var sp = 0; sp < stripProps.length; sp++) {
         if (node.style.getPropertyValue(stripProps[sp])) {
           node.style.removeProperty(stripProps[sp]);
@@ -1511,7 +1531,18 @@ function hardResetLoadedContentLeftEdge(editor) {
   var targets = editor.querySelectorAll('*');
   for (var i = 0; i < targets.length; i++) {
     var node = targets[i];
+    var tag = node.tagName ? node.tagName.toLowerCase() : '';
+    var isListNode = tag === 'ul' || tag === 'ol' || tag === 'li';
     if (node.closest('.visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-block')) {
+      continue;
+    }
+
+    // Keep native list indentation/markers for imported content
+    if (isListNode) {
+      if (node.style) {
+        node.style.removeProperty('border-left');
+        node.style.removeProperty('text-indent');
+      }
       continue;
     }
 
@@ -1561,7 +1592,13 @@ function forceNormalizeComputedLeftEdge(editor) {
   var nodes = editor.querySelectorAll('*');
   for (var i = 0; i < nodes.length; i++) {
     var node = nodes[i];
+    var tagName = node.tagName ? node.tagName.toLowerCase() : '';
     if (node.closest('.visual-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-color-block')) {
+      continue;
+    }
+
+    // Do not flatten native list indentation/markers
+    if (tagName === 'ul' || tagName === 'ol' || tagName === 'li') {
       continue;
     }
 
@@ -1579,6 +1616,59 @@ function forceNormalizeComputedLeftEdge(editor) {
       node.style.setProperty('border', 'none', 'important');
       node.style.setProperty('outline', 'none', 'important');
     }
+  }
+}
+
+/**
+ * Ensure list markers and indentation are visible in edit mode after loading from Doc.
+ */
+function normalizeListFormattingForEditor(editor) {
+  if (!editor) return;
+
+  var lists = editor.querySelectorAll('ul, ol');
+  for (var i = 0; i < lists.length; i++) {
+    var list = lists[i];
+    if (list.closest('.visual-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-color-block')) {
+      continue;
+    }
+
+    list.style.setProperty('padding-left', '32px', 'important');
+    list.style.setProperty('margin', '10px 0', 'important');
+    list.style.setProperty('margin-left', '0', 'important');
+    list.style.setProperty('text-indent', '0', 'important');
+    list.style.setProperty('list-style-position', 'outside', 'important');
+    if (list.tagName.toLowerCase() === 'ul') {
+      list.style.setProperty('list-style-type', 'disc', 'important');
+    } else {
+      list.style.setProperty('list-style-type', 'decimal', 'important');
+    }
+  }
+
+  var nestedUls = editor.querySelectorAll('ul ul');
+  for (var n1 = 0; n1 < nestedUls.length; n1++) {
+    nestedUls[n1].style.setProperty('list-style-type', 'circle', 'important');
+  }
+
+  var nestedOl = editor.querySelectorAll('ol ol');
+  for (var n2 = 0; n2 < nestedOl.length; n2++) {
+    nestedOl[n2].style.setProperty('list-style-type', 'lower-alpha', 'important');
+  }
+
+  var items = editor.querySelectorAll('li');
+  for (var j = 0; j < items.length; j++) {
+    var li = items[j];
+    if (li.closest('.visual-block, .visual-code-block, .visual-terminal-block, .visual-output-block, .visual-cmd-block, .visual-grid-block, .visual-figure-block, .visual-color-block')) {
+      continue;
+    }
+    li.style.removeProperty('list-style');
+    li.style.removeProperty('list-style-type');
+    li.style.removeProperty('display');
+    li.style.removeProperty('text-indent');
+    li.style.removeProperty('margin-left');
+    li.style.removeProperty('padding-left');
+    li.style.setProperty('display', 'list-item', 'important');
+    li.style.setProperty('list-style-position', 'outside', 'important');
+    li.style.setProperty('margin', '5px 0', 'important');
   }
 }
 
