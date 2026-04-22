@@ -309,7 +309,7 @@ function handleGoogleCallback(authCode) {
         <!-- Success Card -->
         <div class="success-card">
           <div class="logo">
-            <img src="https://cdn.jsdelivr.net/gh/twngvi/Doan@main/assets/landing/logo.svg" alt="Logo" />
+            <img src="https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/landing/LOGO.svg" alt="Logo" />
           </div>
             
           <h2>Chào mừng trở lại! 🎉</h2>
