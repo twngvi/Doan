@@ -145,6 +145,61 @@
     return null;
   }
 
+  // ==================== Global Petal Effect ====================
+  let globalPetalStormInterval = null;
+
+  function initGlobalPetalEffect() {
+    const container = document.getElementById("petal-container");
+    if (!container) return;
+
+    const images = [
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao.png",
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao2.png"
+    ];
+
+    function createPetal(isStorm = false) {
+      const currentPage = localStorage.getItem("lastActivePage") || "";
+      const excludedPages = ["landing", "mcq", "matching"];
+      
+      // Stop if on excluded pages or hidden or forest theme is NOT active
+      if (excludedPages.includes(currentPage) || document.hidden) return;
+      if (!document.body.classList.contains("theme-forest")) return;
+      
+      const petal = document.createElement("div");
+      const img = images[Math.floor(Math.random() * images.length)];
+      
+      const size = Math.random() * 25 + 15 + "px";
+      const startX = Math.random() * 100 - 20; 
+      const duration = Math.random() * 6 + 4 + "s";
+      const delay = isStorm ? Math.random() * 2 + "s" : "0s";
+
+      petal.className = "petal";
+      petal.style.backgroundImage = `url(${img})`;
+      petal.style.width = size;
+      petal.style.height = size;
+      petal.style.left = startX + "vw";
+      petal.style.top = "-50px";
+      petal.style.animation = `petal-fall ${duration} linear ${delay} forwards`;
+      
+      container.appendChild(petal);
+
+      setTimeout(() => petal.remove(), (parseFloat(duration) + parseFloat(delay)) * 1000 + 100);
+    }
+
+    if (globalPetalStormInterval) clearInterval(globalPetalStormInterval);
+    
+    globalPetalStormInterval = setInterval(() => {
+      if (Math.random() > 0.7) {
+        const stormCount = Math.floor(Math.random() * 10) + 5;
+        for (let i = 0; i < stormCount; i++) {
+          setTimeout(() => createPetal(true), Math.random() * 4000);
+        }
+      } else {
+        createPetal();
+      }
+    }, 2500);
+  }
+
   function resolveAppBackToTopScrollSource() {
     const visiblePage = getVisiblePageContent();
     return visiblePage || window;
@@ -435,12 +490,16 @@
       window._isRestoringPage = false;
     }, 500);
 
-    // Load dữ liệu dashboard nếu cần
     if (
       targetPageId === "page-dashboard" &&
       typeof loadDashboardData === "function"
     ) {
       setTimeout(loadDashboardData, 100);
+    }
+
+    // ⭐ Initialize Global Petal Effect
+    if (typeof initGlobalPetalEffect === "function") {
+      initGlobalPetalEffect();
     }
   });
   // ==================== URL State Management ====================
