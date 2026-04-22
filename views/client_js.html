@@ -149,71 +149,160 @@
   let globalPetalStormTimeout = null;
 
   function initGlobalPetalEffect() {
+    console.log("🌸 [Petal] initGlobalPetalEffect called");
+    
     const container = document.getElementById("petal-container");
-    if (!container) return;
+    if (!container) {
+      console.warn("🌸 [Petal] Container #petal-container NOT FOUND in DOM!");
+      return;
+    }
 
-    const images = [
+    // Force container visible regardless of CSS
+    container.style.display = "block";
+    container.style.position = "fixed";
+    container.style.top = "0";
+    container.style.left = "0";
+    container.style.width = "100vw";
+    container.style.height = "100vh";
+    container.style.pointerEvents = "none";
+    container.style.zIndex = "9999";
+    container.style.overflow = "visible";
+    
+    console.log("🌸 [Petal] Container found and forced visible. display:", 
+      window.getComputedStyle(container).display);
+
+    const petalImages = [
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao.png",
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao2.png"
     ];
 
-    function createPetal() {
-      // Get current page from DOM instead of storage for real-time accuracy
-      const visiblePage = getVisiblePageContent();
-      const currentPageId = visiblePage ? visiblePage.id : "";
-      
-      const excludedPageIds = ["page-landing", "page-mcq", "page-matching"];
-      
-      // Stop if on excluded pages or hidden
-      if (!currentPageId || excludedPageIds.includes(currentPageId) || document.hidden) return;
-      
-      const petal = document.createElement("div");
-      const img = images[Math.floor(Math.random() * images.length)];
-      
-      // Random size for variety
-      const sizeNum = Math.random() * 15 + 15;
-      const size = sizeNum + "px";
-      
-      // Start positions: mostly top-left area
-      // We want them to originate from the top-left corner or the top/left edges
-      const startX = Math.random() * 50 - 25; // -25vw to 25vw
-      const startY = Math.random() * 50 - 60; // -60px to -10px
-      
-      const duration = Math.random() * 5 + 5 + "s";
-      const delay = Math.random() * 3 + "s";
-      const rotation = Math.random() * 360 + "deg";
+    // Preload images
+    petalImages.forEach(function(src) {
+      var img = new Image();
+      img.src = src;
+    });
 
-      petal.className = "petal";
-      petal.style.backgroundImage = `url(${img})`;
-      petal.style.width = size;
-      petal.style.height = size;
-      petal.style.left = startX + "vw";
-      petal.style.top = startY + "px";
-      petal.style.setProperty('--initial-rotation', rotation);
-      petal.style.animation = `petal-fall ${duration} linear ${delay} forwards`;
-      
+    function isPageExcluded() {
+      var visiblePage = getVisiblePageContent();
+      var pageId = visiblePage ? visiblePage.id : "";
+      var excluded = ["page-landing", "page-mcq", "page-matching"];
+      if (!pageId || excluded.indexOf(pageId) !== -1 || document.hidden) {
+        return true;
+      }
+      return false;
+    }
+
+    function createPetal() {
+      if (isPageExcluded()) return;
+
+      var imgSrc = petalImages[Math.floor(Math.random() * petalImages.length)];
+
+      // Use <img> element for reliability
+      var petal = document.createElement("img");
+      petal.src = imgSrc;
+      petal.draggable = false;
+
+      // Random size (18-35px)
+      var sizeNum = Math.random() * 17 + 18;
+
+      // Start from left side of screen (0-30% from left, above viewport)
+      var startLeft = Math.random() * 30;
+      var startTop = -(Math.random() * 40 + 20);
+
+      petal.style.position = "absolute";
+      petal.style.width = sizeNum + "px";
+      petal.style.height = sizeNum + "px";
+      petal.style.left = startLeft + "vw";
+      petal.style.top = startTop + "px";
+      petal.style.pointerEvents = "none";
+      petal.style.zIndex = "9999";
+      petal.style.opacity = "0";
+      petal.style.objectFit = "contain";
+
       container.appendChild(petal);
 
-      // Cleanup
-      setTimeout(() => petal.remove(), (parseFloat(duration) + parseFloat(delay)) * 1000 + 100);
+      // Animation params
+      var durationMs = (Math.random() * 4 + 6) * 1000; // 6-10s
+      var delayMs = Math.random() * 2000;                // 0-2s stagger
+      var startRot = Math.random() * 360;
+      var endRot = startRot + 400 + Math.random() * 400;
+
+      try {
+        // Web Animations API
+        var anim = petal.animate([
+          {
+            transform: "translate(0px, 0px) rotate(" + startRot + "deg) scale(0.5)",
+            opacity: 0
+          },
+          {
+            transform: "translate(60px, 80px) rotate(" + (startRot + 60) + "deg) scale(0.8)",
+            opacity: 0.9,
+            offset: 0.1
+          },
+          {
+            transform: "translate(" + (window.innerWidth * 0.7) + "px, " + (window.innerHeight * 0.65) + "px) rotate(" + (endRot - 120) + "deg) scale(0.9)",
+            opacity: 0.8,
+            offset: 0.75
+          },
+          {
+            transform: "translate(" + (window.innerWidth * 1.1) + "px, " + (window.innerHeight * 1.0) + "px) rotate(" + endRot + "deg) scale(1)",
+            opacity: 0
+          }
+        ], {
+          duration: durationMs,
+          delay: delayMs,
+          easing: "ease-in-out",
+          fill: "forwards"
+        });
+
+        anim.onfinish = function() { 
+          if (petal.parentNode) petal.remove(); 
+        };
+      } catch (e) {
+        console.warn("🌸 [Petal] animate() failed, using CSS fallback:", e);
+        // CSS transition fallback
+        petal.style.transition = "all " + (durationMs / 1000) + "s ease-in-out " + (delayMs / 1000) + "s";
+        petal.style.opacity = "0.85";
+        setTimeout(function() {
+          petal.style.transform = "translate(" + (window.innerWidth * 1.1) + "px, " + (window.innerHeight * 1.0) + "px) rotate(" + endRot + "deg)";
+          petal.style.opacity = "0";
+        }, 50);
+        setTimeout(function() {
+          if (petal.parentNode) petal.remove();
+        }, durationMs + delayMs + 500);
+      }
+
+      // Safety cleanup
+      setTimeout(function() { 
+        if (petal.parentNode) petal.remove(); 
+      }, durationMs + delayMs + 1000);
     }
 
     function triggerStorm() {
-      // Create a "storm" of petals (bão hoa)
-      const stormCount = Math.floor(Math.random() * 15) + 10; // 10-25 petals per storm
-      for (let i = 0; i < stormCount; i++) {
+      if (isPageExcluded()) {
+        // Still schedule next check even if excluded
+        globalPetalStormTimeout = setTimeout(triggerStorm, 5000);
+        return;
+      }
+
+      var stormCount = Math.floor(Math.random() * 12) + 8;
+      console.log("🌸 [Petal] Storm triggered!", stormCount, "petals");
+      
+      for (var i = 0; i < stormCount; i++) {
         createPetal();
       }
 
-      // Schedule next random storm (8 to 20 seconds apart)
+      // Schedule next storm (10-25 seconds)
       if (globalPetalStormTimeout) clearTimeout(globalPetalStormTimeout);
-      const nextDelay = Math.random() * 12000 + 8000;
+      var nextDelay = Math.random() * 15000 + 10000;
       globalPetalStormTimeout = setTimeout(triggerStorm, nextDelay);
     }
 
-    // Initial trigger after a short delay
+    // Start first storm after 1.5s
     if (globalPetalStormTimeout) clearTimeout(globalPetalStormTimeout);
-    setTimeout(triggerStorm, 2000);
+    globalPetalStormTimeout = setTimeout(triggerStorm, 1500);
+    
+    console.log("🌸 [Petal] First storm scheduled in 1.5s");
   }
 
   function resolveAppBackToTopScrollSource() {
@@ -496,8 +585,15 @@
 
     initGlobalBackToTop();
 
+    // ⭐ Initialize Global Petal Effect (before scroll restore to avoid being blocked)
+    if (typeof initGlobalPetalEffect === "function") {
+      try { initGlobalPetalEffect(); } catch(e) { console.error("Petal init error:", e); }
+    }
+
     // Khôi phục vị trí scroll sau khi trang đã hiển thị
-    restoreScrollPosition(finalPageName);
+    if (typeof restoreScrollPosition === "function") {
+      restoreScrollPosition(finalPageName);
+    }
 
     setTimeout(syncAppBackToTopScrollSource, 0);
 
@@ -511,11 +607,6 @@
       typeof loadDashboardData === "function"
     ) {
       setTimeout(loadDashboardData, 100);
-    }
-
-    // ⭐ Initialize Global Petal Effect
-    if (typeof initGlobalPetalEffect === "function") {
-      initGlobalPetalEffect();
     }
   });
   // ==================== URL State Management ====================
