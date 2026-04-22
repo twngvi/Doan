@@ -151,6 +151,7 @@
     initStreakTracking();
     initHeaderMeteorShower();
     setupDashboardHeaderMouseEffect();
+    initPetalEffect();
 
     // Single API call for all dashboard data
     loadAllDashboardData({
@@ -1285,6 +1286,72 @@
       }
     }
   });
+
+  /**
+   * Hoa Đào (Cherry Blossom) Effect
+   */
+  function initPetalEffect() {
+    const container = document.getElementById("petal-container");
+    if (!container) return;
+
+    // Clear existing if any
+    container.innerHTML = "";
+
+    const images = [
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao.png",
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao2.png"
+    ];
+
+    function createPetal(isStorm = false) {
+      if (!isDashboardVisible()) return;
+      
+      const petal = document.createElement("div");
+      const img = images[Math.floor(Math.random() * images.length)];
+      
+      // Random properties
+      const size = Math.random() * 25 + 15 + "px";
+      // Start from top or left side to drift towards bottom-right
+      const startX = Math.random() * 100 - 20; // -20 to 80vw
+      const duration = Math.random() * 6 + 4 + "s";
+      const delay = isStorm ? Math.random() * 2 + "s" : "0s";
+
+      petal.className = "petal";
+      petal.style.backgroundImage = `url(${img})`;
+      petal.style.width = size;
+      petal.style.height = size;
+      petal.style.left = startX + "vw";
+      petal.style.top = "-50px";
+      petal.style.animation = `petal-fall ${duration} linear ${delay} forwards`;
+      
+      container.appendChild(petal);
+
+      // Remove after animation completes
+      setTimeout(() => {
+        petal.remove();
+      }, (parseFloat(duration) + parseFloat(delay)) * 1000 + 100);
+    }
+
+    // Create initial blossom
+    for (let i = 0; i < 20; i++) {
+      setTimeout(() => createPetal(true), Math.random() * 3000);
+    }
+
+    // Periodic "storms"
+    setInterval(() => {
+      if (document.hidden || !isDashboardVisible()) return;
+      
+      // 30% chance for a storm every interval
+      if (Math.random() > 0.7) {
+        const stormCount = Math.floor(Math.random() * 10) + 5;
+        for (let i = 0; i < stormCount; i++) {
+          setTimeout(() => createPetal(true), Math.random() * 4000);
+        }
+      } else {
+        // Just a few lone petals
+        createPetal();
+      }
+    }, 2000);
+  }
 
   // Listen for custom event from other pages (quiz/learning completion)
   window.addEventListener("dashboard-needs-refresh", function () {
