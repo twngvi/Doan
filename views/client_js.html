@@ -158,19 +158,21 @@
     ];
 
     function createPetal(isStorm = false) {
-      const currentPage = localStorage.getItem("lastActivePage") || "";
-      const excludedPages = ["landing", "mcq", "matching"];
+      // Get current page from DOM instead of storage for real-time accuracy
+      const visiblePage = getVisiblePageContent();
+      const currentPageId = visiblePage ? visiblePage.id : "";
       
-      // Stop if on excluded pages or hidden or forest theme is NOT active
-      if (excludedPages.includes(currentPage) || document.hidden) return;
-      if (!document.body.classList.contains("theme-forest")) return;
+      const excludedPageIds = ["page-landing", "page-mcq", "page-matching"];
+      
+      // Stop if on excluded pages or hidden
+      if (!currentPageId || excludedPageIds.includes(currentPageId) || document.hidden) return;
       
       const petal = document.createElement("div");
       const img = images[Math.floor(Math.random() * images.length)];
       
-      const size = Math.random() * 25 + 15 + "px";
-      const startX = Math.random() * 100 - 20; 
-      const duration = Math.random() * 6 + 4 + "s";
+      const size = Math.random() * 20 + 15 + "px";
+      const startX = Math.random() * 100 - 10; 
+      const duration = Math.random() * 5 + 5 + "s";
       const delay = isStorm ? Math.random() * 2 + "s" : "0s";
 
       petal.className = "petal";
@@ -188,16 +190,22 @@
 
     if (globalPetalStormInterval) clearInterval(globalPetalStormInterval);
     
+    // Initial batch
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => createPetal(true), Math.random() * 2000);
+    }
+
     globalPetalStormInterval = setInterval(() => {
-      if (Math.random() > 0.7) {
-        const stormCount = Math.floor(Math.random() * 10) + 5;
+      // Periodic storms or lone petals
+      if (Math.random() > 0.8) {
+        const stormCount = Math.floor(Math.random() * 6) + 4;
         for (let i = 0; i < stormCount; i++) {
-          setTimeout(() => createPetal(true), Math.random() * 4000);
+          setTimeout(() => createPetal(true), Math.random() * 3000);
         }
       } else {
         createPetal();
       }
-    }, 2500);
+    }, 3000);
   }
 
   function resolveAppBackToTopScrollSource() {
