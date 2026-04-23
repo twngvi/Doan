@@ -2766,7 +2766,7 @@ function getDashboardData(userContext) {
     const allMainDone = quests.every((q) => q.done);
     quests.push({
       questId: "daily_all_bonus",
-      title: "🎉 Hoàn thành tất cả nhiệm vụ",
+      title: "Hoàn thành tất cả nhiệm vụ",
       progress: quests.filter((q) => q.done).length,
       target: quests.length,
       xpReward: 50,
