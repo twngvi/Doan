@@ -202,22 +202,39 @@
       petal.src = imgSrc;
       petal.draggable = false;
 
-      // Random size (18-35px)
-      var sizeNum = Math.random() * 17 + 18;
+      // Random size (10-22px) - Smaller as requested
+      var sizeNum = Math.random() * 12 + 10;
 
-      // Start from left side of screen (0-30% from left, above viewport)
-      var startLeft = Math.random() * 30;
-      var startTop = -(Math.random() * 40 + 20);
+      // Random start position (top or left)
+      var startFromTop = Math.random() > 0.5;
+      var startLeft, startTop;
+
+      if (startFromTop) {
+        startLeft = Math.random() * 100; // 0-100vw
+        startTop = -(Math.random() * 60 + 40); // -40 to -100px
+      } else {
+        startLeft = -(Math.random() * 60 + 40); // -40 to -100px
+        startTop = Math.random() * 60; // 0-60vh
+      }
 
       petal.style.position = "absolute";
       petal.style.width = sizeNum + "px";
       petal.style.height = sizeNum + "px";
-      petal.style.left = startLeft + "vw";
-      petal.style.top = startTop + "px";
-      petal.style.pointerEvents = "none";
+      petal.style.left = startLeft + (startFromTop ? "vw" : "px");
+      petal.style.top = startTop + (startFromTop ? "px" : "vh");
+      petal.style.pointerEvents = "auto"; // Enable interaction
+      petal.style.cursor = "pointer";
       petal.style.zIndex = "9999";
       petal.style.opacity = "0";
       petal.style.objectFit = "contain";
+
+      // Glow effect on interaction
+      petal.addEventListener("mousedown", function() {
+        petal.style.filter = "drop-shadow(0 0 15px #ff1493) brightness(1.2)";
+      });
+      petal.addEventListener("touchstart", function() {
+        petal.style.filter = "drop-shadow(0 0 15px #ff1493) brightness(1.2)";
+      }, {passive: true});
 
       container.appendChild(petal);
 
@@ -229,29 +246,35 @@
 
       try {
         // Web Animations API
+        // Random destination points for "free" movement
+        var midX = window.innerWidth * (0.3 + Math.random() * 0.4);
+        var midY = window.innerHeight * (0.3 + Math.random() * 0.4);
+        var destX = window.innerWidth * (0.8 + Math.random() * 0.4);
+        var destY = window.innerHeight * (0.5 + Math.random() * 0.5);
+
         var anim = petal.animate([
           {
             transform: "translate(0px, 0px) rotate(" + startRot + "deg) scale(0.5)",
             opacity: 0
           },
           {
-            transform: "translate(60px, 80px) rotate(" + (startRot + 60) + "deg) scale(0.8)",
-            opacity: 0.9,
-            offset: 0.1
+            transform: "translate(" + (midX * 0.4) + "px, " + (midY * 0.4) + "px) rotate(" + (startRot + 90) + "deg) scale(0.8)",
+            opacity: 0.5, // Faded
+            offset: 0.2
           },
           {
-            transform: "translate(" + (window.innerWidth * 0.7) + "px, " + (window.innerHeight * 0.65) + "px) rotate(" + (endRot - 120) + "deg) scale(0.9)",
-            opacity: 0.8,
-            offset: 0.75
+            transform: "translate(" + midX + "px, " + midY + "px) rotate(" + (endRot - 180) + "deg) scale(0.9)",
+            opacity: 0.6, // Faded
+            offset: 0.5
           },
           {
-            transform: "translate(" + (window.innerWidth * 1.1) + "px, " + (window.innerHeight * 1.0) + "px) rotate(" + endRot + "deg) scale(1)",
+            transform: "translate(" + destX + "px, " + destY + "px) rotate(" + endRot + "deg) scale(0.8)",
             opacity: 0
           }
         ], {
           duration: durationMs,
           delay: delayMs,
-          easing: "ease-in-out",
+          easing: "cubic-bezier(0.37, 0, 0.63, 1)",
           fill: "forwards"
         });
 
@@ -261,10 +284,10 @@
       } catch (e) {
         console.warn("🌸 [Petal] animate() failed, using CSS fallback:", e);
         // CSS transition fallback
-        petal.style.transition = "all " + (durationMs / 1000) + "s ease-in-out " + (delayMs / 1000) + "s";
+        petal.style.transition = "all " + (durationMs / 1000) + "s ease-out " + (delayMs / 1000) + "s";
         petal.style.opacity = "0.85";
         setTimeout(function() {
-          petal.style.transform = "translate(" + (window.innerWidth * 1.1) + "px, " + (window.innerHeight * 1.0) + "px) rotate(" + endRot + "deg)";
+          petal.style.transform = "translate(" + (window.innerWidth * 1.2) + "px, " + (window.innerHeight * 0.7) + "px) rotate(" + endRot + "deg)";
           petal.style.opacity = "0";
         }, 50);
         setTimeout(function() {
@@ -285,17 +308,16 @@
         return;
       }
 
-      var stormCount = Math.floor(Math.random() * 12) + 8;
+      var stormCount = Math.floor(Math.random() * 15) + 30; // More petals (30-45)
       console.log("🌸 [Petal] Storm triggered!", stormCount, "petals");
       
       for (var i = 0; i < stormCount; i++) {
         createPetal();
       }
 
-      // Schedule next storm (10-25 seconds)
+      // Schedule next storm every 10 seconds
       if (globalPetalStormTimeout) clearTimeout(globalPetalStormTimeout);
-      var nextDelay = Math.random() * 15000 + 10000;
-      globalPetalStormTimeout = setTimeout(triggerStorm, nextDelay);
+      globalPetalStormTimeout = setTimeout(triggerStorm, 10000);
     }
 
     // Start first storm after 1.5s
