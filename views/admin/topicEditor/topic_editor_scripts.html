@@ -11,6 +11,92 @@
 let savedSelection = null;
 let isEditMode = false;
 let editingTopicId = null;
+const TABLE_MAX_COLS = 10;
+const TABLE_MAX_ROWS = 20;
+
+function clampTableSize(value, maxValue, fallback) {
+  var parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  if (parsed < 1) return 1;
+  if (parsed > maxValue) return maxValue;
+  return parsed;
+}
+
+function updateTableSizePicker(cols, rows, syncInputs) {
+  var grid = document.getElementById('tableSizeGrid');
+  var label = document.getElementById('tableSizeLabel');
+  var colInput = document.getElementById('tableCols');
+  var rowInput = document.getElementById('tableRows');
+  if (!grid || !label || !colInput || !rowInput) return;
+
+  var safeCols = clampTableSize(cols, TABLE_MAX_COLS, 1);
+  var safeRows = clampTableSize(rows, TABLE_MAX_ROWS, 1);
+
+  var cells = grid.querySelectorAll('.table-size-cell');
+  cells.forEach(function(cell) {
+    var cellCol = parseInt(cell.getAttribute('data-col'), 10);
+    var cellRow = parseInt(cell.getAttribute('data-row'), 10);
+    var isActive = cellCol <= safeCols && cellRow <= safeRows;
+    cell.classList.toggle('active', isActive);
+  });
+
+  label.textContent = safeCols + ' x ' + safeRows;
+
+  if (syncInputs !== false) {
+    colInput.value = String(safeCols);
+    rowInput.value = String(safeRows);
+  }
+}
+
+function ensureTableSizePicker() {
+  var grid = document.getElementById('tableSizeGrid');
+  if (!grid) return;
+
+  if (grid.dataset.initialized === 'true') return;
+
+  var fragment = document.createDocumentFragment();
+  for (var r = 1; r <= TABLE_MAX_ROWS; r++) {
+    for (var c = 1; c <= TABLE_MAX_COLS; c++) {
+      var cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'table-size-cell';
+      cell.setAttribute('data-col', String(c));
+      cell.setAttribute('data-row', String(r));
+      cell.title = c + ' x ' + r;
+
+      cell.addEventListener('mouseenter', function() {
+        var hoverCol = parseInt(this.getAttribute('data-col'), 10);
+        var hoverRow = parseInt(this.getAttribute('data-row'), 10);
+        updateTableSizePicker(hoverCol, hoverRow, true);
+      });
+
+      cell.addEventListener('click', function() {
+        var pickCol = parseInt(this.getAttribute('data-col'), 10);
+        var pickRow = parseInt(this.getAttribute('data-row'), 10);
+        updateTableSizePicker(pickCol, pickRow, true);
+      });
+
+      fragment.appendChild(cell);
+    }
+  }
+
+  grid.appendChild(fragment);
+
+  var colInput = document.getElementById('tableCols');
+  var rowInput = document.getElementById('tableRows');
+  if (colInput && rowInput) {
+    var syncFromInputs = function() {
+      var inputCols = clampTableSize(colInput.value, TABLE_MAX_COLS, 1);
+      var inputRows = clampTableSize(rowInput.value, TABLE_MAX_ROWS, 1);
+      updateTableSizePicker(inputCols, inputRows, true);
+    };
+
+    colInput.addEventListener('input', syncFromInputs);
+    rowInput.addEventListener('input', syncFromInputs);
+  }
+
+  grid.dataset.initialized = 'true';
+}
 
 // ========================================
 // INITIALIZATION
@@ -449,10 +535,12 @@ function closeLinkModal() {
 
 function openTableModal() {
   saveSelection();
+  ensureTableSizePicker();
   document.getElementById('tableCols').value = '3';
   document.getElementById('tableRows').value = '4';
   document.getElementById('tableHasHeader').checked = true;
   document.getElementById('tableModal').classList.add('active');
+  updateTableSizePicker(3, 4, true);
   document.getElementById('tableCols').focus();
 }
 
@@ -466,12 +554,12 @@ function insertTable() {
   const rows = parseInt(document.getElementById('tableRows').value, 10);
   const hasHeader = !!document.getElementById('tableHasHeader').checked;
 
-  if (!Number.isInteger(cols) || cols < 1 || cols > 10) {
-    showToast('Số cột phải từ 1 đến 10', 'warning');
+  if (!Number.isInteger(cols) || cols < 1 || cols > TABLE_MAX_COLS) {
+    showToast('Số cột phải từ 1 đến ' + TABLE_MAX_COLS, 'warning');
     return;
   }
-  if (!Number.isInteger(rows) || rows < 1 || rows > 20) {
-    showToast('Số dòng phải từ 1 đến 20', 'warning');
+  if (!Number.isInteger(rows) || rows < 1 || rows > TABLE_MAX_ROWS) {
+    showToast('Số dòng phải từ 1 đến ' + TABLE_MAX_ROWS, 'warning');
     return;
   }
 
