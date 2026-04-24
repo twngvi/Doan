@@ -17,11 +17,41 @@
   let currentFilter = 'all';
   let searchQuery = '';
   let refreshInterval = null;
+  let meteorInterval = null;
   let aiUsageStats = null;
+  let onlineStatsInitialized = false;
+
+  function getOnlineStatsCurrentUser() {
+    try {
+      return window.currentUser || JSON.parse(localStorage.getItem('currentUser') || 'null');
+    } catch (e) {
+      return window.currentUser || null;
+    }
+  }
+
+  function isOnlineStatsPageActive() {
+    const adminPage = document.getElementById('page-admin');
+    const adminVisible = !!(
+      adminPage &&
+      window.getComputedStyle(adminPage).display !== 'none'
+    );
+    const user = getOnlineStatsCurrentUser();
+    const role = String(user?.role || '').trim().toUpperCase();
+    return adminVisible && role === 'ADMIN';
+  }
 
   // Initialize page
   function initOnlineStatsPage() {
-    setupEventListeners();
+    if (!isOnlineStatsPageActive()) {
+      stopAutoRefresh();
+      return;
+    }
+
+    if (!onlineStatsInitialized) {
+      setupEventListeners();
+      onlineStatsInitialized = true;
+    }
+
     loadOnlineUsers();
     loadAIUsageStats();
     startAutoRefresh();
@@ -59,6 +89,7 @@
 
   // Load online users from server
   async function loadOnlineUsers() {
+    if (!isOnlineStatsPageActive()) return;
     showLoading(true);
     
     try {
@@ -89,6 +120,7 @@
   }
 
   async function loadAIUsageStats() {
+    if (!isOnlineStatsPageActive()) return;
     try {
       const daysEl = document.getElementById('aiUsageDays');
       const days = Number((daysEl && daysEl.value) || 7);
@@ -463,8 +495,13 @@
 
   // Start auto refresh
   function startAutoRefresh() {
-    // Refresh every 30 seconds
-    refreshInterval = setInterval(loadOnlineUsers, 30000);
+    stopAutoRefresh();
+    // Refresh every 30 seconds only when admin page is active
+    refreshInterval = setInterval(() => {
+      if (!isOnlineStatsPageActive()) return;
+      loadOnlineUsers();
+      loadAIUsageStats();
+    }, 30000);
   }
 
   // Stop auto refresh
@@ -497,6 +534,7 @@
   function initMeteorEffect() {
     const container = document.getElementById('onlineStatsMeteorContainer');
     if (!container) return;
+    if (!isOnlineStatsPageActive()) return;
     
     // Check if galaxy effects should be hidden
     if (document.body.classList.contains('hide-galaxy-effects')) return;
@@ -515,8 +553,13 @@
       }, 2000);
     }
     
+    if (meteorInterval) {
+      clearInterval(meteorInterval);
+    }
+
     // Create meteors periodically
-    setInterval(() => {
+    meteorInterval = setInterval(() => {
+      if (!isOnlineStatsPageActive()) return;
       if (Math.random() > 0.7) {
         createMeteor();
       }
@@ -536,16 +579,25 @@
     };
   }
 
-  // Initialize when DOM is ready
+  // Expose hook so admin sidebar navigation can init this page lazily.
+  window.initonlinestats = initOnlineStatsPage;
+
+  // Initialize only if admin page is currently active.
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initOnlineStatsPage);
-  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      if (isOnlineStatsPageActive()) initOnlineStatsPage();
+    });
+  } else if (isOnlineStatsPageActive()) {
     initOnlineStatsPage();
   }
 
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
+    if (meteorInterval) {
+      clearInterval(meteorInterval);
+      meteorInterval = null;
+    }
   });
 
   window.refreshAIUsageStats = refreshAIUsageStats;

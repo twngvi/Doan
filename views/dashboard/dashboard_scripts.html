@@ -25,24 +25,44 @@
     return null;
   }
 
+  function normalizeDashboardUser(user) {
+    if (!user || typeof user !== "object") return null;
+    const payload =
+      user && typeof user.user === "object" && user.user
+        ? user.user
+        : user;
+    return payload && typeof payload === "object" ? payload : null;
+  }
+
   /**
    * Build auth context payload for backend calls.
    * Backend still verifies this payload against Users sheet.
    */
   function getDashboardAuthContext() {
-    const user = window.currentUser || getUserData();
+    const user = normalizeDashboardUser(window.currentUser || getUserData());
     if (!user) return null;
     return {
-      userId: user.userId || "",
-      email: user.email || "",
-      username: user.username || "",
+      userId: user.userId || user.id || user.uid || "",
+      email: user.email || user.userEmail || user.mail || "",
+      username:
+        user.username || user.displayName || user.fullName || user.name || "",
       role: user.role || "",
     };
   }
 
   function hasReadyDashboardAuthContext() {
     const auth = getDashboardAuthContext();
-    return !!(auth && auth.userId);
+    // Some sessions only have email populated in storage.
+    return !!(auth && (auth.userId || auth.email));
+  }
+
+  function getDashboardRequestContext(forceRefresh) {
+    const auth = getDashboardAuthContext() || {};
+    return {
+      ...auth,
+      // Let backend bypass short-lived cache on explicit force refresh.
+      noCache: !!forceRefresh,
+    };
   }
 
   /**
@@ -79,6 +99,22 @@
 
   const DASHBOARD_REFRESH_MIN_GAP_MS = 4000;
 
+  function getDashboardDebugSnapshot(source) {
+    const auth = getDashboardAuthContext();
+    const storageUser = getUserData();
+    const isLoggedInRaw = localStorage.getItem("isLoggedIn");
+    return {
+      source,
+      visible: isDashboardVisible(),
+      isLoggedInRaw: isLoggedInRaw,
+      hasWindowCurrentUser: !!window.currentUser,
+      hasStorageUser: !!storageUser,
+      userId: auth?.userId || "",
+      email: auth?.email || "",
+      dashboardInitialized,
+    };
+  }
+
   function requestDashboardRefresh(options = {}) {
     const opts =
       options && typeof options === "object"
@@ -93,7 +129,15 @@
         ? Math.max(0, opts.minGapMs)
         : DASHBOARD_REFRESH_MIN_GAP_MS;
 
-    if (!isDashboardVisible()) return;
+    if (!isDashboardVisible()) {
+      console.log(
+        "⏭️ requestDashboardRefresh skipped - dashboard not visible",
+        getDashboardDebugSnapshot(source),
+      );
+      return;
+    }
+
+    console.log("🔄 requestDashboardRefresh()", getDashboardDebugSnapshot(source));
 
     const now = Date.now();
     if (
@@ -117,26 +161,29 @@
   }
 
   function initDashboard() {
-    // Guard: only init if dashboard is visible and user is logged in
-    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-    if (!isLoggedIn) {
-      console.log("📊 Dashboard init skipped - not logged in");
+    const auth = getDashboardAuthContext();
+    const hasAuthContext = !!(auth && (auth.userId || auth.email));
+
+    console.log("📊 initDashboard() called", getDashboardDebugSnapshot("init"));
+
+    if (!isDashboardVisible()) {
+      console.log("📊 Dashboard init skipped - page not visible yet");
       return;
     }
 
-    if (!hasReadyDashboardAuthContext()) {
-      if (dashboardInitRetryCount < 20) {
+    if (!hasAuthContext) {
+      if (dashboardInitRetryCount < 8) {
         dashboardInitRetryCount++;
         console.log(
           "⏳ Dashboard waiting for user context before loading data...",
+          getDashboardDebugSnapshot("init-retry"),
         );
         setTimeout(initDashboard, 150);
       } else {
         console.warn(
-          "⚠️ Dashboard init aborted: missing authenticated user context",
+          "⚠️ Dashboard init continues with server-session auth fallback",
         );
       }
-      return;
     }
 
     dashboardInitRetryCount = 0;
@@ -284,6 +331,53 @@
    */
   let _dashboardIsLoading = false;
 
+  function requestDashboardDataWithTimeout(requestContext, requestOptions) {
+    const opts = requestOptions || {};
+    const hardTimeoutMs = Math.max(1000, opts.hardTimeoutMs || 15000);
+    const slowWarningMs = Math.max(1000, opts.slowWarningMs || 8000);
+    const onSuccess = typeof opts.onSuccess === "function" ? opts.onSuccess : () => {};
+    const onFailure = typeof opts.onFailure === "function" ? opts.onFailure : () => {};
+    const label = opts.label || "dashboard-request";
+
+    let settled = false;
+
+    const slowTimer = setTimeout(() => {
+      if (!settled) {
+        console.warn("⏱️ Dashboard request is slow:", label);
+      }
+    }, slowWarningMs);
+
+    const hardTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(slowTimer);
+      onFailure("Tải Dashboard quá lâu, vui lòng thử lại");
+    }, hardTimeoutMs);
+
+    const settleSuccess = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(slowTimer);
+      clearTimeout(hardTimer);
+      onSuccess(payload);
+    };
+
+    const settleFailure = (errorPayload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(slowTimer);
+      clearTimeout(hardTimer);
+      onFailure(errorPayload);
+    };
+
+    google.script.run
+      .withSuccessHandler(settleSuccess)
+      .withFailureHandler((error) => {
+        settleFailure(error?.message || error || "Lỗi kết nối server");
+      })
+      .getDashboardData(requestContext);
+  }
+
   function loadAllDashboardData(options) {
     // Prevent overlapping API calls from multiple triggers
     if (_dashboardIsLoading) {
@@ -316,6 +410,16 @@
     const forceRefresh = !!opts.forceRefresh;
     const backgroundRefresh = !!opts.backgroundRefresh;
     const initialLoad = !dashboardHasLoadedOnce && !DashboardCache.data;
+    const requestContext = getDashboardRequestContext(forceRefresh);
+
+    console.log("📡 loadAllDashboardData()", {
+      forceRefresh,
+      backgroundRefresh,
+      initialLoad,
+      visible: isDashboardVisible(),
+      userId: requestContext?.userId || "",
+      email: requestContext?.email || "",
+    });
 
     const finishLoad = () => {
       _dashboardIsLoading = false;
@@ -342,6 +446,12 @@
       return;
     }
 
+    if (!requestContext.userId && !requestContext.email) {
+      console.warn(
+        "⚠️ Dashboard request has no user context, relying on server session auth",
+      );
+    }
+
     // Show large loading placeholders only on first load.
     // Background refresh should keep old data on screen.
     if (initialLoad && !backgroundRefresh) {
@@ -350,75 +460,95 @@
 
     const handleLoadError = (message) => {
       finishLoad();
-      if (initialLoad) {
+      const shouldRenderError = initialLoad || !dashboardHasLoadedOnce;
+      if (shouldRenderError) {
         showErrorStates(message);
       } else {
         console.warn("Background refresh failed, keeping current UI:", message);
       }
     };
 
-    const loadingTimeout = setTimeout(() => {
-      console.warn("⏱️ API taking too long");
-    }, 10000);
+    const applySuccessResponse = (response) => {
+      if (response && response.success) {
+        DashboardCache.data = response;
+        DashboardCache.lastFetch = Date.now();
+        renderAllZones(response);
+        dashboardHasLoadedOnce = true;
+        finishLoad();
+        return true;
+      }
+      return false;
+    };
 
-    google.script.run
-      .withSuccessHandler((response) => {
-        clearTimeout(loadingTimeout);
-        if (response && response.success) {
-          DashboardCache.data = response;
-          DashboardCache.lastFetch = Date.now();
-          renderAllZones(response);
-          dashboardHasLoadedOnce = true;
-          finishLoad();
-        } else {
-          console.warn(
-            "Dashboard data returned success:false, retrying in 3s...",
-          );
-          // Retry once after a short delay instead of showing error immediately
-          setTimeout(() => {
-            google.script.run
-              .withSuccessHandler((retryResponse) => {
-                if (retryResponse && retryResponse.success) {
-                  DashboardCache.data = retryResponse;
-                  DashboardCache.lastFetch = Date.now();
-                  renderAllZones(retryResponse);
-                  dashboardHasLoadedOnce = true;
-                  finishLoad();
-                } else {
-                  handleLoadError("Không thể tải dữ liệu");
-                }
-              })
-              .withFailureHandler(() => {
-                handleLoadError("Không thể tải dữ liệu");
-              })
-              .getDashboardData(getDashboardAuthContext());
-          }, 3000);
+    const runRetryOnce = (reasonMessage) => {
+      console.warn("🔁 Dashboard retrying once:", reasonMessage);
+
+      setTimeout(() => {
+        const retryContext = getDashboardRequestContext(true);
+        console.log("📡 Dashboard retry context", {
+          userId: retryContext?.userId || "",
+          email: retryContext?.email || "",
+          reason: reasonMessage,
+        });
+
+        requestDashboardDataWithTimeout(retryContext, {
+          label: "retry",
+          hardTimeoutMs: 14000,
+          slowWarningMs: 7000,
+          onSuccess: (retryResponse) => {
+            if (applySuccessResponse(retryResponse)) return;
+            handleLoadError(
+              (retryResponse && retryResponse.message) || "Không thể tải dữ liệu",
+            );
+          },
+          onFailure: (retryError) => {
+            const msg =
+              typeof retryError === "string"
+                ? retryError
+                : retryError?.message || "Lỗi kết nối server";
+            handleLoadError(msg);
+          },
+        });
+      }, 1200);
+    };
+
+    console.log("📡 Dashboard request context", {
+      userId: requestContext?.userId || "",
+      email: requestContext?.email || "",
+      forceRefresh,
+      source: opts.source || "unknown",
+    });
+
+    requestDashboardDataWithTimeout(requestContext, {
+      label: "initial",
+      hardTimeoutMs: 18000,
+      slowWarningMs: 9000,
+      onSuccess: (response) => {
+        if (applySuccessResponse(response)) return;
+
+        const serverMessage =
+          (response && typeof response.message === "string"
+            ? response.message
+            : "") || "Không thể tải dữ liệu";
+        const authFailed = /not logged in|chưa đăng nhập|unauthorized/i.test(
+          serverMessage,
+        );
+
+        if (authFailed) {
+          handleLoadError("Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại");
+          return;
         }
-      })
-      .withFailureHandler((error) => {
-        clearTimeout(loadingTimeout);
-        console.error("❌ getDashboardData error:", error);
-        // Retry once on failure
-        setTimeout(() => {
-          google.script.run
-            .withSuccessHandler((retryResponse) => {
-              if (retryResponse && retryResponse.success) {
-                DashboardCache.data = retryResponse;
-                DashboardCache.lastFetch = Date.now();
-                renderAllZones(retryResponse);
-                dashboardHasLoadedOnce = true;
-                finishLoad();
-              } else {
-                handleLoadError("Lỗi kết nối server");
-              }
-            })
-            .withFailureHandler(() => {
-              handleLoadError("Lỗi kết nối server");
-            })
-            .getDashboardData(getDashboardAuthContext());
-        }, 3000);
-      })
-      .getDashboardData(getDashboardAuthContext());
+
+        runRetryOnce(serverMessage);
+      },
+      onFailure: (errorMessage) => {
+        const message =
+          typeof errorMessage === "string"
+            ? errorMessage
+            : errorMessage?.message || "Lỗi kết nối server";
+        runRetryOnce(message);
+      },
+    });
   }
 
   /**
@@ -947,7 +1077,6 @@
       });
     }
 
-    const medals = ["🥇", "🥈", "🥉"];
     const now = new Date();
     const timeStr = now.toLocaleTimeString("vi-VN", {
       hour: "2-digit",
@@ -964,13 +1093,20 @@
     podiumOrder.forEach((pos) => {
       const entry = top3[pos];
       if (!entry) {
-        top3Html += `<div class="lb-podium-item empty-podium"></div>`;
+        top3Html += `
+        <div class="lb-podium-item empty-podium podium-rank-${pos + 1}">
+          <div class="lb-podium-stand"></div>
+        </div>`;
         return;
       }
       const rank = pos + 1;
       const meClass = entry.isMe ? "lb-me" : "";
-      
-      const avatarSrc = entry.avatarUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random";
+
+      const avatarSrc =
+        entry.avatarUrl ||
+        "https://ui-avatars.com/api/?name=" +
+          encodeURIComponent(entry.name) +
+          "&background=random";
 
       // Detect XP change for Top 3
       let changeHtml = "";
@@ -983,13 +1119,18 @@
 
       top3Html += `
       <div class="lb-podium-item podium-rank-${rank} ${meClass}" title="${entry.name} - ${entry.xp} XP">
-        <div class="lb-podium-avatar-wrapper">
-          <img src="${avatarSrc}" alt="${entry.name}" class="lb-podium-avatar">
-          <div class="lb-podium-badge">${rank}</div>
-          ${changeHtml}
+        <div class="lb-podium-avatar-cluster">
+          <div class="lb-podium-avatar-wrapper">
+            <img src="${avatarSrc}" alt="${entry.name}" class="lb-podium-avatar">
+            <div class="lb-podium-badge">${rank}</div>
+            ${changeHtml}
+          </div>
+          <div class="lb-podium-name-bar">
+            <div class="lb-podium-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
+            <div class="lb-podium-xp">${entry.xp.toLocaleString()} XP</div>
+          </div>
         </div>
-        <div class="lb-podium-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
-        <div class="lb-podium-xp">${entry.xp.toLocaleString()} XP</div>
+        <div class="lb-podium-stand"></div>
       </div>`;
     });
     top3Html += '</div>';
@@ -1006,17 +1147,25 @@
         }
       }
 
-      const avatarSrc = entry.avatarUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random";
+      const avatarSrc =
+        entry.avatarUrl ||
+        "https://ui-avatars.com/api/?name=" +
+          encodeURIComponent(entry.name) +
+          "&background=random";
 
       restHtml += `
       <div class="lb-list-item ${meClass}">
         <div class="lb-list-rank">${rank}</div>
-        <div class="lb-list-avatar-wrapper">
-          <img src="${avatarSrc}" class="lb-list-avatar" alt="${entry.name}">
-        </div>
-        <div class="lb-list-info">
-          <div class="lb-list-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
-          <div class="lb-list-xp">${entry.xp.toLocaleString()} XP ${changeHtml}</div>
+        <div class="lb-list-main">
+          <div class="lb-list-avatar-wrapper">
+            <div class="lb-list-avatar-shell">
+              <img src="${avatarSrc}" class="lb-list-avatar" alt="${entry.name}">
+            </div>
+          </div>
+          <div class="lb-list-info">
+            <div class="lb-list-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
+            <div class="lb-list-xp">${entry.xp.toLocaleString()} XP ${changeHtml}</div>
+          </div>
         </div>
       </div>`;
     });
@@ -1299,16 +1448,30 @@
     return date.toLocaleDateString("vi-VN");
   }
 
-  // Do NOT auto-initialize dashboard on script load.
-  // Dashboard will be initialized when user navigates to it via refreshDashboardOnReturn().
-  // Only initialize if the dashboard is already visible (page restore on reload).
-  if (isDashboardVisible() && localStorage.getItem("isLoggedIn") === "true") {
-    initDashboard();
-  }
+  // Self-heal init path for restored sessions: visible dashboard should not stay uninitialized.
+  setTimeout(() => {
+    if (isDashboardVisible() && !dashboardInitialized) {
+      console.log("🩹 Delayed dashboard self-heal init");
+      initDashboard();
+    }
+  }, 400);
 
   // Listen for user updates
   window.addEventListener("user-info-updated", function (e) {
     if (e.detail) updateDashboardUserInfo(e.detail);
+
+    const shouldReinit = isDashboardVisible() && !dashboardInitialized;
+    console.log("👤 user-info-updated", {
+      shouldReinit,
+      dashboardVisible: isDashboardVisible(),
+      dashboardInitialized,
+      detailEmail: e?.detail?.email || "",
+      detailUserId: e?.detail?.userId || "",
+    });
+
+    if (shouldReinit) {
+      initDashboard();
+    }
   });
 
   window.addEventListener("avatar-updated", function (e) {

@@ -32,6 +32,40 @@
     }
   }
 
+  function triggerDashboardRefreshWhenVisible(attempt) {
+    const maxAttempts = 8;
+    const currentAttempt = typeof attempt === "number" ? attempt : 0;
+    const dashboardMain = document.querySelector(
+      "#page-dashboard .dashboard-main-content",
+    );
+    const visible = !!(dashboardMain && dashboardMain.offsetParent !== null);
+
+    console.log("📊 showPage dashboard visibility check:", {
+      attempt: currentAttempt,
+      visible: visible,
+      hasRefreshFunction: typeof window.refreshDashboardOnReturn === "function",
+    });
+
+    if (visible) {
+      if (typeof window.refreshDashboardOnReturn === "function") {
+        console.log("📊 showPage calling refreshDashboardOnReturn()");
+        window.refreshDashboardOnReturn();
+      }
+      return;
+    }
+
+    if (currentAttempt >= maxAttempts) {
+      console.warn(
+        "⚠️ Dashboard page not visible after retries; skip refreshDashboardOnReturn",
+      );
+      return;
+    }
+
+    setTimeout(function () {
+      triggerDashboardRefreshWhenVisible(currentAttempt + 1);
+    }, 80);
+  }
+
   function getHeartbeatUser() {
     return window.currentUser || currentUser || getStoredCurrentUser();
   }
@@ -863,8 +897,9 @@
       // Các xử lý khởi tạo trang con (dùng try-catch để an toàn)
       try {
         if (pageId === "page-dashboard") {
-          if (typeof refreshDashboardOnReturn === "function")
-            refreshDashboardOnReturn();
+          setTimeout(function () {
+            triggerDashboardRefreshWhenVisible(0);
+          }, 0);
         }
         if (pageId === "page-topics") {
           if (typeof initTopicsPage === "function") initTopicsPage();
@@ -1663,33 +1698,33 @@
    * Load dashboard data
    */
   function loadDashboardData() {
-    console.log("Loading dashboard data...");
+    console.log("Loading dashboard data (compat wrapper)...");
 
-    if (!currentUser) {
-      console.error("No current user");
+    // Keep legacy callers working, but delegate to the real dashboard loader.
+    const recoveredUser = window.currentUser || currentUser || getStoredCurrentUser();
+    if (recoveredUser) {
+      currentUser = recoveredUser;
+      window.currentUser = recoveredUser;
+    }
+
+    if (typeof triggerDashboardRefreshWhenVisible === "function") {
+      triggerDashboardRefreshWhenVisible(0);
       return;
     }
 
-    // Update user display name
-    const displayElements = document.querySelectorAll(
-      "#user-display-name, #dashboard-user-name",
-    );
-    displayElements.forEach((el) => {
-      if (el) {
-        el.textContent = currentUser.fullName || currentUser.username;
-      }
-    });
+    if (typeof window.refreshDashboardOnReturn === "function") {
+      // Last fallback if visibility helper is unavailable.
+      window.refreshDashboardOnReturn();
+      return;
+    }
 
-    // Load stats (placeholder values for now)
+    // Fallback for older dashboard templates that still use stat-* IDs.
     updateDashboardStats({
       totalTopics: 0,
       completed: 0,
       avgScore: 0,
       streak: 0,
     });
-
-    // TODO: Load actual data from user progress sheet
-    console.log("Dashboard loaded for user:", currentUser.userId);
   }
 
   /**

@@ -626,6 +626,10 @@ function dailyCheckin(userContext) {
     // Update streak
     updateUserStreak(userEmail, today);
 
+    if (typeof invalidateDashboardCachesByEmail === "function") {
+      invalidateDashboardCachesByEmail(userEmail, false);
+    }
+
     // === AUTO-AWARD CHECKIN XP ===
     // Reuse quest reward pipeline so XP_Log + totalXP are updated consistently.
     const xpResult = completeQuestAndAwardXP("daily_checkin", userContext);

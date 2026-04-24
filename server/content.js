@@ -1293,13 +1293,13 @@ function resolveAuthenticatedEmailFromContext(userContext) {
       return String(sessionEmail).trim();
     }
 
-    if (!userContext || !userContext.userId) {
+    if (!userContext) {
       return "";
     }
 
     const userId = String(userContext.userId || "").trim();
     const contextEmail = String(userContext.email || "").trim();
-    if (!userId) return "";
+    if (!userId && !contextEmail) return "";
 
     const masterDbId =
       DB_CONFIG.SPREADSHEET_ID ||
@@ -1317,19 +1317,39 @@ function resolveAuthenticatedEmailFromContext(userContext) {
     const isActiveCol = headers.indexOf("isActive");
     if (userIdCol < 0 || emailCol < 0) return "";
 
-    for (let i = 1; i < allData.length; i++) {
-      if (String(allData[i][userIdCol] || "").trim() !== userId) continue;
+    const normalizedContextEmail = contextEmail.toLowerCase();
 
-      const matchedEmail = String(allData[i][emailCol] || "").trim();
+    for (let i = 1; i < allData.length; i++) {
+      const rowUserId = String(allData[i][userIdCol] || "").trim();
+      const rowEmail = String(allData[i][emailCol] || "").trim();
       const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
       const isDisabled = isActive === false || isActive === "FALSE";
-      if (isDisabled) return "";
 
-      if (contextEmail && contextEmail !== matchedEmail) {
-        return "";
+      // Strongest verification: both userId and email match the same row.
+      if (userId && rowUserId === userId) {
+        if (isDisabled) return "";
+        if (contextEmail && rowEmail !== contextEmail) return "";
+        return rowEmail;
       }
 
-      return matchedEmail;
+      // Backward-compatible fallback for sessions that only carry email.
+      if (!userId && normalizedContextEmail && rowEmail.toLowerCase() === normalizedContextEmail) {
+        if (isDisabled) return "";
+        return rowEmail;
+      }
+    }
+
+    // If userId is stale but email is valid, allow a verified email fallback.
+    if (normalizedContextEmail) {
+      for (let i = 1; i < allData.length; i++) {
+        const rowEmail = String(allData[i][emailCol] || "").trim();
+        if (rowEmail.toLowerCase() !== normalizedContextEmail) continue;
+
+        const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
+        const isDisabled = isActive === false || isActive === "FALSE";
+        if (isDisabled) return "";
+        return rowEmail;
+      }
     }
 
     return "";
@@ -1338,6 +1358,128 @@ function resolveAuthenticatedEmailFromContext(userContext) {
       "Error resolving authenticated email from context: " + error.toString(),
     );
     return "";
+  }
+}
+
+function normalizeYmdDate_(value) {
+  if (!value && value !== 0) return "";
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+  }
+  const str = String(value).trim();
+  if (!str) return "";
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+  }
+  return str;
+}
+
+function getSheetValuesTailWithHeader_(sheet, maxDataRows) {
+  if (!sheet) return [];
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return [];
+
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues();
+  if (lastRow === 1) return header;
+
+  const safeMaxRows = Math.max(1, parseInt(maxDataRows, 10) || 1);
+  const startRow = Math.max(2, lastRow - safeMaxRows + 1);
+  const rowCount = lastRow - startRow + 1;
+  if (rowCount <= 0) return header;
+
+  const rows = sheet.getRange(startRow, 1, rowCount, lastCol).getValues();
+  return header.concat(rows);
+}
+
+function hasCheckedInTodayFast_(spreadsheet, today, maxRowsToScan) {
+  const checkinSheet = spreadsheet.getSheetByName("Checkin_History");
+  if (!checkinSheet) return false;
+
+  const lastRow = checkinSheet.getLastRow();
+  if (lastRow <= 1) return false;
+
+  const scanRows = Math.min(Math.max(1, maxRowsToScan || 90), lastRow - 1);
+  const startRow = lastRow - scanRows + 1;
+  const dateValues = checkinSheet.getRange(startRow, 1, scanRows, 1).getValues();
+
+  for (let i = dateValues.length - 1; i >= 0; i--) {
+    const rowDate = normalizeYmdDate_(dateValues[i][0]);
+    if (!rowDate) continue;
+    if (rowDate === today) return true;
+    if (rowDate < today) break;
+  }
+
+  return false;
+}
+
+function getClaimedQuestMapForTodayFast_(spreadsheet, today, maxRowsToScan) {
+  const claimedQuests = {};
+  const xpSheet = spreadsheet.getSheetByName("XP_Log");
+  if (!xpSheet) return claimedQuests;
+
+  const lastRow = xpSheet.getLastRow();
+  if (lastRow <= 1) return claimedQuests;
+
+  const scanRows = Math.min(Math.max(1, maxRowsToScan || 600), lastRow - 1);
+  const startRow = lastRow - scanRows + 1;
+  // Need date (col 1) and questId (col 3)
+  const rows = xpSheet.getRange(startRow, 1, scanRows, 3).getValues();
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const dateStr = normalizeYmdDate_(rows[i][0]);
+    if (!dateStr) continue;
+
+    if (dateStr === today) {
+      const questId = String(rows[i][2] || "").trim();
+      if (questId) claimedQuests[questId] = true;
+      continue;
+    }
+
+    if (dateStr < today) break;
+  }
+
+  return claimedQuests;
+}
+
+const DASHBOARD_CACHE_TTL_SECONDS = 45;
+const DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS = 45;
+const DASHBOARD_LEADERBOARD_CACHE_KEY = "dashboard_leaderboard_top10_v1";
+
+function getDashboardCacheKeyForEmail_(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+  if (!normalized) return "";
+  return (
+    "dashboard_data_v4_" +
+    Utilities.base64EncodeWebSafe(normalized).replace(/=+$/g, "")
+  );
+}
+
+function invalidateDashboardCachesByEmail(email, clearLeaderboard) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const userCacheKey = getDashboardCacheKeyForEmail_(email);
+
+    if (userCacheKey) {
+      cache.remove(userCacheKey);
+    }
+
+    if (clearLeaderboard) {
+      cache.remove(DASHBOARD_LEADERBOARD_CACHE_KEY);
+    }
+  } catch (error) {
+    Logger.log(
+      "Warning: invalidateDashboardCachesByEmail failed: " + error.toString(),
+    );
+  }
+}
+
+function invalidateDashboardCachesByUserContext_(userContext, clearLeaderboard) {
+  const email = resolveAuthenticatedEmailFromContext(userContext);
+  if (email) {
+    invalidateDashboardCachesByEmail(email, !!clearLeaderboard);
   }
 }
 
@@ -1689,6 +1831,8 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
 
     let progressSheetId = "";
 
+    let userFound = false;
+
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][emailCol]).trim() === String(userEmail).trim()) {
         const currentXP = parseInt(data[i][xpCol]) || 0;
@@ -1697,6 +1841,7 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
         result.totalXP = currentXP + xpDelta;
         result.totalXQP = currentXQP + xpDelta;
         progressSheetId = data[i][headers.indexOf("progressSheetId")];
+        userFound = true;
 
         usersSheet.getRange(i + 1, xpCol + 1).setValue(result.totalXP);
         usersSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
@@ -1707,6 +1852,10 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
     // 2. Update PERSONAL DB
     if (progressSheetId) {
       updatePersonalProfilePoints(progressSheetId, result.totalXP, result.totalXQP);
+    }
+
+    if (userFound) {
+      invalidateDashboardCachesByEmail(userEmail, true);
     }
 
     return result;
@@ -1936,6 +2085,7 @@ function saveQuizResult(resultData) {
     });
 
     quizSheet.appendRow(resultEntry);
+    invalidateDashboardCachesByEmail(userEmail, false);
 
     Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
 
@@ -2234,6 +2384,7 @@ function saveMatchingResult(resultData) {
     });
 
     matchingSheet.appendRow(resultEntry);
+    invalidateDashboardCachesByEmail(userEmail, false);
     Logger.log("✅ Matching result saved to personal sheet");
 
     // Award topic completion XP for completed matching attempts.
@@ -2442,6 +2593,8 @@ function saveActivityLog(data) {
       now.toISOString(),
     ]);
 
+    invalidateDashboardCachesByEmail(userEmail, false);
+
     Logger.log("✅ Activity saved: " + data.type + " - " + data.topicTitle);
     return { success: true };
   } catch (error) {
@@ -2455,30 +2608,89 @@ function saveActivityLog(data) {
  * Returns: quickStats (XP, accuracy, badges, rank), activities, quests, skillProgress, leaderboard
  */
 function getDashboardData(userContext) {
+  const requestStart = Date.now();
+  const logTiming = function (label, startTime) {
+    Logger.log("[DashboardData] " + label + ": " + (Date.now() - startTime) + "ms");
+  };
+
   try {
+    const noCache = !!(userContext && userContext.noCache);
+    const contextEmail = String((userContext && userContext.email) || "").trim();
+    const contextUserId = String((userContext && userContext.userId) || "").trim();
+
+    const resolveStart = Date.now();
     const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+    logTiming("resolve user", resolveStart);
+
     if (!userEmail || userEmail === "anonymous") {
-      return { success: false, message: "Not logged in" };
+      let authMessage = "Not logged in";
+      if (!contextEmail && !contextUserId) {
+        authMessage = "Not logged in";
+      } else if (!contextEmail) {
+        authMessage = "Missing email in auth context";
+      } else if (!contextUserId) {
+        authMessage = "Missing userId in auth context";
+      }
+      return { success: false, message: authMessage };
     }
 
+    const dashboardCacheKey = getDashboardCacheKeyForEmail_(userEmail);
+    const dashboardCache = CacheService.getScriptCache();
+
+    if (!noCache && dashboardCacheKey) {
+      try {
+        const cachedPayload = dashboardCache.get(dashboardCacheKey);
+        if (cachedPayload) {
+          const parsed = JSON.parse(cachedPayload);
+          if (parsed && parsed.success) {
+            return parsed;
+          }
+        }
+      } catch (cacheReadError) {
+        Logger.log(
+          "⚠️ getDashboardData cache read failed: " + cacheReadError.toString(),
+        );
+      }
+    }
+
+    const DASHBOARD_ACTIVITY_SCAN_ROWS = 200;
+    const DASHBOARD_QUIZ_SCAN_ROWS = 200;
+    const DASHBOARD_XPLOG_SCAN_ROWS = 200;
+    const DASHBOARD_CHECKIN_SCAN_ROWS = 120;
+
     // === 1. Read from Master DB (User row) ===
+    const usersReadStart = Date.now();
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
     const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Users sheet not found" };
+    }
+
     const allData = usersSheet.getDataRange().getValues();
+    if (!allData || allData.length <= 1) {
+      return { success: false, message: "Users data is empty" };
+    }
+
     const headers = allData[0];
 
     const col = {};
     headers.forEach((h, i) => (col[h] = i));
+    if (typeof col["email"] !== "number") {
+      return { success: false, message: "Users.email column is missing" };
+    }
+    logTiming("read Users", usersReadStart);
 
     let userRow = null;
-    let userRowIdx = -1;
     for (let i = 1; i < allData.length; i++) {
-      if (allData[i][col["email"]] === userEmail) {
+      if (String(allData[i][col["email"]] || "").trim() === userEmail) {
         userRow = allData[i];
-        userRowIdx = i;
         break;
       }
+    }
+
+    if (!userRow) {
+      return { success: false, message: "Authenticated user not found" };
     }
 
     const totalXP = userRow ? parseInt(userRow[col["totalXP"]]) || 0 : 0;
@@ -2490,50 +2702,70 @@ function getDashboardData(userContext) {
 
     // === 2. Read personal sheet data ===
     let activities = [];
-    let quizResults = [];
+    let quizAttemptCount = 0;
+    const topicScores = {};
     let totalCorrect = 0;
     let totalQuestions = 0;
     let badges = 0;
+    const today = Utilities.formatDate(
+      new Date(),
+      "Asia/Ho_Chi_Minh",
+      "yyyy-MM-dd",
+    );
+    let checkedInToday = false;
+    let claimedQuests = {};
 
     if (progressSheetId) {
+      const personalSheetStart = Date.now();
       const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+      logTiming("open personal sheet", personalSheetStart);
 
       // Activity Log
+      const activityReadStart = Date.now();
       const actSheet = userSpreadsheet.getSheetByName("Activity_Log");
       if (actSheet) {
-        const actData = actSheet.getDataRange().getValues();
-        const actHeaders = actData[0];
-        const ac = {};
-        actHeaders.forEach((h, i) => (ac[h] = i));
-
-        for (let i = 1; i < actData.length; i++) {
-          activities.push({
-            type: ac["type"] >= 0 ? actData[i][ac["type"]] : "",
-            topicId:
-              ac["topicId"] >= 0 ? String(actData[i][ac["topicId"]]) : "",
-            topicTitle:
-              ac["topicTitle"] >= 0 ? String(actData[i][ac["topicTitle"]]) : "",
-            score:
-              ac["score"] >= 0 && actData[i][ac["score"]] !== ""
-                ? parseInt(actData[i][ac["score"]])
-                : null,
-            totalQuestions:
-              ac["totalQuestions"] >= 0 &&
-              actData[i][ac["totalQuestions"]] !== ""
-                ? parseInt(actData[i][ac["totalQuestions"]])
-                : null,
-            percentage:
-              ac["percentage"] >= 0 && actData[i][ac["percentage"]] !== ""
-                ? parseInt(actData[i][ac["percentage"]])
-                : null,
-            timestamp:
-              ac["timestamp"] >= 0 ? String(actData[i][ac["timestamp"]]) : "",
-          });
-        }
-        activities.sort(
-          (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+        const actData = getSheetValuesTailWithHeader_(
+          actSheet,
+          DASHBOARD_ACTIVITY_SCAN_ROWS,
         );
-        activities = activities.slice(0, 10);
+        const actHeaders = actData[0];
+        if (actHeaders && actHeaders.length > 0) {
+          const ac = {};
+          actHeaders.forEach((h, i) => (ac[h] = i));
+
+          for (let i = 1; i < actData.length; i++) {
+            activities.push({
+              type: ac["type"] >= 0 ? actData[i][ac["type"]] : "",
+              topicId:
+                ac["topicId"] >= 0 ? String(actData[i][ac["topicId"]]) : "",
+              topicTitle:
+                ac["topicTitle"] >= 0
+                  ? String(actData[i][ac["topicTitle"]])
+                  : "",
+              score:
+                ac["score"] >= 0 && actData[i][ac["score"]] !== ""
+                  ? parseInt(actData[i][ac["score"]])
+                  : null,
+              totalQuestions:
+                ac["totalQuestions"] >= 0 &&
+                actData[i][ac["totalQuestions"]] !== ""
+                  ? parseInt(actData[i][ac["totalQuestions"]])
+                  : null,
+              percentage:
+                ac["percentage"] >= 0 && actData[i][ac["percentage"]] !== ""
+                  ? parseInt(actData[i][ac["percentage"]])
+                  : null,
+              timestamp:
+                ac["timestamp"] >= 0
+                  ? String(actData[i][ac["timestamp"]])
+                  : "",
+            });
+          }
+          activities.sort(
+            (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+          );
+          activities = activities.slice(0, 10);
+        }
 
         // ⭐ Enrich Learning activities with contentDocId from Topics sheet
         try {
@@ -2541,35 +2773,65 @@ function getDashboardData(userContext) {
             return a.type === "Learning" && a.topicId;
           });
           if (learningActivities.length > 0) {
-            var topicsSSId = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
-            var topicsSS = SpreadsheetApp.openById(topicsSSId);
-            var topicsSheet = topicsSS.getSheetByName("Topics");
-            if (topicsSheet) {
-              var topicsData = topicsSheet.getDataRange().getValues();
-              var topicDocMap = {};
-              for (var ti = 1; ti < topicsData.length; ti++) {
-                var tId = String(topicsData[ti][0]).trim();
-                var docId = String(topicsData[ti][13] || "").trim();
-                if (tId && docId) {
-                  topicDocMap[tId] = docId;
-                }
+            var topicDocMap = null;
+            var topicDocCacheKey = "dashboard_topic_doc_map_v1";
+
+            try {
+              var topicCache = CacheService.getScriptCache();
+              var cachedTopicMap = topicCache.get(topicDocCacheKey);
+              if (cachedTopicMap) {
+                topicDocMap = JSON.parse(cachedTopicMap);
               }
-              for (var ai = 0; ai < activities.length; ai++) {
-                if (
-                  activities[ai].type === "Learning" &&
-                  activities[ai].topicId
-                ) {
-                  var mappedDocId =
-                    topicDocMap[String(activities[ai].topicId).trim()];
-                  if (mappedDocId) {
-                    activities[ai].contentDocId = mappedDocId;
+            } catch (cacheReadError) {
+              Logger.log(
+                "⚠️ Could not read topicDocMap cache: " +
+                  cacheReadError.toString(),
+              );
+            }
+
+            if (!topicDocMap) {
+              topicDocMap = {};
+              var topicsSSId = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+              var topicsSS = SpreadsheetApp.openById(topicsSSId);
+              var topicsSheet = topicsSS.getSheetByName("Topics");
+
+              if (topicsSheet) {
+                var topicsData = topicsSheet.getDataRange().getValues();
+                for (var ti = 1; ti < topicsData.length; ti++) {
+                  var tId = String(topicsData[ti][0]).trim();
+                  var docId = String(topicsData[ti][13] || "").trim();
+                  if (tId && docId) {
+                    topicDocMap[tId] = docId;
                   }
                 }
               }
-              Logger.log(
-                "✅ Enriched activities with contentDocId from Topics sheet",
-              );
+
+              try {
+                CacheService.getScriptCache().put(
+                  topicDocCacheKey,
+                  JSON.stringify(topicDocMap),
+                  600,
+                );
+              } catch (cacheWriteError) {
+                Logger.log(
+                  "⚠️ Could not write topicDocMap cache: " +
+                    cacheWriteError.toString(),
+                );
+              }
             }
+
+            for (var ai = 0; ai < activities.length; ai++) {
+              if (activities[ai].type === "Learning" && activities[ai].topicId) {
+                var mappedDocId = topicDocMap[String(activities[ai].topicId).trim()];
+                if (mappedDocId) {
+                  activities[ai].contentDocId = mappedDocId;
+                }
+              }
+            }
+
+            Logger.log(
+              "✅ Enriched activities with contentDocId from Topics sheet/cache",
+            );
           }
         } catch (enrichError) {
           Logger.log(
@@ -2578,37 +2840,81 @@ function getDashboardData(userContext) {
           );
         }
       }
+      logTiming("read Activity_Log", activityReadStart);
 
       // Quiz Results for accuracy calculation
+      const quizReadStart = Date.now();
       const quizSheet = userSpreadsheet.getSheetByName("Quiz_Results");
       if (quizSheet) {
-        const qData = quizSheet.getDataRange().getValues();
+        const qData = getSheetValuesTailWithHeader_(
+          quizSheet,
+          DASHBOARD_QUIZ_SCAN_ROWS,
+        );
         const qHeaders = qData[0];
-        const qc = {};
-        qHeaders.forEach((h, i) => (qc[h] = i));
+        if (qHeaders && qHeaders.length > 0) {
+          const qc = {};
+          qHeaders.forEach((h, i) => (qc[h] = i));
 
-        for (let i = 1; i < qData.length; i++) {
-          const status =
-            qc["status"] >= 0 ? qData[i][qc["status"]] : "complete";
-          if (status === "partial") continue;
-          const sc =
-            qc["score"] >= 0 ? parseInt(qData[i][qc["score"]]) || 0 : 0;
-          const tq =
-            qc["totalQuestions"] >= 0
-              ? parseInt(qData[i][qc["totalQuestions"]]) || 0
-              : 0;
-          totalCorrect += sc;
-          totalQuestions += tq;
-          quizResults.push({
-            topicId: qc["topicId"] >= 0 ? qData[i][qc["topicId"]] : "",
-            topicTitle: qc["topicTitle"] >= 0 ? qData[i][qc["topicTitle"]] : "",
-            percentage:
+          for (let i = 1; i < qData.length; i++) {
+            const status =
+              qc["status"] >= 0 ? qData[i][qc["status"]] : "complete";
+            if (status === "partial") continue;
+            const sc =
+              qc["score"] >= 0 ? parseInt(qData[i][qc["score"]]) || 0 : 0;
+            const tq =
+              qc["totalQuestions"] >= 0
+                ? parseInt(qData[i][qc["totalQuestions"]]) || 0
+                : 0;
+            totalCorrect += sc;
+            totalQuestions += tq;
+            quizAttemptCount++;
+
+            const topicTitle =
+              qc["topicTitle"] >= 0
+                ? String(qData[i][qc["topicTitle"]] || "").trim()
+                : "";
+            const percentage =
               qc["percentage"] >= 0
                 ? parseInt(qData[i][qc["percentage"]]) || 0
-                : 0,
-          });
+                : 0;
+
+            if (topicTitle) {
+              if (!topicScores[topicTitle]) {
+                topicScores[topicTitle] = { total: 0, count: 0 };
+              }
+              topicScores[topicTitle].total += percentage;
+              topicScores[topicTitle].count++;
+            }
+          }
         }
       }
+      logTiming("read Quiz_Results", quizReadStart);
+
+      // Check if user checked in today (scan tail rows only)
+      checkedInToday = false;
+      try {
+        checkedInToday = hasCheckedInTodayFast_(
+          userSpreadsheet,
+          today,
+          DASHBOARD_CHECKIN_SCAN_ROWS,
+        );
+      } catch (e) {
+        Logger.log("Error checking checkin (fast): " + e.toString());
+      }
+
+      // Check which quests have been claimed today (from XP_Log tail rows)
+      claimedQuests = {};
+      const xpReadStart = Date.now();
+      try {
+        claimedQuests = getClaimedQuestMapForTodayFast_(
+          userSpreadsheet,
+          today,
+          DASHBOARD_XPLOG_SCAN_ROWS,
+        );
+      } catch (e) {
+        Logger.log("Error reading XP_Log (fast): " + e.toString());
+      }
+      logTiming("read XP_Log", xpReadStart);
     }
 
     const avgAccuracy =
@@ -2621,8 +2927,9 @@ function getDashboardData(userContext) {
     if (totalXP >= 500) badges++;
     if (totalXP >= 1000) badges++;
     if (avgAccuracy >= 80) badges++;
-    if (quizResults.length >= 10) badges++;
-    if (quizResults.length >= 50) badges++;
+    const quizCountForBadges = Math.max(totalQuizAnswered, quizAttemptCount);
+    if (quizCountForBadges >= 10) badges++;
+    if (quizCountForBadges >= 50) badges++;
     const currentStreak = userRow
       ? parseInt(userRow[col["currentStreak"]]) || 0
       : 0;
@@ -2653,11 +2960,6 @@ function getDashboardData(userContext) {
     }
 
     // === 4. Daily Quests ===
-    const today = Utilities.formatDate(
-      new Date(),
-      "Asia/Ho_Chi_Minh",
-      "yyyy-MM-dd",
-    );
     const todayActivities = activities.filter(
       (a) => a.timestamp && a.timestamp.startsWith(today),
     );
@@ -2672,47 +2974,6 @@ function getDashboardData(userContext) {
       (a) =>
         (a.type === "MCQ" || a.type === "Matching") && a.percentage === 100,
     ).length;
-
-    // Check if user checked in today
-    let checkedInToday = false;
-    if (progressSheetId) {
-      try {
-        const userSS = SpreadsheetApp.openById(progressSheetId);
-        checkedInToday = hasCheckedInToday(userSS, today);
-      } catch (e) {
-        Logger.log("Error checking checkin: " + e.toString());
-      }
-    }
-
-    // Check which quests have been claimed today (from XP_Log)
-    let claimedQuests = {};
-    if (progressSheetId) {
-      try {
-        const userSS = SpreadsheetApp.openById(progressSheetId);
-        const xpSheet = userSS.getSheetByName("XP_Log");
-        if (xpSheet) {
-          const xpData = xpSheet.getDataRange().getValues();
-          for (let i = 1; i < xpData.length; i++) {
-            const xpDate = xpData[i][0];
-            let dateStr;
-            if (xpDate instanceof Date) {
-              dateStr = Utilities.formatDate(
-                xpDate,
-                "Asia/Ho_Chi_Minh",
-                "yyyy-MM-dd",
-              );
-            } else {
-              dateStr = String(xpDate).trim();
-            }
-            if (dateStr === today) {
-              claimedQuests[xpData[i][2]] = true; // questId column
-            }
-          }
-        }
-      } catch (e) {
-        Logger.log("Error reading XP_Log: " + e.toString());
-      }
-    }
 
     const quests = [
       {
@@ -2776,14 +3037,6 @@ function getDashboardData(userContext) {
     });
 
     // === 5. Skill progress from quiz results ===
-    const topicScores = {};
-    quizResults.forEach((r) => {
-      if (!topicScores[r.topicTitle]) {
-        topicScores[r.topicTitle] = { total: 0, count: 0 };
-      }
-      topicScores[r.topicTitle].total += r.percentage;
-      topicScores[r.topicTitle].count++;
-    });
     const skillProgress = Object.entries(topicScores)
       .map(([title, s]) => ({
         title: title,
@@ -2792,38 +3045,92 @@ function getDashboardData(userContext) {
       .sort((a, b) => b.progress - a.progress)
       .slice(0, 5);
 
-    // === 6. Leaderboard (top 10 from master DB) ===
-    const leaderboard = [];
-    const roleColExists = typeof col["role"] === "number";
-    for (let i = 1; i < allData.length; i++) {
-      const xp = parseInt(allData[i][col["totalXP"]]) || 0;
-      const isActive = allData[i][col["isActive"]];
-      const role = roleColExists
-        ? String(allData[i][col["role"]] || "")
-            .trim()
-            .toUpperCase()
-        : "USER";
+    // === 6. Leaderboard (top 10 from master DB + short cache) ===
+    const leaderboardBuildStart = Date.now();
+    let leaderboardEntries = null;
 
-      if (isActive === false || isActive === "FALSE") continue;
-      if (role === "ADMIN") continue;
-
-      leaderboard.push({
-        name:
-          allData[i][col["displayName"]] ||
-          allData[i][col["username"]] ||
-          "User",
-        avatarUrl: allData[i][col["avatarUrl"]] || "",
-        xp: xp,
-        isMe: allData[i][col["email"]] === userEmail,
-      });
+    if (!noCache) {
+      try {
+        const cachedLeaderboard = dashboardCache.get(DASHBOARD_LEADERBOARD_CACHE_KEY);
+        if (cachedLeaderboard) {
+          leaderboardEntries = JSON.parse(cachedLeaderboard);
+        }
+      } catch (leaderboardCacheReadError) {
+        Logger.log(
+          "Warning: leaderboard cache read failed: " +
+            leaderboardCacheReadError.toString(),
+        );
+      }
     }
-    leaderboard.sort((a, b) => b.xp - a.xp);
+
+    if (!Array.isArray(leaderboardEntries) || leaderboardEntries.length === 0) {
+      leaderboardEntries = [];
+      const roleColExists = typeof col["role"] === "number";
+      const avatarUrlColExists = typeof col["avatarUrl"] === "number";
+      const avatarColExists = typeof col["avatar"] === "number";
+
+      for (let i = 1; i < allData.length; i++) {
+        const xp = parseInt(allData[i][col["totalXP"]]) || 0;
+        const isActive = allData[i][col["isActive"]];
+        const role = roleColExists
+          ? String(allData[i][col["role"]] || "")
+              .trim()
+              .toUpperCase()
+          : "USER";
+
+        if (isActive === false || isActive === "FALSE") continue;
+        if (role === "ADMIN") continue;
+
+        let avatarUrl = "";
+        if (avatarUrlColExists) {
+          avatarUrl = String(allData[i][col["avatarUrl"]] || "").trim();
+        }
+        if (!avatarUrl && avatarColExists) {
+          avatarUrl = String(allData[i][col["avatar"]] || "").trim();
+        }
+
+        leaderboardEntries.push({
+          email: String(allData[i][col["email"]] || "").trim(),
+          name:
+            allData[i][col["displayName"]] ||
+            allData[i][col["username"]] ||
+            "User",
+          avatarUrl: avatarUrl,
+          xp: xp,
+        });
+      }
+
+      leaderboardEntries.sort((a, b) => b.xp - a.xp);
+      leaderboardEntries = leaderboardEntries.slice(0, 10);
+
+      try {
+        dashboardCache.put(
+          DASHBOARD_LEADERBOARD_CACHE_KEY,
+          JSON.stringify(leaderboardEntries),
+          DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS,
+        );
+      } catch (leaderboardCacheWriteError) {
+        Logger.log(
+          "Warning: leaderboard cache write failed: " +
+            leaderboardCacheWriteError.toString(),
+        );
+      }
+    }
+
+    const leaderboard = leaderboardEntries.map(function (entry) {
+      return {
+        name: entry.name || "User",
+        avatarUrl: entry.avatarUrl || "",
+        xp: parseInt(entry.xp, 10) || 0,
+        isMe: String(entry.email || "").trim() === userEmail,
+      };
+    });
+    logTiming("build leaderboard", leaderboardBuildStart);
 
     // === 7. Smart suggestion (disabled) ===
     let suggestion = null;
 
-    Logger.log("✅ getDashboardData: complete");
-    return {
+    const responsePayload = {
       success: true,
       quickStats: {
         totalXP: totalXP,
@@ -2839,6 +3146,24 @@ function getDashboardData(userContext) {
       leaderboard: leaderboard.slice(0, 10),
       suggestion: suggestion,
     };
+
+    try {
+      if (dashboardCacheKey) {
+        dashboardCache.put(
+          dashboardCacheKey,
+          JSON.stringify(responsePayload),
+          DASHBOARD_CACHE_TTL_SECONDS,
+        );
+      }
+    } catch (cacheWriteError) {
+      Logger.log(
+        "⚠️ getDashboardData cache write failed: " + cacheWriteError.toString(),
+      );
+    }
+
+    Logger.log("[DashboardData] total: " + (Date.now() - requestStart) + "ms");
+    Logger.log("✅ getDashboardData: complete");
+    return responsePayload;
   } catch (error) {
     Logger.log("❌ Error in getDashboardData: " + error.toString());
     return { success: false, message: error.toString() };
