@@ -1451,7 +1451,9 @@
       state.pressZone = null;
       state.isEyesClosed = false;
       clearInteractionClasses();
-      renderEyes();
+      if (typeof renderEyes === "function") {
+        renderEyes();
+      }
     }
 
     function playLevelTransitionAnimation() {
@@ -3005,6 +3007,7 @@
 
     function triggerBlink() {
       if (!canEquipAccessories() || state.isPressing) return;
+      if (typeof renderEyes !== "function") return;
 
       state.isEyesClosed = true;
       renderEyes();
@@ -3015,7 +3018,9 @@
 
       state.blinkTimeoutId = setTimeout(function () {
         state.isEyesClosed = false;
-        renderEyes();
+        if (typeof renderEyes === "function") {
+          renderEyes();
+        }
       }, BLINK_CLOSE_DURATION_MS);
     }
 
@@ -3025,6 +3030,10 @@
       }
       if (state.blinkTimeoutId) {
         clearTimeout(state.blinkTimeoutId);
+      }
+
+      if (typeof renderEyes !== "function") {
+        return;
       }
 
       state.isEyesClosed = false;

@@ -2717,10 +2717,11 @@ function getDashboardData(userContext) {
 
     if (progressSheetId) {
       const personalSheetStart = Date.now();
-      const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
-      logTiming("open personal sheet", personalSheetStart);
+      try {
+        const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
+        logTiming("open personal sheet", personalSheetStart);
 
-      // Activity Log
+        // Activity Log
       const activityReadStart = Date.now();
       const actSheet = userSpreadsheet.getSheetByName("Activity_Log");
       if (actSheet) {
@@ -2733,6 +2734,13 @@ function getDashboardData(userContext) {
           const ac = {};
           actHeaders.forEach((h, i) => (ac[h] = i));
 
+          // ⭐ Hàm parse an toàn: trả null thay vì NaN để tránh JSON serialization crash
+          function safeParseInt(val) {
+            if (val === "" || val === null || val === undefined) return null;
+            var parsed = parseInt(val, 10);
+            return isNaN(parsed) ? null : parsed;
+          }
+
           for (let i = 1; i < actData.length; i++) {
             activities.push({
               type: ac["type"] >= 0 ? actData[i][ac["type"]] : "",
@@ -2743,17 +2751,16 @@ function getDashboardData(userContext) {
                   ? String(actData[i][ac["topicTitle"]])
                   : "",
               score:
-                ac["score"] >= 0 && actData[i][ac["score"]] !== ""
-                  ? parseInt(actData[i][ac["score"]])
+                ac["score"] >= 0
+                  ? safeParseInt(actData[i][ac["score"]])
                   : null,
               totalQuestions:
-                ac["totalQuestions"] >= 0 &&
-                actData[i][ac["totalQuestions"]] !== ""
-                  ? parseInt(actData[i][ac["totalQuestions"]])
+                ac["totalQuestions"] >= 0
+                  ? safeParseInt(actData[i][ac["totalQuestions"]])
                   : null,
               percentage:
-                ac["percentage"] >= 0 && actData[i][ac["percentage"]] !== ""
-                  ? parseInt(actData[i][ac["percentage"]])
+                ac["percentage"] >= 0
+                  ? safeParseInt(actData[i][ac["percentage"]])
                   : null,
               timestamp:
                 ac["timestamp"] >= 0
@@ -2914,7 +2921,9 @@ function getDashboardData(userContext) {
       } catch (e) {
         Logger.log("Error reading XP_Log (fast): " + e.toString());
       }
-      logTiming("read XP_Log", xpReadStart);
+      } catch (personalSheetError) {
+        Logger.log("⚠️ Error reading personal sheet (ID: " + progressSheetId + "): " + personalSheetError.toString());
+      }
     }
 
     const avgAccuracy =
