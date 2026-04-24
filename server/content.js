@@ -2812,6 +2812,7 @@ function getDashboardData(userContext) {
           allData[i][col["displayName"]] ||
           allData[i][col["username"]] ||
           "User",
+        avatarUrl: allData[i][col["avatarUrl"]] || "",
         xp: xp,
         isMe: allData[i][col["email"]] === userEmail,
       });

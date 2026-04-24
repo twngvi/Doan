@@ -954,36 +954,75 @@
       minute: "2-digit",
     });
 
-    container.innerHTML =
-      '<div class="leaderboard-table">' +
-      leaderboard
-        .slice(0, 10)
-        .map((entry, idx) => {
-          const meClass = entry.isMe ? "lb-me" : "";
-          const topClass = idx < 3 ? "lb-top3" : "";
-          const rankDisplay = idx < 3 ? medals[idx] : idx + 1;
+    const top10 = leaderboard.slice(0, 10);
+    const top3 = top10.slice(0, 3);
+    const rest = top10.slice(3, 10);
 
-          // Detect XP change
-          let changeHtml = "";
-          if (previousLeaderboard && prevMap[entry.name] !== undefined) {
-            const diff = entry.xp - prevMap[entry.name];
-            if (diff > 0) {
-              changeHtml = `<span class="lb-xp-change lb-xp-up">+${diff}</span>`;
-            }
-          }
+    let top3Html = '<div class="lb-podium-container">';
+    // Podium order: 2, 1, 3 -> index 1, 0, 2
+    const podiumOrder = [1, 0, 2];
+    podiumOrder.forEach((pos) => {
+      const entry = top3[pos];
+      if (!entry) {
+        top3Html += `<div class="lb-podium-item empty-podium"></div>`;
+        return;
+      }
+      const rank = pos + 1;
+      const meClass = entry.isMe ? "lb-me" : "";
+      
+      const avatarSrc = entry.avatarUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random";
 
-          return `
-          <div class="lb-row ${meClass} ${topClass}">
-            <div class="lb-rank">${rankDisplay}</div>
-            <div class="lb-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
-            <div class="lb-xp">${entry.xp.toLocaleString()} XP ${changeHtml}</div>
-          </div>`;
-        })
-        .join("") +
-      "</div>" +
-      '<div class="lb-updated">Cập nhật lúc ' +
-      timeStr +
-      "</div>";
+      // Detect XP change for Top 3
+      let changeHtml = "";
+      if (previousLeaderboard && prevMap[entry.name] !== undefined) {
+        const diff = entry.xp - prevMap[entry.name];
+        if (diff > 0) {
+          changeHtml = `<div class="lb-xp-change-pop">+${diff}</div>`;
+        }
+      }
+
+      top3Html += `
+      <div class="lb-podium-item podium-rank-${rank} ${meClass}" title="${entry.name} - ${entry.xp} XP">
+        <div class="lb-podium-avatar-wrapper">
+          <img src="${avatarSrc}" alt="${entry.name}" class="lb-podium-avatar">
+          <div class="lb-podium-badge">${rank}</div>
+          ${changeHtml}
+        </div>
+        <div class="lb-podium-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
+        <div class="lb-podium-xp">${entry.xp.toLocaleString()} XP</div>
+      </div>`;
+    });
+    top3Html += '</div>';
+
+    let restHtml = '<div class="lb-list-container">';
+    rest.forEach((entry, idx) => {
+      const rank = idx + 4;
+      const meClass = entry.isMe ? "lb-me" : "";
+      let changeHtml = "";
+      if (previousLeaderboard && prevMap[entry.name] !== undefined) {
+        const diff = entry.xp - prevMap[entry.name];
+        if (diff > 0) {
+          changeHtml = `<span class="lb-xp-change lb-xp-up">+${diff}</span>`;
+        }
+      }
+
+      const avatarSrc = entry.avatarUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random";
+
+      restHtml += `
+      <div class="lb-list-item ${meClass}">
+        <div class="lb-list-rank">${rank}</div>
+        <div class="lb-list-avatar-wrapper">
+          <img src="${avatarSrc}" class="lb-list-avatar" alt="${entry.name}">
+        </div>
+        <div class="lb-list-info">
+          <div class="lb-list-name">${entry.name}${entry.isMe ? " (Bạn)" : ""}</div>
+          <div class="lb-list-xp">${entry.xp.toLocaleString()} XP ${changeHtml}</div>
+        </div>
+      </div>`;
+    });
+    restHtml += '</div>';
+
+    container.innerHTML = top3Html + restHtml + '<div class="lb-updated">Cập nhật lúc ' + timeStr + "</div>";
 
     // Save current as previous for next comparison
     previousLeaderboard = leaderboard
