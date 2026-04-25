@@ -118,6 +118,33 @@ function initializeTopicEditor() {
     document.execCommand('insertText', false, text);
   });
 
+  // Keep a fresh caret range so toolbar actions can restore it reliably.
+  ['keyup', 'mouseup', 'input', 'focus'].forEach(function(evt) {
+    editor.addEventListener(evt, function() {
+      saveSelection();
+    });
+  });
+
+  document.addEventListener('selectionchange', function() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      savedSelection = range.cloneRange();
+    }
+  });
+
+  const toolbar = document.querySelector('.editor-toolbar');
+  if (toolbar) {
+    toolbar.addEventListener('mousedown', function(e) {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      saveSelection();
+      // Prevent toolbar button focus from stealing editor caret.
+      e.preventDefault();
+    });
+  }
+
   // Check edit mode
   initEditMode();
 
@@ -132,27 +159,33 @@ function initializeTopicEditor() {
 // ========================================
 
 function formatText(command) {
+  restoreSelection();
   document.execCommand(command, false, null);
   if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
     const editor = document.getElementById('contentEditor');
     normalizeListFormattingForEditor(editor);
   }
+  saveSelection();
   document.getElementById('contentEditor').focus();
 }
 
 function formatHeading(tag) {
   if (!tag) return;
+  restoreSelection();
   document.execCommand('formatBlock', false, tag);
   document.getElementById('headingSelect').value = '';
+  saveSelection();
   document.getElementById('contentEditor').focus();
 }
 
 function clearTextFormatting() {
+  restoreSelection();
   document.execCommand('removeFormat', false, null);
   // Reset block type to paragraph after clearing inline styles
   document.execCommand('formatBlock', false, 'p');
   var headingSelect = document.getElementById('headingSelect');
   if (headingSelect) headingSelect.value = '';
+  saveSelection();
   document.getElementById('contentEditor').focus();
 }
 
@@ -226,6 +259,7 @@ function insertCodeBlock() {
 // ========================================
 
 function insertCallout(type) {
+  restoreSelection();
   const icons = {
     note: '💡',
     warning: '⚠️',
@@ -251,6 +285,7 @@ function insertCallout(type) {
   `;
 
   document.execCommand('insertHTML', false, calloutHtml);
+  saveSelection();
   document.getElementById('contentEditor').focus();
 }
 
@@ -279,6 +314,7 @@ function closeBlockMarkersMenuOnClickOutside(e) {
 }
 
 function insertBlockMarker(type) {
+  restoreSelection();
   const menu = document.getElementById('blockMarkersMenu');
   menu.classList.remove('active');
 
@@ -328,6 +364,7 @@ function insertBlockMarker(type) {
   `;
 
   document.execCommand('insertHTML', false, html);
+  saveSelection();
   document.getElementById('contentEditor').focus();
 }
 
