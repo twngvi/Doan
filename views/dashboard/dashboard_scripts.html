@@ -13,6 +13,8 @@
    * Called from showPage() in client_js.html
    */
   window.refreshDashboardOnReturn = function () {
+    triggerQuickStatsDropAnimation();
+
     // If dashboard was never initialized, do full init
     if (typeof dashboardInitialized === "undefined" || !dashboardInitialized) {
       console.log("🔄 First-time Dashboard init on navigation...");
@@ -31,6 +33,25 @@
     });
     startDashboardAutoRefresh();
   };
+
+  function triggerQuickStatsDropAnimation() {
+    var statsRow = document.getElementById("quick-stats-row");
+    if (!statsRow) return;
+
+    statsRow.classList.remove("is-dropping");
+    // Force reflow so animation can restart on each dashboard entry.
+    void statsRow.offsetWidth;
+    statsRow.classList.add("is-dropping");
+
+    if (statsRow._dropAnimTimer) {
+      clearTimeout(statsRow._dropAnimTimer);
+    }
+
+    statsRow._dropAnimTimer = setTimeout(function () {
+      statsRow.classList.remove("is-dropping");
+      statsRow._dropAnimTimer = null;
+    }, 1300);
+  }
 
   /**
    * Get user data from storage
@@ -213,6 +234,8 @@
 
     console.log("📊 Initializing Dashboard (Gamification)...");
     dashboardInitialized = true;
+
+    triggerQuickStatsDropAnimation();
 
     var user = getUserData();
     if (user) updateDashboardUserInfo(user);
