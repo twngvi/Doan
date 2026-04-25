@@ -1066,11 +1066,12 @@
     if (!container) return;
 
     if (!leaderboard || leaderboard.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">🏅</div>
-          <div class="empty-state-text">Chưa có dữ liệu xếp hạng</div>
-        </div>`;
+      container.innerHTML = 
+        '<div class="empty-state">' +
+          '<div class="empty-state-icon">🌱</div>' +
+          '<div class="empty-state-text">Chưa có nhà thám hiểm nào trên bảng xếp hạng</div>' +
+          '<div class="empty-state-subtext">Hoàn thành bài học hoặc trò chơi để nhận XP đầu tiên.</div>' +
+        '</div>';
       previousLeaderboard = null;
       return;
     }
@@ -1078,7 +1079,7 @@
     // Build map of previous XP for change detection
     var prevMap = {};
     if (previousLeaderboard) {
-      previousLeaderboard.forEach((e) => {
+      previousLeaderboard.forEach(function(e) {
         prevMap[e.name] = e.xp;
       });
     }
@@ -1093,93 +1094,78 @@
     var top3 = top10.slice(0, 3);
     var rest = top10.slice(3, 10);
 
-    var top3Html = '<div class="lb-podium-container">';
-    // [FIX] Podium order: 2, 1, 3 -> index 1, 0, 2
+    // --- TOP 1-2-3 PODIUM ---
+    var top3Html = '<div class="forest-podium-container">';
+    // Display order: Rank 2, Rank 1, Rank 3
     var podiumOrder = [1, 0, 2];
-    podiumOrder.forEach((pos) => {
-      var entry = top3[pos];
-      if (!entry) {
-        top3Html += '<div class="lb-podium-item empty-podium podium-rank-' + (pos + 1) + '">' +
-          '<div class="lb-podium-stand"></div>' +
-          '</div>';
-        return;
-      }
-      var rank = pos + 1;
-      var meClass = entry.isMe ? "lb-me" : "";
+    
+    podiumOrder.forEach(function(idx) {
+      var entry = top3[idx];
+      if (!entry) return;
 
-      var avatarSrc =
-        entry.avatarUrl ||
-        "https://ui-avatars.com/api/?name=" +
-          encodeURIComponent(entry.name) +
-          "&background=random";
-
-      // Detect XP change for Top 3
+      var rank = idx + 1;
+      var meClass = entry.isMe ? "is-me" : "";
+      var avatarSrc = entry.avatarUrl || ("https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random");
+      
+      // XP Change detection
       var changeHtml = "";
       if (previousLeaderboard && prevMap[entry.name] !== undefined) {
         var diff = entry.xp - prevMap[entry.name];
         if (diff > 0) {
-          changeHtml = '<div class="lb-xp-change-pop">+' + (diff) + '</div>';
+          changeHtml = '<div class="lb-xp-change-pop">+' + diff + '</div>';
         }
       }
 
-      top3Html += '<div class="lb-podium-item podium-rank-' + rank + ' ' + meClass + '" title="' + entry.name + ' - ' + entry.xp + ' XP">' +
-        '<div class="lb-podium-avatar-cluster">' +
-          '<div class="lb-podium-avatar-wrapper">' +
-            '<img src="' + avatarSrc + '" alt="' + entry.name + '" class="lb-podium-avatar">' +
-            '<div class="lb-podium-badge">' + rank + '</div>' +
+      top3Html += 
+        '<div class="forest-podium-item rank-' + rank + ' ' + meClass + '">' +
+          '<div class="forest-podium-avatar-wrapper">' +
+            '<img src="' + avatarSrc + '" alt="' + entry.name + '" class="forest-podium-avatar">' +
+            '<div class="forest-rank-badge">' + rank + '</div>' +
             changeHtml +
           '</div>' +
-          '<div class="lb-podium-name-bar">' +
-            '<div class="lb-podium-name">' + entry.name + (entry.isMe ? " (Bạn)" : "") + '</div>' +
-            '<div class="lb-podium-xp">' + entry.xp.toLocaleString() + ' XP</div>' +
+          '<div class="forest-podium-info">' +
+            '<div class="forest-podium-name">' + entry.name + (entry.isMe ? ' <span class="forest-user-chip">Bạn</span>' : "") + '</div>' +
+            '<div class="forest-podium-xp">' + entry.xp.toLocaleString() + ' XP</div>' +
           '</div>' +
-        '</div>' +
-        '<div class="lb-podium-stand"></div>' +
-      '</div>';
+          '<div class="forest-stump"></div>' +
+        '</div>';
     });
     top3Html += '</div>';
 
-    var restHtml = '<div class="lb-list-container">';
-    rest.forEach((entry, idx) => {
+    // --- RANKS 4-10 LIST ---
+    var restHtml = '<div class="forest-list-container">';
+    rest.forEach(function(entry, idx) {
       var rank = idx + 4;
-      var meClass = entry.isMe ? "lb-me" : "";
+      var meClass = entry.isMe ? "is-me" : "";
+      var avatarSrc = entry.avatarUrl || ("https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random");
+      
       var changeHtml = "";
       if (previousLeaderboard && prevMap[entry.name] !== undefined) {
         var diff = entry.xp - prevMap[entry.name];
         if (diff > 0) {
-          changeHtml = '<span class="lb-xp-change lb-xp-up">+' + (diff) + '</span>';
+          changeHtml = '<span class="lb-xp-change lb-xp-up">+' + diff + '</span>';
         }
       }
 
-      var avatarSrc =
-        entry.avatarUrl ||
-        "https://ui-avatars.com/api/?name=" +
-          encodeURIComponent(entry.name) +
-          "&background=random";
-
-      restHtml += '<div class="lb-list-item ' + meClass + '">' +
-        '<div class="lb-list-rank">' + rank + '</div>' +
-        '<div class="lb-list-main">' +
-          '<div class="lb-list-avatar-wrapper">' +
-            '<div class="lb-list-avatar-shell">' +
-              '<img src="' + avatarSrc + '" class="lb-list-avatar" alt="' + entry.name + '">' +
-            '</div>' +
-          '</div>' +
-          '<div class="lb-list-info">' +
-            '<div class="lb-list-name">' + entry.name + (entry.isMe ? " (Bạn)" : "") + '</div>' +
-            '<div class="lb-list-xp">' + entry.xp.toLocaleString() + ' XP ' + changeHtml + '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+      restHtml += 
+        '<div class="forest-rank-item ' + meClass + '">' +
+          '<div class="forest-item-rank">#' + rank + '</div>' +
+          '<img src="' + avatarSrc + '" class="forest-item-avatar" alt="' + entry.name + '">' +
+          '<div class="forest-item-name">' + entry.name + (entry.isMe ? ' <span class="forest-user-chip">Bạn</span>' : "") + '</div>' +
+          '<div class="forest-item-xp">' + entry.xp.toLocaleString() + ' XP ' + changeHtml + '</div>' +
+        '</div>';
     });
     restHtml += '</div>';
 
-    container.innerHTML = top3Html + restHtml + '<div class="lb-updated">Cập nhật lúc ' + timeStr + "</div>";
+    // --- FOOTER ---
+    var footerHtml = '<div class="forest-leaderboard-footer">Cập nhật lúc ' + timeStr + '</div>';
+
+    container.innerHTML = top3Html + restHtml + footerHtml;
 
     // Save current as previous for next comparison
-    previousLeaderboard = leaderboard
-      .slice(0, 10)
-      .map((e) => ({ name: e.name, xp: e.xp }));
+    previousLeaderboard = leaderboard.slice(0, 10).map(function(e) { 
+      return { name: e.name, xp: e.xp }; 
+    });
   }
 
   /**
