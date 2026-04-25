@@ -217,7 +217,6 @@ function insertCodeBlock() {
   `;
   
   closeCodeModal();
-  restoreSelection();
   document.execCommand('insertHTML', false, codeBlockHtml);
   document.getElementById('contentEditor').focus();
 }
@@ -446,7 +445,6 @@ function insertCodeMarker() {
   }
 
   closeCodeMarkerModal();
-  restoreSelection();
 
   // Escape HTML for display
   const escapedCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1518,7 +1516,7 @@ function normalizeLoadedDocTextColors(editor) {
   for (var n = 0; n < normalNodes.length; n++) {
     var normalNode = normalNodes[n];
     if (normalNode.closest(
-      '.visual-terminal-block, .visual-code-block, .visual-code-content, .visual-terminal-content, pre, code, .code-block'
+      '.visual-terminal-block, .visual-code-block, .visual-code-content, .visual-terminal-content, pre, code, .code-block, .code-block-wrapper, .code-block-header, .code-block-lang'
     )) {
       continue;
     }
@@ -1640,6 +1638,12 @@ function normalizeLoadedDocTextColors(editor) {
   for (var c = 0; c < codeContentNodes.length; c++) {
     codeContentNodes[c].style.setProperty('color', '#d4d4d4', 'important');
     codeContentNodes[c].style.setProperty('-webkit-text-fill-color', '#d4d4d4', 'important');
+  }
+
+  var legacyCodeNodes = editor.querySelectorAll('.code-block-wrapper .code-block-lang, .code-block-wrapper pre, .code-block-wrapper pre code, .code-block-wrapper pre *');
+  for (var l = 0; l < legacyCodeNodes.length; l++) {
+    legacyCodeNodes[l].style.setProperty('color', '#ffffff', 'important');
+    legacyCodeNodes[l].style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
   }
 
   // Safety net: ensure normal headings/paragraphs never keep legacy left border.
@@ -2386,21 +2390,52 @@ function setupKeyboardShortcuts() {
 // ========================================
 
 function saveSelection() {
+  const editor = document.getElementById('contentEditor');
+  if (!editor) return;
+
   const selection = window.getSelection();
-  if (selection.rangeCount > 0) {
-    savedSelection = selection.getRangeAt(0).cloneRange();
+  if (!selection || selection.rangeCount === 0) return;
+
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+
+  // Only keep ranges inside the editor to avoid restoring to document start.
+  if (editor.contains(container)) {
+    savedSelection = range.cloneRange();
   }
 }
 
 function restoreSelection() {
   const editor = document.getElementById('contentEditor');
-  editor.focus();
-  
-  if (savedSelection) {
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(savedSelection);
+  if (!editor) return;
+
+  try {
+    editor.focus({ preventScroll: true });
+  } catch (e) {
+    editor.focus();
   }
+
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  let rangeToApply = null;
+  if (savedSelection) {
+    const container = savedSelection.commonAncestorContainer;
+    if (editor.contains(container)) {
+      rangeToApply = savedSelection.cloneRange();
+    }
+  }
+
+  // Fallback: place caret at end of editor instead of jumping to top.
+  if (!rangeToApply) {
+    rangeToApply = document.createRange();
+    rangeToApply.selectNodeContents(editor);
+    rangeToApply.collapse(false);
+    savedSelection = rangeToApply.cloneRange();
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(rangeToApply);
 }
 
 // ========================================
