@@ -9,6 +9,7 @@
 // ========================================
 
 let savedSelection = null;
+let tableInsertSelection = null;
 let isEditMode = false;
 let editingTopicId = null;
 const TABLE_MAX_COLS = 10;
@@ -570,6 +571,20 @@ function closeLinkModal() {
 
 function openTableModal() {
   saveSelection();
+  restoreSelection();
+  const editor = document.getElementById('contentEditor');
+  const selection = window.getSelection();
+  if (editor && selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      tableInsertSelection = range.cloneRange();
+      savedSelection = range.cloneRange();
+    } else {
+      tableInsertSelection = null;
+    }
+  } else {
+    tableInsertSelection = null;
+  }
   ensureTableSizePicker();
   document.getElementById('tableCols').value = '3';
   document.getElementById('tableRows').value = '4';
@@ -579,9 +594,15 @@ function openTableModal() {
   document.getElementById('tableCols').focus();
 }
 
-function closeTableModal() {
+function closeTableModal(restoreEditorSelection = true) {
   document.getElementById('tableModal').classList.remove('active');
-  restoreSelection();
+  if (restoreEditorSelection) {
+    if (tableInsertSelection) {
+      savedSelection = tableInsertSelection.cloneRange();
+    }
+    restoreSelection();
+    tableInsertSelection = null;
+  }
 }
 
 function insertTable() {
@@ -598,38 +619,86 @@ function insertTable() {
     return;
   }
 
-  let thead = '';
+  const editor = document.getElementById('contentEditor');
+  if (!editor) return;
+
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'editor-table-wrapper';
+  const table = document.createElement('table');
+  table.className = 'editor-content-table';
+
   if (hasHeader) {
-    let headerCells = '';
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
     for (let c = 0; c < cols; c++) {
-      headerCells += '<th>Tiêu đề ' + (c + 1) + '</th>';
+      const th = document.createElement('th');
+      th.textContent = 'Tiêu đề ' + (c + 1);
+      tr.appendChild(th);
     }
-    thead = '<thead><tr>' + headerCells + '</tr></thead>';
+    thead.appendChild(tr);
+    table.appendChild(thead);
   }
 
-  let bodyRows = '';
   const bodyCount = hasHeader ? Math.max(rows - 1, 1) : rows;
+  const tbody = document.createElement('tbody');
   for (let r = 0; r < bodyCount; r++) {
-    let cells = '';
+    const tr = document.createElement('tr');
     for (let c = 0; c < cols; c++) {
-      cells += '<td><br></td>';
+      const td = document.createElement('td');
+      td.innerHTML = '<br>';
+      tr.appendChild(td);
     }
-    bodyRows += '<tr>' + cells + '</tr>';
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  tableWrapper.appendChild(table);
+
+  const trailingParagraph = document.createElement('p');
+  trailingParagraph.innerHTML = '<br>';
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(tableWrapper);
+  fragment.appendChild(trailingParagraph);
+
+  closeTableModal(false);
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  if (tableInsertSelection) {
+    const markerContainer = tableInsertSelection.commonAncestorContainer;
+    if (editor.contains(markerContainer)) {
+      const preservedRange = tableInsertSelection.cloneRange();
+      selection.removeAllRanges();
+      selection.addRange(preservedRange);
+      savedSelection = preservedRange.cloneRange();
+    }
   }
 
-  const tableHtml =
-    '<div class="editor-table-wrapper">' +
-      '<table class="editor-content-table">' +
-        thead +
-        '<tbody>' + bodyRows + '</tbody>' +
-      '</table>' +
-    '</div>' +
-    '<p><br></p>';
-
-  closeTableModal();
   restoreSelection();
-  document.execCommand('insertHTML', false, tableHtml);
-  document.getElementById('contentEditor').focus();
+  if (selection.rangeCount === 0) return;
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  range.insertNode(fragment);
+
+  const firstCell = table.querySelector('tbody td') || table.querySelector('th');
+  const caretRange = document.createRange();
+  if (firstCell) {
+    caretRange.selectNodeContents(firstCell);
+    caretRange.collapse(true);
+  } else {
+    caretRange.setStartAfter(tableWrapper);
+    caretRange.collapse(true);
+  }
+
+  try {
+    editor.focus({ preventScroll: true });
+  } catch (e) {
+    editor.focus();
+  }
+  selection.removeAllRanges();
+  selection.addRange(caretRange);
+  savedSelection = caretRange.cloneRange();
+  tableInsertSelection = null;
 }
 
 function insertLink() {
