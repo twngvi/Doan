@@ -8,6 +8,9 @@
   window.updateAllAvatars = updateAllAvatars;
   window.updateAllUserNames = updateAllUserNames;
   window.startProfileMeteorShower = startProfileMeteorShower;
+  window.togglePetalStorm = togglePetalStorm;
+  window.enablePetalStorm = enablePetalStorm;
+  window.disablePetalStorm = disablePetalStorm;
   window.setupProfileHeaderMouseEffect = setupProfileHeaderMouseEffect;
   window.selectTheme = selectTheme;
   window.applyTheme = applyTheme;
@@ -611,6 +614,13 @@
       startProfileMeteorShower();
       // Load theme selection state
       loadUserTheme();
+      // Load petal storm persisted state
+      try {
+        const petalEnabled = localStorage.getItem("petalStormEnabled") === "1";
+        const petalInput = document.getElementById("petalToggleInput");
+        if (petalInput) petalInput.checked = petalEnabled;
+        if (petalEnabled) startPetalStorm();
+      } catch (e) {}
     } catch (error) {
       console.error("Profile init error:", error);
       ensureProfileSectionsVisible();
@@ -827,6 +837,19 @@
         selectTheme(themeName);
       });
     });
+
+    // Petal toggle binding
+    const petalToggle = document.getElementById("petalToggleInput");
+    if (petalToggle) {
+      petalToggle.removeAttribute("onclick");
+      // Initialize checked state from storage
+      try {
+        petalToggle.checked = localStorage.getItem("petalStormEnabled") === "1";
+      } catch (e) {}
+      petalToggle.addEventListener("change", function () {
+        togglePetalStorm();
+      });
+    }
 
     // Password toggle - Updated for new HTML structure
     document.querySelectorAll(".password-toggle-btn").forEach((toggle) => {
@@ -1462,6 +1485,92 @@
     setTimeout(() => {
       meteor.remove();
     }, 1500);
+  }
+
+  // ===== PETAL / CHERRY BLOSSOM STORM =====
+  let petalInterval = null;
+
+  function createPetal() {
+    const container = document.getElementById("petalContainer");
+    if (!container) return;
+
+    const petal = document.createElement("div");
+    petal.className = "petal";
+
+    // Random horizontal start between -10% and 110%
+    const startLeft = -10 + Math.random() * 120;
+    petal.style.left = startLeft + "%";
+
+    // Random horizontal drift using CSS transform variation
+    const drift = (Math.random() - 0.5) * 40; // -20 to 20
+    petal.style.transform = `translateY(-10vh) rotate(${Math.random() * 360}deg)`;
+
+    // Randomize animation duration for variety
+    const dur = 5 + Math.random() * 5; // 5s - 10s
+    petal.style.animationDuration = dur + "s";
+
+    // Random scale
+    const scale = 0.8 + Math.random() * 0.6;
+    petal.style.width = Math.round(14 * scale) + "px";
+    petal.style.height = Math.round(14 * scale) + "px";
+
+    // Slight horizontal drift added by using left changes via CSS animation
+    container.appendChild(petal);
+
+    // Clean up after animation finishes
+    setTimeout(() => {
+      try {
+        petal.remove();
+      } catch (e) {}
+    }, dur * 1000 + 500);
+  }
+
+  function startPetalStorm() {
+    const container = document.getElementById("petalContainer");
+    if (!container) return;
+    container.classList.add("active");
+    stopPetalStorm();
+    // spawn small bursts
+    petalInterval = setInterval(() => {
+      const burst = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < burst; i++) {
+        setTimeout(createPetal, i * 120);
+      }
+    }, 600);
+  }
+
+  function stopPetalStorm() {
+    const container = document.getElementById("petalContainer");
+    if (petalInterval) {
+      clearInterval(petalInterval);
+      petalInterval = null;
+    }
+    if (container) {
+      container.classList.remove("active");
+      // remove existing petals
+      Array.from(container.querySelectorAll(".petal")).forEach((p) => p.remove());
+    }
+  }
+
+  function enablePetalStorm() {
+    try {
+      localStorage.setItem("petalStormEnabled", "1");
+    } catch (e) {}
+    startPetalStorm();
+  }
+
+  function disablePetalStorm() {
+    try {
+      localStorage.removeItem("petalStormEnabled");
+    } catch (e) {}
+    stopPetalStorm();
+  }
+
+  function togglePetalStorm() {
+    const input = document.getElementById("petalToggleInput");
+    if (!input) return;
+    if (input.checked) enablePetalStorm();
+    else disablePetalStorm();
   }
 
   // ===== MOUSE-RESPONSIVE STARS EFFECT =====

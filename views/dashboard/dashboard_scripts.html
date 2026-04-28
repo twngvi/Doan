@@ -1084,6 +1084,60 @@
    */
   var previousLeaderboard = null;
 
+  function formatLeaderboardCompactXP(xp) {
+    var val = Number(xp) || 0;
+    if (val >= 1000000) {
+      var m = (val / 1000000).toFixed(val >= 10000000 ? 0 : 1);
+      return m.replace(/\.0$/, "") + "M";
+    }
+    if (val >= 1000) {
+      var k = (val / 1000).toFixed(val >= 100000 ? 0 : 1);
+      return k.replace(/\.0$/, "") + "K";
+    }
+    return String(val);
+  }
+
+  function escapeLeaderboardHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function bindTop10AvatarInteractions(container) {
+    if (!container) return;
+
+    var avatarButtons = container.querySelectorAll(".forest-top10-avatar-btn");
+    if (!avatarButtons || avatarButtons.length === 0) return;
+
+    avatarButtons.forEach(function (btn) {
+      btn.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        var wrap = btn.closest(".forest-top10-avatar-wrap");
+        if (!wrap) return;
+
+        var isOpen = wrap.classList.contains("show-name");
+        var opened = container.querySelectorAll(".forest-top10-avatar-wrap.show-name");
+        opened.forEach(function (node) {
+          node.classList.remove("show-name");
+        });
+
+        if (!isOpen) {
+          wrap.classList.add("show-name");
+        }
+
+        btn.classList.remove("is-bouncing");
+        void btn.offsetWidth;
+        btn.classList.add("is-bouncing");
+        setTimeout(function () {
+          btn.classList.remove("is-bouncing");
+        }, 460);
+      });
+    });
+  }
+
   function renderLeaderboard(leaderboard) {
     var container = document.getElementById("leaderboard-list");
     if (!container) return;
@@ -1114,80 +1168,90 @@
     });
 
     var top10 = leaderboard.slice(0, 10);
-    var top3 = top10.slice(0, 3);
-    var rest = top10.slice(3, 10);
+    var maxXp = top10[0] ? Number(top10[0].xp) || 0 : 0;
+    var minXp = top10.length > 0 ? Number(top10[top10.length - 1].xp) || 0 : 0;
+    if (maxXp === minXp) {
+      minXp = Math.max(0, maxXp - 1);
+    }
 
-    // --- TOP 1-2-3 PODIUM ---
-    var top3Html = '<div class="forest-podium-container">';
-    // Display order: Rank 2, Rank 1, Rank 3
-    var podiumOrder = [1, 0, 2];
-    
-    podiumOrder.forEach(function(idx) {
-      var entry = top3[idx];
-      if (!entry) return;
+    var chartHtml = '<div class="forest-top10-stage is-revealing"><div class="forest-top10-grid">';
 
-      var rank = idx + 1;
-      var meClass = entry.isMe ? "is-me" : "";
-      var avatarSrc = entry.avatarUrl || ("https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random");
-      
-      // XP Change detection
+    for (var i = 0; i < 10; i++) {
+      var entry = top10[i] || null;
+      var rank = i + 1;
+      var meClass = entry && entry.isMe ? "is-me" : "";
+      var displayName = entry && entry.name ? entry.name : "Ẩn danh";
+      var safeName = escapeLeaderboardHtml(displayName);
+      var avatarSrc = entry
+        ? entry.avatarUrl ||
+          ("https://ui-avatars.com/api/?name=" +
+            encodeURIComponent(entry.name) +
+            "&background=f4e7cd&color=5f3b1d")
+        : "";
+
+      var barHeight = 78;
+      var stairBase = 320;
+      var stairDrop = 26;
+      var revealDelay = i * 90;
+      if (entry) {
+        var xpVal = Number(entry.xp) || 0;
+        var ratio = (xpVal - minXp) / (maxXp - minXp);
+        ratio = Math.max(0, Math.min(1, ratio));
+        barHeight = Math.max(62, Math.round(stairBase - i * stairDrop + ratio * 10));
+      } else {
+        barHeight = Math.max(58, stairBase - i * stairDrop);
+      }
+
       var changeHtml = "";
-      if (previousLeaderboard && prevMap[entry.name] !== undefined) {
+      if (entry && previousLeaderboard && prevMap[entry.name] !== undefined) {
         var diff = entry.xp - prevMap[entry.name];
         if (diff > 0) {
           changeHtml = '<div class="lb-xp-change-pop">+' + diff + '</div>';
         }
       }
 
-      top3Html += 
-        '<div class="forest-podium-item rank-' + rank + ' ' + meClass + '">' +
-          '<div class="forest-podium-avatar-wrapper">' +
-            '<img src="' + avatarSrc + '" alt="' + entry.name + '" class="forest-podium-avatar">' +
-            '<div class="forest-rank-badge">' + rank + '</div>' +
+      var popName = entry ? safeName : "Hạng #" + rank + " chưa có người chơi";
+      var ariaLabel = entry
+        ? "Hiện tên người chơi hạng " + rank
+        : "Hạng " + rank + " chưa có dữ liệu";
+
+      chartHtml +=
+        '<div class="forest-top10-col rank-' + rank + ' ' + meClass + '" style="--bar-height:' + barHeight + 'px;--reveal-delay:' + revealDelay + 'ms">' +
+          '<div class="forest-top10-avatar-wrap">' +
+            '<button type="button" class="forest-top10-avatar-btn" aria-label="' + escapeLeaderboardHtml(ariaLabel) + '">' +
+              '<span class="forest-top10-name-pop">' + popName + '</span>' +
+              '<div class="forest-top10-avatar-ring">' +
+                (entry
+                  ? '<img src="' + avatarSrc + '" alt="' + safeName + '" class="forest-top10-avatar">'
+                  : '<span class="forest-top10-avatar-empty">?</span>') +
+              '</div>' +
+            '</button>' +
             changeHtml +
           '</div>' +
-          '<div class="forest-podium-info">' +
-            '<div class="forest-podium-name">' + entry.name + (entry.isMe ? ' <span class="forest-user-chip">Bạn</span>' : "") + '</div>' +
-            '<div class="forest-podium-xp">' + entry.xp.toLocaleString() + ' XP</div>' +
+          '<div class="forest-top10-bar">' +
+            '<div class="forest-top10-xp">' +
+              (entry ? formatLeaderboardCompactXP(entry.xp) + ' XP' : '') +
+            '</div>' +
+            '<div class="forest-top10-inline-name">' +
+              (entry ? safeName : '--') +
+            '</div>' +
+            '<div class="forest-top10-rank-chip">' +
+              '# ' + rank +
+            '</div>' +
           '</div>' +
-          '<div class="forest-stump"></div>' +
         '</div>';
-    });
-    top3Html += '</div>';
+    }
 
-    // --- RANKS 4-10 LIST ---
-    var restHtml = '<div class="forest-list-container">';
-    rest.forEach(function(entry, idx) {
-      var rank = idx + 4;
-      var meClass = entry.isMe ? "is-me" : "";
-      var avatarSrc = entry.avatarUrl || ("https://ui-avatars.com/api/?name=" + encodeURIComponent(entry.name) + "&background=random");
-      
-      var changeHtml = "";
-      if (previousLeaderboard && prevMap[entry.name] !== undefined) {
-        var diff = entry.xp - prevMap[entry.name];
-        if (diff > 0) {
-          changeHtml = '<span class="lb-xp-change lb-xp-up">+' + diff + '</span>';
-        }
-      }
+    chartHtml += '</div></div>';
 
-      restHtml += 
-        '<div class="forest-rank-item ' + meClass + '">' +
-          '<div class="forest-item-rank">#' + rank + '</div>' +
-          '<img src="' + avatarSrc + '" class="forest-item-avatar" alt="' + entry.name + '">' +
-          '<div class="forest-item-name">' + entry.name + (entry.isMe ? ' <span class="forest-user-chip">Bạn</span>' : "") + '</div>' +
-          '<div class="forest-item-xp">' + entry.xp.toLocaleString() + ' XP ' + changeHtml + '</div>' +
-        '</div>';
-    });
-    restHtml += '</div>';
-
-    // --- FOOTER ---
     var footerHtml = '<div class="forest-leaderboard-footer">Cập nhật lúc ' + timeStr + '</div>';
 
-    container.innerHTML = top3Html + restHtml + footerHtml;
+    container.innerHTML = chartHtml + footerHtml;
+  bindTop10AvatarInteractions(container);
 
     // Save current as previous for next comparison
-    previousLeaderboard = leaderboard.slice(0, 10).map(function(e) { 
-      return { name: e.name, xp: e.xp }; 
+    previousLeaderboard = leaderboard.slice(0, 10).map(function(e) {
+      return { name: e.name, xp: e.xp };
     });
   }
 

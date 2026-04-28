@@ -859,6 +859,10 @@
     padding: 120px 45px 85px 45px; /* Đã giảm từ 125px xuống 120px để nhích nội dung lên 5px */
   }
 
+  .zone3-left .glass-card-body {
+    padding-top: 106px; /* Nhích riêng phần Lịch sử lên thêm mà không ảnh hưởng hành vi */
+  }
+
   .zone3-left .glass-card-header,
   .quest-card .glass-card-header {
     position: absolute;
@@ -874,6 +878,7 @@
 
   .zone3-left .glass-card-title,
   .quest-card .glass-card-title {
+    font-family: "Fredoka", sans-serif;
     font-size: 1.1rem;
     font-weight: 800;
     color: #4a2f1d !important;
@@ -1919,10 +1924,20 @@
   }
   /* ===== FOREST ADVENTURE LEADERBOARD THEME ===== */
   #page-dashboard .forest-leaderboard-card {
-    background: #f1f7ec !important; /* Kem xanh nhạt */
-    border: 2px solid #a7c796 !important; /* Viền xanh rêu */
+    --forest-surface: #eef7ed;
+    --forest-surface-soft: #e3f0e0;
+    --forest-border: #8aaf88;
+    --forest-border-soft: #b9cfb5;
+    --forest-header-start: #2f6b45;
+    --forest-header-end: #244f35;
+    --forest-text-main: #1f3e2a;
+    --forest-text-soft: #4f6b58;
+    --forest-accent: #3e8a5b;
+    --forest-accent-soft: #d7ecda;
+    background: linear-gradient(180deg, var(--forest-surface) 0%, var(--forest-surface-soft) 100%) !important;
+    border: 2px solid var(--forest-border) !important;
     border-radius: 28px !important;
-    box-shadow: 0 12px 30px rgba(47, 93, 58, 0.15) !important;
+    box-shadow: 0 14px 32px rgba(34, 78, 51, 0.18) !important;
     padding: 0;
     margin-bottom: 3rem;
     position: relative;
@@ -1933,19 +1948,19 @@
   #page-dashboard .forest-leaderboard-card::after {
     content: "🌿";
     position: absolute;
-    top: -10px;
-    right: 15px;
-    font-size: 2.5rem;
-    opacity: 0.8;
+    top: -12px;
+    right: 16px;
+    font-size: 2.15rem;
+    opacity: 0.72;
     z-index: 5;
     transform: rotate(15deg);
   }
 
   #page-dashboard .forest-leaderboard-card .forest-leaderboard-header {
-    background: linear-gradient(180deg, #9b642f, #6b3f1f);
+    background: linear-gradient(180deg, var(--forest-header-start), var(--forest-header-end));
     padding: 1.25rem 2rem;
-    border-bottom: 4px solid #4a2e18;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    border-bottom: 2px solid rgba(201, 228, 198, 0.45);
+    box-shadow: inset 0 -1px 0 rgba(214, 238, 211, 0.18);
     position: relative;
     z-index: 10;
     margin: -1px;
@@ -1959,30 +1974,347 @@
   }
 
   #page-dashboard .forest-title-icon {
-    font-size: 2.2rem;
-    filter: drop-shadow(0 0 8px rgba(232, 182, 71, 0.6));
+    font-size: 2rem;
+    filter: drop-shadow(0 0 6px rgba(132, 197, 148, 0.45));
   }
 
   #page-dashboard .forest-title-content h3 {
     font-family: "Fredoka", sans-serif;
-    font-size: 1.5rem;
+    font-size: 1.36rem;
     font-weight: 800;
-    color: #fff4d6;
+    color: #ecfff0;
     margin: 0;
-    letter-spacing: 0.03em;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    letter-spacing: 0.01em;
+    text-shadow: 0 1px 2px rgba(13, 34, 22, 0.34);
   }
 
   #page-dashboard .forest-title-content p {
+    font-family: "Fredoka", sans-serif;
     font-size: 0.9rem;
-    color: rgba(255, 244, 214, 0.85);
+    color: rgba(226, 245, 228, 0.9);
     margin: 0.2rem 0 0;
     font-weight: 500;
   }
 
   #page-dashboard .forest-leaderboard-card .glass-card-body {
-    padding: 2.5rem 2rem 1.5rem;
-    background: transparent !important;
+    padding: 3.1rem 2rem 1.5rem;
+    background: linear-gradient(180deg, rgba(241, 250, 241, 0.72), rgba(225, 241, 223, 0.68)) !important;
+  }
+
+  /* === TOP 10 STAIRCASE CHART (wireframe-like) === */
+  .forest-top10-stage {
+    border-radius: 18px;
+    padding: 38px 10px 14px;
+    overflow: hidden;
+  }
+
+  .forest-top10-grid {
+    width: 100%;
+    height: 430px;
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 8px;
+    align-items: end;
+  }
+
+  .forest-top10-col {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    position: relative;
+  }
+
+  .forest-top10-avatar-wrap {
+    position: relative;
+    margin-bottom: 8px;
+  }
+
+  .forest-top10-avatar-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .forest-top10-avatar-btn:focus-visible {
+    outline: 2px solid var(--forest-accent);
+    outline-offset: 3px;
+    border-radius: 999px;
+  }
+
+  .forest-top10-name-pop {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) translateY(8px) scale(0.95);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 6;
+    min-width: 86px;
+    max-width: 160px;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: 12px;
+    font-family: "Fredoka", sans-serif;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #f5fff5;
+    background: rgba(44, 98, 63, 0.96);
+    box-shadow: 0 8px 18px rgba(20, 53, 35, 0.24);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .forest-top10-avatar-wrap.show-name .forest-top10-name-pop,
+  .forest-top10-avatar-wrap:hover .forest-top10-name-pop {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+
+  .forest-top10-avatar-ring {
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    border: 1.6px solid var(--forest-border);
+    background: #fbfffb;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 9px rgba(38, 82, 55, 0.18);
+    transition: transform 0.24s ease;
+  }
+
+  .forest-top10-avatar-btn.is-bouncing .forest-top10-avatar-ring {
+    animation: forestAvatarBounce 0.46s cubic-bezier(0.2, 0.9, 0.25, 1);
+  }
+
+  @keyframes forestAvatarBounce {
+    0% { transform: translateY(0) scale(1); }
+    45% { transform: translateY(-10px) scale(1.06); }
+    75% { transform: translateY(2px) scale(0.98); }
+    100% { transform: translateY(0) scale(1); }
+  }
+
+  .forest-top10-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .forest-top10-avatar-empty {
+    font-family: "Fredoka", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--forest-accent);
+    line-height: 1;
+  }
+
+  .forest-top10-bar {
+    width: 100%;
+    max-width: 88px;
+    height: var(--bar-height, 120px);
+    border: 1.6px solid var(--forest-border);
+    border-radius: 6px 6px 0 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 4px;
+    background:
+      linear-gradient(180deg, rgba(239, 250, 238, 0.98), rgba(213, 235, 210, 0.98)),
+      repeating-linear-gradient(8deg, rgba(92, 137, 98, 0.14) 0 9px, rgba(131, 170, 124, 0.08) 9px 18px);
+  }
+
+  .forest-top10-col.is-me .forest-top10-bar,
+  .forest-top10-col.is-me .forest-top10-avatar-ring {
+    border-color: #2f7f4c;
+    box-shadow: 0 0 0 2px rgba(47, 127, 76, 0.18);
+  }
+
+  .forest-top10-xp {
+    font-family: "Fredoka", sans-serif;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--forest-text-main);
+    line-height: 1;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+    min-height: 0.74rem;
+  }
+
+  .forest-top10-inline-name {
+    display: none;
+    font-family: "Fredoka", sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #27563a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .forest-top10-rank-chip {
+    font-family: "Fredoka", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #255f3e;
+    background: rgba(226, 244, 224, 0.95);
+    border: 1px solid rgba(95, 149, 101, 0.38);
+    border-radius: 999px;
+    padding: 2px 8px;
+    line-height: 1;
+  }
+
+  .forest-top10-stage.is-revealing .forest-top10-col .forest-top10-bar {
+    opacity: 0;
+    transform: translateY(34px);
+    animation: forestTop10BarRise 0.42s cubic-bezier(0.25, 0.9, 0.32, 1) forwards;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+
+  .forest-top10-stage.is-revealing .forest-top10-col .forest-top10-avatar-wrap {
+    opacity: 0;
+    transform: translateY(16px) scale(0.92);
+    animation: forestTop10AvatarRise 0.32s cubic-bezier(0.26, 0.9, 0.32, 1) forwards;
+    animation-delay: calc(var(--reveal-delay, 0ms) + 170ms);
+  }
+
+  @keyframes forestTop10BarRise {
+    0% {
+      opacity: 0;
+      transform: translateY(34px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes forestTop10AvatarRise {
+    0% {
+      opacity: 0;
+      transform: translateY(16px) scale(0.92);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .forest-top10-grid {
+      height: 390px;
+      gap: 6px;
+    }
+
+    .forest-top10-avatar-ring {
+      width: 56px;
+      height: 56px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .forest-top10-stage {
+      padding: 28px 8px 14px;
+    }
+
+    .forest-top10-grid {
+      height: 330px;
+      gap: 5px;
+    }
+
+    .forest-top10-avatar-ring {
+      width: 46px;
+      height: 46px;
+    }
+
+    .forest-top10-bar {
+      max-width: 74px;
+    }
+
+    .forest-top10-xp {
+      font-size: 0.68rem;
+    }
+
+    .forest-top10-rank-chip {
+      font-size: 0.68rem;
+      padding: 2px 6px;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .forest-top10-stage {
+      padding: 14px 8px 8px;
+      border-radius: 14px;
+    }
+
+    .forest-top10-grid {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 10px;
+      height: auto;
+      width: 100%;
+    }
+
+    .forest-top10-col {
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      min-height: 54px;
+      width: 100%;
+    }
+
+    .forest-top10-avatar-wrap {
+      margin-bottom: 0;
+      flex: 0 0 auto;
+    }
+
+    .forest-top10-name-pop {
+      display: none !important;
+    }
+
+    .forest-top10-bar {
+      height: auto !important;
+      max-width: none;
+      flex: 1;
+      min-height: 46px;
+      border-radius: 10px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      column-gap: 8px;
+      align-items: center;
+      padding: 6px 10px;
+    }
+
+    .forest-top10-xp {
+      font-size: 0.72rem;
+      min-height: auto;
+    }
+
+    .forest-top10-inline-name {
+      display: block;
+      font-size: 0.78rem;
+    }
+
+    .forest-top10-rank-chip {
+      font-size: 0.74rem;
+    }
   }
 
   /* === FOREST PODIUM TOP 3 === */
@@ -2207,7 +2539,7 @@
   .forest-leaderboard-footer {
     text-align: right;
     font-size: 0.8rem;
-    color: #6b755f;
+    color: #4f6b58;
     margin-top: 1.5rem;
     padding-right: 0.5rem;
     font-weight: 500;
