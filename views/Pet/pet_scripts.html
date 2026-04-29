@@ -2215,36 +2215,6 @@
       });
     }
 
-    function resetPetProgression() {
-      const nextEggIndex = PET_VARIANTS.length
-        ? Math.floor(Math.random() * PET_VARIANTS.length)
-        : 0;
-      const nextVariantId = getVariantIdByIndex(nextEggIndex);
-
-      state.progressionXP = 0;
-      state.currentIndex = nextEggIndex;
-      state.selectedAccessories = [];
-      state.petAccessoryByVariantId = {};
-      state.selectedStageBackgroundIndex = 0;
-      state.selectionLocked = false;
-      state.ownedVariantIds = normalizeOwnedVariantIds([], nextVariantId);
-      state.lockedVariantId = state.ownedVariantIds[0] || nextVariantId;
-      state.petProgressByVariantId = {};
-      state.petNamesByVariantId = {};
-      ensurePetProgressAndNamesMaps();
-      setPetProgressXP(nextVariantId, 0);
-      
-      if (typeof showToast === "function") {
-        showToast("Đã reset PET về Level 1 và chọn ngẫu nhiên trứng mới", "info");
-      } else if (typeof window.showNotification === "function") {
-        window.showNotification("Da reset PET ve Level 1 va chon ngau nhien trung moi", "info");
-      }
-      
-      renderPet();
-      updateSaveButtonUI();
-      queuePetConfigAutoSave();
-    }
-
     function buildPersistedConfig() {
       ensurePetProgressAndNamesMaps();
       const progressionXP = getPetProgressXP(getActiveVariantId());
@@ -3685,31 +3655,6 @@
         });
       }
 
-      const resetBtn = document.getElementById("petResetBtn");
-      if (resetBtn) {
-        resetBtn.addEventListener("click", async function () {
-          const confirmMessage = "Ban co chac muon reset PET? Du lieu tien trinh hien tai se duoc dat lai.";
-          let confirmed = true;
-
-          if (typeof window.showAppConfirm === "function") {
-            try {
-              const result = await window.showAppConfirm(confirmMessage, {
-                title: "Xac nhan reset PET",
-                confirmText: "Reset",
-                cancelText: "Huy",
-              });
-              confirmed = result === true;
-            } catch (_) {
-              confirmed = window.confirm(confirmMessage);
-            }
-          } else {
-            confirmed = window.confirm(confirmMessage);
-          }
-
-          if (!confirmed) return;
-          resetPetProgression();
-        });
-      }
     }
 
 

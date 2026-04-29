@@ -320,8 +320,6 @@ function saveUserAvatarUrl(userId, avatarUrl) {
   }
 }
 
-const PET_GLOBAL_RESET_VERSION = "2026-04-17-lv1-random-egg-v1";
-const PET_GLOBAL_RESET_PROPERTY_KEY = "PET_GLOBAL_RESET_VERSION";
 const PET_EGG_VARIANT_COUNT = 12;
 const PET_EGG_VARIANT_BASE_ID = 12;
 const PET_MAX_OWNED_VARIANTS = 999;
@@ -589,7 +587,6 @@ function buildFreshPetConfig_(forcedIndex) {
       map[defaultVariantId] = PET_DEFAULT_NAME;
       return map;
     })(),
-    petConfigVersion: PET_GLOBAL_RESET_VERSION,
   };
 }
 
@@ -657,44 +654,6 @@ function buildLegacySelectedAccessoriesFromMap_(accessoryByVariantMap, activeVar
   }
 
   return [{ fileName: normalizedItem.fileName }];
-}
-
-function ensurePetGlobalResetApplied_(usersSheet) {
-  var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(PET_GLOBAL_RESET_PROPERTY_KEY) === PET_GLOBAL_RESET_VERSION) {
-    return;
-  }
-
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-
-  try {
-    if (props.getProperty(PET_GLOBAL_RESET_PROPERTY_KEY) === PET_GLOBAL_RESET_VERSION) {
-      return;
-    }
-
-    var data = usersSheet.getDataRange().getValues();
-    var headers = data[0] || [];
-    var configIdx = headers.indexOf("petConfig");
-
-    if (configIdx === -1) {
-      usersSheet.getRange(1, headers.length + 1).setValue("petConfig");
-      configIdx = headers.length;
-      headers.push("petConfig");
-    }
-
-    if (data.length > 1) {
-      var resetValues = [];
-      for (var i = 1; i < data.length; i++) {
-        resetValues.push([JSON.stringify(buildFreshPetConfig_())]);
-      }
-      usersSheet.getRange(2, configIdx + 1, resetValues.length, 1).setValues(resetValues);
-    }
-
-    props.setProperty(PET_GLOBAL_RESET_PROPERTY_KEY, PET_GLOBAL_RESET_VERSION);
-  } finally {
-    lock.releaseLock();
-  }
 }
 
 function getUserPetName(userId) {
@@ -865,8 +824,6 @@ function getUserPetConfig(userId) {
     const safeUserId = String(userId).trim();
     const usersSheet = getSheet("Users");
     if (!usersSheet) return { success: false, message: "Users sheet not found" };
-
-    ensurePetGlobalResetApplied_(usersSheet);
 
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0] || [];
@@ -1059,11 +1016,6 @@ function getUserPetConfig(userId) {
       shouldPersist = true;
     }
 
-    if (parsedConfig.petConfigVersion !== PET_GLOBAL_RESET_VERSION) {
-      parsedConfig.petConfigVersion = PET_GLOBAL_RESET_VERSION;
-      shouldPersist = true;
-    }
-
     if (shouldPersist) {
       configCell.setValue(JSON.stringify(parsedConfig));
     }
@@ -1195,7 +1147,6 @@ function saveUserPetConfig(userId, config) {
       petAccessoryByVariantId: normalizedAccessoryByVariant,
       petProgressByVariantId: normalizedProgressByVariant,
       petNamesByVariantId: normalizedNamesByVariant,
-      petConfigVersion: PET_GLOBAL_RESET_VERSION,
     });
 
     const configString = JSON.stringify(normalizedConfig);
@@ -1359,7 +1310,6 @@ function purchaseUserPetVariant(payload) {
     config.ownedVariantIds = ownedVariantIds;
     config.selectionLocked = false;
     config.lockedVariantId = ownedVariantIds[0] || variantId;
-    config.petConfigVersion = PET_GLOBAL_RESET_VERSION;
 
     config.petProgressByVariantId =
       config.petProgressByVariantId && typeof config.petProgressByVariantId === "object"
