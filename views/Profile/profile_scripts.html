@@ -26,6 +26,49 @@
 
   console.log("🎨 Profile scripts loading...");
 
+  function bindPasswordUiHandlers() {
+    if (window.__profilePasswordUiBound) return;
+    window.__profilePasswordUiBound = true;
+
+    document.addEventListener("click", function (event) {
+      const toggle = event.target && event.target.closest
+        ? event.target.closest(".password-toggle-btn")
+        : null;
+      if (!toggle) return;
+
+      const inputId = toggle.dataset ? toggle.dataset.target : null;
+      const input = inputId ? document.getElementById(inputId) : null;
+      if (!input) return;
+
+      const eyeOpen = toggle.querySelector(".eye-open");
+      const eyeClosed = toggle.querySelector(".eye-closed");
+
+      if (input.type === "password") {
+        input.type = "text";
+        toggle.setAttribute("aria-pressed", "true");
+        if (eyeOpen) eyeOpen.style.display = "none";
+        if (eyeClosed) eyeClosed.style.display = "block";
+      } else {
+        input.type = "password";
+        toggle.setAttribute("aria-pressed", "false");
+        if (eyeOpen) eyeOpen.style.display = "block";
+        if (eyeClosed) eyeClosed.style.display = "none";
+      }
+    });
+
+    document.addEventListener("input", function (event) {
+      const target = event.target;
+      if (!target || !target.id) return;
+      if (target.id === "newPassword") {
+        checkPasswordStrength(event);
+      } else if (target.id === "confirmPassword") {
+        checkPasswordMatch(event);
+      }
+    });
+  }
+
+  bindPasswordUiHandlers();
+
   // ⭐ COLLAPSIBLE TOGGLE FUNCTION
   function toggleCollapsible(button) {
     const section = button.closest(".collapsible-section");
@@ -831,17 +874,22 @@
 
     // Password toggle - Updated for new HTML structure
     document.querySelectorAll(".password-toggle-btn").forEach((toggle) => {
+      if (toggle.dataset.bound === "1") return;
+      toggle.dataset.bound = "1";
       toggle.addEventListener("click", function () {
         const input = document.getElementById(this.dataset.target);
+        if (!input) return;
         const eyeOpen = this.querySelector(".eye-open");
         const eyeClosed = this.querySelector(".eye-closed");
 
         if (input.type === "password") {
           input.type = "text";
+          this.setAttribute("aria-pressed", "true");
           if (eyeOpen) eyeOpen.style.display = "none";
           if (eyeClosed) eyeClosed.style.display = "block";
         } else {
           input.type = "password";
+          this.setAttribute("aria-pressed", "false");
           if (eyeOpen) eyeOpen.style.display = "block";
           if (eyeClosed) eyeClosed.style.display = "none";
         }
@@ -850,11 +898,17 @@
 
     // Password strength
     const newPwd = document.getElementById("newPassword");
-    if (newPwd) newPwd.addEventListener("input", checkPasswordStrength);
+    if (newPwd && newPwd.dataset.boundStrength !== "1") {
+      newPwd.dataset.boundStrength = "1";
+      newPwd.addEventListener("input", checkPasswordStrength);
+    }
 
     // Confirm password
     const confirmPwd = document.getElementById("confirmPassword");
-    if (confirmPwd) confirmPwd.addEventListener("input", checkPasswordMatch);
+    if (confirmPwd && confirmPwd.dataset.boundMatch !== "1") {
+      confirmPwd.dataset.boundMatch = "1";
+      confirmPwd.addEventListener("input", checkPasswordMatch);
+    }
 
     // Forms
     const profileForm = document.getElementById("profileForm");
@@ -1045,8 +1099,9 @@
     });
   }
 
-  function checkPasswordStrength() {
-    const pwd = this.value;
+  function checkPasswordStrength(event) {
+    const input = (event && event.target) || this;
+    const pwd = (input && typeof input.value === "string") ? input.value : "";
     const bars = document.querySelectorAll(".strength-bar-item");
     const text = document.getElementById("strengthText");
 
@@ -1090,9 +1145,11 @@
     }
   }
 
-  function checkPasswordMatch() {
-    const newPwd = document.getElementById("newPassword").value;
-    const confirmPwd = this.value;
+  function checkPasswordMatch(event) {
+    const newInput = document.getElementById("newPassword");
+    const confirmInput = (event && event.target) || this;
+    const newPwd = (newInput && typeof newInput.value === "string") ? newInput.value : "";
+    const confirmPwd = (confirmInput && typeof confirmInput.value === "string") ? confirmInput.value : "";
     const icon = document.getElementById("passwordMatchIcon");
 
     if (!icon) return;
