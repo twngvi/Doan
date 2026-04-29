@@ -437,6 +437,22 @@
       .trim();
   }
 
+  function scoreAdminPrefixMatch(text, normalizedQuery, baseScore) {
+    if (!normalizedQuery) return -1;
+
+    const normalizedText = normalizeAdminSearchText(text);
+    if (!normalizedText) return -1;
+
+    if (normalizedText.startsWith(normalizedQuery)) return baseScore + 20;
+
+    const words = normalizedText.split(/[^a-z0-9]+/).filter(Boolean);
+    if (words.some((word) => word.startsWith(normalizedQuery))) {
+      return baseScore;
+    }
+
+    return -1;
+  }
+
   function escapeAdminSearchHtml(text) {
     return String(text || '')
       .replace(/&/g, '&amp;')
@@ -559,15 +575,13 @@
   }
 
   function scoreAdminSearchEntry(entry, normalizedQuery) {
-    const title = normalizeAdminSearchText(entry.title);
-    const subtitle = normalizeAdminSearchText(entry.subtitle);
-    const keywords = normalizeAdminSearchText(entry.keywords);
+    if (!normalizedQuery) return -1;
 
-    if (title.startsWith(normalizedQuery)) return 100;
-    if (title.includes(normalizedQuery)) return 80;
-    if (keywords.includes(normalizedQuery)) return 60;
-    if (subtitle.includes(normalizedQuery)) return 40;
-    return -1;
+    return Math.max(
+      scoreAdminPrefixMatch(entry.title, normalizedQuery, 120),
+      scoreAdminPrefixMatch(entry.keywords, normalizedQuery, 90),
+      scoreAdminPrefixMatch(entry.subtitle, normalizedQuery, 60),
+    );
   }
 
   function clearAdminSearchResults() {
@@ -722,7 +736,7 @@
 
   function runAdminSearch(query) {
     const normalizedQuery = normalizeAdminSearchText(query);
-    if (!normalizedQuery) {
+    if (!normalizedQuery || normalizedQuery.length < 2) {
       clearAdminSearchResults();
       return;
     }
