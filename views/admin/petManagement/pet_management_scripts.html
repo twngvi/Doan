@@ -194,14 +194,16 @@
         type: null,
         index: -1,
         isNew: false,
-        draft: null
+        draft: null,
+        savedSnapshot: null
       },
       variantEditor: {
         index: -1,
         isNew: false,
         draft: null,
         previewLevel: 1,
-        editLevel: 1
+        editLevel: 1,
+        savedSnapshot: null
       }
     };
 
@@ -422,6 +424,155 @@
         unlockCondition: unlockCondition,
         scalePercent: scalePercent,
       };
+    }
+
+    function snapshotToString(value) {
+      try {
+        return JSON.stringify(value || null);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function buildItemSnapshotFromForm() {
+      if (!state.editor || !state.editor.draft || !state.editor.type) return null;
+
+      var type = state.editor.type;
+      var snapshot = cloneItem(state.editor.draft);
+      var unlockType = type === 'backgrounds'
+        ? 'level'
+        : (editorEls.unlockType ? String(editorEls.unlockType.value || 'level') : 'level');
+      var unlockMode = type === 'backgrounds'
+        ? 'all'
+        : (editorEls.unlockMode ? normalizeUnlockMode(editorEls.unlockMode.value) : 'all');
+      var unlockValue;
+
+      snapshot.name = editorEls.name ? String(editorEls.name.value || '').trim() : snapshot.name;
+      snapshot.file = editorEls.image ? String(editorEls.image.value || '').trim() : snapshot.file;
+      snapshot.priceXqp = type === 'backgrounds'
+        ? 0
+        : parseNonNegative(editorEls.price ? editorEls.price.value : snapshot.priceXqp, 0);
+
+      if (type === 'backgrounds') {
+        unlockValue = Math.max(1, parseNonNegative(editorEls.unlockLevel ? editorEls.unlockLevel.value : 1, 1));
+      } else if (unlockType === 'level') {
+        unlockValue = Math.max(1, parseNonNegative(editorEls.unlockLevel ? editorEls.unlockLevel.value : 1, 1));
+      } else {
+        unlockValue = editorEls.unlockTopic ? String(editorEls.unlockTopic.value || '') : '';
+      }
+
+      var unlockConditions = [{
+        type: unlockType,
+        value: unlockValue
+      }];
+
+      if (type !== 'backgrounds') {
+        unlockConditions = unlockConditions.concat(
+          collectUnlockExtraRows(editorEls.unlockExtraList, { allowLevel: type !== 'accessories' })
+        );
+      }
+
+      snapshot.unlockCondition = unlockConditionFromList(unlockConditions, unlockMode);
+
+      if (type === 'food') {
+        snapshot.petXpGain = parseNonNegative(editorEls.foodXp ? editorEls.foodXp.value : snapshot.petXpGain, 0);
+      }
+
+      if (type === 'accessories') {
+        syncAccessoryDraftFromForm();
+        snapshot.positionMode = normalizeAccessoryPositionMode(state.editor.draft.positionMode || 'center');
+        snapshot.positionProfiles = cloneAccessoryProfiles(state.editor.draft.positionProfiles);
+        var activeProfile = getAccessoryProfileByPosition(snapshot.positionProfiles, snapshot.positionMode);
+        snapshot.offsetX = activeProfile.offsetX;
+        snapshot.offsetY = activeProfile.offsetY;
+        snapshot.scalePercent = activeProfile.scalePercent;
+        snapshot.rotDeg = activeProfile.rotDeg;
+      }
+
+      return snapshot;
+    }
+
+    function buildVariantSnapshotFromForm() {
+      if (!state.variantEditor || !state.variantEditor.draft) return null;
+      syncVariantDraftFromForm();
+      return cloneVariant(state.variantEditor.draft);
+    }
+
+    function rememberItemSavedSnapshot() {
+      state.editor.savedSnapshot = snapshotToString(buildItemSnapshotFromForm());
+    }
+
+    function rememberVariantSavedSnapshot() {
+      state.variantEditor.savedSnapshot = snapshotToString(buildVariantSnapshotFromForm());
+    }
+
+    function hasUnsavedItemChanges() {
+      if (!state.editor || !state.editor.draft || !state.editor.type) return false;
+      var currentSnapshot = snapshotToString(buildItemSnapshotFromForm());
+      return currentSnapshot !== String(state.editor.savedSnapshot || '');
+    }
+
+    function hasUnsavedVariantChanges() {
+      if (!state.variantEditor || !state.variantEditor.draft) return false;
+      var currentSnapshot = snapshotToString(buildVariantSnapshotFromForm());
+      return currentSnapshot !== String(state.variantEditor.savedSnapshot || '');
+    }
+
+    function confirmUnsavedChangesAndContinue(sectionLabel, onSave, onDiscard) {
+      var section = String(sectionLabel || 'muc dang chinh sua');
+      requestDeleteConfirm('Ban co thay doi chua luu o ' + section + '. Ban co muon luu truoc khi tiep tuc?', {
+        title: 'Thay doi chua luu',
+        confirmText: 'Luu',
+        cancelText: 'Khong luu'
+      }).then(function (shouldSave) {
+        if (shouldSave) {
+          var didSave = typeof onSave === 'function' ? !!onSave() : true;
+          if (didSave && typeof onDiscard === 'function') {
+            onDiscard();
+          }
+          return;
+        }
+
+        requestDeleteConfirm('Ban chac chan muon bo thay doi chua luu?', {
+          title: 'Xac nhan bo thay doi',
+          confirmText: 'Bo thay doi',
+          cancelText: 'Quay lai'
+        }).then(function (shouldDiscard) {
+          if (shouldDiscard && typeof onDiscard === 'function') {
+            onDiscard();
+          }
+        });
+      });
+    }
+
+    function runAfterUnsavedEditorsResolved(onContinue) {
+      var proceed = typeof onContinue === 'function' ? onContinue : function () {};
+
+      var resolveVariant = function () {
+        if (!hasUnsavedVariantChanges()) {
+          proceed();
+          return;
+        }
+
+        confirmUnsavedChangesAndContinue('hinh dang PET', function () {
+          return handleSaveVariantEditor({
+            showNotice: false,
+            reopenAfterSave: false,
+          });
+        }, proceed);
+      };
+
+      if (!hasUnsavedItemChanges()) {
+        resolveVariant();
+        return;
+      }
+
+      confirmUnsavedChangesAndContinue('item PET', function () {
+        return handleSaveEditor({
+          showNotice: false,
+          reopenAfterSave: false,
+        });
+      }, resolveVariant);
     }
 
     function initializeStateIfNeeded() {
@@ -1144,7 +1295,7 @@
       }
     }
 
-    function closePmVariantEditor() {
+    function closePmVariantEditorImmediate() {
       if (!editorEls.page || !editorEls.variantSidebar) return;
       editorEls.page.classList.remove('pm-variant-editor-open');
       editorEls.variantSidebar.setAttribute('aria-hidden', 'true');
@@ -1153,14 +1304,31 @@
         isNew: false,
         draft: null,
         previewLevel: 1,
-        editLevel: 1
+        editLevel: 1,
+        savedSnapshot: null
       };
+    }
+
+    function closePmVariantEditor() {
+      if (!hasUnsavedVariantChanges()) {
+        closePmVariantEditorImmediate();
+        return;
+      }
+
+      confirmUnsavedChangesAndContinue('hinh dang PET', function () {
+        return handleSaveVariantEditor({
+          showNotice: false,
+          reopenAfterSave: false,
+        });
+      }, function () {
+        closePmVariantEditorImmediate();
+      });
     }
 
     function openPmVariantEditor(index, isNew, previewLevel) {
       if (!editorEls.page || !editorEls.variantSidebar) return;
 
-      closePmEditor();
+      closePmEditorImmediate();
 
       var draft;
       if (isNew) {
@@ -1224,6 +1392,7 @@
 
       editorEls.page.classList.add('pm-variant-editor-open');
       editorEls.variantSidebar.setAttribute('aria-hidden', 'false');
+      rememberVariantSavedSnapshot();
     }
 
     function syncVariantDraftFromForm() {
@@ -1258,18 +1427,19 @@
       updateVariantPreview();
     }
 
-    function handleSaveVariantEditor() {
-      if (!state.variantEditor.draft) return;
+    function handleSaveVariantEditor(options) {
+      if (!state.variantEditor.draft) return false;
+      var opts = options || {};
       syncVariantDraftFromForm();
 
       var draft = state.variantEditor.draft;
       if (!draft.name) {
         if (editorEls.variantName) editorEls.variantName.focus();
-        return;
+        return false;
       }
       if (!draft.level1) {
         if (editorEls.variantLevel1) editorEls.variantLevel1.focus();
-        return;
+        return false;
       }
 
       var savedIndex = 0;
@@ -1284,22 +1454,30 @@
 
       updateCounts();
       renderAllPmItems();
-      persistPetVariantsToBackend(true);
+      persistPetVariantsToBackend(opts.showNotice !== false);
 
-      if (state.variantEditor.isNew) {
+      if (state.variantEditor.isNew && opts.reopenAfterSave !== false) {
         openPmVariantEditor(-1, true, currentPreviewLevel);
-        if (typeof window.showNotification === 'function') {
+        if (opts.showNotice !== false && typeof window.showNotification === 'function') {
           window.showNotification('Da them hinh dang PET moi. San sang them tiep', 'success');
         }
-        return;
+        return true;
       }
 
-      openPmVariantEditor(savedIndex, false, currentPreviewLevel);
+      if (opts.reopenAfterSave !== false) {
+        openPmVariantEditor(savedIndex, false, currentPreviewLevel);
+      }
+
+      if (typeof opts.afterSave === 'function') {
+        opts.afterSave(savedIndex);
+      }
+
+      return true;
     }
 
     function handleDeleteVariantEditor() {
       if (state.variantEditor.isNew) {
-        closePmVariantEditor();
+        closePmVariantEditorImmediate();
         return;
       }
 
@@ -1313,7 +1491,7 @@
         updateCounts();
         renderAllPmItems();
         persistPetVariantsToBackend(false);
-        closePmVariantEditor();
+        closePmVariantEditorImmediate();
 
         if (typeof window.showNotification === 'function') {
           window.showNotification('Da xoa ' + deletedVariantName, 'success');
@@ -1555,7 +1733,7 @@
       editorEls.sidebar.setAttribute('aria-hidden', 'false');
     }
 
-    function closePmEditor() {
+    function closePmEditorImmediate() {
       if (!editorEls.page || !editorEls.sidebar) return;
       editorEls.page.classList.remove('pm-editor-open');
       editorEls.sidebar.setAttribute('aria-hidden', 'true');
@@ -1563,8 +1741,25 @@
         type: null,
         index: -1,
         isNew: false,
-        draft: null
+        draft: null,
+        savedSnapshot: null
       };
+    }
+
+    function closePmEditor() {
+      if (!hasUnsavedItemChanges()) {
+        closePmEditorImmediate();
+        return;
+      }
+
+      confirmUnsavedChangesAndContinue('item PET', function () {
+        return handleSaveEditor({
+          showNotice: false,
+          reopenAfterSave: false,
+        });
+      }, function () {
+        closePmEditorImmediate();
+      });
     }
 
     function generateNextItemId(type) {
@@ -1617,13 +1812,14 @@
 
       fillEditorForm();
       openSidebar();
+      rememberItemSavedSnapshot();
     }
 
     function openPmEditor(type, index) {
       var items = getItemsByType(type);
       if (index < 0 || index >= items.length) return;
 
-      closePmVariantEditor();
+      closePmVariantEditorImmediate();
 
       state.editor = {
         type: type,
@@ -1634,6 +1830,7 @@
 
       fillEditorForm();
       openSidebar();
+      rememberItemSavedSnapshot();
     }
 
     function parseNonNegative(value, fallback) {
@@ -1907,8 +2104,9 @@
       }
     }
 
-    function handleSaveEditor() {
-      if (!state.editor.draft || !state.editor.type) return;
+    function handleSaveEditor(options) {
+      if (!state.editor.draft || !state.editor.type) return false;
+      var opts = options || {};
 
       var type = state.editor.type;
       var index = state.editor.index;
@@ -1923,11 +2121,11 @@
 
       if (!name) {
         if (editorEls.name) editorEls.name.focus();
-        return;
+        return false;
       }
       if (!file) {
         if (editorEls.image) editorEls.image.focus();
-        return;
+        return false;
       }
 
       if (type === 'backgrounds') {
@@ -1980,14 +2178,20 @@
       updateCounts();
       renderAllPmItems();
       // closePmEditor(); - Bỏ đóng sidebar khi lưu theo yêu cầu
-      persistPetItemsToBackend(true);
+      persistPetItemsToBackend(opts.showNotice !== false);
 
-      if (isNew) {
+      if (isNew && opts.reopenAfterSave !== false) {
         startCreateNewItem(type);
-        if (typeof window.showNotification === 'function') {
+        if (opts.showNotice !== false && typeof window.showNotification === 'function') {
           window.showNotification('Da them moi. San sang them tiep', 'success');
         }
       }
+
+      if (typeof opts.afterSave === 'function') {
+        opts.afterSave(payload);
+      }
+
+      return true;
     }
 
     function performDelete() {
@@ -1996,7 +2200,7 @@
       if (!type) return;
 
       if (state.editor.isNew) {
-        closePmEditor();
+        closePmEditorImmediate();
         return;
       }
 
@@ -2008,7 +2212,7 @@
       target.splice(index, 1);
       updateCounts();
       renderAllPmItems();
-      closePmEditor();
+      closePmEditorImmediate();
       persistPetItemsToBackend(false);
 
       if (typeof window.showNotification === 'function') {
@@ -2220,7 +2424,11 @@
       var addCard = event.target.closest('.pm-add-card');
       if (addCard) {
         var addType = addCard.getAttribute('data-item-type');
-        if (addType) startCreateNewItem(addType);
+        if (!addType) return;
+
+        runAfterUnsavedEditorsResolved(function () {
+          startCreateNewItem(addType);
+        });
         return;
       }
 
@@ -2231,7 +2439,9 @@
       var index = parseInt(dataCard.getAttribute('data-item-index') || '-1', 10);
       if (!type || isNaN(index) || index < 0) return;
 
-      openPmEditor(type, index);
+      runAfterUnsavedEditorsResolved(function () {
+          openPmEditor(type, index);
+      });
     }
 
     function handleVariantGridClick(event) {
@@ -2239,7 +2449,9 @@
 
       var addCard = event.target.closest('[data-variant-add="1"]');
       if (addCard) {
-        openPmVariantEditor(-1, true);
+        runAfterUnsavedEditorsResolved(function () {
+          openPmVariantEditor(-1, true);
+        });
         return;
       }
 
@@ -2249,7 +2461,10 @@
       var index = parseInt(variantCard.getAttribute('data-variant-index') || '-1', 10);
       if (isNaN(index) || index < 0) return;
       var level = parseInt(variantCard.getAttribute('data-variant-level') || '1', 10);
-      openPmVariantEditor(index, false, level === 2 ? 2 : 1);
+
+      runAfterUnsavedEditorsResolved(function () {
+          openPmVariantEditor(index, false, level === 2 ? 2 : 1);
+      });
     }
 
     function bindPmEvents() {
@@ -2418,9 +2633,17 @@
 
       document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
-          closePmEditor();
-          closePmVariantEditor();
+          runAfterUnsavedEditorsResolved(function () {
+            closePmEditorImmediate();
+            closePmVariantEditorImmediate();
+          });
         }
+      });
+
+      window.addEventListener('beforeunload', function (event) {
+        if (!hasUnsavedItemChanges() && !hasUnsavedVariantChanges()) return;
+        event.preventDefault();
+        event.returnValue = '';
       });
 
       eventsBound = true;
@@ -2474,8 +2697,8 @@
       updateCounts();
       renderAllPmItems();
       loadPetItemsFromBackend();
-      closePmEditor();
-      closePmVariantEditor();
+      closePmEditorImmediate();
+      closePmVariantEditorImmediate();
       window.togglePmSegment('accessories');
       state.initialized = true;
     };
@@ -2485,11 +2708,13 @@
       var targetSegment = document.getElementById('segment-' + segmentId);
       if (!targetSegment) return;
 
-      var isOpening = !targetSegment.classList.contains('active');
-      segments.forEach(function (s) {
-        s.classList.remove('active');
+      runAfterUnsavedEditorsResolved(function () {
+        var isOpening = !targetSegment.classList.contains('active');
+        segments.forEach(function (s) {
+          s.classList.remove('active');
+        });
+        if (isOpening) targetSegment.classList.add('active');
       });
-      if (isOpening) targetSegment.classList.add('active');
     };
 
     window.closePmEditor = closePmEditor;
