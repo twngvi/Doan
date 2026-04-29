@@ -1454,7 +1454,13 @@
 
       updateCounts();
       renderAllPmItems();
-      persistPetVariantsToBackend(opts.showNotice !== false);
+      persistPetVariantsToBackend(opts.showNotice !== false, {
+        onSuccess: function (result) {
+          if (result && result.success) {
+            rememberVariantSavedSnapshot();
+          }
+        }
+      });
 
       if (state.variantEditor.isNew && opts.reopenAfterSave !== false) {
         openPmVariantEditor(-1, true, currentPreviewLevel);
@@ -2178,7 +2184,13 @@
       updateCounts();
       renderAllPmItems();
       // closePmEditor(); - Bỏ đóng sidebar khi lưu theo yêu cầu
-      persistPetItemsToBackend(opts.showNotice !== false);
+      persistPetItemsToBackend(opts.showNotice !== false, {
+        onSuccess: function (result) {
+          if (result && result.success) {
+            rememberItemSavedSnapshot();
+          }
+        }
+      });
 
       if (isNew && opts.reopenAfterSave !== false) {
         startCreateNewItem(type);
@@ -2628,6 +2640,40 @@
             var targetLevel = parseInt(this.getAttribute('data-preview-level') || '1', 10) === 2 ? 2 : 1;
             setVariantEditLevel(targetLevel, true);
           });
+        });
+      }
+
+      if (editorEls.sidebar) {
+        editorEls.sidebar.addEventListener('keydown', function (event) {
+          if (event.key !== 'Enter') return;
+          if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+          if (!editorEls.page || !editorEls.page.classList.contains('pm-editor-open')) return;
+          if (!state.editor || !state.editor.draft) return;
+
+          var target = event.target;
+          var tagName = target && target.tagName ? String(target.tagName).toUpperCase() : '';
+          if (tagName !== 'INPUT' && tagName !== 'SELECT') return;
+          if (target && String(target.type || '').toLowerCase() === 'file') return;
+
+          event.preventDefault();
+          handleSaveEditor();
+        });
+      }
+
+      if (editorEls.variantSidebar) {
+        editorEls.variantSidebar.addEventListener('keydown', function (event) {
+          if (event.key !== 'Enter') return;
+          if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+          if (!editorEls.page || !editorEls.page.classList.contains('pm-variant-editor-open')) return;
+          if (!state.variantEditor || !state.variantEditor.draft) return;
+
+          var target = event.target;
+          var tagName = target && target.tagName ? String(target.tagName).toUpperCase() : '';
+          if (tagName !== 'INPUT' && tagName !== 'SELECT') return;
+          if (target && String(target.type || '').toLowerCase() === 'file') return;
+
+          event.preventDefault();
+          handleSaveVariantEditor();
         });
       }
 
