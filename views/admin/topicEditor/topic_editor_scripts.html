@@ -1503,6 +1503,21 @@ async function publishTopic() {
 /**
  * Check localStorage for editTopicId and enter edit mode
  */
+function updateTopicEditorHeader(mode) {
+  var isEdit = mode === 'edit';
+  var titleEl = document.getElementById('topicEditorTitle');
+  var subtitleEl = document.getElementById('topicEditorSubtitle');
+  var iconEl = document.getElementById('topicEditorHeaderIcon');
+
+  if (titleEl) titleEl.textContent = isEdit ? 'Chỉnh sửa bài học' : 'Tạo bài học mới';
+  if (subtitleEl) {
+    subtitleEl.textContent = isEdit
+      ? 'Cập nhật nội dung và xuất bản lại bài học hiện có'
+      : 'Tạo và xuất bản nội dung bài học mới cho học viên';
+  }
+  if (iconEl) iconEl.textContent = isEdit ? 'edit_square' : 'post_add';
+}
+
 function initEditMode() {
   var editTopicId = localStorage.getItem('editTopicId');
   if (!editTopicId) {
@@ -1513,6 +1528,7 @@ function initEditMode() {
     }
     isEditMode = false;
     editingTopicId = null;
+    updateTopicEditorHeader('create');
     return;
   }
 
@@ -1521,8 +1537,7 @@ function initEditMode() {
   editingTopicId = editTopicId;
 
   // Update UI for edit mode
-  var titleEl = document.getElementById('topicEditorTitle');
-  if (titleEl) titleEl.textContent = '\u270f\ufe0f Ch\u1ec9nh s\u1eeda b\u00e0i h\u1ecdc';
+  updateTopicEditorHeader('edit');
 
   var btnPublish = document.getElementById('btnPublish');
   var btnUpdate = document.getElementById('btnUpdate');
@@ -2435,8 +2450,7 @@ function resetForm() {
   localStorage.removeItem('editTopicId');
 
   // Restore create mode UI
-  var titleEl = document.getElementById('topicEditorTitle');
-  if (titleEl) titleEl.textContent = '\u2728 T\u1ea1o Topic m\u1edbi';
+  updateTopicEditorHeader('create');
 
   var btnPublish = document.getElementById('btnPublish');
   var btnUpdate = document.getElementById('btnUpdate');
