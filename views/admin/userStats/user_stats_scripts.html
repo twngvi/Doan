@@ -21,6 +21,7 @@
     }
 
     loadUserStatsData();
+    setTimeout(consumePendingAdminUserStatsSearchTarget, 0);
   }
 
   // Compatible with current dynamic init resolver in admin sidebar scripts.
@@ -90,15 +91,23 @@
 
       userStatsState.users = users;
       userStatsState.filteredUsers = users.slice();
+      window.__adminUserStatsSearchCache = users.map((user) => ({
+        id: String(user && (user.id || user.userId || user.email) || ''),
+        name: String(user && (user.name || user.displayName || user.email || user.id) || ''),
+        email: String(user && user.email || ''),
+      }));
+      window.dispatchEvent(new CustomEvent('admin-user-stats-cache-updated'));
       if (!users.find((user) => user.id === userStatsState.selectedUserId)) {
         userStatsState.selectedUserId = null;
       }
 
       applyUserStatsFilters();
+      consumePendingAdminUserStatsSearchTarget();
     } catch (error) {
       console.error('loadUserStatsData error:', error);
       userStatsState.users = [];
       userStatsState.filteredUsers = [];
+      window.__adminUserStatsSearchCache = [];
       renderUserList();
       renderUserDetail(null);
     } finally {
@@ -159,6 +168,70 @@
 
     return bStats.overallProgress - aStats.overallProgress;
   }
+
+  function normalizeUserStatsSearchText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function selectUserStatsUser(userTarget) {
+    const target = userTarget && typeof userTarget === 'object' ? userTarget : {};
+    const targetId = String(target.id || target.userId || '').trim();
+    const targetEmail = String(target.email || '').trim();
+    const targetName = String(target.name || target.displayName || '').trim();
+    const users = Array.isArray(userStatsState.users) ? userStatsState.users : [];
+
+    if (!users.length) return false;
+
+    let selectedUser = null;
+    if (targetId) {
+      selectedUser = users.find((user) => String(user && user.id || '').trim() === targetId) || null;
+    }
+    if (!selectedUser && targetEmail) {
+      selectedUser = users.find((user) => String(user && user.email || '').trim().toLowerCase() === targetEmail.toLowerCase()) || null;
+    }
+    if (!selectedUser && targetName) {
+      const needle = normalizeUserStatsSearchText(targetName);
+      selectedUser = users.find((user) => normalizeUserStatsSearchText(user && user.name).includes(needle)) || null;
+    }
+
+    if (!selectedUser) return false;
+
+    userStatsState.selectedUserId = selectedUser.id;
+    userStatsState.searchQuery = '';
+    const searchInput = document.getElementById('userStatsSearchInput');
+    if (searchInput) {
+      searchInput.value = '';
+    }
+
+    applyUserStatsFilters();
+
+    setTimeout(() => {
+      const userList = document.getElementById('userStatsUserList');
+      if (!userList) return;
+      const activeItem = Array.from(userList.querySelectorAll('.user-list-item')).find(
+        (item) => String(item.dataset.userId || '') === String(selectedUser.id || ''),
+      );
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: 'nearest' });
+      }
+    }, 0);
+
+    return true;
+  }
+
+  function consumePendingAdminUserStatsSearchTarget() {
+    if (!window.__adminUserStatsSearchTarget) return;
+    const didSelect = selectUserStatsUser(window.__adminUserStatsSearchTarget);
+    if (didSelect) {
+      window.__adminUserStatsSearchTarget = null;
+    }
+  }
+
+  window.selectUserStatsUser = selectUserStatsUser;
 
   function renderUserList() {
     const userList = document.getElementById('userStatsUserList');

@@ -23,6 +23,7 @@
     }
 
     loadCourseStatsData();
+    setTimeout(consumePendingCourseStatsSearchTarget, 0);
   }
 
   window.initcoursestats = initCourseStatsPage;
@@ -337,6 +338,7 @@
   function renderAllCourseStats(aggregated) {
     renderCourseStatsSummary(aggregated);
     renderCourseStatsTables(aggregated);
+    consumePendingCourseStatsSearchTarget();
   }
 
   function getOrCreateStatItem(map, key, title) {
@@ -921,4 +923,89 @@
     if (value === 'all') return 'toàn bộ dữ liệu';
     return `${value} ngày gần đây`;
   }
+
+  function normalizeCourseStatsSearchText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function selectCourseStatsEntryByTopic(topicTarget) {
+    const target = topicTarget && typeof topicTarget === 'object' ? topicTarget : {};
+    const targetId = String(target.topicId || target.id || '').trim();
+    const targetTitle = String(target.title || target.topicTitle || '').trim();
+    const preferredKey = resolveCourseStatsKey(targetId, targetTitle);
+    const topicRows = Array.isArray(courseStatsState.topicRows) ? courseStatsState.topicRows : [];
+    const matchingRows = Array.isArray(courseStatsState.matchingRows) ? courseStatsState.matchingRows : [];
+
+    if (!topicRows.length && !matchingRows.length) return false;
+
+    let selectedType = 'topic';
+    let selectedRow = preferredKey
+      ? topicRows.find((row) => String(row.key || '') === preferredKey)
+      : null;
+
+    if (!selectedRow && preferredKey) {
+      selectedType = 'matching';
+      selectedRow = matchingRows.find((row) => String(row.key || '') === preferredKey);
+    }
+
+    if (!selectedRow) {
+      const needle = normalizeCourseStatsSearchText(targetTitle || targetId);
+      if (!needle) return false;
+
+      selectedType = 'topic';
+      selectedRow = topicRows.find((row) => {
+        const title = normalizeCourseStatsSearchText(row && row.title);
+        return title.includes(needle);
+      });
+
+      if (!selectedRow) {
+        selectedType = 'matching';
+        selectedRow = matchingRows.find((row) => {
+          const title = normalizeCourseStatsSearchText(row && row.title);
+          return title.includes(needle);
+        });
+      }
+    }
+
+    if (!selectedRow) return false;
+
+    courseStatsState.selectedStatsType = selectedType;
+    courseStatsState.selectedStatsKey = String(selectedRow.key || '');
+    ensureSelectedStatsExists();
+    renderCourseStatsTables({
+      topicRows: courseStatsState.topicRows,
+      matchingRows: courseStatsState.matchingRows,
+    });
+
+    setTimeout(() => {
+      const tableBodyId = selectedType === 'matching'
+        ? 'courseStatsMatchingTableBody'
+        : 'courseStatsTopicTableBody';
+      const tableBody = document.getElementById(tableBodyId);
+      if (!tableBody) return;
+
+      const targetRow = Array.from(tableBody.querySelectorAll('tr[data-stats-key]')).find((row) =>
+        String(row.dataset.statsKey || '') === String(selectedRow.key || '')
+      );
+      if (targetRow) {
+        targetRow.scrollIntoView({ block: 'center' });
+      }
+    }, 0);
+
+    return true;
+  }
+
+  function consumePendingCourseStatsSearchTarget() {
+    if (!window.__adminCourseStatsSearchTarget) return;
+    const didSelect = selectCourseStatsEntryByTopic(window.__adminCourseStatsSearchTarget);
+    if (didSelect) {
+      window.__adminCourseStatsSearchTarget = null;
+    }
+  }
+
+  window.selectCourseStatsEntryByTopic = selectCourseStatsEntryByTopic;
 </script>

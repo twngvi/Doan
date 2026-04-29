@@ -7,6 +7,69 @@
   // State
   let isAdminSidebarCollapsed = false;
   let isMobileView = window.innerWidth <= 768;
+  const ADMIN_SEARCH_LIMIT = 20;
+  let adminUserSearchList = [];
+  let adminUserEntries = [];
+  let adminSearchResultsCache = [];
+  let adminSearchActiveIndex = -1;
+
+  const adminStaticSearchEntries = [
+    {
+      id: 'admin-page-online-stats',
+      group: 'pages',
+      title: 'Tổng quan',
+      subtitle: 'Xem số liệu online tổng hợp',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'tong quan overview dashboard online dang online user nguoi dung',
+      action: { type: 'page', pageId: 'page-online-stats' },
+    },
+    {
+      id: 'admin-page-content-management',
+      group: 'pages',
+      title: 'Quản lý Nội dung',
+      subtitle: 'Quản lý bài học, chủ đề và nội dung',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'quan ly noi dung content bai hoc lesson topic tao moi them create',
+      action: { type: 'page', pageId: 'page-content-management' },
+    },
+    {
+      id: 'admin-page-quiz-management',
+      group: 'pages',
+      title: 'Thống kê khóa học',
+      subtitle: 'Theo dõi thống kê và tiến độ khóa học',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'thong ke khoa hoc course stats course analytics lesson stats',
+      action: { type: 'page', pageId: 'page-quiz-management' },
+    },
+    {
+      id: 'admin-page-user-stats',
+      group: 'pages',
+      title: 'Thống kê người dùng',
+      subtitle: 'Phân tích dữ liệu người dùng',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'thong ke thong ke nguoi dung user stats analytics nguoi dung',
+      action: { type: 'page', pageId: 'page-user-stats' },
+    },
+    {
+      id: 'admin-page-pet-management',
+      group: 'pages',
+      title: 'Quản lý PET',
+      subtitle: 'Quản lý thông tin và dữ liệu PET',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'quan ly pet pet management thu cung',
+      action: { type: 'page', pageId: 'page-pet-management' },
+    },
+  ];
+
+  const adminSearchGroupLabels = {
+    pages: 'Trang',
+    users: 'Người dùng',
+  };
 
   // Initialize Admin Sidebar
   function initAdminSidebar() {
@@ -281,72 +344,401 @@
   function setupAdminSearch() {
     const searchInput = document.getElementById('adminSearchInput');
     const searchResults = document.getElementById('adminSearchResults');
+    const searchBox = document.getElementById('adminSearchBox');
+    const sidebar = document.getElementById('adminSidebar');
 
-    if (!searchInput || !searchResults) return;
+    if (!searchInput || !searchResults || !searchBox || !sidebar) return;
 
-    searchInput.addEventListener('input', debounce((e) => {
-      const query = e.target.value.trim().toLowerCase();
-      if (query.length < 2) {
-        searchResults.classList.remove('open');
-        return;
+    fetchAdminUsersForSearch();
+
+    searchBox.addEventListener('click', () => {
+      if (isAdminSidebarCollapsed) {
+        toggleAdminSidebar();
+        setTimeout(() => searchInput.focus(), 300);
       }
-      
-      const results = searchAdminPages(query);
-      renderAdminSearchResults(results);
-    }, 300));
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      runAdminSearch(e.target.value || '');
+    });
 
     searchInput.addEventListener('focus', () => {
-      if (searchInput.value.trim().length >= 2) {
-        searchResults.classList.add('open');
+      if (searchInput.value && searchInput.value.trim()) {
+        runAdminSearch(searchInput.value);
+      }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (!adminSearchResultsCache.length) {
+        if (e.key === 'Escape') {
+          clearAdminSearchResults();
+          searchInput.blur();
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        adminSearchActiveIndex = Math.min(
+          adminSearchActiveIndex + 1,
+          adminSearchResultsCache.length - 1,
+        );
+        updateAdminSearchActiveResult();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        adminSearchActiveIndex = Math.max(adminSearchActiveIndex - 1, 0);
+        updateAdminSearchActiveResult();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const selected =
+          adminSearchActiveIndex >= 0
+            ? adminSearchResultsCache[adminSearchActiveIndex]
+            : adminSearchResultsCache[0];
+        if (navigateWithAdminSearchResult(selected)) {
+          searchInput.value = '';
+          clearAdminSearchResults();
+        }
+      } else if (e.key === 'Escape') {
+        clearAdminSearchResults();
+        searchInput.blur();
+      }
+    });
+
+    searchResults.addEventListener('click', (e) => {
+      const item = e.target.closest('.sidebar-search-result-item');
+      if (!item) return;
+
+      const index = Number(item.getAttribute('data-result-index'));
+      if (Number.isNaN(index) || !adminSearchResultsCache[index]) return;
+
+      if (navigateWithAdminSearchResult(adminSearchResultsCache[index])) {
+        searchInput.value = '';
+        clearAdminSearchResults();
       }
     });
 
     // Close on outside click
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.sidebar-search-wrapper')) {
-        searchResults.classList.remove('open');
+      if (!sidebar.contains(e.target)) {
+        clearAdminSearchResults();
       }
     });
-  }
 
-  // Search Admin Pages
-  function searchAdminPages(query) {
-    const pages = [
-      { id: 'page-online-stats', name: 'Tổng quan', icon: 'group', keywords: ['tong quan', 'overview', 'dashboard', 'online', 'dang online', 'user', 'nguoi dung'] },
-      { id: 'page-content-management', name: 'Quản lý Nội dung', icon: 'library_books', keywords: ['content', 'noi dung', 'bai hoc', 'lesson', 'topic', 'tao moi', 'them', 'create'] },
-      { id: 'page-quiz-management', name: 'Thống kê khóa học', icon: 'query_stats', keywords: ['thong ke khoa hoc', 'khoa hoc', 'course stats', 'course analytics', 'lesson stats'] },
-      { id: 'page-user-stats', name: 'Thống kê người dùng', icon: 'bar_chart', keywords: ['thong ke', 'thong ke nguoi dung', 'user stats', 'analytics', 'nguoi dung'] },
-    ];
-
-    return pages.filter(page => {
-      const nameMatch = page.name.toLowerCase().includes(query);
-      const keywordMatch = page.keywords.some(kw => kw.includes(query));
-      return nameMatch || keywordMatch;
+    window.addEventListener('admin-user-stats-cache-updated', () => {
+      fetchAdminUsersForSearch();
     });
   }
 
-  // Render Search Results
+  function normalizeAdminSearchText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function escapeAdminSearchHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function normalizeAdminUserSearchList(users) {
+    return (users || [])
+      .map((user) => {
+        const id = String(user && (user.id || user.userId || user.email) || '').trim();
+        const email = String(user && user.email || '').trim();
+        const name = String(user && (user.name || user.displayName || email || id) || '').trim();
+
+        if (!id) return null;
+        return { id, name, email };
+      })
+      .filter(Boolean);
+  }
+
+  function rerunAdminSearchIfInputHasValue() {
+    const input = document.getElementById('adminSearchInput');
+    if (input && input.value && input.value.trim()) {
+      runAdminSearch(input.value);
+    }
+  }
+
+  function setUsersForAdminSearch(users) {
+    adminUserSearchList = normalizeAdminUserSearchList(users);
+    adminUserEntries = buildAdminUserEntries(adminUserSearchList);
+    rerunAdminSearchIfInputHasValue();
+  }
+
+  function buildAdminUserEntries(users) {
+    const entries = [];
+
+    (users || []).forEach((user) => {
+      const userId = String(user.id || '').trim();
+      if (!userId) return;
+      const userName = String(user.name || user.email || userId).trim();
+      const userEmail = String(user.email || '').trim();
+
+      entries.push({
+        id: `admin-user-${userId}`,
+        group: 'users',
+        title: userName,
+        subtitle: userEmail ? `User - ${userEmail}` : `User ID - ${userId}`,
+        tag: 'User',
+        tagClass: 'tag-user',
+        keywords: `user nguoi dung thong ke user stats ${userId} ${userName} ${userEmail}`,
+        action: {
+          type: 'user',
+          pageId: 'page-user-stats',
+          user: {
+            id: userId,
+            name: userName,
+            email: userEmail,
+          },
+        },
+      });
+    });
+
+    return entries;
+  }
+
+  function fetchAdminUsersForSearch() {
+    if (
+      Array.isArray(window.__adminUserStatsSearchCache) &&
+      window.__adminUserStatsSearchCache.length
+    ) {
+      setUsersForAdminSearch(window.__adminUserStatsSearchCache);
+      return;
+    }
+
+    if (typeof callAppsScript === 'function') {
+      callAppsScript('getAdminUserLearningStats')
+        .then((result) => {
+          const users =
+            result && result.success && Array.isArray(result.data)
+              ? result.data
+              : (Array.isArray(result) ? result : []);
+          setUsersForAdminSearch(users);
+        })
+        .catch(() => {
+          adminUserSearchList = [];
+          adminUserEntries = [];
+        });
+      return;
+    }
+
+    if (
+      typeof google === 'undefined' ||
+      !google.script ||
+      !google.script.run
+    ) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler((response) => {
+        let users = [];
+        if (response && response.success && Array.isArray(response.data)) {
+          users = response.data;
+        } else if (Array.isArray(response)) {
+          users = response;
+        }
+        setUsersForAdminSearch(users);
+      })
+      .withFailureHandler(() => {
+        adminUserSearchList = [];
+        adminUserEntries = [];
+      })
+      .getAdminUserLearningStats();
+  }
+
+  function buildAdminSearchEntries() {
+    return adminStaticSearchEntries.concat(adminUserEntries);
+  }
+
+  function scoreAdminSearchEntry(entry, normalizedQuery) {
+    const title = normalizeAdminSearchText(entry.title);
+    const subtitle = normalizeAdminSearchText(entry.subtitle);
+    const keywords = normalizeAdminSearchText(entry.keywords);
+
+    if (title.startsWith(normalizedQuery)) return 100;
+    if (title.includes(normalizedQuery)) return 80;
+    if (keywords.includes(normalizedQuery)) return 60;
+    if (subtitle.includes(normalizedQuery)) return 40;
+    return -1;
+  }
+
+  function clearAdminSearchResults() {
+    const searchResults = document.getElementById('adminSearchResults');
+    if (!searchResults) return;
+    searchResults.classList.remove('open');
+    searchResults.innerHTML = '';
+    adminSearchResultsCache = [];
+    adminSearchActiveIndex = -1;
+  }
+
+  function updateAdminSearchActiveResult() {
+    const resultEls = document.querySelectorAll(
+      '#adminSearchResults .sidebar-search-result-item',
+    );
+    resultEls.forEach((el) => el.classList.remove('active'));
+
+    if (
+      adminSearchActiveIndex < 0 ||
+      adminSearchActiveIndex >= adminSearchResultsCache.length
+    ) {
+      return;
+    }
+
+    const activeEl = document.querySelector(
+      `#adminSearchResults .sidebar-search-result-item[data-result-index="${adminSearchActiveIndex}"]`,
+    );
+    if (activeEl) {
+      activeEl.classList.add('active');
+      activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function activateAdminNavByPageId(pageId) {
+    const navItem = document.querySelector(
+      `.admin-sidebar .nav-item[data-page="${pageId}"]`,
+    );
+    if (navItem) {
+      setActiveNavItem(navItem);
+    }
+  }
+
+  function applyAdminUserStatsTarget(target) {
+    if (!target) return;
+    window.__adminUserStatsSearchTarget = target;
+
+    let attemptCount = 0;
+    const maxAttempts = 30;
+    const tryApply = () => {
+      if (!window.__adminUserStatsSearchTarget) return;
+      if (typeof window.selectUserStatsUser === 'function') {
+        const didSelect = window.selectUserStatsUser(
+          window.__adminUserStatsSearchTarget,
+        );
+        if (didSelect) {
+          window.__adminUserStatsSearchTarget = null;
+          return;
+        }
+      }
+
+      attemptCount += 1;
+      if (attemptCount < maxAttempts) {
+        setTimeout(tryApply, 120);
+      }
+    };
+    setTimeout(tryApply, 80);
+  }
+
+  function navigateWithAdminSearchResult(result) {
+    if (!result) return false;
+
+    const action = result.action;
+    if (!action || typeof action !== 'object') return false;
+
+    if (action.type === 'page') {
+      showAdminPage(action.pageId);
+      activateAdminNavByPageId(action.pageId);
+      return true;
+    }
+
+    if (action.type === 'user') {
+      showAdminPage(action.pageId);
+      activateAdminNavByPageId(action.pageId);
+      applyAdminUserStatsTarget(action.user || {});
+      return true;
+    }
+
+    return false;
+  }
+
+  function groupAdminSearchResults(results) {
+    const grouped = {
+      pages: [],
+      users: [],
+    };
+
+    (results || []).forEach((entry) => {
+      if (grouped[entry.group]) {
+        grouped[entry.group].push(entry);
+      }
+    });
+
+    return grouped;
+  }
+
+  function indexAdminSearchMap(results, id) {
+    return results.findIndex((entry) => entry.id === id);
+  }
+
   function renderAdminSearchResults(results) {
     const searchResults = document.getElementById('adminSearchResults');
     if (!searchResults) return;
 
     if (results.length === 0) {
-      searchResults.innerHTML = `
-        <div class="search-no-results">
-          <span class="material-symbols-sharp">search_off</span>
-          <p>Không tìm thấy kết quả</p>
-        </div>
-      `;
+      searchResults.innerHTML =
+        '<div class="sidebar-search-empty">Không có kết quả phù hợp</div>';
     } else {
-      searchResults.innerHTML = results.map(result => `
-        <button class="sidebar-search-result-item" onclick="showAdminPage('${result.id}'); document.getElementById('adminSearchResults').classList.remove('open');">
-          <span class="material-symbols-sharp">${result.icon}</span>
-          <span class="result-name">${result.name}</span>
-        </button>
-      `).join('');
+      const grouped = groupAdminSearchResults(results);
+      const order = ['pages', 'users'];
+      const html = [];
+
+      order.forEach((groupKey) => {
+        const items = grouped[groupKey];
+        if (!items || items.length === 0) return;
+
+        html.push(
+          `<div class="sidebar-search-group"><div class="sidebar-search-group-label">${adminSearchGroupLabels[groupKey]}</div>`,
+        );
+        items.forEach((item) => {
+          const resultIndex = indexAdminSearchMap(results, item.id);
+
+          html.push(`
+            <button class="sidebar-search-result-item" data-result-index="${resultIndex}">
+              <div class="sidebar-search-result-main">
+                <div class="sidebar-search-result-title">${escapeAdminSearchHtml(item.title)}</div>
+                <div class="sidebar-search-result-subtitle">${escapeAdminSearchHtml(item.subtitle)}</div>
+              </div>
+              <div class="sidebar-search-result-side">
+                <span class="sidebar-search-result-tag ${item.tagClass}">${item.tag}</span>
+              </div>
+            </button>
+          `);
+        });
+        html.push('</div>');
+      });
+
+      searchResults.innerHTML = html.join('');
     }
 
     searchResults.classList.add('open');
+  }
+
+  function runAdminSearch(query) {
+    const normalizedQuery = normalizeAdminSearchText(query);
+    if (!normalizedQuery) {
+      clearAdminSearchResults();
+      return;
+    }
+
+    adminSearchResultsCache = buildAdminSearchEntries()
+      .map((entry) => ({
+        entry: entry,
+        score: scoreAdminSearchEntry(entry, normalizedQuery),
+      }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, ADMIN_SEARCH_LIMIT)
+      .map((item) => item.entry);
+
+    adminSearchActiveIndex = -1;
+    renderAdminSearchResults(adminSearchResultsCache);
   }
 
   // Online Count Updater
@@ -387,19 +779,6 @@
     if (username && adminData.name) {
       username.textContent = adminData.name;
     }
-  }
-
-  // Debounce Utility
-  function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
   }
 
   // Initialize on DOM Ready
