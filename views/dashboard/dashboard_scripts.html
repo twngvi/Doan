@@ -1332,8 +1332,17 @@
 
     if (greetingEl && userNameEl) {
       var userName = userNameEl.textContent || "User";
-      greetingEl.innerHTML =
-        buildDashboardGreetingHtml(greeting, userName);
+      if (typeof window.buildBouncyTextHtml === "function") {
+        greetingEl.innerHTML =
+          '<span class="greeting-prefix">' +
+          window.buildBouncyTextHtml(greeting + ",") +
+          '</span> <span id="userNameWelcome" class="greeting-name">' +
+          window.buildBouncyTextHtml(userName) +
+          "</span>";
+      } else {
+        greetingEl.textContent = greeting + ", " + userName;
+      }
+      greetingEl.dataset.bounceReady = "true";
     }
   }
 
@@ -1347,16 +1356,8 @@
   }
 
   function buildDashboardGreetingHtml(greeting, userName) {
-    var greetingText = `${greeting},`;
-    var greetingWords = greetingText.split(" ");
-    var greetingHtml = greetingWords
-      .map(function (word) {
-        return `<span class="bounce-word">${escapeHtml(word)}</span>`;
-      })
-      .join(" ");
-
-    var safeUser = escapeHtml(userName);
-    return `${greetingHtml} <span id="userNameWelcome" class="bounce-word">${safeUser}</span>`;
+    var greetingText = `${greeting}, ${userName}`;
+    return escapeHtml(greetingText);
   }
 
   /**
@@ -1368,7 +1369,12 @@
     var displayName =
       profileName || user.displayName || user.fullName || user.username || "User";
     var userNameEl = document.getElementById("userNameWelcome");
-    if (userNameEl) userNameEl.textContent = displayName;
+    if (userNameEl) {
+      userNameEl.textContent = displayName;
+      if (typeof window.applyHeaderTitleBounce === "function") {
+        window.applyHeaderTitleBounce(userNameEl);
+      }
+    }
 
     if (typeof window.updateAllUserNames === "function")
       window.updateAllUserNames(displayName);

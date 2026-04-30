@@ -691,6 +691,53 @@
     window.history.replaceState({ page: pageName }, "", newURL);
   }
 
+  // ==================== Header Title Bounce ====================
+
+  function escapeHeaderText(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function buildBouncyTextHtml(text) {
+    var safe = escapeHeaderText(text);
+    return safe
+      .split("")
+      .map(function (ch) {
+        if (ch === " ") {
+          return '<span class="bounce-char bounce-space">&nbsp;</span>';
+        }
+        return '<span class="bounce-char">' + ch + "</span>";
+      })
+      .join("");
+  }
+
+  function applyHeaderTitleBounce(root) {
+    var scope = root && root.nodeType === 1 ? root : document;
+    var targets = [];
+    if (scope.classList && scope.classList.contains("header-title-animated")) {
+      targets.push(scope);
+    } else if (scope.querySelectorAll) {
+      targets = Array.prototype.slice.call(
+        scope.querySelectorAll(".header-title-animated"),
+      );
+    }
+
+    targets.forEach(function (el) {
+      if (!el || el.dataset.bounceReady === "true") return;
+      var rawText = el.textContent || "";
+      if (!rawText.trim()) return;
+      el.innerHTML = buildBouncyTextHtml(rawText);
+      el.dataset.bounceReady = "true";
+    });
+  }
+
+  window.buildBouncyTextHtml = buildBouncyTextHtml;
+  window.applyHeaderTitleBounce = applyHeaderTitleBounce;
+
   // ==================== Page Navigation ====================
 
   function updateBodyPageClass(pageId) {
@@ -940,6 +987,69 @@
       console.error("Page not found:", pageId);
     }
   }
+
+  // ==================== Navigation Guard ====================
+
+  window.onBeforeNavigate = function (pageId, params, addToHistory) {
+    if (window.__navGuardActive) return false;
+
+    var currentPageName = localStorage.getItem("lastActivePage") || "";
+    var currentPageId = currentPageName ? "page-" + currentPageName : "";
+    if (pageId && currentPageId && pageId === currentPageId) {
+      return false;
+    }
+
+    var pending = [];
+    if (typeof window.isLessonMiniQuizInProgress === "function") {
+      if (window.isLessonMiniQuizInProgress()) pending.push("Mini Quiz");
+    }
+    if (typeof window.isMcqQuizInProgress === "function") {
+      if (window.isMcqQuizInProgress()) pending.push("Quiz");
+    }
+    if (typeof window.isMatchingGameInProgress === "function") {
+      if (window.isMatchingGameInProgress()) pending.push("Matching");
+    }
+
+    if (!pending.length) return false;
+
+    var message =
+      "Bạn đang làm " +
+      pending.join(", ") +
+      " và chưa hoàn thành chủ đề. Bạn có chắc muốn rời trang?";
+
+    window.__navGuardActive = true;
+
+    var proceed = function () {
+      window.__navGuardActive = false;
+      showPage(pageId, params, addToHistory);
+    };
+
+    var cancel = function () {
+      window.__navGuardActive = false;
+    };
+
+    if (typeof window.showAppConfirm === "function") {
+      window.showAppConfirm(message, {
+        title: "Rời khỏi?",
+        confirmText: "Rời đi",
+        cancelText: "Ở lại",
+      }).then(function (ok) {
+        if (ok) proceed();
+        else cancel();
+      });
+    } else {
+      if (confirm(message)) proceed();
+      else cancel();
+    }
+
+    return true;
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    if (typeof window.applyHeaderTitleBounce === "function") {
+      window.applyHeaderTitleBounce();
+    }
+  });
   // ==================== Browser History Handling ====================
 
   /**

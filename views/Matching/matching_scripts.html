@@ -619,6 +619,9 @@
       (matchingState.selectedTopic && matchingState.selectedTopic.title) ||
       "Matching Game";
     titleEl.textContent = (topic && topic.title) || fallbackTitle;
+    if (typeof window.applyHeaderTitleBounce === "function") {
+      window.applyHeaderTitleBounce(titleEl);
+    }
   }
 
   // ===== VIEW MANAGEMENT =====
@@ -3357,6 +3360,17 @@
     matchingState.resultData = null;
 
     showPage("page-dashboard");
+  };
+
+  window.isMatchingGameInProgress = function () {
+    var page = document.getElementById("page-matching");
+    var gameWrapper = document.getElementById("matchingGameWrapper");
+    var isVisible =
+      !!page &&
+      page.style.display !== "none" &&
+      !!gameWrapper &&
+      gameWrapper.classList.contains("active");
+    return isVisible && matchingState.gameCompleted === false;
   };
 
   // ===== UTILS =====

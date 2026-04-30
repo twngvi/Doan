@@ -549,6 +549,9 @@
     const topicTitleEl = document.getElementById("mcq-topic-title");
     if (topicTitleEl) {
       topicTitleEl.textContent = quizState.topicTitle;
+      if (typeof window.applyHeaderTitleBounce === "function") {
+        window.applyHeaderTitleBounce(topicTitleEl);
+      }
     }
   }
 
@@ -2404,11 +2407,15 @@
     
     // Create a scroll-to-top indicator or just a fresh start
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    const card = document.createElement("div");
+    card.className = "review-question-card";
+    container.appendChild(card);
     
     quizState.questions.forEach((question, qIdx) => {
-      const qCard = document.createElement("div");
-      qCard.className = "review-question-card";
-      qCard.id = `review-q-${qIdx}`;
+      const qItem = document.createElement("div");
+      qItem.className = "review-question-item";
+      qItem.id = `review-q-${qIdx}`;
       
       let optionsHtml = "";
       const labels = ["A", "B", "C", "D"];
@@ -2439,7 +2446,7 @@
         optionsHtml += '</div>';
       }
       
-      qCard.innerHTML = `
+      qItem.innerHTML = `
         <div class="question-header">
           <div class="question-number-badge">${qIdx + 1}</div>
           <div class="question-content">
@@ -2449,7 +2456,7 @@
         ${optionsHtml}
       `;
       
-      container.appendChild(qCard);
+      card.appendChild(qItem);
     });
     
     // Add Submit Button at the bottom
@@ -3165,6 +3172,9 @@
 
     showResults(finalScore, totalQuestions, percentage, timeTaken);
     saveQuizResult(finalScore, totalQuestions, percentage, timeTaken);
+    if (quizState.quizSession) {
+      quizState.quizSession.status = "completed";
+    }
 
     // Save MCQ activity to personal Google Sheet
     google.script.run.saveActivityLog({
@@ -3246,6 +3256,21 @@
 
     generateAnswerReview();
   }
+
+  window.isMcqQuizInProgress = function () {
+    const page = document.getElementById("page-mcq");
+    const quizView = document.getElementById("mcq-quiz-view");
+    const isVisible =
+      !!page &&
+      page.style.display !== "none" &&
+      !!quizView &&
+      quizView.style.display !== "none";
+    return (
+      isVisible &&
+      !!quizState.quizSession &&
+      quizState.quizSession.status === "in_progress"
+    );
+  };
 
   /**
    * Generate answer review - Professional Design
