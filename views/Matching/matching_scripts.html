@@ -3283,24 +3283,36 @@
 
   // ===== NAVIGATION =====
   window.matchingBackToTopicHub = function () {
-    clearMatchingDragWrongResetTimeout();
-    stopMatchingTimer();
-    setMatchingPreplayMode(true);
+    var runBack = function () {
+      clearMatchingDragWrongResetTimeout();
+      stopMatchingTimer();
+      setMatchingPreplayMode(true);
 
-    document.getElementById("matchingGameWrapper").classList.remove("active");
-    var resultView = document.getElementById("matchingResultView");
-    if (resultView) resultView.style.display = "none";
-    document.getElementById("matchingBoard").innerHTML = "";
+      document.getElementById("matchingGameWrapper").classList.remove("active");
+      var resultView = document.getElementById("matchingResultView");
+      if (resultView) resultView.style.display = "none";
+      document.getElementById("matchingBoard").innerHTML = "";
 
-    matchingState.showResultModal = false;
-    matchingState.resultData = null;
+      matchingState.showResultModal = false;
+      matchingState.resultData = null;
 
-    if (matchingState.selectedTopic) {
-      openMatchingTopicHub(matchingState.selectedTopic);
+      if (matchingState.selectedTopic) {
+        openMatchingTopicHub(matchingState.selectedTopic);
+        return;
+      }
+
+      showMatchingTopicSelection();
+    };
+
+    if (typeof window.confirmExitActiveSession === "function") {
+      window.confirmExitActiveSession().then(function (ok) {
+        if (!ok) return;
+        runBack();
+      });
       return;
     }
 
-    showMatchingTopicSelection();
+    runBack();
   };
 
   window.matchingBackToTopics = function () {

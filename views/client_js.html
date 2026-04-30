@@ -702,12 +702,15 @@
       .replace(/'/g, "&#39;");
   }
 
-  function buildBouncyTextHtml(text) {
+  function buildBouncyTextHtml(text, options) {
+    var opts = options || {};
+    var preserveSpaces = opts.preserveSpaces !== false;
     var safe = escapeHeaderText(text);
     return safe
       .split("")
       .map(function (ch) {
         if (ch === " ") {
+          if (!preserveSpaces) return " ";
           return '<span class="bounce-char bounce-space">&nbsp;</span>';
         }
         return '<span class="bounce-char">' + ch + "</span>";
@@ -730,7 +733,10 @@
       if (!el || el.dataset.bounceReady === "true") return;
       var rawText = el.textContent || "";
       if (!rawText.trim()) return;
-      el.innerHTML = buildBouncyTextHtml(rawText);
+      var preserveSpaces = el.dataset.bounceSpaces !== "false";
+      el.innerHTML = buildBouncyTextHtml(rawText, {
+        preserveSpaces: preserveSpaces,
+      });
       el.dataset.bounceReady = "true";
     });
   }
@@ -990,15 +996,7 @@
 
   // ==================== Navigation Guard ====================
 
-  window.onBeforeNavigate = function (pageId, params, addToHistory) {
-    if (window.__navGuardActive) return false;
-
-    var currentPageName = localStorage.getItem("lastActivePage") || "";
-    var currentPageId = currentPageName ? "page-" + currentPageName : "";
-    if (pageId && currentPageId && pageId === currentPageId) {
-      return false;
-    }
-
+  function getActiveSessionLabels() {
     var pending = [];
     if (typeof window.isLessonMiniQuizInProgress === "function") {
       if (window.isLessonMiniQuizInProgress()) pending.push("Mini Quiz");
@@ -1009,18 +1007,59 @@
     if (typeof window.isMatchingGameInProgress === "function") {
       if (window.isMatchingGameInProgress()) pending.push("Matching");
     }
+    return pending;
+  }
+
+  function buildExitConfirmMessage(pending) {
+    return (
+      "Bạn đang làm " +
+      pending.join(", ") +
+      " và chưa hoàn thành chủ đề. Bạn có chắc muốn rời trang?"
+    );
+  }
+
+  window.confirmExitActiveSession = function (options) {
+    var pending = getActiveSessionLabels();
+    if (!pending.length) return Promise.resolve(true);
+
+    var opts = options || {};
+    var message = opts.message || buildExitConfirmMessage(pending);
+
+    if (typeof window.showAppConfirm === "function") {
+      return window.showAppConfirm(message, {
+        title: opts.title || "Rời khỏi?",
+        confirmText: opts.confirmText || "Rời đi",
+        cancelText: opts.cancelText || "Ở lại",
+      });
+    }
+
+    return Promise.resolve(confirm(message));
+  };
+
+  window.onBeforeNavigate = function (pageId, params, addToHistory) {
+    if (window.__navGuardActive) return false;
+    if (window.__navGuardBypass) {
+      window.__navGuardBypass = false;
+      return false;
+    }
+
+    var currentPageName = localStorage.getItem("lastActivePage") || "";
+    var currentPageId = currentPageName ? "page-" + currentPageName : "";
+    if (pageId && currentPageId && pageId === currentPageId) {
+      return false;
+    }
+
+    var pending = getActiveSessionLabels();
 
     if (!pending.length) return false;
 
-    var message =
-      "Bạn đang làm " +
-      pending.join(", ") +
-      " và chưa hoàn thành chủ đề. Bạn có chắc muốn rời trang?";
+    var message = buildExitConfirmMessage(pending);
 
     window.__navGuardActive = true;
 
     var proceed = function () {
       window.__navGuardActive = false;
+      window.__navGuardBypass = true;
       showPage(pageId, params, addToHistory);
     };
 

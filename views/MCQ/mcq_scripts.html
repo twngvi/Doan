@@ -1883,6 +1883,17 @@
   }
 
   function backToQuizTopicHome() {
+    if (typeof window.confirmExitActiveSession === "function") {
+      window.confirmExitActiveSession().then(function (ok) {
+        if (!ok) return;
+        if (quizState.selectedTopic && quizState.selectedTopic.topicId) {
+          openQuizTopicHub(quizState.selectedTopic);
+        } else {
+          backToTopicSelection();
+        }
+      });
+      return;
+    }
     if (quizState.selectedTopic && quizState.selectedTopic.topicId) {
       openQuizTopicHub(quizState.selectedTopic);
     } else {
@@ -2301,6 +2312,12 @@
     quizState.startTime = new Date();
     quizState.isReviewing = false;
 
+    var totalEl = document.getElementById("total-questions");
+    if (totalEl) totalEl.textContent = quizState.questions.length;
+
+    var progressTotalEl = document.getElementById("progress-total");
+    if (progressTotalEl) progressTotalEl.textContent = quizState.questions.length;
+
     document.getElementById("quiz-loading").style.display = "none";
     document.getElementById("quiz-error").style.display = "none";
     
@@ -2308,7 +2325,8 @@
     
     if (quizState.gameMode === "review") {
       document.getElementById("quiz-stats").style.display = "none";
-      document.getElementById("quiz-progress-bar").style.display = "none";
+      var progressBar = document.getElementById("quiz-progress-bar");
+      if (progressBar) progressBar.style.display = "none";
       document.getElementById("quiz-section").style.display = "none";
       document.getElementById("review-questions-list").style.display = "block";
       renderAllQuestionsForReview();
@@ -2318,7 +2336,8 @@
       if (subtitleEl) subtitleEl.innerHTML = 'Ôn tập: Trả lời toàn bộ câu hỏi và nộp bài <span id="quiz-mode-indicator" class="quiz-mode-indicator review">REVIEW</span>';
     } else {
       document.getElementById("quiz-stats").style.display = "flex";
-      document.getElementById("quiz-progress-bar").style.display = "block";
+      var progressBar = document.getElementById("quiz-progress-bar");
+      if (progressBar) progressBar.style.display = "none";
       document.getElementById("quiz-section").style.display = "block";
       document.getElementById("review-questions-list").style.display = "none";
       
@@ -2351,10 +2370,16 @@
 
     document.getElementById("question-number").textContent = questionIndex + 1;
     document.getElementById("current-question").textContent = questionIndex + 1;
-    document.getElementById("progress-current").textContent = questionIndex + 1;
+    var progressCurrentEl = document.getElementById("progress-current");
+    if (progressCurrentEl) {
+      progressCurrentEl.textContent = questionIndex + 1;
+    }
 
-    const progress = ((questionIndex + 1) / quizState.questions.length) * 100;
-    document.getElementById("progress-fill").style.width = progress + "%";
+    var progressFillEl = document.getElementById("progress-fill");
+    if (progressFillEl) {
+      const progress = ((questionIndex + 1) / quizState.questions.length) * 100;
+      progressFillEl.style.width = progress + "%";
+    }
 
     // Display question with retry badge if retry question
     const questionTextEl = document.getElementById("question-text");
@@ -3205,7 +3230,8 @@
     document.getElementById("quiz-section").style.display = "none";
     document.getElementById("review-questions-list").style.display = "none";
     document.getElementById("quiz-stats").style.display = "none";
-    document.getElementById("quiz-progress-bar").style.display = "none";
+    var progressBar = document.getElementById("quiz-progress-bar");
+    if (progressBar) progressBar.style.display = "none";
     document.getElementById("quiz-results").style.display = "block";
 
     const resultIcon = document.getElementById("result-icon");
@@ -3657,7 +3683,8 @@
     document.getElementById("quiz-error").style.display = "none";
     document.getElementById("quiz-section").style.display = "none";
     document.getElementById("quiz-stats").style.display = "none";
-    document.getElementById("quiz-progress-bar").style.display = "none";
+    var progressBar = document.getElementById("quiz-progress-bar");
+    if (progressBar) progressBar.style.display = "none";
     document.getElementById("quiz-results").style.display = "none";
   }
 
@@ -3669,6 +3696,8 @@
     document.getElementById("quiz-error-message").textContent = message;
     document.getElementById("quiz-section").style.display = "none";
     document.getElementById("quiz-stats").style.display = "none";
+    var progressBar = document.getElementById("quiz-progress-bar");
+    if (progressBar) progressBar.style.display = "none";
     document.getElementById("quiz-results").style.display = "none";
   }
 
