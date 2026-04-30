@@ -1068,12 +1068,19 @@
 
     // Reset matching
     document.querySelectorAll(".matching-slot").forEach((slot) => {
-      slot.classList.remove("matched", "dragover");
+      slot.classList.remove("matched", "incorrect-flash");
+      // Restore original text if matched
+      const originalText = slot.getAttribute("data-original-text");
+      if (originalText) {
+        slot.textContent = originalText;
+      }
     });
     document.querySelectorAll(".matching-term").forEach((term) => {
-      term.classList.remove("dragging");
+      term.classList.remove("selected", "matched");
+      term.style.visibility = "visible";
       term.style.display = "";
     });
+    selectedTerm = null;
   }
 
   // ===== DEMO ANSWER CHECKING =====
@@ -1148,57 +1155,51 @@
     GalaxyState.legalType = null;
   }
 
-  // ===== MATCHING DEMO DRAG & DROP =====
+  // ===== MATCHING DEMO CLICK-TO-MATCH =====
+  let selectedTerm = null;
+
   function initMatchingDemo() {
-    const terms = document.querySelectorAll(".matching-term");
-    const slots = document.querySelectorAll(".matching-slot");
-
-    terms.forEach((term) => {
-      term.addEventListener("dragstart", handleDragStart);
-      term.addEventListener("dragend", handleDragEnd);
-    });
-
-    slots.forEach((slot) => {
-      slot.addEventListener("dragover", handleDragOver);
-      slot.addEventListener("dragleave", handleDragLeave);
-      slot.addEventListener("drop", handleDrop);
+    // Store original text for slots to restore on reset
+    document.querySelectorAll(".matching-slot").forEach((slot) => {
+      if (!slot.getAttribute("data-original-text")) {
+        slot.setAttribute("data-original-text", slot.textContent.trim());
+      }
     });
   }
 
-  let draggedItem = null;
+  window.handleTermClick = function (element) {
+    if (element.classList.contains("matched")) return;
 
-  function handleDragStart(e) {
-    draggedItem = e.target;
-    e.target.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", e.target.dataset.match);
-  }
+    // Reset previous selection
+    document
+      .querySelectorAll(".matching-term")
+      .forEach((t) => t.classList.remove("selected"));
 
-  function handleDragEnd(e) {
-    e.target.classList.remove("dragging");
-    draggedItem = null;
-  }
+    selectedTerm = element;
+    element.classList.add("selected");
 
-  function handleDragOver(e) {
-    e.preventDefault();
-    e.target.classList.add("dragover");
-  }
+    // Track event
+    trackEvent("matching_term_select", { term: element.textContent.trim() });
+  };
 
-  function handleDragLeave(e) {
-    e.target.classList.remove("dragover");
-  }
+  window.handleSlotClick = function (element) {
+    if (element.classList.contains("matched") || !selectedTerm) return;
 
-  function handleDrop(e) {
-    e.preventDefault();
-    e.target.classList.remove("dragover");
-
-    const matchId = e.dataTransfer.getData("text/plain");
-    const acceptId = e.target.dataset.accept;
+    const matchId = selectedTerm.dataset.match;
+    const acceptId = element.dataset.accept;
 
     if (matchId === acceptId) {
-      e.target.classList.add("matched");
-      e.target.textContent = `${draggedItem.textContent} → ${e.target.textContent}`;
-      draggedItem.style.display = "none";
+      // Correct match
+      element.classList.add("matched");
+      const termText = selectedTerm.textContent.trim();
+      const slotText = element.getAttribute("data-original-text");
+      element.innerHTML = `<span class="matched-text">${termText} → ${slotText}</span>`;
+
+      selectedTerm.classList.add("matched");
+      selectedTerm.classList.remove("selected");
+      selectedTerm.style.visibility = "hidden";
+
+      selectedTerm = null;
 
       // Check if all matched
       const allSlots = document.querySelectorAll(".matching-slot");
@@ -1213,8 +1214,16 @@
         }
         trackEvent("demo_complete", { type: "matching", correct: true });
       }
+    } else {
+      // Wrong match
+      element.classList.add("incorrect-flash");
+      setTimeout(() => element.classList.remove("incorrect-flash"), 500);
+
+      // Deselect term on wrong match to encourage re-selection
+      selectedTerm.classList.remove("selected");
+      selectedTerm = null;
     }
-  }
+  };
 
   // ===== PARALLAX EFFECT =====
   function initParallax() {
