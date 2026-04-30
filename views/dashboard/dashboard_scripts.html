@@ -1332,8 +1332,31 @@
 
     if (greetingEl && userNameEl) {
       var userName = userNameEl.textContent || "User";
-      greetingEl.innerHTML = `${greeting}, <span id="userNameWelcome">${userName}</span>`;
+      greetingEl.innerHTML =
+        buildDashboardGreetingHtml(greeting, userName);
     }
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function buildDashboardGreetingHtml(greeting, userName) {
+    var greetingText = `${greeting},`;
+    var greetingWords = greetingText.split(" ");
+    var greetingHtml = greetingWords
+      .map(function (word) {
+        return `<span class="bounce-word">${escapeHtml(word)}</span>`;
+      })
+      .join(" ");
+
+    var safeUser = escapeHtml(userName);
+    return `${greetingHtml} <span id="userNameWelcome" class="bounce-word">${safeUser}</span>`;
   }
 
   /**

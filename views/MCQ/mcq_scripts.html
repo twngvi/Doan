@@ -164,6 +164,94 @@
   hydrateQuizStatsCacheFromPersisted();
   ensureMcqUnlockedTopicsCache();
 
+  function mergeMcqLocalStorageProgress(progress, options) {
+    var merged = Object.assign({}, progress || {});
+    var opts = options || {};
+    var serverAuthoritative = !!opts.serverAuthoritative;
+
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var key = localStorage.key(i);
+        if (!key || key.indexOf("lesson_progress_") !== 0) continue;
+
+        var topicId = key.replace("lesson_progress_", "");
+        var localData = JSON.parse(localStorage.getItem(key) || "null");
+        if (!localData) continue;
+
+        if (serverAuthoritative && !merged[topicId]) {
+          localStorage.removeItem(key);
+          continue;
+        }
+
+        if (!merged[topicId]) {
+          merged[topicId] = {
+            topicId: topicId,
+            completed: false,
+            progress: 0,
+          };
+        }
+
+        merged[topicId].lessonCompleted =
+          merged[topicId].lessonCompleted || localData.lessonRead || false;
+        merged[topicId].mindmapViewed =
+          merged[topicId].mindmapViewed || localData.mindmapViewed || false;
+        merged[topicId].flashcardsCompleted =
+          merged[topicId].flashcardsCompleted || localData.flashcardsDone || false;
+        merged[topicId].miniQuizCompleted =
+          merged[topicId].miniQuizCompleted || localData.lessonQuiz || false;
+
+        var count = 0;
+        if (merged[topicId].lessonCompleted) count++;
+        if (merged[topicId].mindmapViewed) count++;
+        if (merged[topicId].flashcardsCompleted) count++;
+        if (merged[topicId].miniQuizCompleted) count++;
+        merged[topicId].progress = Math.round((count / 4) * 100);
+        merged[topicId].completed = count === 4;
+      }
+    } catch (e) {
+      console.warn("⚠️ Could not merge localStorage progress for MCQ:", e);
+    }
+    return merged;
+  }
+
+  function updateMcqHeaderProgress() {
+    var baseProgress =
+      (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
+    var mergedProgress = mergeMcqLocalStorageProgress(baseProgress);
+    var completed = Object.values(mergedProgress).filter(function (item) {
+      return item && item.completed;
+    }).length;
+
+    var completedEl = document.getElementById("completedMcqTopics");
+    if (completedEl) {
+      completedEl.textContent = completed;
+    }
+  }
+
+  function refreshMcqProgressFromServer() {
+    if (typeof google === "undefined" || !google.script || !google.script.run) {
+      updateMcqHeaderProgress();
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        if (result && result.success && result.progress) {
+          var merged = mergeMcqLocalStorageProgress(result.progress, {
+            serverAuthoritative: true,
+          });
+          if (window.globalTopicsCache) {
+            window.globalTopicsCache.progress = merged;
+          }
+        }
+        updateMcqHeaderProgress();
+      })
+      .withFailureHandler(function () {
+        updateMcqHeaderProgress();
+      })
+      .getUserTopicProgress();
+  }
+
   function readQuizStatsPersistedCache(options) {
     const opts = options || {};
     const allowExpired = !!opts.allowExpired;
@@ -515,6 +603,7 @@
       } else {
         renderTopicsGrid(globalCache.data);
       }
+      refreshMcqProgressFromServer();
       return;
     }
 
@@ -535,6 +624,7 @@
       } else {
         renderTopicsGrid(mcqTopicsCache);
       }
+      refreshMcqProgressFromServer();
       return;
     }
 
@@ -837,12 +927,14 @@
 
       if (topics.length === 0) {
         showEmptyTopicsState();
+        refreshMcqProgressFromServer();
         return;
       }
 
       quizState.allTopics = topics;
       mcqAllTopicsForSearch = topics;
       renderTopicsGrid(topics);
+      refreshMcqProgressFromServer();
     } catch (renderError) {
       console.error("❌ Error while processing loaded topics:", renderError);
       handleTopicsError({ message: renderError.message || "Lỗi render chủ đề" });
@@ -1737,7 +1829,6 @@
                 <h4>⚡ Trả lời nhanh</h4>
                 <p>Xem đáp án ngay sau mỗi câu. Không thể sửa câu sai.</p>
               </div>
-              <div class="mode-option-badge">Phổ biến</div>
             </div>
             
             <div class="mcq-mode-option" onclick="startQuizWithMode('review')">

@@ -330,6 +330,38 @@ function handleGoogleCallback(authCode) {
             0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
             100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
           }
+          @media (max-width: 768px) {
+            .success-card {
+              width: 94vw;
+              max-width: 94vw;
+              padding: 6rem 4.5rem;
+              border-radius: 40px;
+            }
+
+            .logo {
+              height: 100px;
+              margin-bottom: 3rem;
+            }
+
+            .logo img {
+              height: 80px;
+              transform: scale(2.9);
+            }
+
+            h2 {
+              font-size: 2.8rem;
+            }
+
+            .welcome-text {
+              font-size: 1.5rem;
+            }
+
+            .btn-dashboard {
+              padding: 1.6rem 3.2rem;
+              font-size: 1.4rem;
+              border-radius: 20px;
+            }
+          }
         </style>
       </head>
       <body>
