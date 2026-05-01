@@ -88,28 +88,28 @@
       },
       python: {
         activeFile: 'main.py',
-        stdin: '1 2\n',
+        stdin: '',
         files: {
           'main.py': 'import sys\n\ndata=sys.stdin.read().strip().split()\nif not data:\n    print("OK")\nelse:\n    nums=list(map(int,data))\n    print(sum(nums))\n'
         }
       },
       c: {
         activeFile: 'main.c',
-        stdin: '1 2\n',
+        stdin: '',
         files: {
           'main.c': '#include <stdio.h>\n\nint main(){\n  long long a=0,b=0;\n  if(scanf("%lld%lld",&a,&b)!=2){\n    printf("OK\\n");\n    return 0;\n  }\n  printf("%lld\\n", a+b);\n  return 0;\n}\n'
         }
       },
       cpp: {
         activeFile: 'main.cpp',
-        stdin: '1 2\n',
+        stdin: '',
         files: {
           'main.cpp': '#include <bits/stdc++.h>\nusing namespace std;\n\nint main(){\n  long long a=0,b=0;\n  if(!(cin>>a>>b)){\n    cout<<"OK"<<"\\n";\n    return 0;\n  }\n  cout<<(a+b)<<"\\n";\n  return 0;\n}\n'
         }
       },
       java: {
         activeFile: 'Main.java',
-        stdin: '1 2\n',
+        stdin: '',
         files: {
           'Main.java': 'import java.io.*;\nimport java.util.*;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    Scanner sc = new Scanner(System.in);\n    if(!sc.hasNextLong()){\n      System.out.println("OK");\n      return;\n    }\n    long a=sc.nextLong();\n    long b=sc.hasNextLong()?sc.nextLong():0;\n    System.out.println(a+b);\n  }\n}\n'
         }
@@ -176,6 +176,49 @@
 
   var autoRunTimer = null;
   var draftSaveTimer = null;
+
+  /* ================================================================
+     CONSOLE INPUT HANDLER
+     ================================================================ */
+  function showConsoleInputArea() {
+    if (el.consoleInputArea) setHidden(el.consoleInputArea, false);
+  }
+
+  function hideConsoleInputArea() {
+    if (el.consoleInputArea) setHidden(el.consoleInputArea, true);
+  }
+
+  function sendConsoleInput() {
+    if (!el.consoleInput) return;
+    var val = el.consoleInput.value;
+    if (val === '') return;
+
+    // Echo input to console
+    appendConsole('input', '> ' + val);
+
+    var ws = getActiveWorkspaceState();
+    var chunk = val + '\n';
+    ws.stdin = chunk;
+    if (el.stdin) el.stdin.value = ws.stdin;
+    ide.dirty = true;
+    updateStateBadge();
+    scheduleDraftSave();
+
+    // Clear input
+    el.consoleInput.value = '';
+    el.consoleInput.focus();
+
+    // Wandbox is batch-based, so apply input by re-running when idle.
+    if (!ide.running) runCode(false);
+  }
+
+  function updateConsoleInputVisibility() {
+    if (!ide.state) return;
+    var wsId = ide.state.activeWorkspace;
+    var wsMeta = WORKSPACES[wsId] || WORKSPACES.web;
+    if (wsMeta.engine === 'wandbox') showConsoleInputArea();
+    else hideConsoleInputArea();
+  }
 
   /* ================================================================
      LOADERS
@@ -491,6 +534,12 @@
 
   function syncStdinToState() {
     var ws = getActiveWorkspaceState();
+    if (el.consoleInput && (el.consoleInput.value || '').trim()) {
+      var text = el.consoleInput.value;
+      ws.stdin = text.endsWith('\n') ? text : (text + '\n');
+      if (el.stdin) el.stdin.value = ws.stdin;
+      return;
+    }
     if (el.stdin) ws.stdin = el.stdin.value || '';
   }
 
@@ -668,6 +717,7 @@
 
     var wsState = getActiveWorkspaceState();
     if (el.stdin) el.stdin.value = wsState.stdin || '';
+    if (el.consoleInput) el.consoleInput.value = String(wsState.stdin || '').replace(/\n+$/, '');
 
     renderFiles();
     applyEditorModeForFile(wsState.activeFile);
@@ -676,6 +726,7 @@
     applyPreviewVisibilityForWorkspace();
     setPreviewOverlay(false, '');
     setEngineLabels();
+    updateConsoleInputVisibility();
     scheduleDraftSave();
 
     if (ide.state.settings.autoRun) scheduleAutoRunMaybe();
@@ -876,6 +927,7 @@
     }
     ide.runAbort = null;
     setSpinner(false);
+    updateConsoleInputVisibility();
     setRunningUi(false);
     setConsoleMeta('Stopped', '—', '—');
     setStatus('error', 'Đã dừng');
@@ -1035,6 +1087,7 @@
 
     if (wsMeta.engine === 'wandbox') {
       clearConsole();
+      updateConsoleInputVisibility();
       setSpinner(true, 'Đang biên dịch & chạy...');
       var cfg = WANDBOX_CONFIGS[wsId];
       if (!cfg) {
@@ -1494,6 +1547,7 @@
     ide.lastRunHadError = false;
     updateStateBadge();
     if (el.stdin) el.stdin.value = def.stdin || '';
+    if (el.consoleInput) el.consoleInput.value = String(def.stdin || '').replace(/\n+$/, '');
     renderFiles();
     applyEditorModeForFile(def.activeFile);
     setCurrentCode(def.files[def.activeFile] || '');
@@ -1726,7 +1780,8 @@
         ide.lastRunHadError = true;
         updateStateBadge();
         appendConsole('error', String(data.message || 'Runtime error'));
-        setPreviewOverlay(true, String(data.message || 'Runtime error'));
+        // Keep preview visible even if runtime errors occur; show details in Console.
+        setPreviewOverlay(false, '');
       }
     });
   }
@@ -1780,6 +1835,9 @@
     el.zoomSelect = byId('cpZoomSelect');
 
     el.console = byId('cpConsole');
+    el.consoleInputArea = byId('cpConsoleInputArea');
+    el.consoleInput = byId('cpConsoleInput');
+    el.consoleSendBtn = byId('cpConsoleSendBtn');
     el.runStatePill = byId('cpRunStatePill');
     el.exitCode = byId('cpExitCode');
     el.runTime = byId('cpRunTime');
@@ -1930,6 +1988,11 @@
 
     if (el.previewRefreshBtn) el.previewRefreshBtn.addEventListener('click', function () { runCode(false); });
     if (el.previewOpenBtn) el.previewOpenBtn.addEventListener('click', openPreviewInNewTab);
+    if (el.previewFrame) {
+      el.previewFrame.addEventListener('load', function () {
+        setPreviewOverlay(false, '');
+      });
+    }
     if (el.previewOpenConsoleBtn) el.previewOpenConsoleBtn.addEventListener('click', function () {
       switchOutputTab('console');
       var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
@@ -1943,6 +2006,19 @@
         updateStateBadge();
         scheduleDraftSave();
       });
+    }
+
+    if (el.consoleInput) {
+      el.consoleInput.addEventListener('keydown', function (e) {
+        if (e && e.key === 'Enter' && e.shiftKey === false) {
+          e.preventDefault();
+          sendConsoleInput();
+        }
+      });
+    }
+
+    if (el.consoleSendBtn) {
+      el.consoleSendBtn.addEventListener('click', sendConsoleInput);
     }
 
     if (el.projectName) {
@@ -2053,6 +2129,8 @@
 
     var ws = getActiveWorkspaceState();
     if (el.stdin) el.stdin.value = ws.stdin || '';
+    if (el.consoleInput) el.consoleInput.value = String(ws.stdin || '').replace(/\n+$/, '');
+    updateConsoleInputVisibility();
     renderFiles();
     renderTests();
     switchOutputTab(defaultOutputTabForWorkspace(ide.state.activeWorkspace));
