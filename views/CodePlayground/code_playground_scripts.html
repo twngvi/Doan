@@ -1,100 +1,192 @@
 <script>
 /* ================================================================
-   CODE PLAYGROUND – Main Script
-   Uses CodeMirror 5 (UMD, loaded via <script> tags from cdnjs)
-   No ESM imports – works correctly inside Google Apps Script
+   CODE PLAYGROUND – Mini Online IDE (ES5, Apps Script safe)
+   Keeps: HTML/CSS/JS via iframe preview, Wandbox API, sql.js, marked.js
+   Adds: IDE layout, mobile tabs, toolbar states, file tabs, settings,
+         preview console bridge, test cases runner, run timeout + stop.
    ================================================================ */
 (function () {
   'use strict';
 
-  /* ---- CDN base ---- */
   var CM_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/';
 
-  /* ----------------------------------------------------------------
-     DEFAULT CODE TEMPLATES
-     ---------------------------------------------------------------- */
-  var DEFAULT_CODE = {
-    html: '<!DOCTYPE html>\n<html lang="vi">\n<head>\n  <meta charset="UTF-8">\n  <title>Hello World</title>\n  <style>\n    body {\n      font-family: \'Segoe UI\', sans-serif;\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      min-height: 100vh;\n      margin: 0;\n      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n    }\n    .card {\n      background: white;\n      border-radius: 16px;\n      padding: 2rem;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0,0,0,0.2);\n    }\n    h1 { color: #4f46e5; margin: 0 0 0.5rem; }\n    p  { color: #6b7280; }\n    button {\n      margin-top: 1rem;\n      padding: 0.6rem 1.5rem;\n      background: #4f46e5;\n      color: white;\n      border: none;\n      border-radius: 8px;\n      cursor: pointer;\n      font-size: 1rem;\n      transition: transform 0.2s;\n    }\n    button:hover { transform: scale(1.05); }\n  </style>\n</head>\n<body>\n  <div class="card">\n    <h1>\uD83D\uDE80 Hello, World!</h1>\n    <p>Ch\xE0o m\u1EEFng \u0111\u1EBFn Code Playground</p>\n    <button onclick="this.textContent=\'\u2728 Clicked!\'">Click me</button>\n  </div>\n</body>\n</html>',
+  var STORAGE_SAVED = 'cp_ide_saved_v1';
+  var STORAGE_DRAFT = 'cp_ide_draft_v1';
 
-    css: '/* CSS Preview */\nbody {\n  margin: 0;\n  font-family: \'Segoe UI\', sans-serif;\n  background: #f0f4ff;\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  min-height: 100vh;\n  gap: 1rem;\n  flex-wrap: wrap;\n  padding: 1rem;\n}\n\n.box {\n  width: 150px;\n  height: 150px;\n  background: linear-gradient(135deg, #667eea, #764ba2);\n  border-radius: 20px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: white;\n  font-size: 2rem;\n  animation: spin 3s ease-in-out infinite;\n  box-shadow: 0 10px 30px rgba(102,126,234,0.4);\n}\n\n@keyframes spin {\n  0%   { transform: rotate(0deg) scale(1); }\n  50%  { transform: rotate(180deg) scale(1.1); }\n  100% { transform: rotate(360deg) scale(1); }\n}',
+  var WANDBOX_URL = 'https://wandbox.org/api/compile.json';
+  var WANDBOX_TIMEOUT_MS = 20000;
 
-    javascript: '// JavaScript Playground\nconsole.log("\uD83D\uDD22 Fibonacci sequence:");\n\nfunction fib(n, memo) {\n  memo = memo || {};\n  if (n in memo) return memo[n];\n  if (n <= 1) return n;\n  memo[n] = fib(n-1, memo) + fib(n-2, memo);\n  return memo[n];\n}\n\nfor (var i = 0; i <= 10; i++) {\n  console.log("F(" + i + ") = " + fib(i));\n}\n\n// Array methods\nvar nums = [5,2,8,1,9,3,7,4,6];\nconsole.log("\n\uD83D\uDDC2\uFE0F Original:", nums.join(", "));\nconsole.log("\u2B06\uFE0F Sorted:", nums.slice().sort(function(a,b){return a-b;}).join(", "));\nconsole.log("\u26AA Evens:", nums.filter(function(x){return x%2===0;}).join(", "));\nconsole.log("\u2211 Sum:", nums.reduce(function(a,b){return a+b;}, 0));',
+  var SQLJS_URL = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js';
+  var SQLJS_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/';
+  var MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js';
 
-    python: '# Python Playground\n\ndef fibonacci(n):\n    """T\xEDnh d\u00E3y Fibonacci"""\n    a, b = 0, 1\n    result = []\n    for _ in range(n):\n        result.append(a)\n        a, b = b, a + b\n    return result\n\nprint("\uD83D\uDD22 Fibonacci(10):", fibonacci(10))\n\n# List comprehension\nsquares = [x**2 for x in range(1, 11)]\nprint("\uD83D\uDCCF Squares:", squares)\n\n# Dictionary\nstudent = {"name": "Nguy\u1EC5n V\u0103n A", "score": 95, "grade": "A"}\nfor key, value in student.items():\n    print(f"  {key}: {value}")\n\n# Class\nclass Circle:\n    def __init__(self, r):\n        self.r = r\n    def area(self):\n        import math\n        return round(math.pi * self.r ** 2, 2)\n    def __repr__(self):\n        return f"Circle(r={self.r}, area={self.area()})"\n\nprint("\\n\u26AA", Circle(5))\nprint("\u26AA", Circle(10))',
-
-    c: '#include <stdio.h>\n#include <string.h>\n\nvoid bubbleSort(int arr[], int n) {\n    for (int i = 0; i < n-1; i++)\n        for (int j = 0; j < n-i-1; j++)\n            if (arr[j] > arr[j+1]) {\n                int t = arr[j]; arr[j] = arr[j+1]; arr[j+1] = t;\n            }\n}\n\nint main() {\n    printf("=== C Playground ===\\n\\n");\n    int arr[] = {64, 34, 25, 12, 22, 11, 90};\n    int n = sizeof(arr) / sizeof(arr[0]);\n\n    printf("Before: ");\n    for (int i = 0; i < n; i++) printf("%d ", arr[i]);\n\n    bubbleSort(arr, n);\n    printf("\\nAfter:  ");\n    for (int i = 0; i < n; i++) printf("%d ", arr[i]);\n\n    char s[] = "Hello, Code Playground!";\n    printf("\\n\\nString: %s\\nLength: %lu\\n", s, strlen(s));\n    return 0;\n}',
-
-    cpp: '#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\ntemplate<typename T>\nvoid print(const vector<T>& v, const string& label="") {\n    if (!label.empty()) cout << label << ": ";\n    for (const auto& x : v) cout << x << " ";\n    cout << endl;\n}\n\nint main() {\n    cout << "=== C++ Playground ===" << endl << endl;\n\n    vector<int> nums = {5, 2, 8, 1, 9, 3, 7, 4, 6};\n    print(nums, "Original");\n    sort(nums.begin(), nums.end());\n    print(nums, "Sorted  ");\n\n    auto evens = [](int n){ return n % 2 == 0; };\n    vector<int> ev;\n    copy_if(nums.begin(), nums.end(), back_inserter(ev), evens);\n    print(ev, "Evens   ");\n\n    cout << "\\nSum: ";\n    int sum = 0;\n    for (auto x : nums) sum += x;\n    cout << sum << endl;\n    return 0;\n}',
-
-    java: 'public class Main {\n    static long fib(int n) {\n        if (n <= 1) return n;\n        long a = 0, b = 1;\n        for (int i = 2; i <= n; i++) {\n            long c = a + b; a = b; b = c;\n        }\n        return b;\n    }\n\n    public static void main(String[] args) {\n        System.out.println("=== Java Playground ===\\n");\n\n        System.out.print("Fibonacci: ");\n        for (int i = 0; i < 10; i++)\n            System.out.print(fib(i) + " ");\n        System.out.println();\n\n        // String operations\n        String text = "Code Playground";\n        System.out.println("\\nString: " + text);\n        System.out.println("Upper:  " + text.toUpperCase());\n        System.out.println("Length: " + text.length());\n        System.out.println("Reverse: " + new StringBuilder(text).reverse());\n    }\n}',
-
-    sql: '-- SQL Playground (SQLite)\nCREATE TABLE IF NOT EXISTS students (\n  id      INTEGER PRIMARY KEY AUTOINCREMENT,\n  name    TEXT    NOT NULL,\n  score   INTEGER NOT NULL,\n  subject TEXT    NOT NULL\n);\n\nINSERT INTO students (name, score, subject) VALUES\n  (\'Nguy\u1EC5n V\u0103n A\', 95, \'Math\'),\n  (\'Tr\u1EA7n Th\u1ECB B\',   88, \'Science\'),\n  (\'L\xEA V\u0103n C\',     76, \'Math\'),\n  (\'Ph\u1EA1m Th\u1ECB D\',   92, \'Science\'),\n  (\'Ho\xE0ng V\u0103n E\',  84, \'Math\');\n\nSELECT * FROM students ORDER BY score DESC;\n\nSELECT subject,\n       COUNT(*) AS total,\n       ROUND(AVG(score), 1) AS avg_score,\n       MAX(score) AS max_score\nFROM students\nGROUP BY subject;',
-
-    json: '{\n  "name": "Code Playground",\n  "version": "2.0.0",\n  "features": [\n    "Syntax highlighting",\n    "10 languages",\n    "Real-time preview",\n    "API sandbox execution"\n  ],\n  "languages": {\n    "frontend": ["HTML", "CSS", "JavaScript"],\n    "backend": ["Python", "C", "C++", "Java"],\n    "data": ["SQL", "JSON", "Markdown"]\n  },\n  "settings": {\n    "theme": "dark",\n    "fontSize": 13,\n    "lineNumbers": true\n  }\n}',
-
-    markdown: '# Code Playground \uD83D\uDE80\n\nCh\xE0o m\u1EEFng \u0111\u1EBFn v\u1EDBi **Code Playground** \u2013 tr\xECnh so\u1EA1n th\u1EA3o code online!\n\n## T\xEDnh n\u0103ng ch\xEDnh\n\n- \u2705 **Syntax highlighting** v\u1EDBi CodeMirror 5\n- \u2705 **10 ng\xF4n ng\u1EEF** \u0111\u01B0\u1EE3c h\u1ED7 tr\u1EE3\n- \u2705 **Preview real-time** cho HTML/CSS/JS\n- \u2705 **API sandbox** cho Python, C, C++, Java\n- \u2705 **SQL** ch\u1EA1y b\u1EB1ng WebAssembly (sql.js)\n- \u2705 **Light/Dark theme**\n\n## H\u01B0\u1EDBng d\u1EABn\n\n1. Ch\u1ECDn **ng\xF4n ng\u1EEF** t\u1EEB dropdown\n2. Nh\u1EADp code v\xE0o **editor b\xEAn tr\xE1i**\n3. Nh\u1EA5n **\u25B6 Run** ho\u1EB7c `Ctrl+Enter`\n4. Xem k\u1EBFt qu\u1EA3 **b\xEAn ph\u1EA3i**\n\n## V\xED d\u1EE5\n\n```python\ndef greet(name):\n    return f"Hello, {name}!"\n\nprint(greet("World"))\n```\n\n| Ng\xF4n ng\u1EEF | Engine | Realtime |\n|---------|--------|-----------|\n| HTML/CSS/JS | iframe | \u2705 |\n| Python/Java | Piston API | \u274C |\n| SQL | sql.js | \u274C |\n| Markdown | marked.js | \u2705 |\n'
+  var WORKSPACES = {
+    web:      { id: 'web', label: 'Web Project', icon: 'language', engine: 'iframe' },
+    python:   { id: 'python', label: 'Python', icon: 'terminal', engine: 'wandbox' },
+    c:        { id: 'c', label: 'C', icon: 'memory', engine: 'wandbox' },
+    cpp:      { id: 'cpp', label: 'C++', icon: 'memory', engine: 'wandbox' },
+    java:     { id: 'java', label: 'Java', icon: 'coffee', engine: 'wandbox' },
+    sql:      { id: 'sql', label: 'SQL', icon: 'database', engine: 'sqljs' },
+    markdown: { id: 'markdown', label: 'Markdown', icon: 'article', engine: 'marked' },
+    json:     { id: 'json', label: 'JSON', icon: 'data_object', engine: 'json' }
   };
 
-  /* ---- CM5 mode mapping ---- */
-  var CM5_MODES = {
-    html:       'htmlmixed',
-    css:        'css',
-    javascript: 'javascript',
-    python:     'python',
-    c:          'text/x-csrc',
-    cpp:        'text/x-c++src',
-    java:       'text/x-java',
-    sql:        'sql',
-    json:       'application/json',
-    markdown:   'markdown'
+  var FILE_ICONS = {
+    html: 'code',
+    css: 'palette',
+    js: 'javascript',
+    py: 'terminal',
+    c: 'memory',
+    cpp: 'memory',
+    java: 'coffee',
+    sql: 'database',
+    md: 'article',
+    json: 'data_object',
+    txt: 'description'
   };
 
-  /* ---- Language metadata ---- */
-  var LANG_META = {
-    html:       { title: 'index.html',  badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
-    css:        { title: 'style.css',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
-    javascript: { title: 'script.js',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'iframe' },
-    python:     { title: 'main.py',     badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
-    c:          { title: 'main.c',      badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
-    cpp:        { title: 'main.cpp',    badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
-    java:       { title: 'Main.java',   badge: 'Wandbox',  badgeClass: 'badge-compiled', engine: 'wandbox' },
-    sql:        { title: 'query.sql',   badge: 'SQLite',   badgeClass: 'badge-compiled', engine: 'sqljs' },
-    json:       { title: 'data.json',   badge: 'validate', badgeClass: 'badge-realtime', engine: 'json' },
-    markdown:   { title: 'README.md',   badge: 'preview',  badgeClass: 'badge-realtime', engine: 'markdown' }
+  var CM_MODE_BY_EXT = {
+    'html': 'htmlmixed',
+    'css': 'css',
+    'js': 'javascript',
+    'py': 'python',
+    'c': 'text/x-csrc',
+    'cpp': 'text/x-c++src',
+    'java': 'text/x-java',
+    'sql': 'sql',
+    'md': 'markdown',
+    'json': 'application/json'
   };
 
-  /* ---- Wandbox API config (free, no auth) ---- */
-  /* Docs: https://wandbox.org/api/list.json for available compilers */
   var WANDBOX_CONFIGS = {
-    python: { compiler: 'cpython-3.12.5',  rawOptions: '' },
-    c:      { compiler: 'gcc-13.2.0',       rawOptions: '-x c -std=c17' },
-    cpp:    { compiler: 'gcc-13.2.0',       rawOptions: '-std=c++17' },
+    python: { compiler: 'cpython-3.12.5', rawOptions: '' },
+    c:      { compiler: 'gcc-13.2.0', rawOptions: '-x c -std=c17' },
+    cpp:    { compiler: 'gcc-13.2.0', rawOptions: '-std=c++17' },
     java:   { compiler: 'openjdk-jdk-21+35', rawOptions: '' }
   };
 
-  /* ---- State ---- */
-  var cmEditor    = null;
-  var cmLoaded    = false;
-  var currentLang = 'html';
-  var isDark      = true;
-  var isFullscreen = false;
-  var codeStore   = {};
-  var sqlDb       = null;
+  var DEFAULT_PROJECT = {
+    projectName: 'Code Playground',
+    activeWorkspace: 'web',
+    settings: {
+      fontSize: 14,
+      wordWrap: false,
+      theme: 'auto',
+      autoRun: true,
+      tabSize: 2,
+      tabletLayout: 'auto'
+    },
+    workspaces: {
+      web: {
+        activeFile: 'index.html',
+        stdin: '',
+        files: {
+          'index.html': '<!doctype html>\n<html lang="vi">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>Web Project</title>\n</head>\n<body>\n  <main class="app">\n    <h1>Code Playground</h1>\n    <p>Mini online IDE – Web Project</p>\n    <button id="btn">Click</button>\n  </main>\n\n  <!-- App script injected on Run -->\n</body>\n</html>',
+          'style.css': 'body{margin:0;font-family:system-ui,Segoe UI,sans-serif;background:#0b1f17;color:#f5fff6;}\n.app{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.75rem;padding:1.25rem;}\nh1{margin:0;font-size:2rem;letter-spacing:0.02em;}\np{margin:0;opacity:0.85;}\nbutton{padding:0.7rem 1.1rem;border-radius:12px;border:1px solid rgba(255,255,255,0.18);background:rgba(74,155,95,0.25);color:#f5fff6;font-weight:700;cursor:pointer;}\nbutton:hover{background:rgba(74,155,95,0.35);}',
+          'script.js': 'console.log("Hello from Web Project!");\n\nvar btn=document.getElementById("btn");\nif(btn){\n  btn.addEventListener("click",function(){\n    console.log("clicked");\n    btn.textContent="Clicked!";\n  });\n}\n'
+        }
+      },
+      python: {
+        activeFile: 'main.py',
+        stdin: '1 2\n',
+        files: {
+          'main.py': 'import sys\n\ndata=sys.stdin.read().strip().split()\nif not data:\n    print("OK")\nelse:\n    nums=list(map(int,data))\n    print(sum(nums))\n'
+        }
+      },
+      c: {
+        activeFile: 'main.c',
+        stdin: '1 2\n',
+        files: {
+          'main.c': '#include <stdio.h>\n\nint main(){\n  long long a=0,b=0;\n  if(scanf("%lld%lld",&a,&b)!=2){\n    printf("OK\\n");\n    return 0;\n  }\n  printf("%lld\\n", a+b);\n  return 0;\n}\n'
+        }
+      },
+      cpp: {
+        activeFile: 'main.cpp',
+        stdin: '1 2\n',
+        files: {
+          'main.cpp': '#include <bits/stdc++.h>\nusing namespace std;\n\nint main(){\n  long long a=0,b=0;\n  if(!(cin>>a>>b)){\n    cout<<"OK"<<"\\n";\n    return 0;\n  }\n  cout<<(a+b)<<"\\n";\n  return 0;\n}\n'
+        }
+      },
+      java: {
+        activeFile: 'Main.java',
+        stdin: '1 2\n',
+        files: {
+          'Main.java': 'import java.io.*;\nimport java.util.*;\n\npublic class Main {\n  public static void main(String[] args) throws Exception {\n    Scanner sc = new Scanner(System.in);\n    if(!sc.hasNextLong()){\n      System.out.println("OK");\n      return;\n    }\n    long a=sc.nextLong();\n    long b=sc.hasNextLong()?sc.nextLong():0;\n    System.out.println(a+b);\n  }\n}\n'
+        }
+      },
+      sql: {
+        activeFile: 'query.sql',
+        stdin: '',
+        files: {
+          'query.sql': '-- SQL Playground (SQLite via sql.js)\n-- Note: Database resets on each Run\n\nCREATE TABLE students(id INTEGER PRIMARY KEY, name TEXT, score INT);\nINSERT INTO students VALUES (1,\'A\',95),(2,\'B\',88),(3,\'C\',76);\n\nSELECT * FROM students ORDER BY score DESC;\n'
+        }
+      },
+      markdown: {
+        activeFile: 'README.md',
+        stdin: '',
+        files: {
+          'README.md': '# Code Playground\n\n- Web Project: edit `index.html`, `style.css`, `script.js`\n- Python/C/C++/Java: chạy qua Wandbox\n- SQL: chạy bằng sql.js (reset mỗi lần Run)\n\n```python\nprint("Hello")\n```\n'
+        }
+      },
+      json: {
+        activeFile: 'data.json',
+        stdin: '',
+        files: {
+          'data.json': '{\n  "name": "Code Playground",\n  "workspace": "web",\n  "ok": true\n}\n'
+        }
+      }
+    },
+    tests: {
+      python: [
+        { input: '1 2\n', expected: '3\n', actual: '', status: 'pending' },
+        { input: '10 20\n', expected: '30\n', actual: '', status: 'pending' }
+      ],
+      c: [
+        { input: '1 2\n', expected: '3\n', actual: '', status: 'pending' },
+        { input: '10 20\n', expected: '30\n', actual: '', status: 'pending' }
+      ],
+      cpp: [
+        { input: '1 2\n', expected: '3\n', actual: '', status: 'pending' },
+        { input: '10 20\n', expected: '30\n', actual: '', status: 'pending' }
+      ],
+      java: [
+        { input: '1 2\n', expected: '3\n', actual: '', status: 'pending' },
+        { input: '10 20\n', expected: '30\n', actual: '', status: 'pending' }
+      ]
+    }
+  };
+
+  var el = {};
+
+  var cmEditor = null;
+  var cmLoaded = false;
+  var cmLoadPromise = null;
+  var sqlInitPromise = null;
+  var SQL = null;
   var markedReady = false;
-  var autoTimer   = null;
-  var el          = {};
+
+  var ide = {
+    state: null,
+    dirty: false,
+    running: false,
+    currentRunSeq: 0,
+    runAbort: null,
+    lastPreviewHtml: ''
+  };
+
+  var autoRunTimer = null;
+  var draftSaveTimer = null;
 
   /* ================================================================
-     SCRIPT / CSS LOADER
+     LOADERS
      ================================================================ */
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
-      // Skip if already loaded
       if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
       var s = document.createElement('script');
       s.src = src;
       s.onload = resolve;
-      s.onerror = function () { reject(new Error('Failed: ' + src)); };
+      s.onerror = function () { reject(new Error('Failed to load: ' + src)); };
       document.head.appendChild(s);
     });
   }
@@ -103,568 +195,211 @@
     return new Promise(function (resolve) {
       if (document.querySelector('link[href="' + href + '"]')) { resolve(); return; }
       var l = document.createElement('link');
-      l.rel = 'stylesheet'; l.href = href;
-      l.onload = resolve; l.onerror = resolve; // non-blocking
+      l.rel = 'stylesheet';
+      l.href = href;
+      l.onload = resolve;
+      l.onerror = resolve;
       document.head.appendChild(l);
     });
   }
 
-  /* ================================================================
-     CODEMIRROR 5 LOADER
-     ================================================================ */
   function loadCM5() {
-    return loadCss(CM_CDN + 'codemirror.min.css')
+    if (cmLoadPromise) return cmLoadPromise;
+    cmLoadPromise = loadCss(CM_CDN + 'codemirror.min.css')
       .then(function () { return loadCss(CM_CDN + 'theme/dracula.min.css'); })
       .then(function () { return loadCss(CM_CDN + 'theme/default.min.css'); })
       .then(function () { return loadScript(CM_CDN + 'codemirror.min.js'); })
-      // base modes
-      .then(function () { return loadScript(CM_CDN + 'mode/xml/xml.min.js'); })
-      .then(function () { return loadScript(CM_CDN + 'mode/css/css.min.js'); })
-      .then(function () { return loadScript(CM_CDN + 'mode/javascript/javascript.min.js'); })
-      // htmlmixed depends on xml + css + javascript
-      .then(function () { return loadScript(CM_CDN + 'mode/htmlmixed/htmlmixed.min.js'); })
-      // other modes (parallel)
       .then(function () {
         return Promise.all([
+          loadScript(CM_CDN + 'mode/xml/xml.min.js'),
+          loadScript(CM_CDN + 'mode/css/css.min.js'),
+          loadScript(CM_CDN + 'mode/javascript/javascript.min.js'),
+          loadScript(CM_CDN + 'mode/htmlmixed/htmlmixed.min.js'),
           loadScript(CM_CDN + 'mode/python/python.min.js'),
           loadScript(CM_CDN + 'mode/clike/clike.min.js'),
           loadScript(CM_CDN + 'mode/sql/sql.min.js'),
           loadScript(CM_CDN + 'mode/markdown/markdown.min.js')
         ]);
       })
-      // addons
       .then(function () {
         return Promise.all([
           loadScript(CM_CDN + 'addon/edit/matchbrackets.min.js'),
           loadScript(CM_CDN + 'addon/edit/closebrackets.min.js')
         ]);
       });
+    return cmLoadPromise;
   }
 
-  /* ================================================================
-     CREATE / UPDATE EDITOR
-     ================================================================ */
-  function createEditor(code, lang) {
-    var wrap = el.editorWrap;
-    if (!wrap) return;
-
-    // Destroy previous instance
-    if (cmEditor) {
-      cmEditor.toTextArea();
-      cmEditor = null;
-    }
-    // Clear wrap
-    wrap.innerHTML = '';
-    var ta = document.createElement('textarea');
-    ta.id = 'cpCodeTextarea';
-    wrap.appendChild(ta);
-
-    var mode = CM5_MODES[lang] || 'htmlmixed';
-    cmEditor = window.CodeMirror.fromTextArea(ta, {
-      value:           code,
-      mode:            mode,
-      theme:           isDark ? 'dracula' : 'default',
-      lineNumbers:     true,
-      tabSize:         2,
-      indentUnit:      2,
-      indentWithTabs:  false,
-      lineWrapping:    false,
-      matchBrackets:   true,
-      autoCloseBrackets: true,
-      extraKeys: {
-        'Ctrl-Enter': function () { runCode(false); return true; },
-        'Tab': function (cm) { cm.execCommand('insertSoftTab'); }
-      }
-    });
-
-    // Set initial value explicitly (textarea.value not always picked up)
-    cmEditor.setValue(code);
-
-    // Refresh after layout settle (important for correct rendering)
-    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 100);
-
-    cmEditor.on('change', function (cm) {
-      var v = cm.getValue();
-      codeStore[currentLang] = v;
-      persistCodes();
-      updateCharCount(v.length);
-      if (['html','css','javascript','markdown'].indexOf(currentLang) !== -1) {
-        scheduleAutoRun();
-      }
-    });
-
-    cmEditor.on('cursorActivity', function (cm) {
-      var c = cm.getCursor();
-      if (el.cursorPos) el.cursorPos.textContent = 'Ln ' + (c.line + 1) + ', Col ' + (c.ch + 1);
-    });
+  function ensureCommentAddon() {
+    // Lazy-load only when Ctrl+/ is used
+    return Promise.all([
+      loadScript(CM_CDN + 'addon/comment/comment.min.js'),
+      loadScript(CM_CDN + 'addon/comment/continuecomment.min.js')
+    ]);
   }
 
-  /* ================================================================
-     INIT
-     ================================================================ */
-  function cpInit() {
-    el = {
-      root:        document.getElementById('cpRoot'),
-      langSelect:  document.getElementById('cpLangSelect'),
-      badge:       document.getElementById('cpEngineBadge'),
-      runBtn:      document.getElementById('cpRunBtn'),
-      resetBtn:    document.getElementById('cpResetBtn'),
-      copyBtn:     document.getElementById('cpCopyBtn'),
-      fsBtn:       document.getElementById('cpFullscreenBtn'),
-      fsIcon:      document.getElementById('cpFsIcon'),
-      clearBtn:    document.getElementById('cpClearBtn'),
-      editorWrap:  document.getElementById('cpEditorWrap'),
-      editorTitle: document.getElementById('cpEditorTitle'),
-      resizer:     document.getElementById('cpResizer'),
-      editorPanel: document.getElementById('cpEditorPanel'),
-      outputPanel: document.getElementById('cpOutputPanel'),
-      spinner:     document.getElementById('cpSpinner'),
-      spinnerText: document.getElementById('cpSpinnerText'),
-      previewFrame:document.getElementById('cpPreviewFrame'),
-      console:     document.getElementById('cpConsole'),
-      mdPreview:   document.getElementById('cpMarkdownPreview'),
-      tabPreview:  document.getElementById('cpTabPreview'),
-      tabConsole:  document.getElementById('cpTabConsole'),
-      previewContainer: document.getElementById('cpPreviewContainer'),
-      terminalWrapper:  document.getElementById('cpTerminalWrapper'),
-      stdin:       document.getElementById('cpStdin'),
-      statusDot:   document.getElementById('cpStatusDot'),
-      statusText:  document.getElementById('cpStatusText'),
-      statusTime:  document.getElementById('cpStatusTime'),
-      cursorPos:   document.getElementById('cpCursorPos'),
-      charCount:   document.getElementById('cpCharCount'),
-      copyToast:   document.getElementById('cpCopyToast')
-    };
-
-    // Restore preferences
-    try { codeStore = JSON.parse(localStorage.getItem('cp_codes') || '{}'); } catch(e) { codeStore = {}; }
-
-    // Sync with global theme instead of local storage
-    syncSystemTheme();
-    
-    // Check for future theme changes
-    var observer = new MutationObserver(syncSystemTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-
-    var savedLang = localStorage.getItem('cp_lang') || 'html';
-    if (el.langSelect) el.langSelect.value = savedLang;
-
-    // Events
-    if (el.langSelect)  el.langSelect.addEventListener('change', function () { switchLanguage(el.langSelect.value); });
-    if (el.runBtn)      el.runBtn.addEventListener('click', function () { runCode(false); });
-    if (el.resetBtn)    el.resetBtn.addEventListener('click', resetCode);
-    if (el.copyBtn)     el.copyBtn.addEventListener('click', copyCode);
-    if (el.fsBtn)       el.fsBtn.addEventListener('click', toggleFullscreen);
-    if (el.clearBtn)    el.clearBtn.addEventListener('click', clearOutput);
-    if (el.tabPreview)  el.tabPreview.addEventListener('click', function () { switchTab('preview'); });
-    if (el.tabConsole)  el.tabConsole.addEventListener('click', function () { switchTab('console'); });
-
-    // Global keyboard shortcut
-    document.addEventListener('keydown', function (e) {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runCode(false); }
-    });
-
-    setupResizer();
-    setStatus('loading', 'Đang tải editor...');
-
-    // Load CM5 then init language
-    loadCM5().then(function () {
-      cmLoaded = true;
-      setStatus('ready', 'Sẵn sàng');
-      switchLanguage(savedLang, true);
-    }).catch(function (err) {
-      setStatus('error', 'Không tải được editor');
-      console.error('[CP] CM5 load error:', err);
-      // Fallback: show plain textarea
-      if (el.editorWrap) {
-        el.editorWrap.innerHTML = '';
-        var ta = document.createElement('textarea');
-        ta.id = 'cpCodeTextarea';
-        ta.style.cssText = 'width:100%;height:100%;border:none;outline:none;resize:none;padding:1rem;font-family:monospace;font-size:13px;background:#0f172a;color:#e2e8f0;box-sizing:border-box;';
-        ta.value = codeStore[savedLang] !== undefined ? codeStore[savedLang] : (DEFAULT_CODE[savedLang] || '');
-        el.editorWrap.appendChild(ta);
-      }
-      switchLanguage(savedLang, true);
-    });
+  function ensureMarked() {
+    if (markedReady) return Promise.resolve();
+    return loadScript(MARKED_URL).then(function () { markedReady = true; });
   }
 
-  /* ================================================================
-     LANGUAGE SWITCH
-     ================================================================ */
-  function switchLanguage(lang, skipSave) {
-    if (!skipSave && currentLang) {
-      codeStore[currentLang] = getCode();
-      persistCodes();
-    }
-    currentLang = lang;
-    localStorage.setItem('cp_lang', lang);
-
-    var meta = LANG_META[lang] || LANG_META.html;
-    if (el.editorTitle) el.editorTitle.textContent = meta.title;
-    if (el.badge) {
-      el.badge.textContent = meta.badge;
-      el.badge.className = 'cp-lang-badge ' + meta.badgeClass;
-    }
-
-    var code = codeStore[lang] !== undefined ? codeStore[lang] : (DEFAULT_CODE[lang] || '');
-
-    if (cmLoaded && window.CodeMirror) {
-      createEditor(code, lang);
-    } else {
-      var ta = document.getElementById('cpCodeTextarea');
-      if (ta) ta.value = code;
-    }
-
-    updateCharCount((code || '').length);
-
-    if (['html','css','javascript','markdown'].indexOf(lang) !== -1) {
-      switchTab('preview');
-      scheduleAutoRun();
-    } else {
-      switchTab('console');
-      clearOutputSilent();
-    }
-
-    setStatus('ready', 'Sẵn sàng');
-  }
-
-  /* ================================================================
-     EDITOR HELPERS
-     ================================================================ */
-  function getCode() {
-    if (cmLoaded && cmEditor) return cmEditor.getValue();
-    var ta = document.getElementById('cpCodeTextarea');
-    return ta ? ta.value : '';
-  }
-
-  function setCode(code) {
-    if (cmLoaded && cmEditor) {
-      cmEditor.setValue(code);
-    } else {
-      var ta = document.getElementById('cpCodeTextarea');
-      if (ta) ta.value = code;
-    }
-    updateCharCount((code || '').length);
-  }
-
-  function updateCharCount(n) {
-    if (el.charCount) el.charCount.textContent = n + ' chars';
-  }
-
-  function scheduleAutoRun() {
-    clearTimeout(autoTimer);
-    autoTimer = setTimeout(function () { runCode(true); }, 800);
-  }
-
-  function persistCodes() {
-    try { localStorage.setItem('cp_codes', JSON.stringify(codeStore)); } catch(e) {}
-  }
-
-  /* ================================================================
-     RUN CODE
-     ================================================================ */
-  function runCode(isAuto) {
-    var code = getCode();
-    if (!code && !isAuto) return;
-
-    var meta  = LANG_META[currentLang] || LANG_META.html;
-    var t0    = performance.now();
-
-    if (!isAuto) {
-      if (el.runBtn) { el.runBtn.disabled = true; el.runBtn.classList.add('running'); }
-      var lbl = el.runBtn && el.runBtn.querySelector('.btn-label');
-      if (lbl) lbl.textContent = 'Running...';
-    }
-
-    setStatus('running', 'Đang chạy...');
-
-    var done = function (ok, msg) {
-      var elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-      if (el.statusTime) el.statusTime.textContent = elapsed + 's';
-      setStatus(ok ? 'success' : 'error', msg || (ok ? 'Hoàn thành' : 'Lỗi'));
-      if (!isAuto) {
-        if (el.runBtn) { el.runBtn.disabled = false; el.runBtn.classList.remove('running'); }
-        if (lbl) lbl.textContent = 'Run';
-      }
-    };
-
-    try {
-      switch (meta.engine) {
-        case 'iframe':   runIframe(code, done);   break;
-        case 'wandbox':  runWandbox(code, done);  break;
-        case 'sqljs':    runSqlJs(code, done);    break;
-        case 'json':     runJson(code, done);     break;
-        case 'markdown': runMarkdown(code, done); break;
-        default: done(true);
-      }
-    } catch (err) {
-      appendConsole('error', '\u274C ' + (err.message || err));
-      done(false, err.message);
-    }
-  }
-
-  /* ================================================================
-     ENGINE: iframe (HTML / CSS / JS)
-     ================================================================ */
-  function runIframe(code, done) {
-    var src;
-    if (currentLang === 'html') {
-      src = code;
-    } else if (currentLang === 'css') {
-      src = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-            '<style>body{margin:0;padding:1rem;font-family:sans-serif;}</style>' +
-            '<style>' + code + '</style></head><body>' +
-            '<div class="box">CSS Preview</div>' +
-            '<p>Đây là đoạn văn bản mẫu để xem CSS của bạn.</p>' +
-            '<a href="#">Link mẫu</a>' +
-            '</body></html>';
-    } else {
-      // JavaScript: wrap in console interceptor
-      src = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-            '<style>body{margin:0;padding:1rem;font-family:\'Segoe UI\',sans-serif;background:#0f172a;color:#e2e8f0;}' +
-            '#out{white-space:pre-wrap;font-family:monospace;font-size:13px;line-height:1.6;}' +
-            '.e{color:#f87171;}.w{color:#fbbf24;}</style></head><body>' +
-            '<div id="out"></div><script>' +
-            '(function(){var out=document.getElementById("out");' +
-            'function ln(t,c){var d=document.createElement("div");if(c)d.className=c;' +
-            'd.textContent=t;out.appendChild(d);}' +
-            'var ol=console.log,oe=console.error,ow=console.warn;' +
-            'console.log=function(){ol.apply(console,arguments);ln(Array.from(arguments).map(function(x){return typeof x==="object"?JSON.stringify(x,null,2):String(x);}).join(" "));};' +
-            'console.error=function(){oe.apply(console,arguments);ln(Array.from(arguments).join(" "),"e");};' +
-            'console.warn=function(){ow.apply(console,arguments);ln(Array.from(arguments).join(" "),"w");};' +
-            'window.onerror=function(m){ln("Error: "+m,"e");return true;};' +
-            'try{' + code + '}catch(e){ln("Error: "+e.message,"e");}' +
-            '})();<\/script></body></html>';
-    }
-    switchTab('preview');
-    showSpinner(false);
-    if (el.previewFrame) el.previewFrame.srcdoc = src;
-    done(true);
-  }
-
-  /* ================================================================
-     ENGINE: Wandbox API (free, no auth needed)
-     https://wandbox.org/
-     ================================================================ */
-  function runWandbox(code, done) {
-    switchTab('console');
-    showSpinner(true, 'Đang biên dịch & chạy...');
-    clearOutputSilent();
-
-    var cfg = WANDBOX_CONFIGS[currentLang];
-    if (!cfg) { done(false, 'Unsupported language'); return; }
-
-    var payload = {
-      compiler:              cfg.compiler,
-      code:                  code,
-      options:               '',
-      stdin:                 el.stdin ? el.stdin.value : '',
-      'compiler-option-raw': cfg.rawOptions || '',
-      'runtime-option-raw':  ''
-    };
-
-    fetch('https://wandbox.org/api/compile.json', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload)
-    }).then(function (res) {
-      if (!res.ok) throw new Error('Wandbox API ' + res.status);
-      return res.json();
-    }).then(function (r) {
-      showSpinner(false);
-
-      // Compiler messages
-      if (r.compiler_error && r.compiler_error.trim()) {
-        r.compiler_error.trim().split('\n').forEach(function (l) { appendConsole('error', l); });
-      }
-      if (r.compiler_output && r.compiler_output.trim()) {
-        r.compiler_output.trim().split('\n').forEach(function (l) { appendConsole('info', l); });
-      }
-      // Program output
-      if (r.program_output && r.program_output.trim()) {
-        r.program_output.trim().split('\n').forEach(function (l) { appendConsole('output', l); });
-      }
-      // Runtime errors
-      if (r.program_error && r.program_error.trim()) {
-        r.program_error.trim().split('\n').forEach(function (l) { appendConsole('error', l); });
-      }
-
-      if (!r.program_output && !r.program_error && !r.compiler_error) {
-        appendConsole('info', '(Không có output)');
-      }
-
-      // status is returned as a string "0" for success
-      var ok = String(r.status) === '0';
-      appendConsole(ok ? 'success' : 'error', ok ? '\u2713 Completed (exit 0)' : 'Exit code: ' + r.status);
-      done(ok);
-    }).catch(function (err) {
-      showSpinner(false);
-      // If Wandbox is down, show helpful message
-      appendConsole('error', '\u274C ' + err.message);
-      if (err.message.indexOf('Failed to fetch') !== -1 || err.message.indexOf('NetworkError') !== -1) {
-        appendConsole('info', 'Không thể kết nối tới Wandbox API. Vui lòng kiểm tra kết nối mạng.');
-      }
-      done(false, err.message);
-    });
-  }
-
-  /* ================================================================
-     ENGINE: sql.js (SQLite WebAssembly)
-     ================================================================ */
-  function runSqlJs(code, done) {
-    switchTab('console');
-    showSpinner(true, 'Khởi tạo SQLite...');
-    clearOutputSilent();
-
-    var doRun = function () {
-      showSpinner(false);
-      var stmts = code.split(/;(?=(?:[^']*'[^']*')*[^']*$)/g)
-        .map(function (s) { return s.trim(); })
-        .filter(function (s) { return s.length > 0; });
-
-      var ok = true;
-      stmts.forEach(function (stmt) {
-        try {
-          appendConsole('info', '\u25B6 ' + stmt.substring(0, 80) + (stmt.length > 80 ? '...' : ''));
-          var results = sqlDb.exec(stmt);
-          if (results && results.length > 0) {
-            results.forEach(function (r) {
-              appendConsole('output', r.columns.join(' | '));
-              appendConsole('output', r.columns.map(function (c) { return '-'.repeat(c.length + 2); }).join('-|-'));
-              r.values.forEach(function (row) {
-                appendConsole('output', row.map(function (v) { return v === null ? 'NULL' : String(v); }).join(' | '));
-              });
-              appendConsole('success', '(' + r.values.length + ' rows)');
-            });
-          } else {
-            appendConsole('success', 'OK');
-          }
-        } catch (e) {
-          appendConsole('error', '\u274C ' + e.message);
-          ok = false;
-        }
-        appendConsole('output', '');
-      });
-      done(ok);
-    };
-
-    if (sqlDb) { doRun(); return; }
-
-    loadScript('https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js')
+  function ensureSqlJs() {
+    if (SQL) return Promise.resolve(SQL);
+    if (sqlInitPromise) return sqlInitPromise;
+    sqlInitPromise = loadScript(SQLJS_URL)
       .then(function () {
-        return window.initSqlJs({
-          locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/' + f; }
-        });
+        return window.initSqlJs({ locateFile: function (f) { return SQLJS_BASE + f; } });
       })
-      .then(function (SQL) {
-        sqlDb = new SQL.Database();
-        doRun();
-      })
-      .catch(function (err) {
-        showSpinner(false);
-        appendConsole('error', '\u274C Không tải được sql.js: ' + err.message);
-        done(false, err.message);
+      .then(function (SQLMod) {
+        SQL = SQLMod;
+        return SQL;
       });
+    return sqlInitPromise;
   }
 
   /* ================================================================
-     ENGINE: JSON validate
+     STORAGE
      ================================================================ */
-  function runJson(code, done) {
-    switchTab('console');
-    clearOutputSilent();
-    try {
-      var parsed = JSON.parse(code);
-      var fmt    = JSON.stringify(parsed, null, 2);
-      appendConsole('success', '\u2713 JSON hợp lệ (' + fmt.split('\n').length + ' dòng)');
-      appendConsole('output', '');
-      fmt.split('\n').forEach(function (l) { appendConsole('output', l); });
-      done(true);
-    } catch (e) {
-      appendConsole('error', '\u274C JSON không hợp lệ: ' + e.message);
-      done(false, e.message);
+  function safeParseJson(s) {
+    if (!s) return null;
+    try { return JSON.parse(s); } catch (e) { return null; }
+  }
+
+  function deepClone(obj) {
+    try { return JSON.parse(JSON.stringify(obj)); } catch (e) { return obj; }
+  }
+
+  function loadState() {
+    var saved = safeParseJson(localStorage.getItem(STORAGE_SAVED));
+    var draft = safeParseJson(localStorage.getItem(STORAGE_DRAFT));
+    var base = deepClone(DEFAULT_PROJECT);
+
+    if (saved) base = mergeState(base, saved);
+    if (draft) base = mergeState(base, draft);
+
+    // Backward compat: older cp_lang values
+    if (base.activeWorkspace === 'html' || base.activeWorkspace === 'css' || base.activeWorkspace === 'javascript') {
+      base.activeWorkspace = 'web';
     }
+    if (!WORKSPACES[base.activeWorkspace]) base.activeWorkspace = 'web';
+    return base;
   }
 
-  /* ================================================================
-     ENGINE: Markdown
-     ================================================================ */
-  function runMarkdown(code, done) {
-    switchTab('preview');
-    showSpinner(false);
-    if (el.previewFrame) el.previewFrame.style.display = 'none';
-    if (el.mdPreview)    el.mdPreview.classList.add('active');
-
-    var render = function () {
-      try {
-        if (el.mdPreview) el.mdPreview.innerHTML = window.marked.parse(code, { breaks: true, gfm: true });
-        done(true);
-      } catch (e) {
-        done(false, e.message);
-      }
-    };
-
-    if (markedReady) { render(); return; }
-    loadScript('https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js')
-      .then(function () { markedReady = true; render(); })
-      .catch(function (e) { done(false, e.message); });
-  }
-
-  /* ================================================================
-     OUTPUT HELPERS
-     ================================================================ */
-  function switchTab(tab) {
-    var isPreview = (tab === 'preview');
-    var isConsole = (tab === 'console');
-
-    if (el.tabPreview) { el.tabPreview.classList.toggle('active', isPreview); el.tabPreview.setAttribute('aria-selected', isPreview); }
-    if (el.tabConsole) { el.tabConsole.classList.toggle('active', isConsole); el.tabConsole.setAttribute('aria-selected', isConsole); }
-
-    // Hide all containers
-    if (el.previewContainer) el.previewContainer.style.display = 'none';
-    if (el.terminalWrapper)  el.terminalWrapper.classList.remove('active');
-
-    if (isPreview) {
-      if (el.previewContainer) el.previewContainer.style.display = 'block';
-      // Toggle sub-elements based on language
-      if (currentLang === 'markdown') {
-        if (el.previewFrame) el.previewFrame.style.display = 'none';
-        if (el.mdPreview)    el.mdPreview.classList.add('active');
+  function mergeState(dst, src) {
+    if (!src) return dst;
+    var k;
+    for (k in src) {
+      if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
+      if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
+        if (!dst[k] || typeof dst[k] !== 'object') dst[k] = {};
+        mergeState(dst[k], src[k]);
       } else {
-        if (el.previewFrame) el.previewFrame.style.display = 'block';
-        if (el.mdPreview)    el.mdPreview.classList.remove('active');
+        dst[k] = src[k];
       }
-    } else if (isConsole) {
-      if (el.terminalWrapper) el.terminalWrapper.classList.add('active');
+    }
+    return dst;
+  }
+
+  function scheduleDraftSave() {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(function () {
+      try { localStorage.setItem(STORAGE_DRAFT, JSON.stringify(ide.state)); } catch (e) {}
+    }, 350);
+  }
+
+  function saveExplicit() {
+    syncEditorToState();
+    syncStdinToState();
+    try { localStorage.setItem(STORAGE_SAVED, JSON.stringify(ide.state)); } catch (e) {}
+    ide.dirty = false;
+    updateStateBadge();
+    toast('Saved');
+  }
+
+  /* ================================================================
+     DOM HELPERS
+     ================================================================ */
+  function byId(id) { return document.getElementById(id); }
+
+  function isPageActive() {
+    var pg = byId('page-code-playground');
+    if (!pg) return false;
+    if (pg.style && pg.style.display === 'none') return false;
+    try {
+      var cs = window.getComputedStyle ? window.getComputedStyle(pg) : null;
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+    } catch (e) {}
+    return true;
+  }
+
+  function setHidden(node, hidden) {
+    if (!node) return;
+    if (hidden) node.setAttribute('hidden', '');
+    else node.removeAttribute('hidden');
+  }
+
+  function toast(msg) {
+    if (!el.toast) return;
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    clearTimeout(el.toast._t);
+    el.toast._t = setTimeout(function () {
+      el.toast.classList.remove('show');
+    }, 1600);
+  }
+
+  function setStatus(state, text) {
+    if (el.statusText) el.statusText.textContent = text || '';
+    if (el.statusDot) {
+      el.statusDot.className = 'cp-status-dot';
+      if (state === 'running') el.statusDot.classList.add('dot-running');
+      if (state === 'success') el.statusDot.classList.add('dot-success');
+      if (state === 'error') el.statusDot.classList.add('dot-error');
     }
   }
 
-  function clearOutput() {
-    if (el.previewFrame) el.previewFrame.srcdoc = '';
-    if (el.mdPreview)    el.mdPreview.innerHTML = '';
-    clearOutputSilent();
+  function setSpinner(show, text) {
+    if (!el.spinner) return;
+    if (text && el.spinnerText) el.spinnerText.textContent = text;
+    el.spinner.classList.toggle('visible', !!show);
   }
 
-  function clearOutputSilent() {
+  function updateStateBadge() {
+    if (!el.stateBadge) return;
+    if (ide.running) {
+      el.stateBadge.textContent = 'Running';
+      return;
+    }
+    if (ide.lastRunHadError) {
+      el.stateBadge.textContent = 'Error';
+      return;
+    }
+    if (ide.completed) {
+      el.stateBadge.textContent = 'Completed';
+      return;
+    }
+    el.stateBadge.textContent = ide.dirty ? 'Unsaved' : 'Saved';
+  }
+
+  function setEngineLabels() {
+    var ws = WORKSPACES[ide.state.activeWorkspace] || WORKSPACES.web;
+    if (el.engineLabel) el.engineLabel.textContent = ws.engine;
+  }
+
+  function clearConsole() {
     if (!el.console) return;
     el.console.innerHTML = '';
-    var empty = document.createElement('div');
-    empty.className = 'cp-output-empty';
-    empty.innerHTML = '<span class="material-symbols-sharp">terminal</span><p>Nhấn <strong>Run</strong> để xem kết quả</p>';
-    el.console.appendChild(empty);
+    appendConsole('info', 'Ready.');
   }
 
-  function appendConsole(type, text) {
+  function appendConsole(level, text) {
     if (!el.console) return;
-    var emp = el.console.querySelector('.cp-output-empty');
-    if (emp) emp.remove();
-
     var row = document.createElement('div');
-    row.className = 'cp-console-line line-' + type;
+    row.className = 'cp-console-line line-' + level;
 
     var pre = document.createElement('span');
     pre.className = 'cp-console-prefix';
-    pre.textContent = type === 'error' ? '\u2715' : type === 'success' ? '\u2713' : type === 'info' ? '\u00BB' : ' ';
+    pre.textContent = level === 'error' ? '✕' : level === 'success' ? '✓' : level === 'warn' ? '!' : level === 'info' ? '»' : ' ';
 
     var txt = document.createElement('span');
     txt.className = 'cp-console-text';
@@ -676,111 +411,1295 @@
     el.console.scrollTop = el.console.scrollHeight;
   }
 
-  function showSpinner(show, text) {
-    if (!el.spinner) return;
-    el.spinner.classList.toggle('visible', show);
-    if (text && el.spinnerText) el.spinnerText.textContent = text;
+  function setConsoleMeta(runState, exitCode, runTime) {
+    if (el.runStatePill) el.runStatePill.textContent = runState || '—';
+    if (el.exitCode) el.exitCode.textContent = exitCode === undefined || exitCode === null ? '—' : String(exitCode);
+    if (el.runTime) el.runTime.textContent = runTime || '—';
   }
 
-  function setStatus(state, text) {
-    if (el.statusText) el.statusText.textContent = text;
-    if (el.statusDot) {
-      el.statusDot.className = 'cp-status-dot';
-      if (state === 'running') el.statusDot.classList.add('dot-running');
-      else if (state === 'success') el.statusDot.classList.add('dot-success');
-      else if (state === 'error')   el.statusDot.classList.add('dot-error');
+  /* ================================================================
+     MENUS
+     ================================================================ */
+  function toggleMenu(btn, menu, show) {
+    if (!btn || !menu) return;
+    var next = (show === undefined) ? menu.hasAttribute('hidden') : show;
+    setHidden(menu, !next);
+    btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+  }
+
+  function closeAllMenus() {
+    toggleMenu(el.langBtn, el.langMenu, false);
+    toggleMenu(el.moreBtn, el.moreMenu, false);
+  }
+
+  function isClickInside(node, target) {
+    if (!node || !target) return false;
+    return node === target || node.contains(target);
+  }
+
+  /* ================================================================
+     FILES + EDITOR
+     ================================================================ */
+  function getWorkspaceState(wsId) {
+    if (!ide.state.workspaces[wsId]) ide.state.workspaces[wsId] = { files: {}, activeFile: '', stdin: '' };
+    return ide.state.workspaces[wsId];
+  }
+
+  function getActiveWorkspaceState() {
+    return getWorkspaceState(ide.state.activeWorkspace);
+  }
+
+  function getActiveFileName() {
+    var ws = getActiveWorkspaceState();
+    return ws.activeFile;
+  }
+
+  function getFileExt(name) {
+    var idx = name.lastIndexOf('.');
+    if (idx === -1) return 'txt';
+    return name.substring(idx + 1).toLowerCase();
+  }
+
+  function getCurrentCode() {
+    if (cmLoaded && cmEditor) return cmEditor.getValue();
+    var ta = byId('cpCodeTextarea');
+    return ta ? ta.value : '';
+  }
+
+  function setCurrentCode(code) {
+    if (cmLoaded && cmEditor) {
+      cmEditor.setValue(code || '');
+    } else {
+      var ta = byId('cpCodeTextarea');
+      if (ta) ta.value = code || '';
+    }
+    updateCharCount();
+  }
+
+  function updateCharCount() {
+    if (!el.charCount) return;
+    var code = getCurrentCode();
+    el.charCount.textContent = String((code || '').length) + ' chars';
+  }
+
+  function syncEditorToState() {
+    var ws = getActiveWorkspaceState();
+    var file = ws.activeFile;
+    if (!file) return;
+    ws.files[file] = getCurrentCode();
+  }
+
+  function syncStdinToState() {
+    var ws = getActiveWorkspaceState();
+    if (el.stdin) ws.stdin = el.stdin.value || '';
+  }
+
+  function applyEditorModeForFile(fileName) {
+    var ext = getFileExt(fileName);
+    var mode = CM_MODE_BY_EXT[ext] || 'htmlmixed';
+    if (cmLoaded && cmEditor) cmEditor.setOption('mode', mode);
+  }
+
+  function applySettingsToEditor() {
+    if (!cmLoaded || !cmEditor) return;
+    var s = ide.state.settings;
+    cmEditor.setOption('lineWrapping', !!s.wordWrap);
+    cmEditor.setOption('tabSize', Number(s.tabSize) || 2);
+    cmEditor.setOption('indentUnit', Number(s.tabSize) || 2);
+
+    var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    var fontSize = Number(s.fontSize) || 14;
+    if (isMobile && fontSize < 14) fontSize = 14;
+    var wrap = el.editorWrap;
+    if (wrap) {
+      var cmEl = wrap.querySelector('.CodeMirror');
+      if (cmEl) cmEl.style.fontSize = fontSize + 'px';
+    }
+
+    var theme = resolveEditorTheme();
+    cmEditor.setOption('theme', theme);
+    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 60);
+  }
+
+  function resolveEditorTheme() {
+    var s = ide.state.settings;
+    if (s.theme === 'light') return 'default';
+    if (s.theme === 'dark') return 'dracula';
+    // auto: follow body class (forest is light), but IDE is dark -> keep dracula.
+    return 'dracula';
+  }
+
+  function createEditorOnce() {
+    if (!el.editorWrap) return;
+    if (!window.CodeMirror) return;
+
+    if (cmEditor) return;
+    var ta = byId('cpCodeTextarea');
+    if (!ta) return;
+
+    cmEditor = window.CodeMirror.fromTextArea(ta, {
+      value: '',
+      mode: 'htmlmixed',
+      theme: resolveEditorTheme(),
+      lineNumbers: true,
+      lineWrapping: !!ide.state.settings.wordWrap,
+      tabSize: Number(ide.state.settings.tabSize) || 2,
+      indentUnit: Number(ide.state.settings.tabSize) || 2,
+      indentWithTabs: false,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      extraKeys: {
+        'Ctrl-Enter': function () { runCode(false); return true; },
+        'Ctrl-S': function () { saveExplicit(); return true; },
+        'Ctrl-/': function (cm) {
+          ensureCommentAddon().then(function () {
+            try { cm.execCommand('toggleComment'); } catch (e) {}
+          });
+          return true;
+        },
+        'Tab': function (cm) { cm.execCommand('insertSoftTab'); }
+      }
+    });
+
+    cmEditor.on('change', function () {
+      ide.dirty = true;
+      ide.completed = false;
+      updateStateBadge();
+      scheduleDraftSave();
+      updateCharCount();
+      if (ide.state.settings.autoRun) scheduleAutoRunMaybe();
+    });
+
+    cmEditor.on('cursorActivity', function () {
+      if (!el.cursorPos) return;
+      var c = cmEditor.getCursor();
+      el.cursorPos.textContent = 'Ln ' + (c.line + 1) + ', Col ' + (c.ch + 1);
+    });
+
+    applySettingsToEditor();
+  }
+
+  function renderFiles() {
+    var ws = getActiveWorkspaceState();
+    var files = Object.keys(ws.files || {});
+    if (files.length === 0) {
+      ws.files = {};
+      ws.activeFile = '';
+      return;
+    }
+    if (!ws.activeFile || !ws.files[ws.activeFile]) ws.activeFile = files[0];
+
+    if (el.fileTabs) {
+      el.fileTabs.innerHTML = '';
+      files.forEach(function (name) {
+        var ext = getFileExt(name);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cp-filetab' + (name === ws.activeFile ? ' active' : '');
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', name === ws.activeFile ? 'true' : 'false');
+        btn.setAttribute('data-file', name);
+
+        var icon = document.createElement('span');
+        icon.className = 'material-symbols-sharp';
+        icon.textContent = FILE_ICONS[ext] || 'description';
+
+        var label = document.createElement('span');
+        label.textContent = name;
+
+        btn.appendChild(icon);
+        btn.appendChild(label);
+        btn.addEventListener('click', function () { switchFile(name); });
+        el.fileTabs.appendChild(btn);
+      });
+    }
+
+    if (el.fileList) {
+      el.fileList.innerHTML = '';
+      files.forEach(function (name) {
+        var ext = getFileExt(name);
+        var item = document.createElement('div');
+        item.className = 'cp-file-item' + (name === ws.activeFile ? ' active' : '');
+        item.setAttribute('data-file', name);
+
+        var icon = document.createElement('span');
+        icon.className = 'material-symbols-sharp';
+        icon.textContent = FILE_ICONS[ext] || 'description';
+
+        var label = document.createElement('span');
+        label.className = 'cp-file-name';
+        label.textContent = name;
+
+        item.appendChild(icon);
+        item.appendChild(label);
+        item.addEventListener('click', function () { switchFile(name); });
+        el.fileList.appendChild(item);
+      });
+    }
+
+    if (el.statusWorkspace) el.statusWorkspace.textContent = (WORKSPACES[ide.state.activeWorkspace] || WORKSPACES.web).label;
+    if (el.statusFile) el.statusFile.textContent = ws.activeFile;
+  }
+
+  function switchFile(fileName) {
+    syncEditorToState();
+    var ws = getActiveWorkspaceState();
+    if (!ws.files[fileName]) return;
+    ws.activeFile = fileName;
+    renderFiles();
+    applyEditorModeForFile(fileName);
+    setCurrentCode(ws.files[fileName] || '');
+    ide.dirty = true;
+    updateStateBadge();
+    scheduleDraftSave();
+  }
+
+  function switchWorkspace(nextWs) {
+    if (!WORKSPACES[nextWs]) return;
+    syncEditorToState();
+    syncStdinToState();
+
+    ide.state.activeWorkspace = nextWs;
+    ide.completed = false;
+    ide.lastRunHadError = false;
+    ide.dirty = true;
+    updateLangUi();
+    updateStateBadge();
+
+    var wsState = getActiveWorkspaceState();
+    if (el.stdin) el.stdin.value = wsState.stdin || '';
+
+    renderFiles();
+    applyEditorModeForFile(wsState.activeFile);
+    setCurrentCode(wsState.files[wsState.activeFile] || '');
+    switchOutputTab(defaultOutputTabForWorkspace(nextWs));
+    applyPreviewVisibilityForWorkspace();
+    setPreviewOverlay(false, '');
+    setEngineLabels();
+    scheduleDraftSave();
+
+    if (ide.state.settings.autoRun) scheduleAutoRunMaybe();
+  }
+
+  function updateLangUi() {
+    var ws = WORKSPACES[ide.state.activeWorkspace] || WORKSPACES.web;
+    if (el.langLabel) el.langLabel.textContent = ws.label;
+    if (el.langIcon) el.langIcon.textContent = ws.icon;
+  }
+
+  function defaultOutputTabForWorkspace(wsId) {
+    var engine = (WORKSPACES[wsId] || WORKSPACES.web).engine;
+    if (engine === 'iframe' || engine === 'marked') return 'preview';
+    return 'console';
+  }
+
+  /* ================================================================
+     OUTPUT TABS + MOBILE TABS
+     ================================================================ */
+  function switchOutputTab(tab) {
+    if (!el.outputTabs) return;
+    var btns = el.outputTabs.querySelectorAll('.cp-output-tab');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var t = b.getAttribute('data-tab');
+      var active = (t === tab);
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+
+    setHidden(el.panelPreview, tab !== 'preview');
+    setHidden(el.panelConsole, tab !== 'console');
+    setHidden(el.panelInput, tab !== 'input');
+    setHidden(el.panelTests, tab !== 'tests');
+
+    if (tab === 'console') {
+      // no-op
+    }
+  }
+
+  function setMobileView(view) {
+    if (!el.root) return;
+    el.root.setAttribute('data-mobile-view', view);
+    if (el.mobileTabs) {
+      var tabs = el.mobileTabs.querySelectorAll('.cp-mobile-tab');
+      for (var i = 0; i < tabs.length; i++) {
+        var t = tabs[i].getAttribute('data-view');
+        var active = (t === view);
+        tabs[i].classList.toggle('active', active);
+        tabs[i].setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+    }
+
+    if (view === 'code') return;
+    if (view === 'preview') switchOutputTab('preview');
+    if (view === 'console') switchOutputTab('console');
+    if (view === 'input') switchOutputTab('input');
+  }
+
+  function applyPreviewVisibilityForWorkspace() {
+    var isMd = ide.state && ide.state.activeWorkspace === 'markdown';
+    if (el.previewViewport) setHidden(el.previewViewport, !!isMd);
+    if (el.mdPreview) el.mdPreview.classList.toggle('active', !!isMd);
+  }
+
+  /* ================================================================
+     PREVIEW
+     ================================================================ */
+  function setPreviewOverlay(show, message) {
+    if (!el.previewOverlay) return;
+    if (el.previewOverlayBody) el.previewOverlayBody.textContent = message || '';
+    setHidden(el.previewOverlay, !show);
+  }
+
+  function applyZoom() {
+    if (!el.previewFrame) return;
+    var val = el.zoomSelect ? el.zoomSelect.value : '100';
+    if (val === 'fit') {
+      el.previewFrame.style.transform = 'scale(1)';
+      el.previewFrame.style.width = '100%';
+      return;
+    }
+    var n = Number(val) || 100;
+    var s = Math.max(0.25, Math.min(1.5, n / 100));
+    el.previewFrame.style.transform = 'scale(' + s + ')';
+    el.previewFrame.style.width = (100 / s) + '%';
+  }
+
+  function buildWebSrcdoc(files) {
+    var html = files['index.html'] || '<!doctype html><html><body></body></html>';
+    var css = files['style.css'] || '';
+    var js = files['script.js'] || '';
+
+    var bridge = '';
+    bridge += '(function(){\n';
+    bridge += '  function toText(x){\n';
+    bridge += '    try{\n';
+    bridge += '      if(x===undefined) return "undefined";\n';
+    bridge += '      if(x===null) return "null";\n';
+    bridge += '      if(typeof x==="string") return x;\n';
+    bridge += '      if(typeof x==="number"||typeof x==="boolean") return String(x);\n';
+    bridge += '      return JSON.stringify(x);\n';
+    bridge += '    }catch(e){ return String(x); }\n';
+    bridge += '  }\n';
+    bridge += '  function post(level,args){\n';
+    bridge += '    try{ parent.postMessage({__cp:1,type:"console",level:level,text:args.map(toText).join(" ")},"*"); }catch(e){}\n';
+    bridge += '  }\n';
+    bridge += '  var ol=console.log, ow=console.warn, oe=console.error;\n';
+    bridge += '  console.log=function(){ ol&&ol.apply(console,arguments); post("output", Array.prototype.slice.call(arguments)); };\n';
+    bridge += '  console.warn=function(){ ow&&ow.apply(console,arguments); post("warn", Array.prototype.slice.call(arguments)); };\n';
+    bridge += '  console.error=function(){ oe&&oe.apply(console,arguments); post("error", Array.prototype.slice.call(arguments)); };\n';
+    bridge += '  window.addEventListener("error", function(ev){\n';
+    bridge += '    var msg = (ev && ev.message) ? ev.message : "Runtime error";\n';
+    bridge += '    try{ parent.postMessage({__cp:1,type:"error",message:msg},"*"); }catch(e){}\n';
+    bridge += '  });\n';
+    bridge += '  window.addEventListener("unhandledrejection", function(ev){\n';
+    bridge += '    var msg = "Unhandled promise rejection";\n';
+    bridge += '    try{ msg = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : msg; }catch(e){}\n';
+    bridge += '    try{ parent.postMessage({__cp:1,type:"error",message:msg},"*"); }catch(e){}\n';
+    bridge += '  });\n';
+    bridge += '})();\n';
+
+    var styleTag = '<style id="cpStyle">\n' + css + '\n</style>';
+    var scriptTag = '<script id="cpRuntime">\n' + bridge + '\ntry{\n' + js + '\n}catch(e){\n  try{ parent.postMessage({__cp:1,type:"error",message:e.message||String(e)},"*"); }catch(_e){}\n}\n<\/script>';
+
+    // Insert CSS before </head>
+    if (html.indexOf('</head>') !== -1) {
+      html = html.replace('</head>', styleTag + '\n</head>');
+    } else {
+      html = '<head>' + styleTag + '</head>\n' + html;
+    }
+
+    // Insert JS before </body>
+    if (html.indexOf('</body>') !== -1) {
+      html = html.replace('</body>', scriptTag + '\n</body>');
+    } else {
+      html = html + '\n' + scriptTag;
+    }
+
+    return html;
+  }
+
+  function openPreviewInNewTab() {
+    if (!ide.lastPreviewHtml) {
+      toast('No preview available');
+      return;
+    }
+    try {
+      var blob = new Blob([ide.lastPreviewHtml], { type: 'text/html' });
+      var url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(function () {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }, 15000);
+    } catch (e) {
+      toast('Cannot open preview');
     }
   }
 
   /* ================================================================
-     RESET / COPY / THEME / FULLSCREEN
+     RUN ENGINES
      ================================================================ */
-  function resetCode() {
-    var def = DEFAULT_CODE[currentLang] || '';
-    setCode(def);
-    codeStore[currentLang] = def;
-    persistCodes();
-    if (['html','css','javascript','markdown'].indexOf(currentLang) !== -1) scheduleAutoRun();
+  function canRunNow(isAuto) {
+    if (ide.running) return false;
+    if (!isAuto) return true;
+    // auto-run only for realtime preview types
+    var ws = WORKSPACES[ide.state.activeWorkspace] || WORKSPACES.web;
+    return (ws.engine === 'iframe' || ws.engine === 'marked');
   }
 
-  function copyCode() {
-    var code = getCode();
-    var success = function () {
-      if (el.copyToast) { el.copyToast.classList.add('show'); setTimeout(function () { el.copyToast.classList.remove('show'); }, 2000); }
+  function scheduleAutoRunMaybe() {
+    clearTimeout(autoRunTimer);
+    if (!ide.state.settings.autoRun) return;
+    if (!canRunNow(true)) return;
+    autoRunTimer = setTimeout(function () {
+      runCode(true);
+    }, 650);
+  }
+
+  function setRunningUi(running) {
+    ide.running = !!running;
+    updateStateBadge();
+    if (el.runBtn) {
+      el.runBtn.disabled = running;
+      el.runBtn.classList.toggle('running', running);
+    }
+    if (el.runBtnMobile) {
+      el.runBtnMobile.disabled = running;
+      el.runBtnMobile.classList.toggle('running', running);
+    }
+    if (el.stopBtn) el.stopBtn.disabled = !running;
+  }
+
+  function stopRun() {
+    if (ide.runAbort) {
+      try { ide.runAbort.abort(); } catch (e) {}
+    }
+    ide.runAbort = null;
+    setSpinner(false);
+    setRunningUi(false);
+    setConsoleMeta('Stopped', '—', '—');
+    setStatus('error', 'Đã dừng');
+    appendConsole('warn', 'Stopped by user.');
+  }
+
+  function runCode(isAuto) {
+    if (!canRunNow(!!isAuto)) return;
+
+    syncEditorToState();
+    syncStdinToState();
+
+    var wsId = ide.state.activeWorkspace;
+    var wsMeta = WORKSPACES[wsId] || WORKSPACES.web;
+    var ws = getActiveWorkspaceState();
+    var file = ws.activeFile;
+    var code = ws.files[file] || '';
+    var t0 = performance.now();
+    var runSeq = ++ide.currentRunSeq;
+
+    ide.completed = false;
+    ide.lastRunHadError = false;
+    updateStateBadge();
+
+    if (!isAuto) {
+      // Switch to the most relevant panel
+      switchOutputTab(defaultOutputTabForWorkspace(wsId));
+      var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) {
+        if (wsMeta.engine === 'iframe' || wsMeta.engine === 'marked') setMobileView('preview');
+        else setMobileView('console');
+      }
+    }
+
+    setRunningUi(true);
+    setStatus('running', 'Đang chạy...');
+    setConsoleMeta('Running', '—', '—');
+    setEngineLabels();
+    setPreviewOverlay(false, '');
+
+    if (wsMeta.engine === 'iframe') {
+      clearConsole();
+      appendConsole('info', 'Preview refreshed.');
+      ide.lastPreviewHtml = buildWebSrcdoc(ws.files);
+      if (el.previewFrame) el.previewFrame.srcdoc = ide.lastPreviewHtml;
+      if (el.mdPreview) el.mdPreview.classList.remove('active');
+      setHidden(el.previewViewport, false);
+      applyZoom();
+
+      var elapsed = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+      if (el.statusTime) el.statusTime.textContent = elapsed;
+      setRunningUi(false);
+      setConsoleMeta('Completed', '0', elapsed);
+      setStatus('success', 'Hoàn thành');
+      updateStateBadge();
+      return;
+    }
+
+    if (wsMeta.engine === 'marked') {
+      clearConsole();
+      setSpinner(false);
+      ensureMarked().then(function () {
+        if (runSeq !== ide.currentRunSeq) return;
+        try {
+          if (el.mdPreview) {
+            el.mdPreview.classList.add('active');
+            el.mdPreview.innerHTML = window.marked.parse(code, { breaks: true, gfm: true });
+          }
+          if (el.previewViewport) setHidden(el.previewViewport, true);
+          if (el.previewFrame) el.previewFrame.srcdoc = '';
+          ide.lastPreviewHtml = '<!doctype html><meta charset="utf-8"><title>Markdown Preview</title><body>' + (el.mdPreview ? el.mdPreview.innerHTML : '') + '</body>';
+          var elapsed2 = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+          if (el.statusTime) el.statusTime.textContent = elapsed2;
+          setConsoleMeta('Completed', '0', elapsed2);
+          setStatus('success', 'Hoàn thành');
+          setRunningUi(false);
+        } catch (e) {
+          ide.lastRunHadError = true;
+          appendConsole('error', e.message || String(e));
+          setConsoleMeta('Error', '1', '—');
+          setStatus('error', 'Lỗi');
+          setRunningUi(false);
+        }
+        updateStateBadge();
+      }).catch(function (e) {
+        ide.lastRunHadError = true;
+        appendConsole('error', 'Cannot load marked.js: ' + (e.message || e));
+        setStatus('error', 'Lỗi');
+        setRunningUi(false);
+        updateStateBadge();
+      });
+      return;
+    }
+
+    if (wsMeta.engine === 'json') {
+      clearConsole();
+      try {
+        var parsed = JSON.parse(code);
+        var fmt = JSON.stringify(parsed, null, 2);
+        appendConsole('success', '✓ JSON valid');
+        appendConsole('output', fmt);
+        var elapsed3 = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+        if (el.statusTime) el.statusTime.textContent = elapsed3;
+        setConsoleMeta('Completed', '0', elapsed3);
+        setStatus('success', 'Hoàn thành');
+      } catch (e) {
+        ide.lastRunHadError = true;
+        appendConsole('error', 'JSON invalid: ' + (e.message || e));
+        setConsoleMeta('Error', '1', '—');
+        setStatus('error', 'Lỗi');
+      }
+      setRunningUi(false);
+      updateStateBadge();
+      return;
+    }
+
+    if (wsMeta.engine === 'sqljs') {
+      clearConsole();
+      setSpinner(true, 'Khởi tạo SQLite...');
+      ensureSqlJs().then(function (SQLMod) {
+        if (runSeq !== ide.currentRunSeq) return;
+        setSpinner(false);
+        // Reset DB every run (no accumulation)
+        var db = new SQLMod.Database();
+        var ok = true;
+        try {
+          var stmts = splitSqlStatements(code);
+          for (var i = 0; i < stmts.length; i++) {
+            var stmt = stmts[i];
+            appendConsole('info', '▶ ' + shorten(stmt, 120));
+            var results = db.exec(stmt);
+            renderSqlResults(results);
+          }
+        } catch (e) {
+          ok = false;
+          ide.lastRunHadError = true;
+          appendConsole('error', e.message || String(e));
+        }
+
+        var elapsed4 = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+        if (el.statusTime) el.statusTime.textContent = elapsed4;
+        setConsoleMeta(ok ? 'Completed' : 'Error', ok ? '0' : '1', elapsed4);
+        setStatus(ok ? 'success' : 'error', ok ? 'Hoàn thành' : 'Lỗi');
+        setRunningUi(false);
+        updateStateBadge();
+      }).catch(function (e) {
+        setSpinner(false);
+        ide.lastRunHadError = true;
+        appendConsole('error', 'Cannot load sql.js: ' + (e.message || e));
+        setStatus('error', 'Lỗi');
+        setConsoleMeta('Error', '1', '—');
+        setRunningUi(false);
+        updateStateBadge();
+      });
+      return;
+    }
+
+    if (wsMeta.engine === 'wandbox') {
+      clearConsole();
+      setSpinner(true, 'Đang biên dịch & chạy...');
+      var cfg = WANDBOX_CONFIGS[wsId];
+      if (!cfg) {
+        setSpinner(false);
+        ide.lastRunHadError = true;
+        appendConsole('error', 'Unsupported language');
+        setRunningUi(false);
+        updateStateBadge();
+        return;
+      }
+
+      var payload = {
+        compiler: cfg.compiler,
+        code: code,
+        options: '',
+        stdin: ws.stdin || '',
+        'compiler-option-raw': cfg.rawOptions || '',
+        'runtime-option-raw': ''
+      };
+
+      var controller = (window.AbortController ? new AbortController() : null);
+      ide.runAbort = controller;
+
+      var timeoutId = setTimeout(function () {
+        if (controller) {
+          try { controller.abort(); } catch (e) {}
+        }
+      }, WANDBOX_TIMEOUT_MS);
+
+      fetch(WANDBOX_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller ? controller.signal : undefined
+      })
+      .then(function (res) {
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error('Wandbox API ' + res.status);
+        return res.json();
+      })
+      .then(function (r) {
+        if (runSeq !== ide.currentRunSeq) return;
+        setSpinner(false);
+        ide.runAbort = null;
+
+        var ok2 = String(r.status) === '0';
+        if (r.compiler_error && r.compiler_error.trim()) {
+          ide.lastRunHadError = true;
+          appendBlock('error', r.compiler_error);
+        }
+        if (r.compiler_output && r.compiler_output.trim()) {
+          appendBlock('info', r.compiler_output);
+        }
+        if (r.program_output && r.program_output.trim()) {
+          appendBlock('output', r.program_output);
+        }
+        if (r.program_error && r.program_error.trim()) {
+          ide.lastRunHadError = true;
+          appendBlock('error', r.program_error);
+        }
+
+        var elapsed5 = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+        if (el.statusTime) el.statusTime.textContent = elapsed5;
+        setConsoleMeta(ok2 && !ide.lastRunHadError ? 'Completed' : 'Error', r.status, elapsed5);
+        setStatus(ok2 && !ide.lastRunHadError ? 'success' : 'error', ok2 ? 'Hoàn thành' : 'Lỗi');
+        setRunningUi(false);
+        updateStateBadge();
+      })
+      .catch(function (err) {
+        if (runSeq !== ide.currentRunSeq) return;
+        clearTimeout(timeoutId);
+        setSpinner(false);
+        ide.runAbort = null;
+        ide.lastRunHadError = true;
+
+        if (String(err && err.name) === 'AbortError') {
+          appendConsole('warn', 'Timeout after ' + Math.round(WANDBOX_TIMEOUT_MS / 1000) + 's');
+        } else {
+          appendConsole('error', '✕ ' + (err.message || String(err)));
+          if ((err.message || '').indexOf('Failed to fetch') !== -1) {
+            appendConsole('info', 'Network error: check your connection.');
+          }
+        }
+
+        setConsoleMeta('Error', '—', '—');
+        setStatus('error', 'Lỗi');
+        setRunningUi(false);
+        updateStateBadge();
+      });
+      return;
+    }
+
+    // Fallback
+    setSpinner(false);
+    setRunningUi(false);
+  }
+
+  function appendBlock(level, text) {
+    var lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i] === '' && i === lines.length - 1) continue;
+      appendConsole(level, lines[i]);
+    }
+  }
+
+  function shorten(s, n) {
+    s = String(s || '').trim();
+    if (s.length <= n) return s;
+    return s.substring(0, n) + '...';
+  }
+
+  function splitSqlStatements(sql) {
+    var out = [];
+    var cur = '';
+    var inStr = false;
+    for (var i = 0; i < sql.length; i++) {
+      var ch = sql.charAt(i);
+      var next = sql.charAt(i + 1);
+      
+      // Handle escaped single quotes in SQL ('')
+      if (ch === "'" && inStr && next === "'") {
+        cur += ch;
+        cur += next;
+        i++;
+        continue;
+      }
+      
+      if (ch === "'") inStr = !inStr;
+      if (ch === ';' && !inStr) {
+        if (cur.trim()) out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+
+  function renderSqlResults(results) {
+    if (!results || !results.length) {
+      appendConsole('success', 'OK');
+      return;
+    }
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      appendConsole('output', (r.columns || []).join(' | '));
+      appendConsole('output', (r.columns || []).map(function (c) { return repeat('-', String(c).length); }).join('-|-'));
+      for (var j = 0; j < (r.values || []).length; j++) {
+        var row = r.values[j];
+        appendConsole('output', row.map(function (v) { return v === null ? 'NULL' : String(v); }).join(' | '));
+      }
+      appendConsole('success', '(' + (r.values ? r.values.length : 0) + ' rows)');
+      appendConsole('output', '');
+    }
+  }
+
+  function repeat(ch, n) {
+    var s = '';
+    for (var i = 0; i < n; i++) s += ch;
+    return s;
+  }
+
+  /* ================================================================
+     TEST CASES
+     ================================================================ */
+  function renderTests() {
+    if (!el.testsList) return;
+    el.testsList.innerHTML = '';
+
+    var wsId = ide.state.activeWorkspace;
+    var tests = ide.state.tests[wsId] || null;
+
+    if (!tests || !tests.length) {
+      var note = document.createElement('div');
+      note.style.opacity = '0.9';
+      note.style.padding = '0.5rem';
+      note.textContent = 'Test cases hiện hỗ trợ cho Python / C / C++ / Java.';
+      el.testsList.appendChild(note);
+      if (el.testsSummary) el.testsSummary.textContent = '';
+      if (el.runTestsBtn) el.runTestsBtn.disabled = true;
+      return;
+    }
+    if (el.runTestsBtn) el.runTestsBtn.disabled = false;
+
+    tests.forEach(function (tc, idx) {
+      var card = document.createElement('div');
+      card.className = 'cp-test';
+
+      var header = document.createElement('div');
+      header.className = 'cp-test-header';
+      
+      var titleSpan = document.createElement('span');
+      titleSpan.textContent = 'Test #' + (idx + 1);
+      header.appendChild(titleSpan);
+
+      var actions = document.createElement('div');
+      actions.className = 'cp-test-actions';
+      actions.style.display = 'flex';
+      actions.style.alignItems = 'center';
+      actions.style.gap = '0.5rem';
+
+      var badge = document.createElement('span');
+      badge.className = 'cp-test-badge';
+      if (tc.status === 'pass') badge.classList.add('pass');
+      if (tc.status === 'fail') badge.classList.add('fail');
+      badge.textContent = tc.status === 'pass' ? 'Passed' : tc.status === 'fail' ? 'Failed' : 'Pending';
+      actions.appendChild(badge);
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'cp-btn cp-btn-icon';
+      delBtn.style.padding = '2px';
+      delBtn.style.borderRadius = '6px';
+      delBtn.innerHTML = '<span class="material-symbols-sharp" style="font-size:1.1rem">delete</span>';
+      delBtn.title = 'Remove test case';
+      delBtn.onclick = function() { removeTestCase(idx); };
+      actions.appendChild(delBtn);
+
+      header.appendChild(actions);
+
+      var body = document.createElement('div');
+      body.className = 'cp-test-body';
+
+      var fIn = buildTestField('Input', tc.input, function (v) { tc.input = v; ide.dirty = true; scheduleDraftSave(); });
+      var fEx = buildTestField('Expected output', tc.expected, function (v) { tc.expected = v; ide.dirty = true; scheduleDraftSave(); });
+      var fAc = buildTestField('Actual output', tc.actual || '', null, true);
+
+      body.appendChild(fIn);
+      body.appendChild(fEx);
+      body.appendChild(fAc);
+
+      card.appendChild(header);
+      card.appendChild(body);
+      el.testsList.appendChild(card);
+    });
+
+    updateTestsSummary();
+  }
+
+  function buildTestField(label, value, onChange, readonly) {
+    var wrap = document.createElement('div');
+    wrap.className = 'cp-test-field';
+    var l = document.createElement('label');
+    l.textContent = label;
+    var ta = document.createElement('textarea');
+    ta.value = value || '';
+    if (readonly) ta.setAttribute('readonly', '');
+    if (onChange) {
+      ta.addEventListener('input', function () {
+        onChange(ta.value);
+      });
+    }
+    wrap.appendChild(l);
+    wrap.appendChild(ta);
+    return wrap;
+  }
+
+  function updateTestsSummary() {
+    if (!el.testsSummary) return;
+    var wsId = ide.state.activeWorkspace;
+    var tests = ide.state.tests[wsId] || [];
+    if (!tests.length) { el.testsSummary.textContent = ''; return; }
+    var pass = 0;
+    for (var i = 0; i < tests.length; i++) if (tests[i].status === 'pass') pass++;
+    el.testsSummary.textContent = pass + '/' + tests.length + ' passed.';
+  }
+
+  function normalizeOutput(s) {
+    s = String(s || '').replace(/\r\n/g, '\n');
+    // Trim trailing spaces on each line, keep final newline significance loosely
+    var lines = s.split('\n');
+    for (var i = 0; i < lines.length; i++) lines[i] = lines[i].replace(/\s+$/g, '');
+    return lines.join('\n').trim() + '\n';
+  }
+
+  function runTests() {
+    var wsId = ide.state.activeWorkspace;
+    var tests = ide.state.tests[wsId];
+    if (!tests || !tests.length) return;
+    if (ide.running) return;
+
+    if (!WANDBOX_CONFIGS[wsId]) {
+      toast('Tests only for Wandbox languages');
+      return;
+    }
+
+    syncEditorToState();
+    var ws = getActiveWorkspaceState();
+    var file = ws.activeFile;
+    var code = ws.files[file] || '';
+
+    ide.completed = false;
+    ide.lastRunHadError = false;
+    updateStateBadge();
+
+    setRunningUi(true);
+    setSpinner(true, 'Running tests...');
+    switchOutputTab('tests');
+    setConsoleMeta('Running', '—', '—');
+    setStatus('running', 'Đang chạy tests...');
+
+    // Reset statuses
+    for (var i = 0; i < tests.length; i++) {
+      tests[i].status = 'pending';
+      tests[i].actual = '';
+    }
+    renderTests();
+
+    var t0 = performance.now();
+    var idx = 0;
+    var passedAll = true;
+
+    function next() {
+      if (!ide.running) return; // Stopped by user
+      if (idx >= tests.length) {
+        setSpinner(false);
+        setRunningUi(false);
+        var elapsed = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+        if (el.statusTime) el.statusTime.textContent = elapsed;
+        setConsoleMeta(passedAll ? 'Completed' : 'Error', passedAll ? '0' : '1', elapsed);
+        setStatus(passedAll ? 'success' : 'error', passedAll ? 'Completed' : 'Failed');
+        if (passedAll) {
+          ide.completed = true;
+          ide.lastRunHadError = false;
+          updateStateBadge();
+          dispatchTestsCompletedEvent(true, elapsed);
+        } else {
+          ide.completed = false;
+          ide.lastRunHadError = true;
+          updateStateBadge();
+          dispatchTestsCompletedEvent(false, elapsed);
+        }
+        updateTestsSummary();
+        scheduleDraftSave();
+        return;
+      }
+
+      var tc = tests[idx];
+      runWandboxForTest(wsId, code, tc.input || '', function (result) {
+        var out = normalizeOutput(result.output);
+        var exp = normalizeOutput(tc.expected || '');
+        tc.actual = result.rawOutput;
+        if (result.ok && out === exp) {
+          tc.status = 'pass';
+        } else {
+          tc.status = 'fail';
+          passedAll = false;
+        }
+        idx++;
+        renderTests();
+        next();
+      });
+    }
+
+    next();
+  }
+
+  function runWandboxForTest(wsId, code, stdin, cb) {
+    var cfg = WANDBOX_CONFIGS[wsId];
+    var payload = {
+      compiler: cfg.compiler,
+      code: code,
+      options: '',
+      stdin: stdin,
+      'compiler-option-raw': cfg.rawOptions || '',
+      'runtime-option-raw': ''
     };
+
+    var controller = (window.AbortController ? new AbortController() : null);
+    ide.runAbort = controller;
+    var timeoutId = setTimeout(function () {
+      if (controller) {
+        try { controller.abort(); } catch (e) {}
+      }
+    }, WANDBOX_TIMEOUT_MS);
+
+    fetch(WANDBOX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined
+    })
+    .then(function (res) {
+      clearTimeout(timeoutId);
+      if (!res.ok) throw new Error('Wandbox API ' + res.status);
+      return res.json();
+    })
+    .then(function (r) {
+      clearTimeout(timeoutId);
+      ide.runAbort = null;
+      var ok = String(r.status) === '0' && !(r.compiler_error && r.compiler_error.trim());
+      var out = '';
+      if (r.program_output) out += r.program_output;
+      if (r.program_error) out += r.program_error;
+      cb({ ok: ok, output: out, rawOutput: out });
+    })
+    .catch(function (err) {
+      clearTimeout(timeoutId);
+      ide.runAbort = null;
+      cb({ ok: false, output: '', rawOutput: 'ERROR: ' + (err.message || String(err)) + '\n' });
+    });
+  }
+
+  function addTestCase() {
+    var wsId = ide.state.activeWorkspace;
+    if (!WANDBOX_CONFIGS[wsId]) {
+      toast('Test cases only for Wandbox languages');
+      return;
+    }
+    if (!ide.state.tests[wsId]) ide.state.tests[wsId] = [];
+    ide.state.tests[wsId].push({ input: '', expected: '', actual: '', status: 'pending' });
+    ide.dirty = true;
+    renderTests();
+    scheduleDraftSave();
+    toast('Test case added');
+  }
+
+  function toggleSidebar() {
+    el.root.classList.toggle('sidebar-collapsed');
+    if (cmEditor) cmEditor.refresh();
+  }
+
+  function removeTestCase(idx) {
+    var wsId = ide.state.activeWorkspace;
+    var tests = ide.state.tests[wsId];
+    if (!tests || !tests[idx]) return;
+    tests.splice(idx, 1);
+    ide.dirty = true;
+    renderTests();
+    scheduleDraftSave();
+    toast('Test case removed');
+  }
+
+  function dispatchTestsCompletedEvent(passed, elapsed) {
+    try {
+      var detail = {
+        workspace: ide.state.activeWorkspace,
+        passed: !!passed,
+        elapsed: elapsed,
+        timestamp: Date.now(),
+        projectName: ide.state.projectName
+      };
+      window.dispatchEvent(new CustomEvent('cp:testsCompleted', { detail: detail }));
+    } catch (e) {}
+  }
+
+  /* ================================================================
+     TOOLBAR ACTIONS
+     ================================================================ */
+  function resetWorkspace() {
+    var wsId = ide.state.activeWorkspace;
+    var def = deepClone(DEFAULT_PROJECT.workspaces[wsId]);
+    if (!def) return;
+    ide.state.workspaces[wsId] = def;
+    ide.dirty = true;
+    ide.completed = false;
+    ide.lastRunHadError = false;
+    updateStateBadge();
+    if (el.stdin) el.stdin.value = def.stdin || '';
+    renderFiles();
+    applyEditorModeForFile(def.activeFile);
+    setCurrentCode(def.files[def.activeFile] || '');
+    setPreviewOverlay(false, '');
+    scheduleDraftSave();
+    toast('Reset');
+  }
+
+  function copyCurrentFile() {
+    syncEditorToState();
+    var ws = getActiveWorkspaceState();
+    var code = ws.files[ws.activeFile] || '';
+
+    var ok = function () { toast('Copied'); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code).then(success).catch(function () { fallbackCopy(code, success); });
+      navigator.clipboard.writeText(code).then(ok).catch(function () { fallbackCopy(code, ok); });
     } else {
-      fallbackCopy(code, success);
+      fallbackCopy(code, ok);
     }
   }
 
   function fallbackCopy(text, cb) {
     var ta = document.createElement('textarea');
     ta.value = text;
-    ta.style.cssText = 'position:fixed;top:-999px;opacity:0';
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); cb(); } catch(e) {}
+    try { document.execCommand('copy'); } catch (e) {}
     document.body.removeChild(ta);
+    if (cb) cb();
   }
 
-  /* =====================================================
-     THEME SYNC (System Integration)
-     ===================================================== */
-  function syncSystemTheme() {
-    // Check global ACTIVE_THEME or body class
-    var activeTheme = window.ACTIVE_THEME || 'default';
-    var isForest = (activeTheme === 'forest' || document.body.classList.contains('theme-forest'));
-    
-    // Toggle CP-light class for specific override logic in CSS
-    if (el.root) {
-      if (isForest) el.root.classList.add('cp-light');
-      else el.root.classList.remove('cp-light');
+  function downloadExport() {
+    syncEditorToState();
+    syncStdinToState();
+    var payload = JSON.stringify(ide.state, null, 2);
+    try {
+      var blob = new Blob([payload], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = (ide.state.projectName || 'code-playground') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 8000);
+      toast('Downloaded');
+    } catch (e) {
+      toast('Download failed');
+    }
+  }
+
+  function ensureWorkspaceFileExtension(wsId, fileName) {
+    fileName = String(fileName || '').trim();
+    if (!fileName) return fileName;
+    if (fileName.indexOf('.') !== -1) return fileName;
+    var extMap = {
+      python: 'py',
+      c: 'c',
+      cpp: 'cpp',
+      java: 'java',
+      sql: 'sql',
+      markdown: 'md',
+      json: 'json'
+    };
+    var ext = extMap[String(wsId || '')] || '';
+    if (!ext) return fileName;
+    return fileName + '.' + ext;
+  }
+
+  function downloadWorkspaceSources() {
+    syncEditorToState();
+    syncStdinToState();
+
+    var wsId = ide.state.activeWorkspace;
+    var ws = getActiveWorkspaceState();
+    var files = (ws && ws.files) ? ws.files : {};
+    var names = Object.keys(files);
+    if (!names.length) {
+      toast('Nothing to download');
+      return;
     }
 
-    // Update CodeMirror Theme (Galaxy: dracula, Forest: default)
-    if (cmEditor) {
-      var cmTheme = isForest ? 'default' : 'dracula';
-      cmEditor.setOption('theme', cmTheme);
-      setTimeout(function() { if (cmEditor) cmEditor.refresh(); }, 100);
+    for (var i = 0; i < names.length; i++) {
+      var originalName = names[i];
+      var name = ensureWorkspaceFileExtension(wsId, originalName);
+      var content = String(files[originalName] || '');
+      try {
+        var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        (function (u) { setTimeout(function () { try { URL.revokeObjectURL(u); } catch (e) {} }, 8000); })(url);
+      } catch (e) {}
     }
-    
-    isDark = !isForest;
+
+    toast('Downloaded');
   }
 
   function toggleFullscreen() {
-    isFullscreen = !isFullscreen;
-    if (el.root) el.root.classList.toggle('cp-fullscreen', isFullscreen);
-    if (el.fsIcon) el.fsIcon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
-    if (el.fsBtn) el.fsBtn.classList.toggle('active', isFullscreen);
-    // Refresh editor after layout change
-    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 50);
+    if (!el.root) return;
+    el.root.classList.toggle('cp-fullscreen');
+    var isFs = el.root.classList.contains('cp-fullscreen');
+    if (el.fsIcon) el.fsIcon.textContent = isFs ? 'fullscreen_exit' : 'fullscreen';
+    setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 60);
+  }
+
+  /* ================================================================
+     SETTINGS PANEL
+     ================================================================ */
+  var settingsToggleLockedUntil = 0;
+
+  function lockSettingsToggle(ms) {
+    settingsToggleLockedUntil = Date.now() + (Number(ms) || 250);
+  }
+
+  function canToggleSettings() {
+    return Date.now() >= settingsToggleLockedUntil;
+  }
+
+  function openSettings() {
+    setHidden(el.backdrop, false);
+    setHidden(el.settings, false);
+    syncSettingsUiFromState();
+  }
+
+  function closeSettings() {
+    // Prevent immediate re-open caused by click-through on touch devices.
+    lockSettingsToggle(250);
+    setHidden(el.backdrop, true);
+    setHidden(el.settings, true);
+  }
+
+  function isSettingsOpen() {
+    return !!(el.settings && !el.settings.hasAttribute('hidden'));
+  }
+
+  function toggleSettings() {
+    if (!canToggleSettings()) return;
+    if (isSettingsOpen()) closeSettings();
+    else openSettings();
+  }
+
+  function syncSettingsUiFromState() {
+    var s = ide.state.settings;
+    if (el.setFontSize) el.setFontSize.value = String(s.fontSize || 14);
+    if (el.setFontSizeVal) el.setFontSizeVal.textContent = String(s.fontSize || 14) + 'px';
+    if (el.setWordWrap) el.setWordWrap.checked = !!s.wordWrap;
+    if (el.setAutoRun) el.setAutoRun.checked = !!s.autoRun;
+    if (el.setTabSize) el.setTabSize.value = String(s.tabSize || 2);
+    if (el.setTheme) el.setTheme.value = s.theme || 'auto';
+    if (el.setTabletLayout) el.setTabletLayout.value = s.tabletLayout || 'auto';
+  }
+
+  function applyTabletLayoutSetting() {
+    if (!el.root) return;
+    var s = ide.state.settings;
+    var mm = window.matchMedia && window.matchMedia('(min-width: 769px) and (max-width: 1024px)');
+    var isTablet = mm ? mm.matches : false;
+
+    el.root.classList.remove('cp-tablet-stack');
+    if (s.tabletLayout === 'stack') {
+      el.root.classList.add('cp-tablet-stack');
+      return;
+    }
+    if (s.tabletLayout === 'side') {
+      return;
+    }
+    // auto
+    if (isTablet) el.root.classList.add('cp-tablet-stack');
   }
 
   /* ================================================================
      RESIZER
      ================================================================ */
   function setupResizer() {
-    if (!el.resizer || !el.editorPanel || !el.outputPanel) return;
-    var dragging = false, startX = 0, startW = 0;
+    if (!el.resizer || !el.editorPane || !el.outputPane) return;
+    var dragging = false;
+    var startX = 0;
+    var startW = 0;
 
     el.resizer.addEventListener('mousedown', function (e) {
-      dragging = true; startX = e.clientX; startW = el.editorPanel.offsetWidth;
+      dragging = true;
+      startX = e.clientX;
+      startW = el.editorPane.getBoundingClientRect().width;
       el.resizer.classList.add('dragging');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
     });
+
     document.addEventListener('mousemove', function (e) {
       if (!dragging) return;
-      var split = document.getElementById('cpSplit');
-      var total = split ? split.offsetWidth : window.innerWidth;
-      var newW  = Math.max(180, Math.min(total - 180, startW + e.clientX - startX));
-      el.editorPanel.style.width = newW + 'px';
-      el.editorPanel.style.flex  = 'none';
-      el.outputPanel.style.flex  = '1';
+      var mainW = el.main ? el.main.getBoundingClientRect().width : window.innerWidth;
+      var min = 280;
+      var max = Math.max(min, mainW - 320);
+      var next = Math.max(min, Math.min(max, startW + (e.clientX - startX)));
+      el.editorPane.style.flex = 'none';
+      el.editorPane.style.width = next + 'px';
+      el.outputPane.style.flex = '1';
       if (cmEditor) cmEditor.refresh();
     });
+
     document.addEventListener('mouseup', function () {
       if (!dragging) return;
       dragging = false;
@@ -792,49 +1711,431 @@
   }
 
   /* ================================================================
-     PAGE LIFECYCLE HOOK
+     PREVIEW MESSAGE BRIDGE (iframe -> console)
      ================================================================ */
-  var cpInitialized = false;
+  function setupPreviewBridge() {
+    window.addEventListener('message', function (ev) {
+      if (!el.previewFrame || ev.source !== el.previewFrame.contentWindow) return;
+      var data = ev.data;
+      if (!data || data.__cp !== 1) return;
 
-  function onPageShow() {
-    if (cpInitialized) {
-      // Already initialized – just refresh editor if visible
-      if (cmEditor) setTimeout(function () { cmEditor.refresh(); }, 50);
-      return;
-    }
-    cpInitialized = true;
-    cpInit();
+      if (data.type === 'console') {
+        appendConsole(data.level || 'output', String(data.text || ''));
+      }
+      if (data.type === 'error') {
+        ide.lastRunHadError = true;
+        updateStateBadge();
+        appendConsole('error', String(data.message || 'Runtime error'));
+        setPreviewOverlay(true, String(data.message || 'Runtime error'));
+      }
+    });
   }
 
-  // Hook into the app's showPage system
-  // Use a polling approach to safely wrap showPage after all scripts load
+  /* ================================================================
+     INIT + LIFECYCLE
+     ================================================================ */
+  function bindDom() {
+    el.root = byId('cpRoot');
+    el.sidebarToggleBtn = byId('cpSidebarToggleBtn');
+    el.editorWrap = byId('cpEditorWrap');
+    el.editorPane = byId('cpEditorPane');
+    el.outputPane = byId('cpOutputPane');
+    el.main = byId('cpMain');
+    el.resizer = byId('cpResizer');
+
+    el.langBtn = byId('cpLangBtn');
+    el.langMenu = byId('cpLangMenu');
+    el.langLabel = byId('cpLangLabel');
+    el.langIcon = byId('cpLangIcon');
+
+    el.runBtn = byId('cpRunBtn');
+    el.stopBtn = byId('cpStopBtn');
+    el.saveBtn = byId('cpSaveBtn');
+    el.resetBtn = byId('cpResetBtn');
+    el.copyBtn = byId('cpCopyBtn');
+    el.shareBtn = byId('cpShareBtn');
+    el.settingsBtn = byId('cpSettingsBtn');
+    el.fullscreenBtn = byId('cpFullscreenBtn');
+    el.fsIcon = byId('cpFsIcon');
+    el.moreBtn = byId('cpMoreBtn');
+    el.moreMenu = byId('cpMoreMenu');
+
+    el.runBtnMobile = byId('cpRunBtnMobile');
+
+    el.outputTabs = byId('cpOutputTabs');
+    el.panelPreview = byId('cpPanelPreview');
+    el.panelConsole = byId('cpPanelConsole');
+    el.panelInput = byId('cpPanelInput');
+    el.panelTests = byId('cpPanelTests');
+    el.clearConsoleBtn = byId('cpClearConsoleBtn');
+
+    el.previewFrame = byId('cpPreviewFrame');
+    el.previewViewport = byId('cpPreviewViewport');
+    el.previewOverlay = byId('cpPreviewOverlay');
+    el.previewOverlayBody = byId('cpPreviewOverlayBody');
+    el.previewOpenConsoleBtn = byId('cpPreviewOpenConsoleBtn');
+    el.mdPreview = byId('cpMarkdownPreview');
+    el.previewRefreshBtn = byId('cpPreviewRefreshBtn');
+    el.previewOpenBtn = byId('cpPreviewOpenBtn');
+    el.zoomSelect = byId('cpZoomSelect');
+
+    el.console = byId('cpConsole');
+    el.runStatePill = byId('cpRunStatePill');
+    el.exitCode = byId('cpExitCode');
+    el.runTime = byId('cpRunTime');
+    el.engineLabel = byId('cpEngineLabel');
+
+    el.stdin = byId('cpStdin');
+
+    el.testsList = byId('cpTestsList');
+    el.testsSummary = byId('cpTestsSummary');
+    el.runTestsBtn = byId('cpRunTestsBtn');
+    el.addTestBtn = byId('cpAddTestBtn');
+
+    el.fileTabs = byId('cpFileTabs');
+    el.fileList = byId('cpFileList');
+
+    el.projectName = byId('cpProjectName');
+    el.stateBadge = byId('cpStateBadge');
+
+    el.statusDot = byId('cpStatusDot');
+    el.statusText = byId('cpStatusText');
+    el.statusTime = byId('cpStatusTime');
+    el.statusWorkspace = byId('cpStatusWorkspace');
+    el.statusFile = byId('cpStatusFile');
+    el.cursorPos = byId('cpCursorPos');
+    el.charCount = byId('cpCharCount');
+
+    el.spinner = byId('cpSpinner');
+    el.spinnerText = byId('cpSpinnerText');
+    el.toast = byId('cpToast');
+
+    el.mobileTabs = byId('cpMobileTabs');
+
+    el.settings = byId('cpSettings');
+    el.backdrop = byId('cpBackdrop');
+    el.settingsCloseBtn = byId('cpSettingsCloseBtn');
+    el.setFontSize = byId('cpSetFontSize');
+    el.setFontSizeVal = byId('cpSetFontSizeVal');
+    el.setWordWrap = byId('cpSetWordWrap');
+    el.setAutoRun = byId('cpSetAutoRun');
+    el.setTabSize = byId('cpSetTabSize');
+    el.setTheme = byId('cpSetTheme');
+    el.setTabletLayout = byId('cpSetTabletLayout');
+  }
+
+  function bindEvents() {
+    // Global shortcuts
+    document.addEventListener('keydown', function (e) {
+      if (!isPageActive()) return;
+      if (e.ctrlKey && (e.key === 'Enter' || e.keyCode === 13)) {
+        e.preventDefault();
+        runCode(false);
+      }
+      if (e.ctrlKey && (e.key === 's' || e.key === 'S' || e.keyCode === 83)) {
+        e.preventDefault();
+        saveExplicit();
+      }
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        closeAllMenus();
+        closeSettings();
+      }
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!isPageActive()) return;
+      var t = e.target;
+      // Close menus on outside click
+      if (el.langMenu && !el.langMenu.hasAttribute('hidden')) {
+        if (!isClickInside(el.langMenu, t) && !isClickInside(el.langBtn, t)) {
+          toggleMenu(el.langBtn, el.langMenu, false);
+        }
+      }
+      if (el.moreMenu && !el.moreMenu.hasAttribute('hidden')) {
+        if (!isClickInside(el.moreMenu, t) && !isClickInside(el.moreBtn, t)) {
+          toggleMenu(el.moreBtn, el.moreMenu, false);
+        }
+      }
+    });
+
+    if (el.langBtn) el.langBtn.addEventListener('click', function () {
+      toggleMenu(el.langBtn, el.langMenu);
+      toggleMenu(el.moreBtn, el.moreMenu, false);
+    });
+
+    if (el.langMenu) {
+      el.langMenu.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.cp-menu-item') : null;
+        if (!btn) return;
+        var ws = btn.getAttribute('data-workspace');
+        toggleMenu(el.langBtn, el.langMenu, false);
+        switchWorkspace(ws);
+        renderTests();
+      });
+    }
+
+    if (el.moreBtn) el.moreBtn.addEventListener('click', function () {
+      toggleMenu(el.moreBtn, el.moreMenu);
+      toggleMenu(el.langBtn, el.langMenu, false);
+    });
+
+    if (el.moreMenu) {
+      el.moreMenu.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.cp-menu-item') : null;
+        if (!btn) return;
+        var act = btn.getAttribute('data-action');
+        toggleMenu(el.moreBtn, el.moreMenu, false);
+        if (act === 'stop') stopRun();
+        if (act === 'save') saveExplicit();
+        if (act === 'reset') resetWorkspace();
+        if (act === 'copy') copyCurrentFile();
+        if (act === 'download') downloadWorkspaceSources();
+        if (act === 'settings') openSettings();
+        if (act === 'fullscreen') toggleFullscreen();
+        if (act === 'tests') { switchOutputTab('tests'); setMobileView('console'); }
+      });
+    }
+
+    if (el.runBtn) el.runBtn.addEventListener('click', function () { runCode(false); });
+    if (el.sidebarToggleBtn) el.sidebarToggleBtn.addEventListener('click', toggleSidebar);
+    if (el.runBtnMobile) el.runBtnMobile.addEventListener('click', function () { runCode(false); });
+    if (el.stopBtn) el.stopBtn.addEventListener('click', stopRun);
+    if (el.saveBtn) el.saveBtn.addEventListener('click', saveExplicit);
+    if (el.resetBtn) el.resetBtn.addEventListener('click', resetWorkspace);
+    if (el.copyBtn) el.copyBtn.addEventListener('click', copyCurrentFile);
+    if (el.shareBtn) el.shareBtn.addEventListener('click', downloadWorkspaceSources);
+    if (el.settingsBtn) {
+      el.settingsBtn.addEventListener('click', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (!canToggleSettings()) return;
+        toggleSettings();
+      });
+    }
+    if (el.fullscreenBtn) el.fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+    if (el.clearConsoleBtn) el.clearConsoleBtn.addEventListener('click', function () {
+      clearConsole();
+      toast('Cleared');
+    });
+
+    if (el.outputTabs) {
+      el.outputTabs.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.cp-output-tab') : null;
+        if (!btn) return;
+        var tab = btn.getAttribute('data-tab');
+        switchOutputTab(tab);
+      });
+    }
+
+    if (el.previewRefreshBtn) el.previewRefreshBtn.addEventListener('click', function () { runCode(false); });
+    if (el.previewOpenBtn) el.previewOpenBtn.addEventListener('click', openPreviewInNewTab);
+    if (el.previewOpenConsoleBtn) el.previewOpenConsoleBtn.addEventListener('click', function () {
+      switchOutputTab('console');
+      var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) setMobileView('console');
+    });
+    if (el.zoomSelect) el.zoomSelect.addEventListener('change', function () { applyZoom(); });
+
+    if (el.stdin) {
+      el.stdin.addEventListener('input', function () {
+        ide.dirty = true;
+        updateStateBadge();
+        scheduleDraftSave();
+      });
+    }
+
+    if (el.projectName) {
+      el.projectName.addEventListener('input', function () {
+        ide.state.projectName = el.projectName.value || 'Project';
+        ide.dirty = true;
+        updateStateBadge();
+        scheduleDraftSave();
+      });
+    }
+
+    if (el.runTestsBtn) el.runTestsBtn.addEventListener('click', runTests);
+    if (el.addTestBtn) el.addTestBtn.addEventListener('click', addTestCase);
+
+    if (el.mobileTabs) {
+      el.mobileTabs.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.cp-mobile-tab') : null;
+        if (!btn) return;
+        var view = btn.getAttribute('data-view');
+        setMobileView(view);
+      });
+    }
+
+    if (el.settingsCloseBtn) {
+      el.settingsCloseBtn.addEventListener('pointerdown', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        closeSettings();
+      });
+      el.settingsCloseBtn.addEventListener('click', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        closeSettings();
+      });
+    }
+    if (el.backdrop) {
+      el.backdrop.addEventListener('pointerdown', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        closeSettings();
+      });
+      el.backdrop.addEventListener('click', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        closeSettings();
+      });
+    }
+
+    if (el.setFontSize) el.setFontSize.addEventListener('input', function () {
+      ide.state.settings.fontSize = Number(el.setFontSize.value) || 14;
+      if (el.setFontSizeVal) el.setFontSizeVal.textContent = ide.state.settings.fontSize + 'px';
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+      applySettingsToEditor();
+    });
+    if (el.setWordWrap) el.setWordWrap.addEventListener('change', function () {
+      ide.state.settings.wordWrap = !!el.setWordWrap.checked;
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+      applySettingsToEditor();
+    });
+    if (el.setAutoRun) el.setAutoRun.addEventListener('change', function () {
+      ide.state.settings.autoRun = !!el.setAutoRun.checked;
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+    });
+    if (el.setTabSize) el.setTabSize.addEventListener('change', function () {
+      ide.state.settings.tabSize = Number(el.setTabSize.value) || 2;
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+      applySettingsToEditor();
+    });
+    if (el.setTheme) el.setTheme.addEventListener('change', function () {
+      ide.state.settings.theme = el.setTheme.value || 'auto';
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+      applySettingsToEditor();
+    });
+    if (el.setTabletLayout) el.setTabletLayout.addEventListener('change', function () {
+      ide.state.settings.tabletLayout = el.setTabletLayout.value || 'auto';
+      ide.dirty = true;
+      updateStateBadge();
+      scheduleDraftSave();
+      applyTabletLayoutSetting();
+      setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 60);
+    });
+
+    window.addEventListener('resize', function () {
+      applyTabletLayoutSetting();
+      applyZoom();
+      if (cmEditor) cmEditor.refresh();
+    });
+  }
+
+  function initUiFromState() {
+    if (el.projectName) el.projectName.value = ide.state.projectName || 'Project';
+    updateLangUi();
+    setEngineLabels();
+    applyPreviewVisibilityForWorkspace();
+    applyTabletLayoutSetting();
+    applyZoom();
+    clearConsole();
+
+    var ws = getActiveWorkspaceState();
+    if (el.stdin) el.stdin.value = ws.stdin || '';
+    renderFiles();
+    renderTests();
+    switchOutputTab(defaultOutputTabForWorkspace(ide.state.activeWorkspace));
+    updateCharCount();
+    updateStateBadge();
+  }
+
+  function boot() {
+    bindDom();
+    if (!el.root) return;
+
+    ide.state = loadState();
+    ide.dirty = false;
+    ide.completed = false;
+    ide.lastRunHadError = false;
+
+    bindEvents();
+    setupResizer();
+    setupPreviewBridge();
+
+    initUiFromState();
+    setStatus('running', 'Đang tải editor...');
+
+    loadCM5().then(function () {
+      cmLoaded = true;
+      createEditorOnce();
+
+      var ws = getActiveWorkspaceState();
+      applyEditorModeForFile(ws.activeFile);
+      setCurrentCode(ws.files[ws.activeFile] || '');
+      applySettingsToEditor();
+      setStatus('success', 'Sẵn sàng');
+      updateStateBadge();
+      if (ide.state.settings.autoRun) scheduleAutoRunMaybe();
+    }).catch(function (err) {
+      cmLoaded = false;
+      setStatus('error', 'Không tải được editor');
+      appendConsole('error', 'CodeMirror load error: ' + (err.message || String(err)));
+      // Fallback textarea already present
+      var ws2 = getActiveWorkspaceState();
+      setCurrentCode(ws2.files[ws2.activeFile] || '');
+      updateStateBadge();
+    });
+  }
+
+  var initialized = false;
+
+  function onPageShow() {
+    if (initialized) {
+      applyTabletLayoutSetting();
+      if (cmEditor) setTimeout(function () { cmEditor.refresh(); }, 60);
+      return;
+    }
+    initialized = true;
+    boot();
+  }
+
   function hookShowPage() {
     var prev = window.showPage;
     window.showPage = function (pageId) {
       var args = Array.prototype.slice.call(arguments);
       if (typeof prev === 'function') prev.apply(window, args);
-      if (pageId === 'page-code-playground') {
-        setTimeout(onPageShow, 50);
-      }
+      if (pageId === 'page-code-playground') setTimeout(onPageShow, 50);
     };
   }
 
-  // Run when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       hookShowPage();
-      // Check if page is immediately visible
-      var pg = document.getElementById('page-code-playground');
+      var pg = byId('page-code-playground');
       if (pg && pg.style.display !== 'none') onPageShow();
     });
   } else {
     hookShowPage();
-    var pg = document.getElementById('page-code-playground');
-    if (pg && pg.style.display !== 'none') onPageShow();
+    var pg2 = byId('page-code-playground');
+    if (pg2 && pg2.style.display !== 'none') onPageShow();
   }
 
-  // Expose globally for debugging
-  window.CodePlayground = { init: cpInit, run: function () { runCode(false); } };
-
+  // Public API (minimal)
+  window.CodePlayground = {
+    init: onPageShow,
+    run: function () { runCode(false); },
+    export: function () { return deepClone(ide.state); }
+  };
 })();
 </script>

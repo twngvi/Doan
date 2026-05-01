@@ -1,165 +1,293 @@
-<!-- Code Playground Content -->
-<!-- Dependencies: CodeMirror 5 (loaded in scripts), marked.js, sql.js -->
+<!-- Code Playground Content (Mini Online IDE) -->
+<!-- Dependencies kept: CodeMirror 5 (lazy loaded in scripts), iframe preview, Wandbox API, sql.js, marked.js -->
 
-<div class="cp-root" id="cpRoot">
+<div class="cp-root" id="cpRoot" data-mobile-view="code">
 
   <!-- ============================================================
-       TOOLBAR
+       TOPBAR / TOOLBAR
        ============================================================ -->
-  <div class="cp-toolbar" id="cpToolbar" role="toolbar" aria-label="Code Playground toolbar">
-
-    <!-- Brand -->
-    <div class="cp-toolbar-brand">
+  <div class="cp-topbar" id="cpTopbar" role="toolbar" aria-label="Code Playground toolbar">
+    <div class="cp-brand" aria-label="Code Playground">
       <span class="material-symbols-sharp cp-brand-icon">code</span>
-      <span class="cp-brand-label">Code Playground</span>
+      <span class="cp-brand-text">Code Playground</span>
     </div>
 
-    <div class="cp-toolbar-divider"></div>
-
-    <!-- Language Selector -->
-    <div class="cp-lang-wrapper">
-      <select id="cpLangSelect" class="cp-lang-select" title="Chọn ngôn ngữ lập trình" aria-label="Chọn ngôn ngữ">
-        <optgroup label="Web">
-          <option value="html">HTML</option>
-          <option value="css">CSS</option>
-          <option value="javascript">JavaScript</option>
-        </optgroup>
-        <optgroup label="Backend (via API)">
-          <option value="python">Python</option>
-          <option value="c">C</option>
-          <option value="cpp">C++</option>
-          <option value="java">Java</option>
-        </optgroup>
-        <optgroup label="Data &amp; Markup">
-          <option value="sql">SQL</option>
-          <option value="json">JSON</option>
-          <option value="markdown">Markdown</option>
-        </optgroup>
-      </select>
-      <span class="cp-lang-badge badge-realtime" id="cpEngineBadge">preview</span>
+    <div class="cp-project">
+      <input id="cpProjectName" class="cp-project-input" type="text" value="Project" aria-label="Tên project" />
+      <span class="cp-state-badge" id="cpStateBadge" aria-label="Trạng thái">Saved</span>
     </div>
 
-    <div class="cp-toolbar-divider"></div>
+    <div class="cp-topbar-spacer"></div>
 
-    <!-- Run Button -->
-    <button class="cp-btn cp-btn-run" id="cpRunBtn" title="Chạy code (Ctrl+Enter)" aria-label="Chạy code">
-      <span class="material-symbols-sharp">play_arrow</span>
-      <span class="btn-label">Run</span>
-    </button>
+    <!-- Custom Language Picker -->
+    <div class="cp-lang" id="cpLangPicker">
+      <button class="cp-lang-btn" id="cpLangBtn" type="button" aria-haspopup="menu" aria-expanded="false">
+        <span class="material-symbols-sharp cp-lang-icon" id="cpLangIcon">widgets</span>
+        <span class="cp-lang-label" id="cpLangLabel">Web Project</span>
+        <span class="material-symbols-sharp cp-lang-caret">expand_more</span>
+      </button>
+      <div class="cp-menu" id="cpLangMenu" role="menu" hidden>
+        <button class="cp-menu-item" role="menuitem" data-workspace="web">
+          <span class="material-symbols-sharp">language</span>
+          Web Project
+        </button>
+        <div class="cp-menu-sep" role="separator"></div>
+        <button class="cp-menu-item" role="menuitem" data-workspace="python">
+          <span class="material-symbols-sharp">terminal</span>
+          Python
+        </button>
+        <button class="cp-menu-item" role="menuitem" data-workspace="c">
+          <span class="material-symbols-sharp">memory</span>
+          C
+        </button>
+        <button class="cp-menu-item" role="menuitem" data-workspace="cpp">
+          <span class="material-symbols-sharp">memory</span>
+          C++
+        </button>
+        <button class="cp-menu-item" role="menuitem" data-workspace="java">
+          <span class="material-symbols-sharp">coffee</span>
+          Java
+        </button>
+        <div class="cp-menu-sep" role="separator"></div>
+        <button class="cp-menu-item" role="menuitem" data-workspace="sql">
+          <span class="material-symbols-sharp">database</span>
+          SQL
+        </button>
+        <button class="cp-menu-item" role="menuitem" data-workspace="markdown">
+          <span class="material-symbols-sharp">article</span>
+          Markdown
+        </button>
+        <button class="cp-menu-item" role="menuitem" data-workspace="json">
+          <span class="material-symbols-sharp">data_object</span>
+          JSON
+        </button>
+      </div>
+    </div>
 
-    <!-- Reset Button -->
-    <button class="cp-btn cp-btn-secondary" id="cpResetBtn" title="Đặt lại về code mẫu" aria-label="Đặt lại code">
-      <span class="material-symbols-sharp">restart_alt</span>
-      <span class="btn-label">Reset</span>
-    </button>
+    <!-- Desktop actions -->
+    <div class="cp-actions cp-actions-desktop" id="cpActionsDesktop">
+      <button class="cp-btn cp-btn-run" id="cpRunBtn" type="button" title="Run (Ctrl+Enter)">
+        <span class="material-symbols-sharp">play_arrow</span>
+        <span class="btn-label">Run</span>
+      </button>
+      <button class="cp-btn cp-btn-stop" id="cpStopBtn" type="button" title="Stop" disabled>
+        <span class="material-symbols-sharp">stop</span>
+        <span class="btn-label">Stop</span>
+      </button>
+      <button class="cp-btn cp-btn-secondary" id="cpSaveBtn" type="button" title="Save (Ctrl+S)">
+        <span class="material-symbols-sharp">save</span>
+        <span class="btn-label">Save</span>
+      </button>
+      <button class="cp-btn cp-btn-secondary" id="cpResetBtn" type="button" title="Reset">
+        <span class="material-symbols-sharp">restart_alt</span>
+        <span class="btn-label">Reset</span>
+      </button>
+      <button class="cp-btn cp-btn-secondary" id="cpCopyBtn" type="button" title="Copy">
+        <span class="material-symbols-sharp">content_copy</span>
+        <span class="btn-label">Copy</span>
+      </button>
+      <button class="cp-btn cp-btn-secondary" id="cpShareBtn" type="button" title="Share / Download">
+        <span class="material-symbols-sharp">ios_share</span>
+        <span class="btn-label">Share</span>
+      </button>
+      <button class="cp-btn cp-btn-icon" id="cpSettingsBtn" type="button" title="Settings">
+        <span class="material-symbols-sharp">settings</span>
+      </button>
+      <button class="cp-btn cp-btn-icon" id="cpFullscreenBtn" type="button" title="Fullscreen">
+        <span class="material-symbols-sharp" id="cpFsIcon">fullscreen</span>
+      </button>
+    </div>
 
-    <!-- Copy Button -->
-    <button class="cp-btn cp-btn-secondary" id="cpCopyBtn" title="Sao chép code" aria-label="Sao chép code">
-      <span class="material-symbols-sharp">content_copy</span>
-      <span class="btn-label">Copy</span>
-    </button>
-
-    <div class="cp-toolbar-spacer"></div>
-
-    <!-- Fullscreen Toggle -->
-    <button class="cp-btn cp-btn-icon" id="cpFullscreenBtn" title="Toàn màn hình" aria-label="Toàn màn hình">
-      <span class="material-symbols-sharp" id="cpFsIcon">fullscreen</span>
-    </button>
+    <!-- Mobile actions (Language + Run + More) -->
+    <div class="cp-actions cp-actions-mobile" id="cpActionsMobile" aria-label="Mobile actions">
+      <button class="cp-btn cp-btn-run" id="cpRunBtnMobile" type="button" title="Run">
+        <span class="material-symbols-sharp">play_arrow</span>
+        <span class="btn-label">Run</span>
+      </button>
+      <button class="cp-btn cp-btn-icon" id="cpMoreBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="More">
+        <span class="material-symbols-sharp">more_vert</span>
+      </button>
+      <div class="cp-menu" id="cpMoreMenu" role="menu" hidden>
+        <button class="cp-menu-item" role="menuitem" data-action="stop"><span class="material-symbols-sharp">stop</span>Stop</button>
+        <button class="cp-menu-item" role="menuitem" data-action="save"><span class="material-symbols-sharp">save</span>Save</button>
+        <button class="cp-menu-item" role="menuitem" data-action="reset"><span class="material-symbols-sharp">restart_alt</span>Reset</button>
+        <button class="cp-menu-item" role="menuitem" data-action="copy"><span class="material-symbols-sharp">content_copy</span>Copy</button>
+        <button class="cp-menu-item" role="menuitem" data-action="download"><span class="material-symbols-sharp">download</span>Download</button>
+        <div class="cp-menu-sep" role="separator"></div>
+        <button class="cp-menu-item" role="menuitem" data-action="tests"><span class="material-symbols-sharp">fact_check</span>Test Cases</button>
+        <button class="cp-menu-item" role="menuitem" data-action="settings"><span class="material-symbols-sharp">settings</span>Settings</button>
+        <button class="cp-menu-item" role="menuitem" data-action="fullscreen"><span class="material-symbols-sharp">fullscreen</span>Fullscreen</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============================================================
-       SPLIT PANE
+       MAIN WORKSPACE (Desktop/Tablet: Sidebar + Editor + Output)
        ============================================================ -->
-  <div class="cp-split" id="cpSplit">
+  <div class="cp-workspace" id="cpWorkspace">
 
-    <!-- ======== EDITOR PANEL (Left) ======== -->
-    <div class="cp-editor-panel" id="cpEditorPanel">
-
-      <div class="cp-panel-header">
-        <span class="cp-panel-dot dot-red"></span>
-        <span class="cp-panel-dot dot-amber"></span>
-        <span class="cp-panel-dot dot-green"></span>
-        <span class="cp-panel-title" id="cpEditorTitle">editor.html</span>
-        <span class="cp-panel-info" id="cpEditorInfo">Ctrl+Enter để chạy</span>
+    <!-- Sidebar (Explorer) -->
+    <aside class="cp-sidebar" id="cpSidebar" aria-label="Sidebar">
+      <div class="cp-sidebar-header">
+        <span class="cp-sidebar-title">Explorer</span>
       </div>
-
-      <!-- CodeMirror 5 editor mounts here via textarea -->
-      <div class="cp-editor-wrap" id="cpEditorWrap">
-        <textarea id="cpCodeTextarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      <div class="cp-sidebar-body">
+        <div class="cp-sidebar-section">
+          <div class="cp-sidebar-section-title">Files</div>
+          <div class="cp-filelist" id="cpFileList" role="list"></div>
+        </div>
       </div>
-    </div>
+    </aside>
 
-    <!-- Resizer handle -->
-    <div class="cp-resizer" id="cpResizer" role="separator" aria-orientation="vertical" title="Kéo để thay đổi kích thước"></div>
+    <!-- Center + Right panes -->
+    <div class="cp-main" id="cpMain">
 
-    <!-- ======== OUTPUT PANEL (Right) ======== -->
-    <div class="cp-output-panel" id="cpOutputPanel">
+      <!-- Editor pane -->
+      <section class="cp-editor-pane" id="cpEditorPane" aria-label="Editor">
+        <div class="cp-filetabs" id="cpFileTabs" role="tablist" aria-label="File tabs"></div>
+        <div class="cp-editor-wrap" id="cpEditorWrap">
+          <textarea id="cpCodeTextarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+      </section>
 
-      <!-- Output tabs -->
-      <div class="cp-output-tabs" role="tablist">
-        <button class="cp-output-tab active" id="cpTabPreview" role="tab" aria-selected="true" data-tab="preview">
-          <span class="material-symbols-sharp">preview</span>
-          Preview
-        </button>
-        <button class="cp-output-tab" id="cpTabConsole" role="tab" aria-selected="false" data-tab="console">
-          <span class="material-symbols-sharp">terminal</span>
-          Terminal (Input/Output)
-        </button>
-        <span class="cp-output-tab-spacer"></span>
-        <button class="cp-btn cp-btn-icon" id="cpClearBtn" title="Xóa output" aria-label="Xóa output" style="font-size:0.75rem;">
-          <span class="material-symbols-sharp" style="font-size:0.95rem">delete_sweep</span>
-        </button>
-      </div>
+      <!-- Resizer handle (hidden on mobile) -->
+      <div class="cp-resizer" id="cpResizer" role="separator" aria-orientation="vertical" title="Kéo để thay đổi kích thước"></div>
 
-      <!-- Output body -->
-      <div class="cp-output-body" id="cpOutputBody">
-
-        <!-- Tab 1: Preview (HTML/JS/Markdown) -->
-        <div class="cp-preview-container" id="cpPreviewContainer">
-          <iframe
-            id="cpPreviewFrame"
-            class="cp-preview-iframe"
-            sandbox="allow-scripts allow-modals"
-            title="Code preview"
-          ></iframe>
-          <div class="cp-markdown-preview" id="cpMarkdownPreview"></div>
+      <!-- Output pane -->
+      <section class="cp-output-pane" id="cpOutputPane" aria-label="Output">
+        <div class="cp-output-tabs" id="cpOutputTabs" role="tablist" aria-label="Output tabs">
+          <button class="cp-output-tab active" type="button" data-tab="preview" aria-selected="true">
+            <span class="material-symbols-sharp">preview</span>
+            Preview
+          </button>
+          <button class="cp-output-tab" type="button" data-tab="console" aria-selected="false">
+            <span class="material-symbols-sharp">terminal</span>
+            Console
+          </button>
+          <button class="cp-output-tab" type="button" data-tab="input" aria-selected="false">
+            <span class="material-symbols-sharp">keyboard</span>
+            Input
+          </button>
+          <button class="cp-output-tab" type="button" data-tab="tests" aria-selected="false">
+            <span class="material-symbols-sharp">fact_check</span>
+            Test Cases
+          </button>
+          <span class="cp-tabs-spacer"></span>
+          <button class="cp-btn cp-btn-icon" id="cpClearConsoleBtn" type="button" title="Clear console">
+            <span class="material-symbols-sharp">delete_sweep</span>
+          </button>
         </div>
 
-        <!-- Tab 2: Terminal (Input & Output combined) -->
-        <div class="cp-terminal-wrapper" id="cpTerminalWrapper">
-
-          <!-- Section 1: Standard Input -->
-          <div class="cp-terminal-section cp-terminal-stdin">
-            <div class="cp-terminal-header">
-              <span class="material-symbols-sharp">keyboard</span>
-              Standard Input (Dữ liệu vào)
+        <div class="cp-output-body" id="cpOutputBody">
+          <!-- Preview panel -->
+          <div class="cp-tabpanel" id="cpPanelPreview" data-panel="preview">
+            <div class="cp-preview-header" aria-label="Preview controls">
+              <button class="cp-btn cp-btn-icon" id="cpPreviewRefreshBtn" type="button" title="Refresh preview">
+                <span class="material-symbols-sharp">refresh</span>
+              </button>
+              <button class="cp-btn cp-btn-icon" id="cpPreviewOpenBtn" type="button" title="Open preview">
+                <span class="material-symbols-sharp">open_in_new</span>
+              </button>
+              <span class="cp-preview-spacer"></span>
+              <label class="cp-inline-select">
+                <span class="cp-inline-label">Zoom</span>
+                <select id="cpZoomSelect" aria-label="Zoom">
+                  <option value="fit">Fit</option>
+                  <option value="50">50%</option>
+                  <option value="75">75%</option>
+                  <option value="100" selected>100%</option>
+                </select>
+              </label>
             </div>
-            <textarea id="cpStdin" placeholder="Nhập dữ liệu vào tại đây... (Ví dụ: 10 20)" spellcheck="false"></textarea>
+
+            <div class="cp-preview-stage" id="cpPreviewStage">
+              <div class="cp-preview-viewport" id="cpPreviewViewport">
+                <iframe
+                  id="cpPreviewFrame"
+                  class="cp-preview-iframe"
+                  sandbox="allow-scripts allow-modals"
+                  title="Code preview"
+                ></iframe>
+              </div>
+              <div class="cp-preview-overlay" id="cpPreviewOverlay" hidden>
+                <div class="cp-preview-overlay-title">Preview error</div>
+                <div class="cp-preview-overlay-body" id="cpPreviewOverlayBody">—</div>
+                <button class="cp-btn cp-btn-secondary" id="cpPreviewOpenConsoleBtn" type="button">
+                  <span class="material-symbols-sharp">terminal</span>
+                  Open Console
+                </button>
+              </div>
+              <div class="cp-markdown-preview" id="cpMarkdownPreview"></div>
+            </div>
           </div>
 
-          <!-- Section 2: Standard Output -->
-          <div class="cp-terminal-section cp-terminal-stdout">
-            <div class="cp-terminal-header">
-              <span class="material-symbols-sharp">output</span>
-              Standard Output (Kết quả)
+          <!-- Console panel -->
+          <div class="cp-tabpanel" id="cpPanelConsole" data-panel="console" hidden>
+            <div class="cp-console-meta" id="cpConsoleMeta" aria-label="Run metadata">
+              <span class="cp-meta-pill" id="cpRunStatePill">Ready</span>
+              <span class="cp-meta">Exit: <span id="cpExitCode">—</span></span>
+              <span class="cp-meta">Time: <span id="cpRunTime">—</span></span>
+              <span class="cp-meta">Engine: <span id="cpEngineLabel">—</span></span>
             </div>
-            <div class="cp-console" id="cpConsole" role="log" aria-live="polite">
-              <div class="cp-output-empty">
-                <span class="material-symbols-sharp">terminal</span>
-                <p>Nhấn <strong>Run</strong> để xem kết quả</p>
+            <div class="cp-console" id="cpConsole" role="log" aria-live="polite"></div>
+          </div>
+
+          <!-- Input panel -->
+          <div class="cp-tabpanel" id="cpPanelInput" data-panel="input" hidden>
+            <div class="cp-input-header">
+              <div class="cp-input-title">Standard Input</div>
+              <div class="cp-input-hint">Lưu theo từng ngôn ngữ</div>
+            </div>
+            <textarea id="cpStdin" placeholder="Nhập input..." spellcheck="false"></textarea>
+          </div>
+
+          <!-- Test cases panel -->
+          <div class="cp-tabpanel" id="cpPanelTests" data-panel="tests" hidden>
+            <div class="cp-tests-header">
+              <div class="cp-tests-title">Test Cases</div>
+              <div class="cp-tests-actions">
+                <button class="cp-btn cp-btn-secondary" id="cpAddTestBtn" type="button" title="Add test case">
+                  <span class="material-symbols-sharp">add</span>
+                  <span class="btn-label">Add Test</span>
+                </button>
+                <button class="cp-btn cp-btn-run" id="cpRunTestsBtn" type="button" title="Run all tests">
+                  <span class="material-symbols-sharp">fact_check</span>
+                  <span class="btn-label">Run Tests</span>
+                </button>
               </div>
             </div>
+            <div class="cp-tests-list" id="cpTestsList"></div>
+            <div class="cp-tests-summary" id="cpTestsSummary"></div>
           </div>
 
+          <!-- Spinner overlay -->
+          <div class="cp-spinner-overlay" id="cpSpinner">
+            <div class="cp-spinner"></div>
+            <span class="cp-spinner-text" id="cpSpinnerText">Đang chạy...</span>
+          </div>
         </div>
-
-        <!-- Spinner overlay -->
-        <div class="cp-spinner-overlay" id="cpSpinner">
-          <div class="cp-spinner"></div>
-          <span class="cp-spinner-text" id="cpSpinnerText">Đang chạy code...</span>
-        </div>
-      </div>
+      </section>
     </div>
+  </div>
+
+  <!-- Mobile full-screen tabs (Code / Preview / Console / Input) -->
+  <div class="cp-mobile-tabs" id="cpMobileTabs" role="tablist" aria-label="Mobile tabs">
+    <button class="cp-mobile-tab active" type="button" data-view="code" aria-selected="true">
+      <span class="material-symbols-sharp">code</span>
+      Code
+    </button>
+    <button class="cp-mobile-tab" type="button" data-view="preview" aria-selected="false">
+      <span class="material-symbols-sharp">preview</span>
+      Preview
+    </button>
+    <button class="cp-mobile-tab" type="button" data-view="console" aria-selected="false">
+      <span class="material-symbols-sharp">terminal</span>
+      Console
+    </button>
+    <button class="cp-mobile-tab" type="button" data-view="input" aria-selected="false">
+      <span class="material-symbols-sharp">keyboard</span>
+      Input
+    </button>
   </div>
 
   <!-- Status bar -->
@@ -172,14 +300,79 @@
       <span class="material-symbols-sharp">schedule</span>
       <span id="cpStatusTime">—</span>
     </div>
+    <div class="cp-status-item">
+      <span class="material-symbols-sharp">deployed_code</span>
+      <span id="cpStatusWorkspace">Web Project</span>
+    </div>
+    <div class="cp-status-item">
+      <span class="material-symbols-sharp">description</span>
+      <span id="cpStatusFile">index.html</span>
+    </div>
     <div class="cp-status-spacer"></div>
     <div class="cp-status-item" id="cpCursorPos">Ln 1, Col 1</div>
     <div class="cp-status-item" id="cpCharCount">0 chars</div>
   </div>
+
+  <!-- Settings panel (in-page, no external dependencies) -->
+  <div class="cp-settings" id="cpSettings" hidden>
+    <div class="cp-settings-header">
+      <div class="cp-settings-title">
+        <span class="material-symbols-sharp">tune</span>
+        Settings
+      </div>
+      <button class="cp-btn cp-btn-icon" id="cpSettingsCloseBtn" type="button" title="Close">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    </div>
+    <div class="cp-settings-body">
+      <div class="cp-setting-row">
+        <label class="cp-setting">
+          <span class="cp-setting-label">Font size</span>
+          <input id="cpSetFontSize" type="range" min="12" max="20" step="1" />
+        </label>
+        <span class="cp-setting-value" id="cpSetFontSizeVal">14px</span>
+      </div>
+      <label class="cp-setting cp-setting-inline">
+        <span class="cp-setting-label">Word wrap</span>
+        <input id="cpSetWordWrap" type="checkbox" />
+      </label>
+      <label class="cp-setting cp-setting-inline">
+        <span class="cp-setting-label">Auto-run</span>
+        <input id="cpSetAutoRun" type="checkbox" />
+      </label>
+      <div class="cp-setting-row">
+        <label class="cp-setting">
+          <span class="cp-setting-label">Tab size</span>
+          <select id="cpSetTabSize" aria-label="Tab size">
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+      </div>
+      <div class="cp-setting-row">
+        <label class="cp-setting">
+          <span class="cp-setting-label">Theme</span>
+          <select id="cpSetTheme" aria-label="Theme">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+      <div class="cp-setting-row">
+        <label class="cp-setting">
+          <span class="cp-setting-label">Tablet layout</span>
+          <select id="cpSetTabletLayout" aria-label="Tablet layout">
+            <option value="auto">Auto</option>
+            <option value="side">Side-by-side</option>
+            <option value="stack">Stacked 60/40</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </div>
+  <div class="cp-backdrop" id="cpBackdrop" hidden></div>
 </div>
 
-<!-- Copy success toast -->
-<div class="cp-copy-toast" id="cpCopyToast" role="alert">
-  <span class="material-symbols-sharp" style="font-size:1rem">check_circle</span>
-  Đã sao chép!
-</div>
+<!-- Toast -->
+<div class="cp-toast" id="cpToast" role="alert" aria-live="assertive"></div>
