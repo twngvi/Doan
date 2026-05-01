@@ -2159,8 +2159,9 @@
         <div class="mq-attempts-note">${buildMiniQuizAttemptSummary()}</div>
         <div class="mq-result-actions">
           <button class="mq-retry-btn" onclick="retryMiniQuizAttempt()" ${canRetry ? "" : "disabled"}>
-            ${canRetry ? "Chơi lại Mini Quiz" : "Đã hết lượt hôm nay"}
+            ${canRetry ? "Thử lại" : "Đã hết lượt hôm nay"}
           </button>
+          ${!canRetry ? '<p class="mq-no-retry-hint" style="margin-top: 10px; font-size: 0.75rem; color: #991b1b;">Vui lòng quay lại vào ngày mai để thử lại lần nữa!</p>' : ""}
         </div>
       </div>
     `;
@@ -2487,7 +2488,7 @@
 
         // Cho qua nếu user đã done bài này. Ngược lại xét lượt chơi
         if (!limitRes.canPlay && !tabCompletion.lessonQuiz) {
-           showMiniQuizError(`Bạn đã dùng hết ${limitRes.attempts}/${limitRes.maxAttempts} lượt thử trong hôm nay. Chủ đề môn học này sẽ tạm khoá bài kiểm tra. Vui lòng quay lại vào ngày mai!`);
+           showMiniQuizError(`Bạn đã dùng hết ${limitRes.attempts}/${limitRes.maxAttempts} lượt thử trong hôm nay. Chủ đề môn học này sẽ tạm khoá bài kiểm tra. Vui lòng quay lại vào ngày mai!`, false);
            if (loadingEl) loadingEl.style.display = "none";
            return;
         }
@@ -2762,11 +2763,17 @@
   /**
    * Show mini quiz error
    */
-  function showMiniQuizError(msg) {
+  function showMiniQuizError(msg, showRetry = true) {
     const errorEl = document.getElementById("mini-quiz-error");
     const errorMsg = document.getElementById("mini-quiz-error-msg");
+    const retryBtn = errorEl ? errorEl.querySelector(".btn-primary") : null;
+    
     if (errorEl) errorEl.style.display = "block";
     if (errorMsg) errorMsg.textContent = msg;
+    if (retryBtn) {
+      retryBtn.style.display = showRetry ? "inline-flex" : "none";
+      retryBtn.textContent = "Thử lại";
+    }
   }
 
   /**
