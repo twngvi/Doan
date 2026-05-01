@@ -57,7 +57,7 @@ const AI_CONFIG = {
 
   // Rate Limiting
   MAX_REQUESTS_PER_MINUTE: 60,
-  MAX_TOKENS_PER_REQUEST: 4096,
+  MAX_TOKENS_PER_REQUEST: 8192,
 };
 
 // Helper: Tính nextReviewDate dựa trên reviewStage

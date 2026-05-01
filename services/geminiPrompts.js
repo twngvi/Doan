@@ -231,13 +231,19 @@ Trả về CHÍNH XÁC format JSON sau:
       "questionType": "single_choice|scenario|definition|application",
       "question": "Nội dung câu hỏi?",
       "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
-      "correctAnswer": 1,
-      "explanation": "Giải thích tại sao đáp án số 1 (B) đúng và các đáp án khác sai",
-      "hint": "Gợi ý nhẹ nếu học sinh gặp khó khăn",
-      "relatedConcepts": ["CON001", "CON002"]
+      "correctAnswer": 0,
+      "explanation": "Giải thích tại sao đáp án số 0 (A) đúng và các đáp án khác sai",
+      "hint": "Gợi ý nhẹ",
+      "relatedConcepts": ["CON001"]
     }
   ]
 }
+
+YÊU CẦU CỰC KỲ QUAN TRỌNG:
+- Tạo CHÍNH XÁC {questionCount} câu hỏi (KHÔNG ĐƯỢC ÍT HƠN {questionCount} CÂU).
+- Mỗi câu hỏi phải là DUY NHẤT, không trùng lặp nội dung với câu khác trong bộ này.
+- KHÔNG tạo các biến thể quá giống nhau của cùng một câu hỏi.
+- Bao phủ TOÀN BỘ các ý chính trong tài liệu.
 
 LƯU Ý FORMAT:
 - "options" phải là mảng 4 chuỗi (không phải object)
@@ -246,7 +252,7 @@ LƯU Ý FORMAT:
 - Ví dụ: correctAnswer = 1 nghĩa là đáp án thứ hai đúng
 
 YÊU CẦU:
-- Tạo {questionCount} câu hỏi
+- Tạo CHÍNH XÁC {questionCount} câu hỏi (nên tạo dư 2-3 câu nếu được để đảm bảo độ đa dạng)
 - Phân bố Bloom's Taxonomy:
   + 30% remember (nhớ)
   + 30% understand (hiểu)
@@ -256,7 +262,8 @@ YÊU CẦU:
 - Đáp án sai phải hợp lý (không quá hiển nhiên)
 - explanation chi tiết, giáo dục
 - CHỈ dùng kiến thức trong tài liệu
-- KHÔNG hỏi những thông tin không có trong tài liệu`,
+- KHÔNG hỏi những thông tin không có trong tài liệu
+- Các câu hỏi PHẢI khác biệt hoàn toàn về nội dung, tránh trùng lặp ý tưởng.`,
 
   /**
    * Tạo variant cho câu hỏi (khi user trả lời sai)
@@ -348,9 +355,6 @@ YÊU CẦU:
 - Ngôn ngữ thân thiện, dễ tiếp cận`,
 
   /**
-   * Tạo Mini Quiz - 10 câu hỏi trọng điểm từ bài học
-   */
-  /**
    * Tạo Matching Pairs - Ghép cặp thuật ngữ/định nghĩa
    */
   MATCHING_GENERATION: `Bạn là chuyên gia giáo dục. Tạo các cặp ghép (matching pairs) từ tài liệu sau.
@@ -390,7 +394,7 @@ YÊU CẦU QUAN TRỌNG:
 - CHỈ dùng kiến thức trong tài liệu
 - KHÔNG tạo cặp mà question hoặc answer quá dài (khó đọc trên thẻ)`,
 
-  MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo CHÍNH XÁC 10 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học.
+  MINI_QUIZ_GENERATION: `Bạn là chuyên gia giáo dục. Tạo bộ 15 câu hỏi trắc nghiệm kiểm tra kiến thức trọng điểm từ bài học (để hệ thống chọn ra 10 câu tốt nhất).
 
 === TÀI LIỆU ===
 {docContent}
@@ -411,19 +415,18 @@ Trả về CHÍNH XÁC format JSON sau:
 }
 
 YÊU CẦU QUAN TRỌNG:
-- Tạo CHÍNH XÁC 10 câu hỏi (không nhiều hơn, không ít hơn)
-- 10 câu hỏi phải KHÁC NHAU, không lặp lại nội dung
-- Không được đổi số thứ tự hoặc thêm hậu tố để lặp lại cùng một câu hỏi
-- Không tạo câu kiểu "Ôn tập" hoặc biến thể gần như giống hệt câu trước
-- Mỗi câu nên kiểm tra một ý trọng tâm khác nhau trong tài liệu
-- Mỗi câu có 4 đáp án (options là mảng 4 chuỗi)
-- "correctAnswer" là index từ 0-3 (0 = đáp án đầu tiên đúng)
-- Câu hỏi phải tập trung vào KIẾN THỨC TRỌNG ĐIỂM, nội dung cốt lõi nhất
-- Câu hỏi đa dạng: khái niệm, ứng dụng, phân tích, so sánh
-- "explanation" phải GIẢI THÍCH RÕ RÀNG tại sao đáp án đúng/sai, giúp người học hiểu bài hơn
-- Đáp án nhiễu (sai) phải có tính logic, không nên quá rõ ràng là sai
-- CHỈ sử dụng kiến thức từ tài liệu, KHÔNG thêm kiến thức bên ngoài
-- Ngôn ngữ rõ ràng, dễ hiểu`,
+- Tạo CHÍNH XÁC 15 câu hỏi (không nhiều hơn, không ít hơn)
+- 15 câu hỏi phải KHÁC NHAU HOÀN TOÀN, không lặp lại nội dung hoặc cách hỏi.
+- Không được đổi số thứ tự hoặc thêm hậu tố để lặp lại cùng một câu hỏi.
+- Không tạo câu kiểu "Ôn tập" hoặc biến thể gần như giống hệt câu trước.
+- Mỗi câu nên kiểm tra một ý trọng tâm khác nhau trong tài liệu.
+- Mỗi câu có 4 đáp án (options là mảng 4 chuỗi).
+- "correctAnswer" là index từ 0-3 (0 = đáp án đầu tiên đúng).
+- Câu hỏi phải tập trung vào KIẾN THỨC TRỌNG ĐIỂM, nội dung cốt lõi nhất.
+- Câu hỏi đa dạng: khái niệm, ứng dụng, phân tích, so sánh.
+- "explanation" phải GIẢI THÍCH RÕ RÀNG tại sao đáp án đúng/sai.
+- CHỈ sử dụng kiến thức từ tài liệu, KHÔNG thêm kiến thức bên ngoài.
+- Ngôn ngữ rõ ràng, dễ hiểu.`,
 };
 
 // ========== CONTENT GENERATOR ==========
@@ -836,7 +839,7 @@ const TopicContentOrchestrator = {
           results.questions = ContentGenerator.generateQuestions(
             docContent,
             analysis,
-            { questionCount: 10 },
+            { questionCount: 20 },
             userContext,
             { topicId: topicId },
           );

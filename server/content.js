@@ -306,12 +306,16 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         Logger.log("📦 Cache result: " + (cached ? "FOUND" : "NOT FOUND"));
 
         if (cached && cached.content) {
-          if (
-            contentType === "mini_quiz" &&
-            !isMiniQuizContentSufficient(cached.content, 10)
-          ) {
+          var isInsufficient = false;
+          var requiredNum = (contentType === "questions") ? 20 : (contentType === "mini_quiz" ? 10 : 0);
+          
+          if (requiredNum > 0 && !isMiniQuizContentSufficient(cached.content, requiredNum)) {
+            isInsufficient = true;
+          }
+
+          if (isInsufficient) {
             Logger.log(
-              "⚠️ mini_quiz cache has duplicated/insufficient questions, regenerating...",
+              "⚠️ " + contentType + " cache has insufficient questions (needs " + requiredNum + "), regenerating...",
             );
           } else {
           Logger.log("✅ Returning from cache");
@@ -468,7 +472,7 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         generatedContent = ContentGenerator.generateQuestions(
           docResult.content,
           analysis,
-          { questionCount: 10 },
+          { questionCount: 20 },
           resolvedUser,
           { topicId: topicId },
         );
