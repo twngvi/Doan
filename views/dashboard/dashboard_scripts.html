@@ -1328,24 +1328,41 @@
     else greeting = "Chúc ngủ ngon";
 
     var greetingEl = document.getElementById("greeting-text");
-    var userNameEl = document.getElementById("userNameWelcome");
+    if (!greetingEl) return;
 
-    if (greetingEl && userNameEl) {
-      var userName = userNameEl.textContent || "User";
-      if (typeof window.buildBouncyTextHtml === "function") {
-        greetingEl.innerHTML =
-          '<span class="greeting-prefix">' +
-          window.buildBouncyTextHtml(greeting + ",", {
-            preserveSpaces: false,
-          }) +
-          '</span> <span id="userNameWelcome" class="greeting-name">' +
-          window.buildBouncyTextHtml(userName, { preserveSpaces: false }) +
-          "</span>";
-      } else {
-        greetingEl.textContent = greeting + ", " + userName;
-      }
-      greetingEl.dataset.bounceReady = "true";
+    // Resolve name from all potential sources
+    var user = normalizeDashboardUser(window.currentUser || getUserData());
+    var userName = "User";
+
+    if (user) {
+      userName = user.displayName || user.fullName || user.name || user.username || "User";
     }
+
+    // Fallback: check sidebar or profile elements if they exist in DOM
+    if (userName === "User") {
+      var fallbackSelectors = ["#sidebar-username", "#sidebar-user-name", ".sidebar-username", "#profile-fullname"];
+      for (var i = 0; i < fallbackSelectors.length; i++) {
+        var el = document.querySelector(fallbackSelectors[i]);
+        if (el && el.textContent.trim() && el.textContent.trim() !== "User") {
+          userName = el.textContent.trim();
+          break;
+        }
+      }
+    }
+
+    if (typeof window.buildBouncyTextHtml === "function") {
+      greetingEl.innerHTML =
+        '<span class="greeting-prefix">' +
+        window.buildBouncyTextHtml(greeting + ",", {
+          preserveSpaces: false,
+        }) +
+        '</span> <span id="userNameWelcome" class="greeting-name">' +
+        window.buildBouncyTextHtml(userName, { preserveSpaces: false }) +
+        "</span>";
+    } else {
+      greetingEl.innerHTML = greeting + ', <span id="userNameWelcome">' + userName + '</span>';
+    }
+    greetingEl.dataset.bounceReady = "true";
   }
 
   function escapeHtml(value) {
@@ -1366,16 +1383,31 @@
    * Update dashboard user info
    */
   function updateDashboardUserInfo(user) {
-    var profileName =
-      ((document.getElementById("profile-fullname") || {}).textContent || "").trim();
     var normalizedUser = normalizeDashboardUser(user) || user || {};
+    
+    // Try to find display name from various sources
     var displayName =
-      profileName ||
       normalizedUser.displayName ||
       normalizedUser.fullName ||
       normalizedUser.name ||
       normalizedUser.username ||
-      "User";
+      "";
+
+    // If still empty, try DOM scraping from sidebar or profile
+    if (!displayName) {
+      var fallbackSelectors = ["#sidebar-username", "#sidebar-user-name", ".sidebar-username", "#profile-fullname"];
+      for (var i = 0; i < fallbackSelectors.length; i++) {
+        var el = document.querySelector(fallbackSelectors[i]);
+        if (el && el.textContent.trim() && el.textContent.trim() !== "User") {
+          displayName = el.textContent.trim();
+          break;
+        }
+      }
+    }
+
+    // Default fallback
+    if (!displayName) displayName = "User";
+
     var userNameEl = document.getElementById("userNameWelcome");
     if (userNameEl) {
       userNameEl.textContent = displayName;
