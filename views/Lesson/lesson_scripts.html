@@ -2815,8 +2815,34 @@
       qEl.id = "mq-q-" + idx;
       qEl.dataset.answered = "false";
 
+      // ⭐ SHUFFLE OPTIONS using Fisher-Yates algorithm
+      var originalOptions = Array.isArray(q.options) ? q.options.slice() : [];
+      var originalCorrect = typeof q.correctAnswer !== "undefined" ? q.correctAnswer : 0;
+      
+      // Build index array [0, 1, 2, 3...]
+      var idxs = [];
+      for (var ii = 0; ii < originalOptions.length; ii++) {
+        idxs.push(ii);
+      }
+      
+      // Fisher-Yates shuffle
+      for (var a = idxs.length - 1; a > 0; a--) {
+        var r = Math.floor(Math.random() * (a + 1));
+        var tmp = idxs[a];
+        idxs[a] = idxs[r];
+        idxs[r] = tmp;
+      }
+      
+      // Get shuffled options and new correct index
+      var shuffledOptions = idxs.map(function(i) { return originalOptions[i]; });
+      var newCorrectIdx = idxs.indexOf(originalCorrect);
+      
+      // Update the question object so selectMiniQuizOption() uses shuffled correctAnswer
+      miniQuizData[idx].options = shuffledOptions;
+      miniQuizData[idx].correctAnswer = newCorrectIdx;
+
       var optionsHtml = "";
-      var options = q.options || [];
+      var options = shuffledOptions || [];
       for (var i = 0; i < options.length; i++) {
         var opt = options[i];
         var optText = typeof opt === "string" ? opt : opt.text || opt;
