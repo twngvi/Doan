@@ -524,6 +524,225 @@
       tooltip.classList.remove("visible");
     }
 
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function getActivePetDisplayLabel() {
+      return sanitizePetName(getPetDisplayNameByVariantId(getActiveVariantId()) || DEFAULT_PET_NAME);
+    }
+
+    function getPetPopoverText(panelKey) {
+      const petName = getActivePetDisplayLabel();
+      if (panelKey === "accessory") return "Pet đang gắn phụ kiện: " + petName;
+      if (panelKey === "food") return "Pet đang được cho ăn: " + petName;
+      if (panelKey === "background") return "Nền cho pet: " + petName;
+      return "Pet đang chọn: " + petName;
+    }
+
+    function getPetPopoverMetaLabel(panelKey) {
+      if (panelKey === "accessory") return "Chạm vào item để xem và gắn phụ kiện";
+      if (panelKey === "food") return "Chạm vào item để xem và cho ăn";
+      if (panelKey === "background") return "Chạm vào item để xem và đổi nền";
+      return "Chạm vào pet để xem thông tin";
+    }
+
+    function getPetPopoverPreviewElement(panelKey) {
+      const mapping = {
+        settings: "petSettingsPreview",
+        background: "petBackgroundPreview",
+        accessory: "petAccessoryPreview",
+        food: "petFoodPreview",
+      };
+      const previewId = mapping[panelKey];
+      return previewId ? document.getElementById(previewId) : null;
+    }
+
+    function getPetPopoverContextElement(panelKey) {
+      const mapping = {
+        settings: "petSettingsContext",
+        background: "petBackgroundContext",
+        accessory: "petAccessoryContext",
+        food: "petFoodContext",
+      };
+      const contextId = mapping[panelKey];
+      return contextId ? document.getElementById(contextId) : null;
+    }
+
+    function updatePetPopoverContext(panelKey) {
+      const contextEl = getPetPopoverContextElement(panelKey);
+      if (contextEl) {
+        contextEl.textContent = getPetPopoverText(panelKey);
+      }
+    }
+
+    function updatePetPopoverPreview(panelKey, itemData, itemType) {
+      const previewEl = getPetPopoverPreviewElement(panelKey);
+      if (!previewEl) return;
+
+      if (!itemData) {
+        previewEl.innerHTML =
+          '<div class="preview-name">' + escapeHtml(getActivePetDisplayLabel()) + '</div>' +
+          '<div class="preview-meta">' + escapeHtml(getPetPopoverMetaLabel(panelKey)) + '</div>';
+        return;
+      }
+
+      const safeName = escapeHtml(itemData.name || itemData.title || getActivePetDisplayLabel());
+      const metaParts = [];
+      const unlockMeta = itemData.unlockCondition ? describeUnlockCondition(itemData.unlockCondition) : "";
+      let topLineRight = "";
+
+      if (itemType === "variant") {
+        if (itemData.isOwned) {
+          topLineRight = "Đã sở hữu";
+        } else {
+          const secondPetPrice = Math.max(0, toNonNegativeNumber(itemData.secondPetPriceXqp, 500));
+          topLineRight = secondPetPrice + " XQP";
+          metaParts.push("Chưa sở hữu");
+        }
+      }
+
+      if (itemType === "background") {
+        metaParts.push(unlockMeta ? "Điều kiện: " + unlockMeta : "Đang chọn nền");
+      }
+
+      if (itemType === "accessory") {
+        const safePriceXqp = Math.max(0, toNonNegativeNumber(itemData.priceXqp, 0));
+        if (safePriceXqp > 0) topLineRight = safePriceXqp + " XQP";
+        if (itemData.description) metaParts.push(String(itemData.description));
+        if (unlockMeta) metaParts.push("Điều kiện: " + unlockMeta);
+      }
+
+      if (itemType === "food") {
+        const safePriceXqp = Math.max(0, toNonNegativeNumber(itemData.priceXqp, 0));
+        const safeFoodXpGain = Math.max(0, toNonNegativeNumber(itemData.petXpGain, 0));
+        if (safePriceXqp > 0) topLineRight = safePriceXqp + " XQP";
+        metaParts.push("+" + safeFoodXpGain + " XP");
+        if (unlockMeta) metaParts.push("Điều kiện: " + unlockMeta);
+      }
+
+      if (itemData.description && itemType !== "accessory" && itemType !== "food") {
+        metaParts.push(String(itemData.description));
+      }
+
+      previewEl.innerHTML =
+        '<div class="preview-topline"><div class="preview-name">' + safeName + '</div>' +
+        (topLineRight ? '<div class="preview-money">' + escapeHtml(topLineRight) + '</div>' : '') +
+        '</div>' +
+        '<div class="preview-meta">' + escapeHtml(metaParts.filter(Boolean).join(" · ") || getPetPopoverMetaLabel(panelKey)) + '</div>';
+    }
+
+    function syncPetPopoverHeader(panelKey, itemData, itemType) {
+      updatePetPopoverContext(panelKey);
+      updatePetPopoverPreview(panelKey, itemData || null, itemType || panelKey);
+    }
+
+    function getCurrentPanelSelection(panelKey) {
+      if (panelKey === "settings") {
+        const activeVariant = PET_VARIANTS[state.currentIndex] || null;
+        if (!activeVariant) return { itemData: null, itemType: "variant" };
+        const activeVariantId = String(activeVariant.id || "").trim();
+        return {
+          itemData: {
+            name: activeVariant.name,
+            isOwned: isVariantOwned(activeVariantId),
+            secondPetPriceXqp: activeVariant.secondPetPriceXqp,
+            description: activeVariant.description,
+            unlockCondition: activeVariant.unlockCondition,
+          },
+          itemType: "variant",
+        };
+      }
+
+      if (panelKey === "background") {
+        const background = STAGE_BACKGROUNDS[state.selectedStageBackgroundIndex] || STAGE_BACKGROUNDS[0] || null;
+        return { itemData: background, itemType: "background" };
+      }
+
+      if (panelKey === "accessory") {
+        const accessory = resolveActiveAccessory();
+        if (!accessory) {
+          return {
+            itemData: {
+              name: "Không gắn phụ kiện",
+              description: "Đã tháo toàn bộ phụ kiện khỏi PET hiện tại",
+            },
+            itemType: "accessory",
+          };
+        }
+        const catalogItem = getAccessoryItemByFileName(accessory.fileName) || accessory;
+        return { itemData: catalogItem, itemType: "accessory" };
+      }
+
+      if (panelKey === "food") {
+        return {
+          itemData: {
+            name: getActivePetDisplayLabel(),
+            description: "Chạm vào item để xem và cho ăn",
+          },
+          itemType: "food",
+        };
+      }
+
+      return { itemData: null, itemType: panelKey };
+    }
+
+    function closePetActionPanels() {
+      state.settingsPanelOpen = false;
+      state.backgroundPanelOpen = false;
+      state.accessoryPanelOpen = false;
+      state.foodPanelOpen = false;
+      updateSettingsPanelVisibility();
+      updateBackgroundPanelVisibility();
+      updateAccessoryPanelVisibility();
+      updateFoodPanelVisibility();
+    }
+
+    function openPetActionPanel(panelKey) {
+      state.settingsPanelOpen = panelKey === "settings";
+      state.backgroundPanelOpen = panelKey === "background";
+      state.accessoryPanelOpen = panelKey === "accessory";
+      state.foodPanelOpen = panelKey === "food";
+      updateSettingsPanelVisibility();
+      updateBackgroundPanelVisibility();
+      updateAccessoryPanelVisibility();
+      updateFoodPanelVisibility();
+    }
+
+    function bindPetPopoverCloseButtons() {
+      if (document.body.dataset.petPopoverCloseBound === "1") return;
+      document.body.dataset.petPopoverCloseBound = "1";
+
+      document.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-popover-close]");
+        if (!button) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const targetId = button.getAttribute("data-popover-close");
+        if (targetId === "petSettingsPopover") {
+          state.settingsPanelOpen = false;
+        } else if (targetId === "petBackgroundPopover") {
+          state.backgroundPanelOpen = false;
+        } else if (targetId === "petAccessoryPopover") {
+          state.accessoryPanelOpen = false;
+        } else if (targetId === "petFoodPopover") {
+          state.foodPanelOpen = false;
+        }
+
+        updateSettingsPanelVisibility();
+        updateBackgroundPanelVisibility();
+        updateAccessoryPanelVisibility();
+        updateFoodPanelVisibility();
+      });
+    }
+
     function toNonNegativeNumber(value, fallback) {
       const parsed = parseInt(value, 10);
       if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -2537,6 +2756,10 @@
         toggleBtn.classList.toggle("active", isVisible);
         toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
       }
+      if (isVisible) {
+        const currentSelection = getCurrentPanelSelection("settings");
+        syncPetPopoverHeader("settings", currentSelection.itemData, currentSelection.itemType);
+      }
     }
 
     function updateBackgroundPanelVisibility() {
@@ -2547,6 +2770,10 @@
       if (toggleBtn) {
         toggleBtn.classList.toggle("active", isVisible);
         toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
+      }
+      if (isVisible) {
+        const currentSelection = getCurrentPanelSelection("background");
+        syncPetPopoverHeader("background", currentSelection.itemData, currentSelection.itemType);
       }
     }
 
@@ -2564,6 +2791,10 @@
         toggleBtn.classList.toggle("active", isVisible);
         toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
       }
+      if (isVisible) {
+        const currentSelection = getCurrentPanelSelection("accessory");
+        syncPetPopoverHeader("accessory", currentSelection.itemData, currentSelection.itemType);
+      }
     }
 
     function updateFoodPanelVisibility() {
@@ -2579,6 +2810,14 @@
         toggleBtn.classList.toggle("active", isVisible);
         toggleBtn.setAttribute("aria-expanded", isVisible ? "true" : "false");
       }
+      if (isVisible) {
+        const currentSelection = getCurrentPanelSelection("food");
+        syncPetPopoverHeader("food", currentSelection.itemData, currentSelection.itemType);
+      }
+    }
+
+    function isMobilePetLayout() {
+      return window.innerWidth <= 768;
     }
 
     function bindSettingsPanelToggle() {
@@ -2586,14 +2825,7 @@
       if (settingsBtn) {
         settingsBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          state.backgroundPanelOpen = false;
-          state.accessoryPanelOpen = false;
-          state.foodPanelOpen = false;
-          state.settingsPanelOpen = !state.settingsPanelOpen;
-          updateSettingsPanelVisibility();
-          updateBackgroundPanelVisibility();
-          updateAccessoryPanelVisibility();
-          updateFoodPanelVisibility();
+          openPetActionPanel("settings");
         });
       }
     }
@@ -2603,14 +2835,7 @@
       if (bgBtn) {
         bgBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          state.settingsPanelOpen = false;
-          state.accessoryPanelOpen = false;
-          state.foodPanelOpen = false;
-          state.backgroundPanelOpen = !state.backgroundPanelOpen;
-          updateSettingsPanelVisibility();
-          updateBackgroundPanelVisibility();
-          updateAccessoryPanelVisibility();
-          updateFoodPanelVisibility();
+          openPetActionPanel("background");
         });
       }
     }
@@ -2620,14 +2845,7 @@
       if (accBtn) {
         accBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          state.settingsPanelOpen = false;
-          state.backgroundPanelOpen = false;
-          state.foodPanelOpen = false;
-          state.accessoryPanelOpen = !state.accessoryPanelOpen;
-          updateSettingsPanelVisibility();
-          updateBackgroundPanelVisibility();
-          updateAccessoryPanelVisibility();
-          updateFoodPanelVisibility();
+          openPetActionPanel("accessory");
         });
       }
     }
@@ -2637,14 +2855,7 @@
       if (foodBtn) {
         foodBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          state.settingsPanelOpen = false;
-          state.backgroundPanelOpen = false;
-          state.accessoryPanelOpen = false;
-          state.foodPanelOpen = !state.foodPanelOpen;
-          updateSettingsPanelVisibility();
-          updateBackgroundPanelVisibility();
-          updateAccessoryPanelVisibility();
-          updateFoodPanelVisibility();
+          openPetActionPanel("food");
         });
       }
     }
@@ -2699,41 +2910,7 @@
       const controlsRoot = document.getElementById("petPanelControls");
       if (!controlsRoot) return;
 
-      document.addEventListener("click", function (event) {
-        if (
-          !state.settingsPanelOpen &&
-          !state.backgroundPanelOpen &&
-          !state.accessoryPanelOpen &&
-          !state.foodPanelOpen
-        ) {
-          return;
-        }
-        if (controlsRoot.contains(event.target)) return;
-
-        state.settingsPanelOpen = false;
-        state.backgroundPanelOpen = false;
-        state.accessoryPanelOpen = false;
-        state.foodPanelOpen = false;
-
-        updateSettingsPanelVisibility();
-        updateBackgroundPanelVisibility();
-        updateAccessoryPanelVisibility();
-        updateFoodPanelVisibility();
-      });
-
-      document.addEventListener("keydown", function (event) {
-        if (event.key !== "Escape") return;
-        
-        state.settingsPanelOpen = false;
-        state.backgroundPanelOpen = false;
-        state.accessoryPanelOpen = false;
-        state.foodPanelOpen = false;
-
-        updateSettingsPanelVisibility();
-        updateBackgroundPanelVisibility();
-        updateAccessoryPanelVisibility();
-        updateFoodPanelVisibility();
-      });
+      bindPetPopoverCloseButtons();
 
       updateSettingsPanelVisibility();
       updateBackgroundPanelVisibility();
@@ -3168,6 +3345,14 @@
           if (typeof showToast === "function") {
             showToast("Mua pet thành công", "success");
           }
+
+          updatePetPopoverPreview("settings", {
+            name: variant.name,
+            isOwned: true,
+            secondPetPriceXqp: variant.secondPetPriceXqp,
+            description: variant.description,
+            unlockCondition: variant.unlockCondition,
+          }, "variant");
         })
         .withFailureHandler(function (error) {
           if (typeof showToast === "function") {
@@ -3219,6 +3404,13 @@
         btn.appendChild(thumb);
 
         btn.addEventListener("mouseenter", function (event) {
+          updatePetPopoverPreview("settings", {
+            name: variant.name,
+            isOwned: owned,
+            secondPetPriceXqp: variant.secondPetPriceXqp,
+            description: variant.description,
+            unlockCondition: variant.unlockCondition,
+          }, "variant");
           showPetTooltip(
             event,
             {
@@ -3235,6 +3427,15 @@
           );
         });
         btn.addEventListener("mouseleave", hidePetTooltip);
+          btn.addEventListener("focus", function () {
+            updatePetPopoverPreview("settings", {
+              name: variant.name,
+              isOwned: owned,
+              secondPetPriceXqp: variant.secondPetPriceXqp,
+              description: variant.description,
+              unlockCondition: variant.unlockCondition,
+            }, "variant");
+          });
 
         btn.addEventListener("click", function () {
           if (!owned) {
@@ -3246,6 +3447,13 @@
           releasePressState();
           renderPet();
           queuePetConfigAutoSave();
+          updatePetPopoverPreview("settings", {
+            name: variant.name,
+            isOwned: owned,
+            secondPetPriceXqp: variant.secondPetPriceXqp,
+            description: variant.description,
+            unlockCondition: variant.unlockCondition,
+          }, "variant");
         });
         buttonsWrap.appendChild(btn);
       });
@@ -3320,6 +3528,13 @@
           state.selectedStageBackgroundIndex = index;
           renderPet();
           queuePetConfigAutoSave();
+          updatePetPopoverPreview("background", background, "background");
+        });
+        btn.addEventListener("mouseenter", function () {
+          updatePetPopoverPreview("background", background, "background");
+        });
+        btn.addEventListener("focus", function () {
+          updatePetPopoverPreview("background", background, "background");
         });
         buttonsWrap.appendChild(btn);
       });
@@ -3352,6 +3567,22 @@
         updateAccessoryButtons();
         updateAccessoryPositionButtons();
         queuePetConfigAutoSave();
+        updatePetPopoverPreview("accessory", {
+          name: "Không gắn phụ kiện",
+          description: "Đã tháo toàn bộ phụ kiện khỏi PET hiện tại",
+        }, "accessory");
+      });
+      noAccessoryBtn.addEventListener("mouseenter", function () {
+        updatePetPopoverPreview("accessory", {
+          name: "Không gắn phụ kiện",
+          description: "Đã tháo toàn bộ phụ kiện khỏi PET hiện tại",
+        }, "accessory");
+      });
+      noAccessoryBtn.addEventListener("focus", function () {
+        updatePetPopoverPreview("accessory", {
+          name: "Không gắn phụ kiện",
+          description: "Đã tháo toàn bộ phụ kiện khỏi PET hiện tại",
+        }, "accessory");
       });
       gridEl.appendChild(noAccessoryBtn);
 
@@ -3396,9 +3627,13 @@
           const tooltipData = Object.assign({}, catalogItem, {
             isLocked: false,
           });
+          updatePetPopoverPreview("accessory", tooltipData, "accessory");
           showPetTooltip(e, tooltipData, 'accessory');
         });
         btn.addEventListener("mouseleave", hidePetTooltip);
+        btn.addEventListener("focus", function () {
+          updatePetPopoverPreview("accessory", catalogItem, "accessory");
+        });
 
         btn.addEventListener("click", function () {
           const lockedNow = isProgressLevelLocked(catalogItem);
@@ -3432,6 +3667,7 @@
             updateAccessoryButtons();
             updateAccessoryPositionButtons();
             queuePetConfigAutoSave();
+            updatePetPopoverPreview("accessory", catalogItem, "accessory");
             return;
           }
 
@@ -3443,6 +3679,7 @@
           updateAccessoryButtons();
           updateAccessoryPositionButtons();
           queuePetConfigAutoSave();
+          updatePetPopoverPreview("accessory", catalogItem, "accessory");
         });
         gridEl.appendChild(btn);
       });
@@ -3523,9 +3760,13 @@
               progressLevel: getHighestOwnedPetProgressLevel(),
             }),
           });
+          updatePetPopoverPreview("food", tooltipData, "food");
           showPetTooltip(e, tooltipData, 'food');
         });
         item.addEventListener("mouseleave", hidePetTooltip);
+        item.addEventListener("focus", function () {
+          updatePetPopoverPreview("food", foodItem, "food");
+        });
 
         item.addEventListener("click", function() {
           const lockedNow = isProgressLevelLocked(foodItem, {
@@ -3543,6 +3784,7 @@
           const activeVariantId = getActiveVariantId();
           if (!activeVariantId) return;
           feedPetVariant(activeVariantId, foodItem);
+          updatePetPopoverPreview("food", foodItem, "food");
         });
 
         item.draggable = true;

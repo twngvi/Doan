@@ -327,6 +327,8 @@
              document.body.classList.remove("hide-sidebar");
              this.updateActiveNav(pageId);
              console.log("Showing sidebar for authenticated page");
+             // Ensure mobile menu button is visible on authenticated pages
+             ensureMobileMenuButtonVisible();
            }
          } catch (e) {
            console.warn("⚠️ Error in checkVisibility (Ignored):", e);
@@ -472,19 +474,9 @@
 
     function applySavedMobileMenuPosition(btn) {
       if (!btn) return;
-      try {
-        const raw = localStorage.getItem(MOBILE_MENU_POS_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        const left = Number(parsed.left);
-        const top = Number(parsed.top);
-        if (!Number.isFinite(left) || !Number.isFinite(top)) return;
-
-        btn.style.left = left + "px";
-        btn.style.top = top + "px";
-        btn.style.bottom = "auto";
-        btn.style.right = "auto";
-      } catch (e) {}
+      // ⭐ Không lưu vị trí - luôn reset về mặc định
+      // Menu button luôn trở về góc trái dưới khi load lại trang
+      // Chỉ di chuyển được trong phiên làm việc hiện tại
     }
 
     function enableMobileMenuDrag(btn) {
@@ -573,8 +565,9 @@
         pointerId = null;
 
         if (moved) {
-          const rect = btn.getBoundingClientRect();
-          saveMobileMenuPosition(rect.left, rect.top);
+          // ⭐ Không lưu vị trí - chỉ di chuyển được trong phiên hiện tại
+          // const rect = btn.getBoundingClientRect();
+          // saveMobileMenuPosition(rect.left, rect.top);
           suppressClickUntil = Date.now() + 250;
           e.preventDefault();
         }
@@ -599,6 +592,17 @@
       if (!btn) return;
       applySavedMobileMenuPosition(btn);
       enableMobileMenuDrag(btn);
+    }
+
+    // Ensure mobile menu button is visible and properly set up
+    function ensureMobileMenuButtonVisible() {
+      const btn = document.getElementById("mobileMenuToggleGlobal");
+      if (btn) {
+        btn.style.display = "flex";
+        btn.style.visibility = "visible";
+        btn.style.pointerEvents = "auto";
+        setupMobileMenuToggleButton(btn);
+      }
     }
 
     // Add mobile menu toggle button dynamically
