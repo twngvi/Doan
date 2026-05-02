@@ -293,7 +293,6 @@
     placeholder.style.display = 'none';
     content.style.display = 'flex';
 
-    renderDetailHeader(user);
     renderSummaryCards(user);
     renderLessonProgress(user);
   }
@@ -313,22 +312,21 @@
     if (!summaryCards) return;
 
     const summary = getUserSummaryStats(user);
-    const cards = [
-      { label: 'Bài đã học', value: summary.learnedLessons },
-      { label: 'Tiến độ tổng', value: `${summary.overallProgress}%` },
-      { label: 'Điểm trung bình', value: summary.avgQuizScore },
-      {
-        label: 'Chi tiết làm bài',
-        value: `<button type="button" class="summary-action-btn" id="userStatsQuizDetailBtn">Xem ${summary.totalAttempts} lượt làm</button>`,
-      },
-    ];
 
-    summaryCards.innerHTML = cards.map((card) => `
+    summaryCards.innerHTML = `
+      <div class="summary-user-info">
+        <h2 class="detail-user-name">${escapeHtml(user.name)}</h2>
+        <p class="detail-user-meta">${escapeHtml(user.email || '')}</p>
+      </div>
       <article class="summary-card">
-        <p class="summary-label">${card.label}</p>
-        <p class="summary-value">${card.value}</p>
+        <p class="summary-label">Bài đã học</p>
+        <p class="summary-value">${summary.learnedLessons}</p>
       </article>
-    `).join('');
+      <article class="summary-card">
+        <p class="summary-label">Chi tiết làm bài</p>
+        <p class="summary-value"><button type="button" class="summary-action-btn" id="userStatsQuizDetailBtn">Xem ${summary.totalAttempts} lượt làm</button></p>
+      </article>
+    `;
 
     const quizDetailBtn = document.getElementById('userStatsQuizDetailBtn');
     if (quizDetailBtn) {
