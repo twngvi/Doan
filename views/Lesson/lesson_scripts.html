@@ -113,91 +113,51 @@
   function clearAllLessonLocalProgress() {
     try {
       var keysToRemove = [];
+
       for (var i = 0; i < localStorage.length; i++) {
         var key = localStorage.key(i);
         if (key && key.indexOf("lesson_progress_") === 0) {
           keysToRemove.push(key);
         }
       }
-      questions.forEach(function (q, idx) {
-        if (idx >= MINI_QUIZ_REQUIRED_QUESTIONS) return;
 
-        var qEl = document.createElement("div");
-        qEl.className = "mq-question";
-        qEl.id = "mq-q-" + idx;
-        qEl.dataset.answered = "false";
-
-        // Prepare options and shuffle them (Fisher-Yates) for better randomness
-        var originalOptions = Array.isArray(q.options) ? q.options.slice() : [];
-        var originalCorrect = typeof q.correctAnswer !== "undefined" ? q.correctAnswer : 0;
-        var idxs = [];
-        for (var ii = 0; ii < originalOptions.length; ii++) idxs.push(ii);
-        for (var a = idxs.length - 1; a > 0; a--) {
-          var r = Math.floor(Math.random() * (a + 1));
-          var tmp = idxs[a];
-          idxs[a] = idxs[r];
-          idxs[r] = tmp;
-        }
-        var shuffledOptions = idxs.map(function(i){ return originalOptions[i]; });
-        var newCorrectIdx = idxs.indexOf(originalCorrect);
-        // Update question object so selection logic matches shuffled ordering
-        q.options = shuffledOptions;
-        q.correctAnswer = newCorrectIdx;
-
-        var optionsHtml = "";
-        var options = q.options || [];
-        for (var i = 0; i < options.length; i++) {
-          var opt = options[i];
-          var optText = typeof opt === "string" ? opt : opt.text || opt;
-          optionsHtml +=
-            '<div class="mq-option" data-idx="' +
-            i +
-            '" data-qidx="' +
-            idx +
-            '" onclick="selectMiniQuizOption(this, ' +
-            idx +
-            ", " +
-            i +
-            ')">' +
-            '<div class="mq-option-radio"></div>' +
-            '<span class="mq-option-text">' +
-            optText +
-            "</span>" +
-            "</div>";
-        }
-
-        qEl.innerHTML =
-          '<div class="mq-question-number">Câu ' +
-          (idx + 1) +
-          "/" +
-          MINI_QUIZ_REQUIRED_QUESTIONS +
-          "</div>" +
-          "</div>" +
-          '<p class="mq-question-text">' +
-          (q.question || "") +
-          "</p>" +
-          '<div class="mq-options">' +
-          optionsHtml +
-          "</div>" +
-          '<div class="mq-explanation" id="mq-explain-' +
-          idx +
-          '" style="display: none"></div>';
-
-        container.appendChild(qEl);
+      keysToRemove.forEach(function (key) {
+        localStorage.removeItem(key);
       });
-    setupLessonHeaderMouseEffect();
 
-    // Initialize topic switcher
-    initTopicSwitcher();
+      console.log("✅ Cleared all lesson local progress");
+    } catch (e) {
+      console.warn("⚠️ Could not clear all lesson local progress:", e);
+    }
+  }
+
+  /**
+   * Initialize lesson page
+   */
+  function initLessonPage() {
+    console.log("🚀 Initializing Lesson Page");
+
+    // Initialize mini quiz questions rendering
+    try {
+      setupLessonHeaderMouseEffect();
+
+      // Initialize topic switcher
+      initTopicSwitcher();
+
+      // Reset tabs to default (lesson tab)
+      switchLessonTab("lesson");
+    } catch (e) {
+      console.error(
+        "⚠️ Lesson setup failed, but content loading will continue:",
+        e,
+      );
+    }
 
     // Clear previous content
     const contentArea = document.getElementById("lesson-content-area");
     if (contentArea) {
       contentArea.innerHTML = "";
     }
-
-    // Reset tabs to default (lesson tab)
-    switchLessonTab("lesson");
 
     // Get params from window.currentPageParams
     if (window.currentPageParams) {
@@ -239,8 +199,12 @@
         );
         loadLessonContent(currentLessonData.contentDocId);
       } else {
-        console.error("❌ No contentDocId found");
-        showLessonError("Không tìm thấy nội dung bài học");
+        console.error("❌ No contentDocId found in topic data");
+        console.error("Topic data:", currentLessonData);
+        showLessonError(
+          "Lỗi: Bài học này chưa có nội dung. Vui lòng liên hệ admin để thêm Google Doc.\n\n" +
+          "Topic: " + (currentLessonData.topicTitle || "Không xác định"),
+        );
       }
 
       // ⭐ Load saved progress for this topic (restore sidebar/checkbox states)
@@ -370,8 +334,22 @@
         console.error("❌ Error type:", typeof error);
         console.error("❌ Error message:", error?.message);
         console.error("❌ Error toString:", error?.toString());
+        
+        // ⭐ More detailed error message
+        let errorMsg = "Lỗi không xác định";
+        if (error?.message) {
+          errorMsg = error.message;
+        } else if (error?.toString) {
+          errorMsg = error.toString();
+        }
+        
         showLessonError(
-          "Lỗi: " + (error?.message || error?.toString() || "Không xác định"),
+          "Không thể tải bài giảng.\n\n" +
+          "Lỗi: " + errorMsg + "\n\n" +
+          "Kiểm tra:\n" +
+          "1. Google Doc ID có hợp lệ không?\n" +
+          "2. Doc có được chia sẻ với Apps Script không?\n" +
+          "3. Xem Apps Script Logs để biết chi tiết: clasp logs",
         );
       })
       .getTopicContentByDocId(docId);

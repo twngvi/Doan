@@ -218,8 +218,10 @@
     var baseProgress =
       (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
     var mergedProgress = mergeMcqLocalStorageProgress(baseProgress);
+    // ⭐ FIX: For MCQ page, count ONLY topics that have quizDone=true (or completed quiz)
+    // NOT topics that have completed all 4 activities
     var completed = Object.values(mergedProgress).filter(function (item) {
-      return item && item.completed;
+      return item && item.quizDone;
     }).length;
 
     var completedEl = document.getElementById("completedMcqTopics");
@@ -3437,6 +3439,10 @@
         console.log(
           "🔄 Progress & quiz stats cache invalidated after quiz save",
         );
+        // ⭐ Refresh header progress count to show updated completed topics
+        if (typeof refreshMcqProgressFromServer === "function") {
+          refreshMcqProgressFromServer();
+        }
       })
       .withFailureHandler((error) => {
         console.error("❌ Error saving result:", error);

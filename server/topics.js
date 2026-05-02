@@ -382,6 +382,7 @@ function getUserTopicProgress() {
         const mindmapViewedIdx = headers.indexOf("mindmapViewed");
         const flashcardsCompletedIdx = headers.indexOf("flashcardsCompleted");
         const quizDoneIdx = headers.indexOf("quizDone");
+        const matchingDoneIdx = headers.indexOf("matchingDone");
         const statusIdx = headers.indexOf("status");
         const completedAtIdx = headers.indexOf("completedAt");
 
@@ -402,6 +403,10 @@ function getUserTopicProgress() {
           const miniQuizCompletedIdx = headers.indexOf("miniQuizCompleted");
           const miniQuizDone =
             miniQuizCompletedIdx >= 0 && isChecked(row[miniQuizCompletedIdx]);
+
+          // ⭐ Matching done
+          const matchingDone =
+            matchingDoneIdx >= 0 && isChecked(row[matchingDoneIdx]);
 
           // ⭐ Calculate progress percentage based on 4 activities (25% each)
           // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
@@ -426,6 +431,7 @@ function getUserTopicProgress() {
             flashcardsCompleted: flashcardsDone,
             quizDone: quizDone,
             miniQuizCompleted: miniQuizDone,
+            matchingDone: matchingDone,
             status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
             completedAt: completedAtIdx >= 0 ? row[completedAtIdx] : null,
           };

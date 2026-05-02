@@ -310,8 +310,10 @@
     var baseProgress =
       (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
     var mergedProgress = mergeMatchingLocalStorageProgress(baseProgress);
+    // ⭐ FIX: For Matching page, count ONLY topics that have matchingDone=true (or completed matching)
+    // NOT topics that have completed all 4 activities
     var completed = Object.values(mergedProgress).filter(function (item) {
-      return item && item.completed;
+      return item && item.matchingDone;
     }).length;
 
     var completedEl = document.getElementById("completedMatchingTopics");
@@ -2923,6 +2925,11 @@
         // Refresh topic hub history if user goes back to topic detail.
         if (matchingState.currentTopicId) {
           loadMatchingTopicHistory(matchingState.currentTopicId);
+        }
+
+        // ⭐ Refresh header progress count to show updated completed topics
+        if (typeof refreshMatchingProgressFromServer === "function") {
+          refreshMatchingProgressFromServer();
         }
 
         // 2. Save activity log entry AFTER matching result is saved (avoid concurrent writes)
