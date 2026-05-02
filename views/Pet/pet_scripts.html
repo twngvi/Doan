@@ -712,6 +712,8 @@
       updateBackgroundPanelVisibility();
       updateAccessoryPanelVisibility();
       updateFoodPanelVisibility();
+      // Reflect panel open state in body so global UI can react
+      updateGlobalUIForPetPanels();
     }
 
     function bindPetPopoverCloseButtons() {
@@ -740,7 +742,42 @@
         updateBackgroundPanelVisibility();
         updateAccessoryPanelVisibility();
         updateFoodPanelVisibility();
+        // Update global UI after closing
+        updateGlobalUIForPetPanels();
       });
+
+      // Also bind direct handlers to each close button to ensure it works
+      try {
+        const closeButtons = document.querySelectorAll('.pet-popover-close-btn');
+        closeButtons.forEach((btn) => {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetId = btn.getAttribute('data-popover-close');
+            if (!targetId) return;
+            if (targetId === 'petSettingsPopover') state.settingsPanelOpen = false;
+            if (targetId === 'petBackgroundPopover') state.backgroundPanelOpen = false;
+            if (targetId === 'petAccessoryPopover') state.accessoryPanelOpen = false;
+            if (targetId === 'petFoodPopover') state.foodPanelOpen = false;
+
+            updateSettingsPanelVisibility();
+            updateBackgroundPanelVisibility();
+            updateAccessoryPanelVisibility();
+            updateFoodPanelVisibility();
+            updateGlobalUIForPetPanels();
+          }, { passive: false });
+        });
+      } catch (e) {}
+    }
+
+    // Add helper to toggle a body class when any pet panel is open
+    function updateGlobalUIForPetPanels() {
+      const anyOpen = !!(state.settingsPanelOpen || state.backgroundPanelOpen || state.accessoryPanelOpen || state.foodPanelOpen);
+      if (anyOpen) {
+        document.body.classList.add('pet-panel-open');
+      } else {
+        document.body.classList.remove('pet-panel-open');
+      }
     }
 
     function toNonNegativeNumber(value, fallback) {
