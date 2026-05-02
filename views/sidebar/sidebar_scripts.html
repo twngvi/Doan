@@ -452,23 +452,177 @@
       }
     };
 
+    const MOBILE_MENU_POS_KEY = "mobileMenuToggleGlobalPosV1";
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function saveMobileMenuPosition(left, top) {
+      try {
+        localStorage.setItem(
+          MOBILE_MENU_POS_KEY,
+          JSON.stringify({
+            left: Math.round(left),
+            top: Math.round(top),
+          }),
+        );
+      } catch (e) {}
+    }
+
+    function applySavedMobileMenuPosition(btn) {
+      if (!btn) return;
+      try {
+        const raw = localStorage.getItem(MOBILE_MENU_POS_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const left = Number(parsed.left);
+        const top = Number(parsed.top);
+        if (!Number.isFinite(left) || !Number.isFinite(top)) return;
+
+        btn.style.left = left + "px";
+        btn.style.top = top + "px";
+        btn.style.bottom = "auto";
+        btn.style.right = "auto";
+      } catch (e) {}
+    }
+
+    function enableMobileMenuDrag(btn) {
+      if (!btn || btn.dataset.dragBound === "1") return;
+
+      let isDragging = false;
+      let moved = false;
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      let suppressClickUntil = 0;
+
+      btn.addEventListener("dragstart", function (e) {
+        e.preventDefault();
+      });
+
+      btn.addEventListener("pointerdown", function (e) {
+        if (window.innerWidth > 768) return;
+        if (e.button !== undefined && e.button !== 0) return;
+
+        const rect = btn.getBoundingClientRect();
+        isDragging = true;
+        moved = false;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        btn.style.left = rect.left + "px";
+        btn.style.top = rect.top + "px";
+        btn.style.bottom = "auto";
+        btn.style.right = "auto";
+        btn.classList.add("dragging");
+
+        if (btn.setPointerCapture) {
+          try {
+            btn.setPointerCapture(pointerId);
+          } catch (err) {}
+        }
+
+        e.preventDefault();
+      });
+
+      btn.addEventListener("pointermove", function (e) {
+        if (!isDragging || e.pointerId !== pointerId) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+
+        const viewportW = window.innerWidth;
+        const viewportH = window.innerHeight;
+        const rect = btn.getBoundingClientRect();
+        const margin = 8;
+
+        const nextLeft = clamp(
+          startLeft + dx,
+          margin,
+          viewportW - rect.width - margin,
+        );
+        const nextTop = clamp(
+          startTop + dy,
+          margin,
+          viewportH - rect.height - margin,
+        );
+
+        btn.style.left = nextLeft + "px";
+        btn.style.top = nextTop + "px";
+      });
+
+      function finishDrag(e) {
+        if (!isDragging || e.pointerId !== pointerId) return;
+
+        isDragging = false;
+        btn.classList.remove("dragging");
+
+        if (btn.releasePointerCapture) {
+          try {
+            btn.releasePointerCapture(pointerId);
+          } catch (err) {}
+        }
+
+        pointerId = null;
+
+        if (moved) {
+          const rect = btn.getBoundingClientRect();
+          saveMobileMenuPosition(rect.left, rect.top);
+          suppressClickUntil = Date.now() + 250;
+          e.preventDefault();
+        }
+      }
+
+      btn.addEventListener("pointerup", finishDrag);
+      btn.addEventListener("pointercancel", finishDrag);
+
+      btn.addEventListener("click", function (e) {
+        if (Date.now() < suppressClickUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        GlobalSidebar.openMobile();
+      });
+
+      btn.dataset.dragBound = "1";
+    }
+
+    function setupMobileMenuToggleButton(btn) {
+      if (!btn) return;
+      applySavedMobileMenuPosition(btn);
+      enableMobileMenuDrag(btn);
+    }
+
     // Add mobile menu toggle button dynamically
-      function addMobileMenuToggle() {
-        const existingBtn = document.getElementById("mobileMenuToggleGlobal");
-        if (
-          !existingBtn &&
-          !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId()) &&
-          !(
-            window.GlobalSidebar?.isAdminRoleActive &&
-            window.GlobalSidebar.isAdminRoleActive()
-          )
-        ) {
-          const btn = document.createElement("button");
-          btn.id = "mobileMenuToggleGlobal";
-          btn.className = "mobile-menu-toggle";
+    function addMobileMenuToggle() {
+      const existingBtn = document.getElementById("mobileMenuToggleGlobal");
+      if (
+        !existingBtn &&
+        !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId()) &&
+        !(
+          window.GlobalSidebar?.isAdminRoleActive &&
+          window.GlobalSidebar.isAdminRoleActive()
+        )
+      ) {
+        const btn = document.createElement("button");
+        btn.id = "mobileMenuToggleGlobal";
+        btn.className = "mobile-menu-toggle";
         btn.innerHTML = "☰";
-        btn.addEventListener("click", () => GlobalSidebar.openMobile());
         document.body.appendChild(btn);
+        setupMobileMenuToggleButton(btn);
+        return;
+      }
+
+      if (existingBtn) {
+        setupMobileMenuToggleButton(existingBtn);
       }
     }
 
