@@ -119,55 +119,72 @@
           keysToRemove.push(key);
         }
       }
-      keysToRemove.forEach(function (key) {
-        localStorage.removeItem(key);
+      questions.forEach(function (q, idx) {
+        if (idx >= MINI_QUIZ_REQUIRED_QUESTIONS) return;
+
+        var qEl = document.createElement("div");
+        qEl.className = "mq-question";
+        qEl.id = "mq-q-" + idx;
+        qEl.dataset.answered = "false";
+
+        // Prepare options and shuffle them (Fisher-Yates) for better randomness
+        var originalOptions = Array.isArray(q.options) ? q.options.slice() : [];
+        var originalCorrect = typeof q.correctAnswer !== "undefined" ? q.correctAnswer : 0;
+        var idxs = [];
+        for (var ii = 0; ii < originalOptions.length; ii++) idxs.push(ii);
+        for (var a = idxs.length - 1; a > 0; a--) {
+          var r = Math.floor(Math.random() * (a + 1));
+          var tmp = idxs[a];
+          idxs[a] = idxs[r];
+          idxs[r] = tmp;
+        }
+        var shuffledOptions = idxs.map(function(i){ return originalOptions[i]; });
+        var newCorrectIdx = idxs.indexOf(originalCorrect);
+        // Update question object so selection logic matches shuffled ordering
+        q.options = shuffledOptions;
+        q.correctAnswer = newCorrectIdx;
+
+        var optionsHtml = "";
+        var options = q.options || [];
+        for (var i = 0; i < options.length; i++) {
+          var opt = options[i];
+          var optText = typeof opt === "string" ? opt : opt.text || opt;
+          optionsHtml +=
+            '<div class="mq-option" data-idx="' +
+            i +
+            '" data-qidx="' +
+            idx +
+            '" onclick="selectMiniQuizOption(this, ' +
+            idx +
+            ", " +
+            i +
+            ')">' +
+            '<div class="mq-option-radio"></div>' +
+            '<span class="mq-option-text">' +
+            optText +
+            "</span>" +
+            "</div>";
+        }
+
+        qEl.innerHTML =
+          '<div class="mq-question-number">Câu ' +
+          (idx + 1) +
+          "/" +
+          MINI_QUIZ_REQUIRED_QUESTIONS +
+          "</div>" +
+          "</div>" +
+          '<p class="mq-question-text">' +
+          (q.question || "") +
+          "</p>" +
+          '<div class="mq-options">' +
+          optionsHtml +
+          "</div>" +
+          '<div class="mq-explanation" id="mq-explain-' +
+          idx +
+          '" style="display: none"></div>';
+
+        container.appendChild(qEl);
       });
-      console.log("🧹 Cleared lesson local cache keys:", keysToRemove.length);
-    } catch (e) {
-      console.warn("⚠️ Could not clear all lesson local cache:", e);
-    }
-  }
-
-  /**
-   * Initialize Lesson Page
-   */
-  function initLessonPage() {
-    console.log("📚 Initializing Lesson Page...");
-    console.log("🔍 window.currentPageParams:", window.currentPageParams);
-
-    // ⭐ Start Learning Time Tracker
-    if (window.LearningTracker) {
-      console.log("✅ LearningTracker found, starting lesson tracking...");
-      window.LearningTracker.start("lesson");
-    } else {
-      console.warn("⚠️ LearningTracker NOT found!");
-    }
-
-    // ⭐ Reset previous lesson data to avoid cache issues
-    currentLessonData = null;
-    scrollProgress = 0;
-    aiContentLoaded = { mindmap: false, flashcards: false };
-    progressSaved = { lesson: false, mindmap: false, flashcards: false };
-    tabCompletion = {
-      lessonRead: false,
-      lessonQuiz: false,
-      mindmapViewed: false,
-      flashcardsDone: false,
-    };
-    flashcardsData = [];
-    fullFlashcardsData = [];
-    currentFlashcardIndex = 0;
-
-    // Reset mini quiz state
-    miniQuizData = null;
-    miniQuizAnswered = 0;
-    miniQuizLoaded = false;
-
-    // ⭐ Reset ALL lesson UI to clean defaults (important when switching topics)
-    resetAllLessonUI();
-
-    // Start meteor shower and mouse effects for header
-    startLessonHeaderMeteors();
     setupLessonHeaderMouseEffect();
 
     // Initialize topic switcher
