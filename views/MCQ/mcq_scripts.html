@@ -199,6 +199,10 @@
           merged[topicId].flashcardsCompleted || localData.flashcardsDone || false;
         merged[topicId].miniQuizCompleted =
           merged[topicId].miniQuizCompleted || localData.lessonQuiz || false;
+        merged[topicId].quizDone =
+          merged[topicId].quizDone || localData.quizDone || false;
+        merged[topicId].matchingDone =
+          merged[topicId].matchingDone || localData.matchingDone || false;
 
         var count = 0;
         if (merged[topicId].lessonCompleted) count++;
@@ -215,14 +219,20 @@
   }
 
   function updateMcqHeaderProgress() {
-    var baseProgress =
-      (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
-    var mergedProgress = mergeMcqLocalStorageProgress(baseProgress);
-    // ⭐ FIX: For MCQ page, count ONLY topics that have quizDone=true (or completed quiz)
-    // NOT topics that have completed all 4 activities
-    var completed = Object.values(mergedProgress).filter(function (item) {
-      return item && item.quizDone;
-    }).length;
+    // ⭐ FIX: Count from quizStatsCache (same source as "Đã chơi" badges in topic list)
+    // instead of Topic_Progress.quizDone which may not be in sync.
+    var completed = 0;
+    var statsCache = window.quizStatsCache;
+    if (statsCache && statsCache.stats) {
+      var statsMap = statsCache.stats;
+      var topicIds = Object.keys(statsMap);
+      for (var i = 0; i < topicIds.length; i++) {
+        var entry = statsMap[topicIds[i]];
+        if (entry && entry.hasPlayed === true) {
+          completed++;
+        }
+      }
+    }
 
     var completedEl = document.getElementById("completedMcqTopics");
     if (completedEl) {
@@ -231,27 +241,9 @@
   }
 
   function refreshMcqProgressFromServer() {
-    if (typeof google === "undefined" || !google.script || !google.script.run) {
-      updateMcqHeaderProgress();
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        if (result && result.success && result.progress) {
-          var merged = mergeMcqLocalStorageProgress(result.progress, {
-            serverAuthoritative: true,
-          });
-          if (window.globalTopicsCache) {
-            window.globalTopicsCache.progress = merged;
-          }
-        }
-        updateMcqHeaderProgress();
-      })
-      .withFailureHandler(function () {
-        updateMcqHeaderProgress();
-      })
-      .getUserTopicProgress();
+    // ⭐ Header counter now uses quizStatsCache, so we just refresh the display.
+    // The stats cache is already loaded/updated by loadQuizStatsIfNeeded() and updateLocalQuizStats().
+    updateMcqHeaderProgress();
   }
 
   function readQuizStatsPersistedCache(options) {
@@ -3377,6 +3369,11 @@
     // ⭐ Update local quiz stats cache IMMEDIATELY (optimistic update)
     if (typeof updateLocalQuizStats === "function" && quizState.topicId) {
       updateLocalQuizStats(quizState.topicId, score, total, percentage);
+    }
+
+    // ⭐ Refresh header immediately (reads from quizStatsCache, already updated above)
+    if (typeof updateMcqHeaderProgress === "function") {
+      updateMcqHeaderProgress();
     }
 
     // Tạo chi tiết từng câu hỏi

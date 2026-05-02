@@ -389,7 +389,19 @@ function getUserTopicProgress() {
         if (lessonCompletedIdx >= 0) {
           // New schema - ⭐ FIX: Handle string/number/boolean values from spreadsheet
           var isChecked = function (val) {
-            return val === 1 || val === true || val === "1" || val === "TRUE";
+            if (val === null || val === undefined) return false;
+            if (typeof val === "boolean") return val;
+            if (typeof val === "number") return val === 1;
+            var s = String(val).trim().toLowerCase();
+            return (
+              s === "1" ||
+              s === "true" ||
+              s === "hoàn thành" ||
+              s === "đã chơi" ||
+              s === "đã hoàn thành" ||
+              s === "x" ||
+              s === "yes"
+            );
           };
           const lessonDone = isChecked(row[lessonCompletedIdx]);
           const mindmapDone =

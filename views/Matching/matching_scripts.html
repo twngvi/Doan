@@ -291,6 +291,10 @@
           merged[topicId].flashcardsCompleted || localData.flashcardsDone || false;
         merged[topicId].miniQuizCompleted =
           merged[topicId].miniQuizCompleted || localData.lessonQuiz || false;
+        merged[topicId].quizDone =
+          merged[topicId].quizDone || localData.quizDone || false;
+        merged[topicId].matchingDone =
+          merged[topicId].matchingDone || localData.matchingDone || false;
 
         var count = 0;
         if (merged[topicId].lessonCompleted) count++;
@@ -307,14 +311,20 @@
   }
 
   function updateMatchingHeaderProgress() {
-    var baseProgress =
-      (window.globalTopicsCache && window.globalTopicsCache.progress) || {};
-    var mergedProgress = mergeMatchingLocalStorageProgress(baseProgress);
-    // ⭐ FIX: For Matching page, count ONLY topics that have matchingDone=true (or completed matching)
-    // NOT topics that have completed all 4 activities
-    var completed = Object.values(mergedProgress).filter(function (item) {
-      return item && item.matchingDone;
-    }).length;
+    // ⭐ FIX: Count from matchingStatsCache (same source as "Đã chơi" badges in topic list)
+    // instead of Topic_Progress.matchingDone which may not be in sync.
+    var completed = 0;
+    var statsCache = window.matchingStatsCache;
+    if (statsCache && statsCache.stats) {
+      var statsMap = statsCache.stats;
+      var topicIds = Object.keys(statsMap);
+      for (var i = 0; i < topicIds.length; i++) {
+        var entry = statsMap[topicIds[i]];
+        if (entry && entry.hasPlayed === true) {
+          completed++;
+        }
+      }
+    }
 
     var completedEl = document.getElementById("completedMatchingTopics");
     if (completedEl) {
@@ -323,27 +333,9 @@
   }
 
   function refreshMatchingProgressFromServer() {
-    if (typeof google === "undefined" || !google.script || !google.script.run) {
-      updateMatchingHeaderProgress();
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        if (result && result.success && result.progress) {
-          var merged = mergeMatchingLocalStorageProgress(result.progress, {
-            serverAuthoritative: true,
-          });
-          if (window.globalTopicsCache) {
-            window.globalTopicsCache.progress = merged;
-          }
-        }
-        updateMatchingHeaderProgress();
-      })
-      .withFailureHandler(function () {
-        updateMatchingHeaderProgress();
-      })
-      .getUserTopicProgress();
+    // ⭐ Header counter now uses matchingStatsCache, so we just refresh the display.
+    // The stats cache is already loaded/updated by loadMatchingStatsIfNeeded() and updateLocalMatchingStats().
+    updateMatchingHeaderProgress();
   }
 
   // ===== STATE =====
@@ -2874,6 +2866,13 @@
 
     var topicId = matchingState.currentTopicId || "";
     var topicTitle = matchingState.currentTopicName || "";
+    
+    // ⭐ Optimistic update: update stats cache BEFORE async server call
+    // so the header counter updates immediately
+    updateLocalMatchingStats(topicId, accuracy, accuracy, matchingState.totalPairs);
+    if (typeof updateMatchingHeaderProgress === "function") {
+      updateMatchingHeaderProgress();
+    }
 
     // 1. Save detailed matching result (also updates matchingDone in Topic_Progress)
     var resultPayload = {
@@ -2905,12 +2904,6 @@
     google.script.run
       .withSuccessHandler(function (response) {
         console.log("✅ Matching result saved:", response);
-        updateLocalMatchingStats(
-          topicId,
-          accuracy,
-          accuracy,
-          matchingState.totalPairs,
-        );
         showMatchingSaveNotification(true, "Kết quả đã được lưu!");
         // Invalidate progress cache so Topics page shows updated badge
         if (window.globalTopicsCache) {
