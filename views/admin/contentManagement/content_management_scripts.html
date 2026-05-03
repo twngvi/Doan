@@ -223,7 +223,7 @@ function renderTopicsTable() {
     const updatedAt = formatDate(topic.updatedAt);
 
     return `
-      <tr data-topic-id="${topic.topicId}" style="animation: fadeInRow 0.3s ease ${index * 0.05}s both;">
+      <tr data-topic-id="${topic.topicId}" onclick="openMobileActionModal('${topic.topicId}', event)" style="animation: fadeInRow 0.3s ease ${index * 0.05}s both;">
         <td><strong>${rowNum}</strong></td>
         <td>
           <div class="topic-info">
@@ -795,6 +795,54 @@ function deleteTopic(topicId, topicTitle) {
 function closeDeleteModal() {
   document.getElementById('cm-delete-modal').style.display = 'none';
   topicToDelete = null;
+}
+
+// ===== Mobile Action Modal =====
+function openMobileActionModal(topicId, event) {
+  // Only trigger on mobile/tablet widths
+  if (window.innerWidth > 768) return;
+  
+  // Don't trigger if they clicked an action button directly
+  if (event && event.target.closest('.action-buttons')) return;
+
+  const topic = allTopics.find(function(t) { return t.topicId === topicId; });
+  if (!topic) return;
+
+  const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
+  const statusClass = isLocked ? 'locked' : 'active';
+  const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
+  
+  document.getElementById('mobile-action-category').textContent = topic.category || 'Chưa phân loại';
+  document.getElementById('mobile-action-time').textContent = topic.estimatedTime || '-';
+  document.getElementById('mobile-action-status').innerHTML = `<span class="status-badge ${statusClass}" style="margin:0; padding:4px 8px; font-size:11px;">${statusText}</span>`;
+  document.getElementById('mobile-action-date').textContent = formatDate(topic.updatedAt);
+
+  // Setup buttons
+  const btnView = document.getElementById('mobile-action-btn-view');
+  const btnEdit = document.getElementById('mobile-action-btn-edit');
+  const btnDelete = document.getElementById('mobile-action-btn-delete');
+  
+  // Clean old event listeners by cloning
+  const newBtnView = btnView.cloneNode(true);
+  const newBtnEdit = btnEdit.cloneNode(true);
+  const newBtnDelete = btnDelete.cloneNode(true);
+  
+  btnView.parentNode.replaceChild(newBtnView, btnView);
+  btnEdit.parentNode.replaceChild(newBtnEdit, btnEdit);
+  btnDelete.parentNode.replaceChild(newBtnDelete, btnDelete);
+
+  newBtnView.addEventListener('click', () => { closeMobileActionModal(); viewTopic(topicId); });
+  newBtnEdit.addEventListener('click', () => { closeMobileActionModal(); editTopic(topicId); });
+  newBtnDelete.addEventListener('click', () => { 
+    closeMobileActionModal(); 
+    deleteTopic(topicId, topic.title); 
+  });
+
+  document.getElementById('cm-mobile-action-modal').style.display = 'flex';
+}
+
+function closeMobileActionModal() {
+  document.getElementById('cm-mobile-action-modal').style.display = 'none';
 }
 
 function confirmDeleteTopic() {
