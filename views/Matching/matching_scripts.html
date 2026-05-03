@@ -604,6 +604,59 @@
     container.classList.toggle("matching-game-active", !isPreplay);
   }
 
+  function isMatchingMobilePairLayout() {
+    return !!(
+      window.matchMedia &&
+      window.matchMedia("(max-width: 768px)").matches
+    );
+  }
+
+  function getMatchingItemByPairId(items, pairId) {
+    var list = Array.isArray(items) ? items : [];
+    for (var index = 0; index < list.length; index++) {
+      if (list[index] && list[index].pairId === pairId) {
+        return list[index];
+      }
+    }
+    return null;
+  }
+
+  function buildMatchingClickItemButtonHtml(item, side, options) {
+    var itemOptions = options || {};
+    var pairId = item && item.pairId !== undefined ? item.pairId : "";
+    var classes = ["matching-item", "matching-item-" + side];
+
+    if (itemOptions.square) classes.push("matching-item-square");
+    if (itemOptions.extraClass) classes.push(itemOptions.extraClass);
+    if (itemOptions.matched) classes.push("matched");
+    else if (itemOptions.wrong) classes.push("wrong");
+    else if (itemOptions.selected) classes.push("selected");
+    if (itemOptions.disabled) classes.push("is-disabled");
+
+    var disabledAttr = itemOptions.disabled || itemOptions.matched ? " disabled" : "";
+    var onclickAttr =
+      itemOptions.disableClick || itemOptions.disabled || itemOptions.matched
+        ? ""
+        : ' onclick="selectMatchingItem(\'' + side + '\',' + pairId + ')"';
+
+    return (
+      '<button class="' +
+      classes.join(" ") +
+      '" id="matching-' +
+      side +
+      '-item-' +
+      pairId +
+      '" data-pair-id="' +
+      pairId +
+      '"' +
+      disabledAttr +
+      onclickAttr +
+      '><span class="matching-item-text">' +
+      (item && item.content ? item.content : "") +
+      "</span></button>"
+    );
+  }
+
   function updateMatchingGameHeader(topic) {
     const titleEl = document.getElementById("matchingGameTopicTitle");
     if (!titleEl) return;
@@ -2025,6 +2078,9 @@
   function renderMatchingBoardClick(board) {
     board.classList.remove("matching-board-drag", "matching-board-wireless");
 
+    var useMobilePairLayout = isMatchingMobilePairLayout();
+    board.classList.toggle("matching-board-mobile-pairs", useMobilePairLayout);
+
     var leftHtml = matchingState.leftItems
       .map(function (item) {
         var isMatched =
@@ -2034,28 +2090,15 @@
           matchingState.wrongAttemptPair &&
           matchingState.wrongAttemptPair.leftId === item.pairId;
 
-        var cls = "matching-item matching-item-left";
-        if (isMatched) cls += " matched";
-        else if (isWrong) cls += " wrong";
-        else if (isSelected) cls += " selected";
+        if (useMobilePairLayout && isMatched) {
+          return "";
+        }
 
-        return (
-          '<button class="' +
-          cls +
-          '" id="matching-left-item-' +
-          item.pairId +
-          '" data-pair-id="' +
-          item.pairId +
-          '"' +
-          (isMatched ? " disabled" : "") +
-          " onclick=\"selectMatchingItem('left'," +
-          item.pairId +
-          ')">' +
-          '<span class="matching-item-text">' +
-          item.content +
-          "</span>" +
-          "</button>"
-        );
+        return buildMatchingClickItemButtonHtml(item, "left", {
+          selected: isSelected,
+          wrong: isWrong,
+          matched: isMatched,
+        });
       })
       .join("");
 
@@ -2068,30 +2111,47 @@
           matchingState.wrongAttemptPair &&
           matchingState.wrongAttemptPair.rightId === item.pairId;
 
-        var cls = "matching-item matching-item-right";
-        if (isMatched) cls += " matched";
-        else if (isWrong) cls += " wrong";
-        else if (isSelected) cls += " selected";
+        if (useMobilePairLayout && isMatched) {
+          return "";
+        }
 
-        return (
-          '<button class="' +
-          cls +
-          '" id="matching-right-item-' +
-          item.pairId +
-          '" data-pair-id="' +
-          item.pairId +
-          '"' +
-          (isMatched ? " disabled" : "") +
-          " onclick=\"selectMatchingItem('right'," +
-          item.pairId +
-          ')">' +
-          '<span class="matching-item-text">' +
-          item.content +
-          "</span>" +
-          "</button>"
-        );
+        return buildMatchingClickItemButtonHtml(item, "right", {
+          selected: isSelected,
+          wrong: isWrong,
+          matched: isMatched,
+        });
       })
       .join("");
+
+    var matchedPairsHtml = "";
+    if (useMobilePairLayout) {
+      matchedPairsHtml = Array.isArray(matchingState.matchedPairIds)
+        ? matchingState.matchedPairIds
+            .map(function (pairId) {
+              var leftItem = getMatchingItemByPairId(matchingState.leftItems, pairId);
+              var rightItem = getMatchingItemByPairId(matchingState.rightItems, pairId);
+              if (!leftItem || !rightItem) return "";
+
+              return (
+                '<div class="matching-mobile-matched-pair">' +
+                buildMatchingClickItemButtonHtml(leftItem, "left", {
+                  matched: true,
+                  square: true,
+                  disableClick: true,
+                  extraClass: "matching-mobile-pair-card",
+                }) +
+                buildMatchingClickItemButtonHtml(rightItem, "right", {
+                  matched: true,
+                  square: true,
+                  disableClick: true,
+                  extraClass: "matching-mobile-pair-card",
+                }) +
+                "</div>"
+              );
+            })
+            .join("")
+        : "";
+    }
 
     board.innerHTML =
       '<div class="matching-column matching-column-left">' +
@@ -2102,9 +2162,13 @@
       '<div class="matching-column-header">Định nghĩa</div>' +
       rightHtml +
       "</div>" +
-      '<svg class="matching-connection-layer" aria-hidden="true"></svg>';
+      (useMobilePairLayout
+        ? '<div class="matching-mobile-matched-pairs">' +
+          matchedPairsHtml +
+          "</div>"
+        : '<svg class="matching-connection-layer" aria-hidden="true"></svg>');
 
-    if (matchingState.showConnectionLines !== false) {
+    if (!useMobilePairLayout && matchingState.showConnectionLines !== false) {
       requestAnimationFrame(drawMatchingConnectionLines);
     }
   }
@@ -2317,6 +2381,7 @@
   function drawMatchingConnectionLines() {
     if (matchingState.interactionMode !== "click") return;
     if (matchingState.showConnectionLines === false) return;
+    if (isMatchingMobilePairLayout()) return;
 
     var board = document.getElementById("matchingBoard");
     if (!board) return;
