@@ -716,6 +716,22 @@
       updateGlobalUIForPetPanels();
     }
 
+    function togglePetActionPanel(panelKey) {
+      const isAlreadyOpen =
+        (panelKey === "settings" && state.settingsPanelOpen) ||
+        (panelKey === "background" && state.backgroundPanelOpen) ||
+        (panelKey === "accessory" && state.accessoryPanelOpen) ||
+        (panelKey === "food" && state.foodPanelOpen);
+
+      if (isAlreadyOpen) {
+        closePetActionPanels();
+        updateGlobalUIForPetPanels();
+        return;
+      }
+
+      openPetActionPanel(panelKey);
+    }
+
     function bindPetPopoverCloseButtons() {
       if (document.body.dataset.petPopoverCloseBound === "1") return;
       document.body.dataset.petPopoverCloseBound = "1";
@@ -2862,7 +2878,7 @@
       if (settingsBtn) {
         settingsBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          openPetActionPanel("settings");
+          togglePetActionPanel("settings");
         });
       }
     }
@@ -2872,7 +2888,7 @@
       if (bgBtn) {
         bgBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          openPetActionPanel("background");
+          togglePetActionPanel("background");
         });
       }
     }
@@ -2882,7 +2898,7 @@
       if (accBtn) {
         accBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          openPetActionPanel("accessory");
+          togglePetActionPanel("accessory");
         });
       }
     }
@@ -2892,7 +2908,7 @@
       if (foodBtn) {
         foodBtn.addEventListener("click", function (event) {
           event.stopPropagation();
-          openPetActionPanel("food");
+          togglePetActionPanel("food");
         });
       }
     }
@@ -2944,9 +2960,7 @@
     }
 
     function bindPanelControlsClick() {
-      const controlsRoot = document.getElementById("petPanelControls");
-      if (!controlsRoot) return;
-
+      // Bind close handlers regardless of legacy container id presence.
       bindPetPopoverCloseButtons();
 
       updateSettingsPanelVisibility();
