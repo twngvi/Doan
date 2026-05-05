@@ -85,6 +85,31 @@
         loadAIUsageStats();
       });
     }
+
+    setupAIUsageToggle();
+  }
+
+  function setupAIUsageToggle() {
+    const section = document.querySelector('.ai-usage-section');
+    const toggleBtn = document.querySelector('.ai-usage-toggle');
+    if (!section || !toggleBtn) return;
+
+    const labelEl = toggleBtn.querySelector('.ai-usage-toggle-text');
+
+    const updateToggle = () => {
+      const isCollapsed = section.classList.contains('is-collapsed');
+      toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+      if (labelEl) {
+        labelEl.textContent = isCollapsed ? 'Xem chi tiết' : 'Thu gọn';
+      }
+    };
+
+    toggleBtn.addEventListener('click', () => {
+      section.classList.toggle('is-collapsed');
+      updateToggle();
+    });
+
+    updateToggle();
   }
 
   // Load online users from server
@@ -295,7 +320,7 @@
     }
     
     if (emptyState) emptyState.style.display = 'none';
-    grid.style.display = window.innerWidth <= 600 ? 'flex' : 'grid';
+    grid.style.display = '';
     
     grid.innerHTML = users.map(user => `
       <div class="user-card" data-user-id="${user.id}">
@@ -456,7 +481,9 @@
       if (emptyState) emptyState.style.display = 'none';
     } else {
       if (loadingState) loadingState.style.display = 'none';
-      if (usersGrid) usersGrid.style.display = window.innerWidth <= 600 ? 'flex' : 'grid';
+      if (usersGrid && usersGrid.style.display === 'none' && usersGrid.innerHTML.trim() !== '') {
+        usersGrid.style.display = '';
+      }
     }
   }
 
