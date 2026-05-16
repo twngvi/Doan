@@ -9,8 +9,12 @@
       "page-register",
       "page-verify-email",
       "page-forgot-password",
-      "page-admin",
     ];
+
+    const CHECKIN_ICON_PENDING =
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260516";
+    const CHECKIN_ICON_DONE =
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260516";
 
     function getStoredRole(storage) {
       if (!storage) return "";
@@ -24,23 +28,62 @@
       }
     }
 
-    function readStoredUser() {
-      if (window.currentUser && typeof window.currentUser === "object") {
-        return window.currentUser;
-      }
+    function isUsableValue(value) {
+      return (
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        value !== "undefined" &&
+        value !== "null"
+      );
+    }
 
-      const raw = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
-      if (!raw) return {};
-
+    function parseStoredUser(storage) {
+      if (!storage) return {};
       try {
-        return JSON.parse(raw) || {};
+        const raw = storage.getItem("currentUser");
+        return raw ? JSON.parse(raw) || {} : {};
       } catch (err) {
         return {};
       }
     }
 
+    function mergeUserPayloads() {
+      const merged = {};
+
+      Array.prototype.slice.call(arguments).forEach(function (src) {
+        if (!src || typeof src !== "object") return;
+
+        Object.keys(src).forEach(function (key) {
+          const value = src[key];
+
+          if (isUsableValue(value) || typeof merged[key] === "undefined") {
+            merged[key] = value;
+          }
+        });
+      });
+
+      return merged;
+    }
+
+    function readStoredUser() {
+      const sessionUser = parseStoredUser(
+        typeof sessionStorage !== "undefined" ? sessionStorage : null
+      );
+      const localUser = parseStoredUser(
+        typeof localStorage !== "undefined" ? localStorage : null
+      );
+      const liveUser =
+        window.currentUser && typeof window.currentUser === "object"
+          ? window.currentUser
+          : {};
+
+      return mergeUserPayloads(sessionUser, localUser, liveUser);
+    }
+
     function resolveDisplayName(user) {
       const payload = user && typeof user === "object" ? user : {};
+
       return (
         payload.displayName ||
         payload.fullName ||
@@ -52,31 +95,21 @@
 
     function resolveAvatarUrl(user) {
       const payload = user && typeof user === "object" ? user : {};
-      if (
-        payload.avatarUrl &&
-        payload.avatarUrl !== "" &&
-        payload.avatarUrl !== "undefined" &&
-        payload.avatarUrl !== "null"
-      ) {
-        return payload.avatarUrl;
-      }
 
-      if (
-        payload.avatar &&
-        payload.avatar !== "" &&
-        payload.avatar !== "undefined" &&
-        payload.avatar !== "null"
-      ) {
-        return payload.avatar;
-      }
+      const candidates = [
+        payload.avatarUrl,
+        payload.avatar,
+        payload.picture,
+        payload.photoURL,
+        payload.photoUrl,
+        payload.imageUrl,
+        payload.profileImage,
+      ];
 
-      if (
-        payload.picture &&
-        payload.picture !== "" &&
-        payload.picture !== "undefined" &&
-        payload.picture !== "null"
-      ) {
-        return payload.picture;
+      for (let i = 0; i < candidates.length; i++) {
+        if (isUsableValue(candidates[i])) {
+          return String(candidates[i]).trim();
+        }
       }
 
       return `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -84,21 +117,74 @@
       )}&size=96&background=6b7280&color=fff`;
     }
 
+    function normalizeNumber(value, fallback) {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+
+      if (typeof value === "string") {
+        const normalized = value.replace(/,/g, "").trim();
+
+        if (normalized !== "") {
+          const parsed = Number(normalized);
+          if (!Number.isNaN(parsed) && Number.isFinite(parsed)) return parsed;
+        }
+      }
+
+      return typeof fallback === "number" ? fallback : 0;
+    }
+
     function resolveTotalXp(user) {
       const payload = user && typeof user === "object" ? user : {};
-      const totalXP = Number(payload.totalXP);
-      if (!Number.isNaN(totalXP)) return totalXP;
 
-      const totalXp = Number(payload.totalXp);
-      if (!Number.isNaN(totalXp)) return totalXp;
+      const candidates = [
+        payload.totalXP,
+        payload.totalXp,
+        payload.xp,
+        payload.XP,
+        payload.points,
+        payload.totalXQP,
+        payload.xqp,
+      ];
 
-      const totalXQP = Number(payload.totalXQP);
-      if (!Number.isNaN(totalXQP)) return totalXQP;
-
-      const points = Number(payload.points);
-      if (!Number.isNaN(points)) return points;
+      for (let i = 0; i < candidates.length; i++) {
+        if (isUsableValue(candidates[i])) {
+          const parsed = normalizeNumber(candidates[i], NaN);
+          if (!Number.isNaN(parsed)) return parsed;
+        }
+      }
 
       return 0;
+    }
+
+    function updateTopNavUserState(user) {
+      const baseUser = readStoredUser();
+      const payload =
+        user && typeof user === "object"
+          ? mergeUserPayloads(baseUser, user)
+          : baseUser;
+
+      const xpValueEl = document.getElementById("global-xp-value");
+      if (xpValueEl) {
+        xpValueEl.textContent = normalizeNumber(
+          resolveTotalXp(payload),
+          0
+        ).toLocaleString();
+      }
+
+      const avatarEl = document.getElementById("globalAvatarImage");
+      if (avatarEl) {
+        const avatarUrl = resolveAvatarUrl(payload);
+
+        avatarEl.onerror = function () {
+          this.onerror = null;
+          this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            resolveDisplayName(payload)
+          )}&size=96&background=6b7280&color=fff`;
+        };
+
+        if (avatarEl.src !== avatarUrl) {
+          avatarEl.src = avatarUrl;
+        }
+      }
     }
 
     function openLogoutModal() {
@@ -115,20 +201,11 @@
       if (button) button.setAttribute("aria-expanded", "false");
     }
 
-    function updateTopNavUserState(user) {
-      const baseUser = readStoredUser();
-      const payload = user && typeof user === "object" ? Object.assign({}, baseUser, user) : baseUser;
-
-      const xpValueEl = document.getElementById("global-xp-value");
-      if (xpValueEl) {
-        xpValueEl.textContent = resolveTotalXp(payload).toLocaleString();
-      }
-
-      const avatarEl = document.getElementById("globalAvatarImage");
-      if (avatarEl) {
-        avatarEl.src = resolveAvatarUrl(payload);
-      }
-    }
+    /* Export để script thứ 2 trong cùng file dùng được */
+    window.readStoredUser = readStoredUser;
+    window.resolveDisplayName = resolveDisplayName;
+    window.resolveAvatarUrl = resolveAvatarUrl;
+    window.updateTopNavUserState = updateTopNavUserState;
 
     // Global top navigation management (legacy name kept for compatibility)
     const GlobalSidebar = {
@@ -146,6 +223,7 @@
         this.setupNavigation();
         this.checkVisibility(this.getCurrentPageId());
         this.syncTopNavCheckinFromStorage();
+        updateTopNavUserState(readStoredUser());
       },
 
       setupEventListeners: function () {
@@ -293,16 +371,21 @@
         const checkinBtn = document.getElementById("global-checkin-fire");
         const fireIcon = document.getElementById("global-fire-icon");
         const streakValueEl = document.getElementById("global-streak-value");
+
         if (checkinBtn) {
           checkinBtn.classList.toggle("checked-in", !!hasCheckedInToday);
           checkinBtn.disabled = !!hasCheckedInToday;
-          checkinBtn.title = hasCheckedInToday ? "Đã điểm danh hôm nay" : "Điểm danh";
+          checkinBtn.title = hasCheckedInToday
+            ? "Đã điểm danh hôm nay"
+            : "Điểm danh";
         }
+
         if (fireIcon) {
           fireIcon.src = hasCheckedInToday
             ? CHECKIN_ICON_DONE
             : CHECKIN_ICON_PENDING;
         }
+
         if (streakValueEl && typeof streakValue !== "undefined") {
           streakValueEl.textContent = String(streakValue || 0);
         }
@@ -1561,21 +1644,27 @@
     console.log("🔧 Sidebar scripts loading...");
 
     const CHECKIN_ICON_PENDING =
-      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png";
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260516";
     const CHECKIN_ICON_DONE =
-      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png";
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260516";
 
     /**
      * ⭐ Update sidebar user info - IMPROVED
      */
     function updateSidebarUserInfo() {
-      const user = readStoredUser();
+      const user =
+        typeof window.readStoredUser === "function"
+          ? window.readStoredUser()
+          : {};
 
       console.log("📊 Updating sidebar with user:", user);
 
       const usernameEl = document.getElementById("sidebar-username");
       if (usernameEl) {
-        usernameEl.textContent = resolveDisplayName(user);
+        usernameEl.textContent =
+          typeof window.resolveDisplayName === "function"
+            ? window.resolveDisplayName(user)
+            : user.displayName || user.fullName || user.username || user.name || "User";
       }
 
       const roleEl = document.getElementById("sidebar-role");
@@ -1584,12 +1673,13 @@
       }
 
       const avatarEl = document.getElementById("sidebar-avatar");
-      if (avatarEl) {
-        avatarEl.src = resolveAvatarUrl(user);
-        console.log("✅ Sidebar avatar updated:", avatarEl.src);
+      if (avatarEl && typeof window.resolveAvatarUrl === "function") {
+        avatarEl.src = window.resolveAvatarUrl(user);
       }
 
-      updateTopNavUserState(user);
+      if (typeof window.updateTopNavUserState === "function") {
+        window.updateTopNavUserState(user);
+      }
 
       console.log("✅ Sidebar updated successfully");
     }
@@ -1603,18 +1693,22 @@
     });
 
     window.addEventListener("user-info-updated", function (e) {
+      if (typeof window.updateTopNavUserState !== "function") return;
+
       if (e && e.detail) {
-        updateTopNavUserState(e.detail);
-      } else {
-        updateTopNavUserState(readStoredUser());
+        window.updateTopNavUserState(e.detail);
+      } else if (typeof window.readStoredUser === "function") {
+        window.updateTopNavUserState(window.readStoredUser());
       }
     });
 
     window.addEventListener("top-nav-user-state-updated", function (e) {
+      if (typeof window.updateTopNavUserState !== "function") return;
+
       if (e && e.detail) {
-        updateTopNavUserState(e.detail);
-      } else {
-        updateTopNavUserState(readStoredUser());
+        window.updateTopNavUserState(e.detail);
+      } else if (typeof window.readStoredUser === "function") {
+        window.updateTopNavUserState(window.readStoredUser());
       }
     });
 
@@ -1627,8 +1721,13 @@
         console.log("✅ Sidebar avatar updated from event");
       }
 
-      if (e && e.detail && e.detail.url) {
-        updateTopNavUserState({ avatarUrl: e.detail.url });
+      if (
+        e &&
+        e.detail &&
+        e.detail.url &&
+        typeof window.updateTopNavUserState === "function"
+      ) {
+        window.updateTopNavUserState({ avatarUrl: e.detail.url });
       }
     });
 

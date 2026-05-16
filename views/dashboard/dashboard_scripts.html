@@ -8,6 +8,121 @@
     cacheTimeout: 60000,
   };
 
+  const DASHBOARD_CHECKIN_ICON_PENDING =
+    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260516";
+  const DASHBOARD_CHECKIN_ICON_DONE =
+    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260516";
+
+  function isDashboardUsableValue(value) {
+    return (
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      value !== "undefined" &&
+      value !== "null"
+    );
+  }
+
+  function dashboardNumber(value, fallback) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+
+    if (typeof value === "string") {
+      var normalized = value.replace(/,/g, "").trim();
+
+      if (normalized !== "") {
+        var parsed = Number(normalized);
+        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) return parsed;
+      }
+    }
+
+    return typeof fallback === "number" ? fallback : 0;
+  }
+
+  function pickDashboardValue() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (isDashboardUsableValue(arguments[i])) return arguments[i];
+    }
+
+    return undefined;
+  }
+
+  function resolveDashboardAvatarUrl(user) {
+    var payload = user && typeof user === "object" ? user : {};
+
+    var avatar = pickDashboardValue(
+      payload.avatarUrl,
+      payload.avatar,
+      payload.picture,
+      payload.photoURL,
+      payload.photoUrl,
+      payload.imageUrl,
+      payload.profileImage
+    );
+
+    return isDashboardUsableValue(avatar) ? String(avatar).trim() : "";
+  }
+
+  function mergeDashboardUserPayloads() {
+    var merged = {};
+
+    Array.prototype.slice.call(arguments).forEach(function (src) {
+      if (!src || typeof src !== "object") return;
+
+      Object.keys(src).forEach(function (key) {
+        var value = src[key];
+
+        if (isDashboardUsableValue(value) || typeof merged[key] === "undefined") {
+          merged[key] = value;
+        }
+      });
+    });
+
+    return merged;
+  }
+
+  function persistAndBroadcastDashboardUser(user) {
+    if (!user || typeof user !== "object") return;
+
+    window.currentUser = mergeDashboardUserPayloads(
+      getUserData() || {},
+      window.currentUser || {},
+      user
+    );
+
+    try {
+      if (typeof currentUser !== "undefined") {
+        currentUser = window.currentUser;
+      }
+    } catch (e) {}
+
+    try {
+      var storageKey = localStorage.getItem("currentUser")
+        ? "localStorage"
+        : "sessionStorage";
+
+      window[storageKey].setItem(
+        "currentUser",
+        JSON.stringify(window.currentUser)
+      );
+    } catch (e) {
+      console.warn("Failed to persist dashboard user sync:", e);
+    }
+
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent("user-info-updated", {
+          detail: window.currentUser,
+        })
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("top-nav-user-state-updated", {
+          detail: window.currentUser,
+        })
+      );
+    }
+  }
+
   /**
    * Force refresh dashboard when user returns to dashboard page
    * Called from showPage() in client_js.html
@@ -579,68 +694,74 @@
    * Render all 4 zones from single data object
    */
   function renderAllZones(data) {
-    try { renderQuickStats(data.quickStats); } catch(e) { console.error("Error renderQuickStats:", e); }
-    try { renderActivities(data.activities); } catch(e) { console.error("Error renderActivities:", e); }
-    try { renderQuests(data.quests); } catch(e) { console.error("Error renderQuests:", e); }
-    try { renderSkillProgress(data.skillProgress); } catch(e) { console.error("Error renderSkillProgress:", e); }
-    try { renderLeaderboard(data.leaderboard); } catch(e) { console.error("Error renderLeaderboard:", e); }
-    try { renderSuggestion(data.suggestion); } catch(e) { console.error("Error renderSuggestion:", e); }
+    data = data || {};
+
+    try {
+      renderQuickStats(data.quickStats);
+    } catch (e) {
+      console.error("Error renderQuickStats:", e);
+    }
+
+    try {
+      renderActivities(data.activities);
+    } catch (e) {
+      console.error("Error renderActivities:", e);
+    }
+
+    try {
+      renderQuests(data.quests);
+    } catch (e) {
+      console.error("Error renderQuests:", e);
+    }
+
+    try {
+      renderSkillProgress(data.skillProgress);
+    } catch (e) {
+      console.error("Error renderSkillProgress:", e);
+    }
+
+    try {
+      renderLeaderboard(data.leaderboard);
+    } catch (e) {
+      console.error("Error renderLeaderboard:", e);
+    }
+
+    try {
+      renderSuggestion(data.suggestion);
+    } catch (e) {
+      console.error("Error renderSuggestion:", e);
+    }
+
+    var userPatch = {};
 
     if (data.user && typeof data.user === "object") {
-      window.currentUser = Object.assign({}, window.currentUser || {}, data.user);
-      try {
-        var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-        window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
-      } catch (e) {
-        console.warn("Failed to persist dashboard user sync:", e);
+      userPatch = mergeDashboardUserPayloads(userPatch, data.user);
+    }
+
+    if (data.quickStats && typeof data.quickStats === "object") {
+      if (isDashboardUsableValue(data.quickStats.totalXP)) {
+        userPatch.totalXP = dashboardNumber(data.quickStats.totalXP, 0);
       }
 
-      if (typeof window.dispatchEvent === "function") {
-        window.dispatchEvent(
-          new CustomEvent("user-info-updated", {
-            detail: window.currentUser
-          })
-        );
-        window.dispatchEvent(
-          new CustomEvent("top-nav-user-state-updated", {
-            detail: window.currentUser
-          })
-        );
+      if (isDashboardUsableValue(data.quickStats.totalXQP)) {
+        userPatch.totalXQP = dashboardNumber(data.quickStats.totalXQP, 0);
       }
     }
 
-    // Sync authoritative XP/XQP from server into window.currentUser
-    // so Pet page and other modules always read the latest values.
-    if (data.quickStats && window.currentUser) {
-      var changed = false;
-      if (typeof data.quickStats.totalXP === 'number') {
-        window.currentUser.totalXP = data.quickStats.totalXP;
-        changed = true;
-      }
-      if (typeof data.quickStats.totalXQP === 'number') {
-        window.currentUser.totalXQP = data.quickStats.totalXQP;
-        changed = true;
-      }
-      if (changed) {
-        try {
-          var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-          window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
-        } catch (e) {
-          console.warn("Failed to persist XQP sync:", e);
-        }
+    if (Object.keys(userPatch).length > 0) {
+      persistAndBroadcastDashboardUser(userPatch);
+    }
 
-        // Also update Pet XQP counter immediately if visible
-        var xqpEl = document.getElementById("petXQPBalance");
-        if (xqpEl) xqpEl.textContent = Number(data.quickStats.totalXQP).toLocaleString();
-
-        if (typeof window.dispatchEvent === "function") {
-          window.dispatchEvent(
-            new CustomEvent("top-nav-user-state-updated", {
-              detail: window.currentUser
-            })
-          );
-        }
-      }
+    var xqpEl = document.getElementById("petXQPBalance");
+    if (
+      xqpEl &&
+      window.currentUser &&
+      isDashboardUsableValue(window.currentUser.totalXQP)
+    ) {
+      xqpEl.textContent = dashboardNumber(
+        window.currentUser.totalXQP,
+        0
+      ).toLocaleString();
     }
   }
 
@@ -649,17 +770,24 @@
    */
   function renderQuickStats(stats) {
     if (!stats) return;
+
     var xpEl = document.getElementById("qs-xp");
+    var topNavXpEl = document.getElementById("global-xp-value");
     var accEl = document.getElementById("qs-accuracy");
     var badgesEl = document.getElementById("qs-badges");
     var rankEl = document.getElementById("qs-rank");
     var rankIconEl = document.getElementById("qs-rank-icon");
 
-    if (xpEl) xpEl.textContent = stats.totalXP.toLocaleString();
-    if (accEl) accEl.textContent = stats.avgAccuracy + "%";
-    if (badgesEl) badgesEl.textContent = stats.badges;
-    if (rankEl) rankEl.textContent = stats.rankTitle;
-    if (rankIconEl) rankIconEl.textContent = stats.rankIcon;
+    var totalXP = dashboardNumber(stats.totalXP, 0);
+    var avgAccuracy = dashboardNumber(stats.avgAccuracy, 0);
+    var badges = dashboardNumber(stats.badges, 0);
+
+    if (xpEl) xpEl.textContent = totalXP.toLocaleString();
+    if (topNavXpEl) topNavXpEl.textContent = totalXP.toLocaleString();
+    if (accEl) accEl.textContent = avgAccuracy + "%";
+    if (badgesEl) badgesEl.textContent = badges;
+    if (rankEl) rankEl.textContent = stats.rankTitle || "Chưa xếp hạng";
+    if (rankIconEl) rankIconEl.textContent = stats.rankIcon || "";
   }
 
   /**
@@ -987,24 +1115,28 @@
             btnEl.outerHTML = '<div class="quest-xp quest-xp-claimed">✓ +' + (result.xpAwarded) + ' XP</div>';
           }
 
-          // Update XP and XQP display
-          var xpEl = document.getElementById("qs-xp");
-          if (xpEl) xpEl.textContent = result.newTotalXP.toLocaleString();
-          
-          // Update XQP balance in state and any visible counters
-          if (result.newTotalXQP !== undefined) {
-            if (window.currentUser) {
-              window.currentUser.totalXP = result.newTotalXP;
-              window.currentUser.totalXQP = result.newTotalXQP;
-              
-              // Persist to storage
-              var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-              window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
-            }
+          // Update XP/XQP display và header theo số mới từ Google Sheet/server.
+          var userPatch = {};
 
-            // Update Pet XQP counter if it exists (for SPA synchronization)
+          if (isDashboardUsableValue(result.newTotalXP)) {
+            userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
+
+            var xpEl = document.getElementById("qs-xp");
+            var topNavXpEl = document.getElementById("global-xp-value");
+
+            if (xpEl) xpEl.textContent = userPatch.totalXP.toLocaleString();
+            if (topNavXpEl) topNavXpEl.textContent = userPatch.totalXP.toLocaleString();
+          }
+
+          if (isDashboardUsableValue(result.newTotalXQP)) {
+            userPatch.totalXQP = dashboardNumber(result.newTotalXQP, 0);
+
             var xqpEl = document.getElementById("petXQPBalance");
-            if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
+            if (xqpEl) xqpEl.textContent = userPatch.totalXQP.toLocaleString();
+          }
+
+          if (Object.keys(userPatch).length > 0) {
+            persistAndBroadcastDashboardUser(userPatch);
           }
 
           // Show XP animation
@@ -1451,8 +1583,11 @@
 
     if (typeof window.updateAllUserNames === "function")
       window.updateAllUserNames(displayName);
-    if (typeof window.updateAllUserAvatars === "function")
-      window.updateAllUserAvatars(user.avatarUrl);
+    var avatarUrl = resolveDashboardAvatarUrl(normalizedUser);
+
+    if (typeof window.updateAllUserAvatars === "function" && avatarUrl) {
+      window.updateAllUserAvatars(avatarUrl);
+    }
   }
 
   /**
@@ -1465,10 +1600,10 @@
       .withSuccessHandler(function (result) {
         if (result && result.success) {
           var streakData = {
-            currentStreak: result.currentStreak || 0,
-            longestStreak: result.longestStreak || 0,
-            lastActiveDate: result.lastActiveDate || null,
-            checkedInToday: result.checkedInToday || false,
+            currentStreak: dashboardNumber(result.currentStreak, 0),
+            longestStreak: dashboardNumber(result.longestStreak, 0),
+            lastActiveDate: result.lastActiveDate || result.serverToday || null,
+            checkedInToday: !!(result.checkedInToday || result.hasCheckedInToday),
           };
           saveStreakData(streakData);
           updateStreakUI(streakData);
@@ -1496,48 +1631,50 @@
       .withSuccessHandler(function (result) {
         if (result && result.success) {
           setCheckinDone();
+
           var streakData = {
-            currentStreak: result.currentStreak || 0,
-            longestStreak: result.longestStreak || 0,
-            lastActiveDate: result.serverToday || null,
+            currentStreak: dashboardNumber(result.currentStreak, 0),
+            longestStreak: dashboardNumber(result.longestStreak, 0),
+            lastActiveDate: result.serverToday || result.lastActiveDate || null,
             checkedInToday: true,
           };
+
           saveStreakData(streakData);
           updateStreakUI(streakData);
 
-          // Update XP and XQP display immediately if XP was awarded
-          if (result.xpAwarded) {
+          // Update XP/XQP display ngay theo response từ server,
+          // kể cả khi backend trả string hoặc giá trị là 0.
+          var userPatch = {};
+
+          if (isDashboardUsableValue(result.newTotalXP)) {
+            userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
+
             var xpEl = document.getElementById("qs-xp");
-            if (xpEl && result.newTotalXP) {
-              xpEl.textContent = result.newTotalXP.toLocaleString();
-            }
+            var topNavXpEl = document.getElementById("global-xp-value");
 
-            showXPAnimation(result.xpAwarded);
+            if (xpEl) xpEl.textContent = userPatch.totalXP.toLocaleString();
+            if (topNavXpEl) topNavXpEl.textContent = userPatch.totalXP.toLocaleString();
           }
 
-          // Always sync XQP/XP totals from server response (even if no XP awarded this time)
-          var activeUser = window.currentUser || currentUser;
-          if (result.newTotalXQP !== undefined && result.newTotalXQP > 0) {
-            if (activeUser) {
-              activeUser.totalXP = result.newTotalXP;
-              activeUser.totalXQP = result.newTotalXQP;
-              
-              // Persist
-              var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-              window[storageKey].setItem("currentUser", JSON.stringify(activeUser));
-            }
+          if (isDashboardUsableValue(result.newTotalXQP)) {
+            userPatch.totalXQP = dashboardNumber(result.newTotalXQP, 0);
 
-            // Update Pet XQP counter if it exists (for SPA synchronization)
             var xqpEl = document.getElementById("petXQPBalance");
-            if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
+            if (xqpEl) xqpEl.textContent = userPatch.totalXQP.toLocaleString();
           }
 
-          if (typeof window.dispatchEvent === "function") {
+          if (Object.keys(userPatch).length > 0) {
+            persistAndBroadcastDashboardUser(userPatch);
+          } else if (typeof window.dispatchEvent === "function") {
             window.dispatchEvent(
               new CustomEvent("top-nav-user-state-updated", {
-                detail: activeUser || window.currentUser || currentUser
+                detail: window.currentUser || {},
               })
             );
+          }
+
+          if (result.xpAwarded) {
+            showXPAnimation(dashboardNumber(result.xpAwarded, 0));
           }
 
           if (typeof showToast === "function") {
@@ -1550,7 +1687,6 @@
             );
           }
 
-          // Refresh quests to show check-in quest as done
           setTimeout(() => {
             requestDashboardRefresh({
               forceRefresh: true,
@@ -1562,15 +1698,20 @@
         } else {
           if (result && result.alreadyCheckedIn) {
             setCheckinDone();
+
             var streakData = {
-              currentStreak: result.currentStreak || 0,
-              longestStreak: result.longestStreak || 0,
+              currentStreak: dashboardNumber(result.currentStreak, 0),
+              longestStreak: dashboardNumber(result.longestStreak, 0),
+              lastActiveDate: result.serverToday || result.lastActiveDate || null,
               checkedInToday: true,
             };
+
             saveStreakData(streakData);
             updateStreakUI(streakData);
-            if (typeof showToast === "function")
+
+            if (typeof showToast === "function") {
               showToast("Hôm nay bạn đã điểm danh rồi!", "info");
+            }
           } else {
             if (btn) btn.disabled = false;
             if (typeof showToast === "function")
@@ -1594,58 +1735,88 @@
    * Set check-in to done state
    */
   function setCheckinDone() {
-    var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
+    var btn =
+      document.getElementById("global-checkin-fire") ||
+      document.getElementById("checkin-btn");
+    var fireIcon = document.getElementById("global-fire-icon");
     var iconEl = document.getElementById("checkin-icon");
     var textEl = document.getElementById("checkin-text");
+    var streakData = getStreakData();
 
     if (btn) {
       btn.disabled = true;
       btn.classList.add("checked-in");
+      btn.title = "Đã điểm danh hôm nay";
     }
+
+    if (fireIcon) {
+      fireIcon.src = DASHBOARD_CHECKIN_ICON_DONE;
+    }
+
     if (iconEl) iconEl.textContent = "✓";
     if (textEl) textEl.textContent = "Đã điểm danh";
+
     if (typeof window.setTopNavCheckinState === "function") {
-      window.setTopNavCheckinState(true);
+      window.setTopNavCheckinState(true, streakData.currentStreak || 0);
     }
   }
 
   function setCheckinPending() {
-    var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
+    var btn =
+      document.getElementById("global-checkin-fire") ||
+      document.getElementById("checkin-btn");
+    var fireIcon = document.getElementById("global-fire-icon");
     var iconEl = document.getElementById("checkin-icon");
     var textEl = document.getElementById("checkin-text");
+    var streakData = getStreakData();
 
     if (btn) {
       btn.disabled = false;
       btn.classList.remove("checked-in");
+      btn.title = "Điểm danh";
     }
+
+    if (fireIcon) {
+      fireIcon.src = DASHBOARD_CHECKIN_ICON_PENDING;
+    }
+
     if (iconEl) iconEl.textContent = "○";
     if (textEl) textEl.textContent = "Điểm danh";
+
     if (typeof window.setTopNavCheckinState === "function") {
-      window.setTopNavCheckinState(false);
+      window.setTopNavCheckinState(false, streakData.currentStreak || 0);
     }
   }
 
-  /**
-   * Update streak UI
-   */
   function updateStreakUI(streakData) {
     var streakDaysEl = document.getElementById("streak-days");
     var subtitleEl = document.getElementById("header-subtitle");
 
-    if (streakDaysEl)
-      streakDaysEl.textContent = '' + (streakData.currentStreak || 0) + ' ngày';
+    var currentStreak = dashboardNumber(
+      streakData && streakData.currentStreak,
+      0
+    );
+    var checkedInToday = !!(streakData && streakData.checkedInToday);
+
+    if (streakDaysEl) {
+      streakDaysEl.textContent = "" + currentStreak + " ngày";
+    }
 
     if (typeof window.setTopNavCheckinState === "function") {
-      window.setTopNavCheckinState(
-        !!(streakData && streakData.checkedInToday),
-        (streakData && streakData.currentStreak) || 0
-      );
+      window.setTopNavCheckinState(checkedInToday, currentStreak);
     }
 
     if (streakData && streakData.checkedInToday) {
       setCheckinDone();
     } else {
       setCheckinPending();
+    }
+
+    if (subtitleEl) {
+      subtitleEl.innerHTML =
+        currentStreak > 0
+          ? 'Bạn đã điểm danh <strong>' + currentStreak + " ngày</strong> liên tục"
+          : "Hãy điểm danh hôm nay để bắt đầu chuỗi học tập!";
     }
   }
 
