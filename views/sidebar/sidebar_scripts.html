@@ -185,6 +185,111 @@
           avatarEl.src = avatarUrl;
         }
       }
+
+      updateTopNavPetState(payload);
+    }
+
+    function resolveTopNavPetImageUrl(user) {
+      const payload = user && typeof user === "object" ? user : {};
+      const petConfig = payload.petConfig && typeof payload.petConfig === "object" ? payload.petConfig : {};
+      const favoriteVariantId = String(petConfig.favoriteVariantId || payload.favoriteVariantId || "").trim();
+
+      const imageCandidates = [
+        petConfig.favoritePetImageUrl,
+        payload.favoritePetImageUrl,
+      ];
+
+      for (let i = 0; i < imageCandidates.length; i++) {
+        if (isUsableValue(imageCandidates[i])) {
+          return String(imageCandidates[i]).trim();
+        }
+      }
+
+      if (
+        favoriteVariantId &&
+        typeof window.resolvePetThumbUrlByVariantId === "function"
+      ) {
+        const resolvedUrl = window.resolvePetThumbUrlByVariantId(favoriteVariantId);
+        if (isUsableValue(resolvedUrl)) {
+          return String(resolvedUrl).trim();
+        }
+      }
+
+      return "";
+    }
+
+    function updateTopNavPetState(user) {
+      const payload = user && typeof user === "object" ? user : readStoredUser();
+      const petButton = document.getElementById("globalPetButton");
+      const petImage = document.getElementById("globalPetImage");
+      const petConfig = payload.petConfig && typeof payload.petConfig === "object" ? payload.petConfig : {};
+      const imageUrl = resolveTopNavPetImageUrl(payload);
+
+      if (petButton) {
+        petButton.classList.toggle("is-placeholder", !imageUrl);
+      }
+
+      if (petImage) {
+        const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+          "Pet"
+        )}&size=96&background=9ca3af&color=fff`;
+
+        petImage.onerror = function () {
+          this.onerror = null;
+          this.src = fallbackUrl;
+          if (petButton) petButton.classList.add("is-placeholder");
+        };
+
+        if (imageUrl) {
+          if (petImage.src !== imageUrl) {
+            petImage.src = imageUrl;
+          }
+          if (petButton) petButton.classList.remove("is-placeholder");
+        } else {
+          petImage.src = fallbackUrl;
+          if (petButton) petButton.classList.add("is-placeholder");
+        }
+      }
+
+      if (petButton) {
+        const favoriteName =
+          (petConfig.favoriteVariantId && petConfig.petNamesByVariantId && petConfig.petNamesByVariantId[petConfig.favoriteVariantId]) ||
+          petConfig.favoriteVariantId ||
+          "Pet";
+        petButton.title = "Trang PET - " + favoriteName;
+        petButton.setAttribute("aria-label", petButton.title);
+      }
+    }
+
+    function refreshTopNavPetStateFromServer(user) {
+      const payload = user && typeof user === "object" ? user : readStoredUser();
+      const userId = String(payload.userId || payload.id || "").trim();
+
+      if (!userId || typeof google === "undefined" || !google.script || !google.script.run) {
+        updateTopNavPetState(payload);
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.success && response.config) {
+            const mergedUser = mergeUserPayloads(payload, { petConfig: response.config });
+            try {
+              window.currentUser = mergeUserPayloads(window.currentUser || {}, mergedUser);
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem("currentUser", JSON.stringify(window.currentUser));
+              }
+            } catch (err) {}
+            updateTopNavPetState(mergedUser);
+            return;
+          }
+
+          updateTopNavPetState(payload);
+        })
+        .withFailureHandler(function () {
+          updateTopNavPetState(payload);
+        })
+        .getPetConfig(userId);
     }
 
     function openLogoutModal() {
@@ -206,6 +311,7 @@
     window.resolveDisplayName = resolveDisplayName;
     window.resolveAvatarUrl = resolveAvatarUrl;
     window.updateTopNavUserState = updateTopNavUserState;
+    window.updateTopNavPetState = updateTopNavPetState;
 
     // Global top navigation management (legacy name kept for compatibility)
     const GlobalSidebar = {
@@ -224,10 +330,14 @@
         this.checkVisibility(this.getCurrentPageId());
         this.syncTopNavCheckinFromStorage();
         updateTopNavUserState(readStoredUser());
+        refreshTopNavPetStateFromServer(readStoredUser());
       },
 
       setupEventListeners: function () {
-        window.addEventListener("storage", () => this.syncTopNavCheckinFromStorage());
+        window.addEventListener("storage", () => {
+          this.syncTopNavCheckinFromStorage();
+          refreshTopNavPetStateFromServer(readStoredUser());
+        });
       },
 
       setupNavigation: function () {
@@ -291,6 +401,16 @@
               }
             } else if (action === "logout") {
               openLogoutModal();
+            }
+          });
+        }
+
+        const petButton = document.getElementById("globalPetButton");
+        if (petButton) {
+          petButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (typeof showPage === "function") {
+              showPage("page-pet");
             }
           });
         }
@@ -1709,6 +1829,17 @@
         window.updateTopNavUserState(e.detail);
       } else if (typeof window.readStoredUser === "function") {
         window.updateTopNavUserState(window.readStoredUser());
+      }
+    });
+
+    window.addEventListener("pet-config-updated", function (e) {
+      if (typeof window.updateTopNavPetState !== "function") return;
+
+      if (e && e.detail) {
+        const user = window.readStoredUser ? window.readStoredUser() : {};
+        window.updateTopNavPetState(Object.assign({}, user, { petConfig: e.detail }));
+      } else {
+        window.updateTopNavPetState(window.readStoredUser());
       }
     });
 

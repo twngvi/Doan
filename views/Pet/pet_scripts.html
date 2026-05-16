@@ -253,6 +253,8 @@
       catalogLoaded: false,
       selectionLocked: false,
       lockedVariantId: DEFAULT_PET_VARIANTS[0].id,
+      favoriteVariantId: DEFAULT_PET_VARIANTS[0].id,
+      favoritePetImageUrl: "",
       ownedVariantIds: [DEFAULT_PET_VARIANTS[0].id],
       petEntities: [], // Track positions and states of all pets in the world
     };
@@ -281,6 +283,87 @@
         return src;
       }
       return PET_ASSET_BASE_URLS[0] + src.replace(/^\/+/, "");
+    }
+
+    function normalizePetImageUrl(value) {
+      const safe = String(value || "").trim();
+      return safe || "";
+    }
+
+    function getVariantThumbFileName(variant) {
+      if (!variant || typeof variant !== "object") return "";
+      return String(variant.level2 || variant.level1 || "").trim();
+    }
+
+    function getVariantThumbUrlById(variantId) {
+      const safeVariantId = String(variantId || "").trim();
+      if (!safeVariantId || !Array.isArray(PET_VARIANTS)) return "";
+
+      for (let i = 0; i < PET_VARIANTS.length; i++) {
+        const variant = PET_VARIANTS[i];
+        if (String((variant && variant.id) || "").trim() !== safeVariantId) continue;
+        return resolvePetThumbSrc(getVariantThumbFileName(variant));
+      }
+
+      return "";
+    }
+
+    window.resolvePetThumbUrlByVariantId = getVariantThumbUrlById;
+
+    function normalizeFavoriteVariantId(rawFavoriteVariantId, ownedVariantIds, fallbackVariantId) {
+      const safeFavorite = String(rawFavoriteVariantId || "").trim();
+      const safeFallback = String(fallbackVariantId || "").trim();
+      const ownedList = Array.isArray(ownedVariantIds) ? ownedVariantIds : [];
+
+      if (safeFavorite && ownedList.indexOf(safeFavorite) !== -1) {
+        return safeFavorite;
+      }
+
+      if (safeFallback && ownedList.indexOf(safeFallback) !== -1) {
+        return safeFallback;
+      }
+
+      if (ownedList.length) {
+        return String(ownedList[0] || "").trim();
+      }
+
+      return safeFavorite || safeFallback;
+    }
+
+    function syncCurrentUserPetConfig(petConfig) {
+      if (!window.currentUser || typeof window.currentUser !== "object") return;
+
+      const safeConfig = petConfig && typeof petConfig === "object" ? JSON.parse(JSON.stringify(petConfig)) : {};
+      window.currentUser.petConfig = safeConfig;
+
+      try {
+        currentUser = window.currentUser;
+      } catch (e) {}
+
+      try {
+        const storage = localStorage.getItem("currentUser") ? localStorage : sessionStorage;
+        if (storage) {
+          storage.setItem("currentUser", JSON.stringify(window.currentUser));
+        }
+      } catch (e) {}
+
+      window.dispatchEvent(
+        new CustomEvent("pet-config-updated", {
+          detail: safeConfig,
+        })
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("user-info-updated", {
+          detail: window.currentUser,
+        })
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("top-nav-user-state-updated", {
+          detail: window.currentUser,
+        })
+      );
     }
 
     function getPetTooltip() {
@@ -812,6 +895,76 @@
       const byIndex = String(getVariantIdByIndex(state.currentIndex) || "").trim();
       if (byIndex) return byIndex;
       return String((state.lockedVariantId || "")).trim();
+    }
+
+    function getFavoriteVariantId() {
+      const fallbackVariantId = String(getActiveVariantId() || getVariantIdByIndex(state.currentIndex) || state.lockedVariantId || "").trim();
+      state.favoriteVariantId = normalizeFavoriteVariantId(
+        state.favoriteVariantId,
+        state.ownedVariantIds,
+        fallbackVariantId,
+      );
+      return String(state.favoriteVariantId || "").trim();
+    }
+
+    function getFavoritePetImageUrl() {
+      const favoriteVariantId = getFavoriteVariantId();
+      const computedUrl = favoriteVariantId ? getVariantThumbUrlById(favoriteVariantId) : "";
+      return normalizePetImageUrl(state.favoritePetImageUrl || computedUrl);
+    }
+
+    function updateFavoritePetUI() {
+      const favoriteVariantId = getFavoriteVariantId();
+      const activeVariantId = String(getActiveVariantId() || "").trim();
+      const favoriteBtn = document.getElementById("petFavoriteToggleBtn");
+      const favoriteIcon = document.getElementById("petFavoriteToggleIcon");
+
+      if (favoriteBtn) {
+        const isFavoriteActive = !!favoriteVariantId && favoriteVariantId === activeVariantId;
+        favoriteBtn.classList.toggle("active", isFavoriteActive);
+        favoriteBtn.setAttribute(
+          "aria-pressed",
+          isFavoriteActive ? "true" : "false",
+        );
+        favoriteBtn.title = isFavoriteActive
+          ? "Pet này đang là yêu thích"
+          : "Đặt pet này làm yêu thích";
+        favoriteBtn.setAttribute("aria-label", favoriteBtn.title);
+      }
+
+      if (favoriteIcon) {
+        const isFavoriteActive = !!favoriteVariantId && favoriteVariantId === activeVariantId;
+        favoriteIcon.textContent = isFavoriteActive ? "star" : "star_outline";
+      }
+    }
+
+    function setFavoriteVariant(variantId, options) {
+      const safeVariantId = String(variantId || "").trim();
+      const fallbackVariantId = String(getActiveVariantId() || getVariantIdByIndex(state.currentIndex) || state.lockedVariantId || "").trim();
+      const normalizedVariantId = normalizeFavoriteVariantId(
+        safeVariantId,
+        state.ownedVariantIds,
+        fallbackVariantId,
+      );
+
+      if (!normalizedVariantId) return false;
+
+      const isSameFavorite = normalizedVariantId === String(state.favoriteVariantId || "").trim();
+      state.favoriteVariantId = normalizedVariantId;
+
+      const nextImageUrl = getVariantThumbUrlById(normalizedVariantId);
+      if (nextImageUrl) {
+        state.favoritePetImageUrl = nextImageUrl;
+      }
+
+      updateFavoritePetUI();
+      queuePetConfigAutoSave();
+
+      if (!options || options.dispatch !== false) {
+        syncCurrentUserPetConfig(buildPersistedConfig());
+      }
+
+      return !isSameFavorite;
     }
 
     function getPetDisplayNameByVariantId(variantId) {
@@ -1736,6 +1889,8 @@
       const buttonsWrap = document.getElementById("petVariantButtons");
       if (!buttonsWrap) return;
 
+      const favoriteVariantId = getFavoriteVariantId();
+
       const buttons = buttonsWrap.querySelectorAll(".pet-variant-btn");
       buttons.forEach((button, index) => {
         const variant = PET_VARIANTS[index];
@@ -1746,8 +1901,12 @@
         button.classList.toggle("is-owned", owned);
         button.classList.toggle("is-not-owned", !owned);
         button.classList.toggle("is-locked", !owned && !unlocked);
+        button.classList.toggle("is-favorite", !!favoriteVariantId && variantId === favoriteVariantId);
         button.setAttribute("aria-disabled", !owned && !unlocked ? "true" : "false");
+        button.setAttribute("aria-pressed", !!favoriteVariantId && variantId === favoriteVariantId ? "true" : "false");
       });
+
+      updateFavoritePetUI();
     }
 
     function sanitizePetName(value) {
@@ -2495,6 +2654,14 @@
       const lockedVariantId = String(
         ownedVariantIds[0] || currentVariantId,
       ).trim();
+      const favoriteVariantId = normalizeFavoriteVariantId(
+        state.favoriteVariantId,
+        ownedVariantIds,
+        currentVariantId,
+      );
+      const favoritePetImageUrl = normalizePetImageUrl(
+        state.favoritePetImageUrl || getVariantThumbUrlById(favoriteVariantId),
+      );
 
       const safeProgressByVariant = {};
       ownedVariantIds.forEach(function (variantId) {
@@ -2547,6 +2714,8 @@
         ownedVariantIds: ownedVariantIds,
         ownedPetCount: ownedVariantIds.length,
         lockedVariantId: lockedVariantId,
+        favoriteVariantId: favoriteVariantId,
+        favoritePetImageUrl: favoritePetImageUrl,
         petProgressByVariantId: safeProgressByVariant,
         petNamesByVariantId: safeNamesByVariant,
         petConfigVersion: PET_CONFIG_VERSION,
@@ -2585,6 +2754,22 @@
           savedVariantId,
         ),
       );
+      const currentFavoriteVariantId = normalizeFavoriteVariantId(
+        state.favoriteVariantId,
+        normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId),
+        currentVariantId,
+      );
+      const savedFavoriteVariantId = normalizeFavoriteVariantId(
+        state.lastSavedConfig.favoriteVariantId,
+        normalizeOwnedVariantIds(state.lastSavedConfig.ownedVariantIds, savedVariantId),
+        savedVariantId,
+      );
+      const currentFavoritePetImageUrl = normalizePetImageUrl(
+        state.favoritePetImageUrl || getVariantThumbUrlById(currentFavoriteVariantId),
+      );
+      const savedFavoritePetImageUrl = normalizePetImageUrl(
+        state.lastSavedConfig.favoritePetImageUrl || getVariantThumbUrlById(savedFavoriteVariantId),
+      );
       const currentPetProgressByVariant = {};
       normalizeOwnedVariantIds(state.ownedVariantIds, currentVariantId).forEach(function (variantId) {
         const safeVariantId = String(variantId || "").trim();
@@ -2608,6 +2793,8 @@
              currentXP !== savedXP ||
              currentVariantId !== savedVariantId ||
              currentOwnedVariantIds !== savedOwnedVariantIds ||
+             currentFavoriteVariantId !== savedFavoriteVariantId ||
+             currentFavoritePetImageUrl !== savedFavoritePetImageUrl ||
              JSON.stringify(currentPetProgressByVariant) !== JSON.stringify(savedPetProgressByVariant) ||
              JSON.stringify(currentPetNamesByVariant) !== JSON.stringify(savedPetNamesByVariant);
     }
@@ -2640,6 +2827,7 @@
             if (saveBtn) saveBtn.classList.remove("loading");
             if (result && result.success) {
               state.lastSavedConfig = JSON.parse(JSON.stringify(config));
+              syncCurrentUserPetConfig(config);
               updateSaveButtonUI();
               if (!silent && typeof showToast === "function") showToast("Đã lưu cấu hình PET!", "success");
               resolve(result);
@@ -2696,6 +2884,14 @@
             state.lockedVariantId = String(
               config.lockedVariantId || state.ownedVariantIds[0] || loadedCurrentVariantId || "",
             ).trim();
+            state.favoriteVariantId = normalizeFavoriteVariantId(
+              config.favoriteVariantId,
+              state.ownedVariantIds,
+              state.lockedVariantId || loadedCurrentVariantId,
+            );
+            state.favoritePetImageUrl = normalizePetImageUrl(
+              config.favoritePetImageUrl || getVariantThumbUrlById(state.favoriteVariantId),
+            );
             state.selectedAccessories = Array.isArray(config.selectedAccessories) ? config.selectedAccessories : [];
             if (state.catalogLoaded) {
               syncSelectedAccessoriesWithCatalog();
@@ -2789,8 +2985,10 @@
 
             enforceLockedVariantSelection();
             syncLockedVariantByCurrentIndex();
+            updateFavoritePetUI();
 
             state.lastSavedConfig = JSON.parse(JSON.stringify(buildPersistedConfig()));
+            syncCurrentUserPetConfig(state.lastSavedConfig);
             updateSaveButtonUI();
 
             // Re-render pet with loaded state
@@ -3421,6 +3619,7 @@
       if (!buttonsWrap) return;
 
       buttonsWrap.innerHTML = "";
+      const favoriteVariantId = getFavoriteVariantId();
       PET_VARIANTS.forEach((variant, index) => {
         const targetVariantId = String((variant && variant.id) || "").trim();
         const unlocked = isPetVariantUnlocked(variant);
@@ -3453,6 +3652,14 @@
         };
         thumb.style.visibility = "hidden";
         btn.appendChild(thumb);
+
+        if (favoriteVariantId && favoriteVariantId === targetVariantId) {
+          const favoriteBadge = document.createElement("span");
+          favoriteBadge.className = "pet-variant-favorite-badge material-symbols-sharp";
+          favoriteBadge.textContent = "star";
+          favoriteBadge.setAttribute("aria-hidden", "true");
+          btn.appendChild(favoriteBadge);
+        }
 
         btn.addEventListener("mouseenter", function (event) {
           updatePetPopoverPreview("settings", {
@@ -3947,6 +4154,27 @@
           savePetConfigToServer();
         });
       }
+
+      const favoriteBtn = document.getElementById("petFavoriteToggleBtn");
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener("click", function () {
+          const activeVariantId = String(getActiveVariantId() || "").trim();
+          if (!activeVariantId) return;
+          if (!isVariantOwned(activeVariantId)) {
+            if (typeof showToast === "function") {
+              showToast("Chỉ có thể yêu thích pet đang sở hữu", "warning");
+            }
+            return;
+          }
+
+          const changed = setFavoriteVariant(activeVariantId);
+          if (!changed && typeof showToast === "function") {
+            showToast("Pet này đã là pet yêu thích", "info");
+          }
+        });
+      }
+
+      updateFavoritePetUI();
 
     }
 

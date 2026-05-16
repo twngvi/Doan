@@ -367,6 +367,26 @@ function normalizeOwnedVariantIds_(ownedVariantIds, fallbackVariantId) {
   return uniqueIds.slice(0, PET_MAX_OWNED_VARIANTS);
 }
 
+function normalizeFavoriteVariantId_(favoriteVariantId, ownedVariantIds, fallbackVariantId) {
+  var safeFavorite = String(favoriteVariantId || "").trim();
+  var safeFallback = String(fallbackVariantId || "").trim();
+  var ownedList = Array.isArray(ownedVariantIds) ? ownedVariantIds : [];
+
+  if (safeFavorite && ownedList.indexOf(safeFavorite) !== -1) {
+    return safeFavorite;
+  }
+
+  if (safeFallback && ownedList.indexOf(safeFallback) !== -1) {
+    return safeFallback;
+  }
+
+  if (ownedList.length) {
+    return String(ownedList[0] || "").trim();
+  }
+
+  return safeFavorite || safeFallback;
+}
+
 function normalizePetNameValue_(value) {
   var safe = String(value || "").trim();
   if (!safe) return PET_DEFAULT_NAME;
@@ -575,6 +595,8 @@ function buildFreshPetConfig_(forcedIndex) {
     selectionLocked: false,
     lockedVariantId: defaultVariantId,
     currentVariantId: defaultVariantId,
+    favoriteVariantId: defaultVariantId,
+    favoritePetImageUrl: "",
     ownedVariantIds: [defaultVariantId],
     petAccessoryByVariantId: {},
     petProgressByVariantId: (function () {
@@ -908,6 +930,8 @@ function getUserPetConfig(userId) {
     const rawOwnedPetCount = parseInt(parsedConfig.ownedPetCount, 10);
     const rawLockedVariantId = String(parsedConfig.lockedVariantId || "").trim();
     const rawCurrentVariantId = String(parsedConfig.currentVariantId || "").trim();
+    const rawFavoriteVariantId = String(parsedConfig.favoriteVariantId || "").trim();
+    const rawFavoritePetImageUrl = String(parsedConfig.favoritePetImageUrl || "").trim();
 
     const inferredVariantId =
       normalizedIndex >= 0 && normalizedIndex < PET_EGG_VARIANT_COUNT
@@ -930,6 +954,12 @@ function getUserPetConfig(userId) {
     parsedConfig.ownedPetCount = ownedVariantIds.length;
     parsedConfig.selectionLocked = false;
     parsedConfig.lockedVariantId = ownedVariantIds[0] || parsedConfig.currentVariantId || "";
+    parsedConfig.favoriteVariantId = normalizeFavoriteVariantId_(
+      parsedConfig.favoriteVariantId,
+      ownedVariantIds,
+      parsedConfig.currentVariantId,
+    );
+    parsedConfig.favoritePetImageUrl = rawFavoritePetImageUrl;
 
     const rawProgressMap =
       parsedConfig.petProgressByVariantId && typeof parsedConfig.petProgressByVariantId === "object"
@@ -1008,6 +1038,8 @@ function getUserPetConfig(userId) {
       rawOwnedPetCount !== ownedVariantIds.length ||
       rawLockedVariantId !== String((ownedVariantIds[0] || normalizedCurrentVariantId || "")).trim() ||
       rawCurrentVariantId !== normalizedCurrentVariantId ||
+      rawFavoriteVariantId !== String(parsedConfig.favoriteVariantId || "").trim() ||
+      rawFavoritePetImageUrl !== String(parsedConfig.favoritePetImageUrl || "").trim() ||
       JSON.stringify(rawProgressMap) !== JSON.stringify(normalizedProgressByVariant) ||
       JSON.stringify(rawNamesMap) !== JSON.stringify(normalizedNamesByVariant) ||
       JSON.stringify(rawAccessoryByVariantMap) !== JSON.stringify(parsedConfig.petAccessoryByVariantId) ||
@@ -1075,6 +1107,12 @@ function saveUserPetConfig(userId, config) {
 
     const ownedVariantIds = normalizeOwnedVariantIds_(safeConfig.ownedVariantIds, currentVariantId);
     const lockedVariantId = ownedVariantIds[0] || currentVariantId || "";
+    const favoriteVariantId = normalizeFavoriteVariantId_(
+      safeConfig.favoriteVariantId,
+      ownedVariantIds,
+      currentVariantId,
+    );
+    const favoritePetImageUrl = String(safeConfig.favoritePetImageUrl || "").trim();
 
     const rawProgressByVariant =
       safeConfig.petProgressByVariantId && typeof safeConfig.petProgressByVariantId === "object"
@@ -1144,6 +1182,8 @@ function saveUserPetConfig(userId, config) {
       ownedVariantIds: ownedVariantIds,
       ownedPetCount: ownedVariantIds.length,
       lockedVariantId: lockedVariantId,
+      favoriteVariantId: favoriteVariantId,
+      favoritePetImageUrl: favoritePetImageUrl,
       petAccessoryByVariantId: normalizedAccessoryByVariant,
       petProgressByVariantId: normalizedProgressByVariant,
       petNamesByVariantId: normalizedNamesByVariant,
