@@ -149,24 +149,6 @@
     startDashboardAutoRefresh();
   };
 
-  function triggerQuickStatsDropAnimation() {
-    var statsRow = document.getElementById("quick-stats-row");
-    if (!statsRow) return;
-
-    statsRow.classList.remove("is-dropping");
-    // Force reflow so animation can restart on each dashboard entry.
-    void statsRow.offsetWidth;
-    statsRow.classList.add("is-dropping");
-
-    if (statsRow._dropAnimTimer) {
-      clearTimeout(statsRow._dropAnimTimer);
-    }
-
-    statsRow._dropAnimTimer = setTimeout(function () {
-      statsRow.classList.remove("is-dropping");
-      statsRow._dropAnimTimer = null;
-    }, 1300);
-  }
 
   /**
    * Get user data from storage
@@ -696,11 +678,6 @@
   function renderAllZones(data) {
     data = data || {};
 
-    try {
-      renderQuickStats(data.quickStats);
-    } catch (e) {
-      console.error("Error renderQuickStats:", e);
-    }
 
     try {
       renderActivities(data.activities);
@@ -763,31 +740,6 @@
         0
       ).toLocaleString();
     }
-  }
-
-  /**
-   * ZONE 2: Quick Stats
-   */
-  function renderQuickStats(stats) {
-    if (!stats) return;
-
-    var xpEl = document.getElementById("qs-xp");
-    var topNavXpEl = document.getElementById("global-xp-value");
-    var accEl = document.getElementById("qs-accuracy");
-    var badgesEl = document.getElementById("qs-badges");
-    var rankEl = document.getElementById("qs-rank");
-    var rankIconEl = document.getElementById("qs-rank-icon");
-
-    var totalXP = dashboardNumber(stats.totalXP, 0);
-    var avgAccuracy = dashboardNumber(stats.avgAccuracy, 0);
-    var badges = dashboardNumber(stats.badges, 0);
-
-    if (xpEl) xpEl.textContent = totalXP.toLocaleString();
-    if (topNavXpEl) topNavXpEl.textContent = totalXP.toLocaleString();
-    if (accEl) accEl.textContent = avgAccuracy + "%";
-    if (badgesEl) badgesEl.textContent = badges;
-    if (rankEl) rankEl.textContent = stats.rankTitle || "Chưa xếp hạng";
-    if (rankIconEl) rankIconEl.textContent = stats.rankIcon || "";
   }
 
   /**
@@ -1121,10 +1073,7 @@
           if (isDashboardUsableValue(result.newTotalXP)) {
             userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
 
-            var xpEl = document.getElementById("qs-xp");
             var topNavXpEl = document.getElementById("global-xp-value");
-
-            if (xpEl) xpEl.textContent = userPatch.totalXP.toLocaleString();
             if (topNavXpEl) topNavXpEl.textContent = userPatch.totalXP.toLocaleString();
           }
 
@@ -1192,10 +1141,10 @@
    * Show floating XP animation
    */
   function showXPAnimation(xpAmount) {
-    var xpEl = document.getElementById("qs-xp");
-    if (!xpEl) return;
+    var topNavXpEl = document.getElementById("global-xp-value");
+    if (!topNavXpEl) return;
 
-    var rect = xpEl.getBoundingClientRect();
+    var rect = topNavXpEl.getBoundingClientRect();
     var floater = document.createElement("div");
     floater.className = "xp-float-animation";
     floater.textContent = "+" + xpAmount + " XP";
@@ -1649,10 +1598,7 @@
           if (isDashboardUsableValue(result.newTotalXP)) {
             userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
 
-            var xpEl = document.getElementById("qs-xp");
             var topNavXpEl = document.getElementById("global-xp-value");
-
-            if (xpEl) xpEl.textContent = userPatch.totalXP.toLocaleString();
             if (topNavXpEl) topNavXpEl.textContent = userPatch.totalXP.toLocaleString();
           }
 
