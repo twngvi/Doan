@@ -586,6 +586,29 @@
     try { renderLeaderboard(data.leaderboard); } catch(e) { console.error("Error renderLeaderboard:", e); }
     try { renderSuggestion(data.suggestion); } catch(e) { console.error("Error renderSuggestion:", e); }
 
+    if (data.user && typeof data.user === "object") {
+      window.currentUser = Object.assign({}, window.currentUser || {}, data.user);
+      try {
+        var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
+        window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+      } catch (e) {
+        console.warn("Failed to persist dashboard user sync:", e);
+      }
+
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          new CustomEvent("user-info-updated", {
+            detail: window.currentUser
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent("top-nav-user-state-updated", {
+            detail: window.currentUser
+          })
+        );
+      }
+    }
+
     // Sync authoritative XP/XQP from server into window.currentUser
     // so Pet page and other modules always read the latest values.
     if (data.quickStats && window.currentUser) {
@@ -1465,7 +1488,7 @@
    * Handle daily check-in
    */
   window.handleDailyCheckin = function () {
-    var btn = document.getElementById("checkin-btn");
+    var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
     if (btn && btn.disabled) return;
     if (btn) btn.disabled = true;
 
@@ -1493,14 +1516,15 @@
           }
 
           // Always sync XQP/XP totals from server response (even if no XP awarded this time)
+          var activeUser = window.currentUser || currentUser;
           if (result.newTotalXQP !== undefined && result.newTotalXQP > 0) {
-            if (window.currentUser) {
-              window.currentUser.totalXP = result.newTotalXP;
-              window.currentUser.totalXQP = result.newTotalXQP;
+            if (activeUser) {
+              activeUser.totalXP = result.newTotalXP;
+              activeUser.totalXQP = result.newTotalXQP;
               
               // Persist
               var storageKey = localStorage.getItem("currentUser") ? "localStorage" : "sessionStorage";
-              window[storageKey].setItem("currentUser", JSON.stringify(window.currentUser));
+              window[storageKey].setItem("currentUser", JSON.stringify(activeUser));
             }
 
             // Update Pet XQP counter if it exists (for SPA synchronization)
@@ -1511,7 +1535,7 @@
           if (typeof window.dispatchEvent === "function") {
             window.dispatchEvent(
               new CustomEvent("top-nav-user-state-updated", {
-                detail: window.currentUser
+                detail: activeUser || window.currentUser || currentUser
               })
             );
           }
@@ -1570,7 +1594,7 @@
    * Set check-in to done state
    */
   function setCheckinDone() {
-    var btn = document.getElementById("checkin-btn");
+    var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
     var iconEl = document.getElementById("checkin-icon");
     var textEl = document.getElementById("checkin-text");
 
@@ -1586,7 +1610,7 @@
   }
 
   function setCheckinPending() {
-    var btn = document.getElementById("checkin-btn");
+    var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
     var iconEl = document.getElementById("checkin-icon");
     var textEl = document.getElementById("checkin-text");
 

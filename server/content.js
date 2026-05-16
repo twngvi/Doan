@@ -2702,6 +2702,19 @@ function getDashboardData(userContext) {
     const totalQuizAnswered = userRow
       ? parseInt(userRow[col["totalQuizAnswered"]]) || 0
       : 0;
+    const avatarUrlColExists = typeof col["avatarUrl"] === "number";
+    const avatarColExists = typeof col["avatar"] === "number";
+    const userAvatarUrl = avatarUrlColExists
+      ? String(userRow[col["avatarUrl"]] || "").trim()
+      : "";
+    const fallbackAvatarUrl = avatarColExists
+      ? String(userRow[col["avatar"]] || "").trim()
+      : "";
+    const resolvedAvatarUrl = userAvatarUrl || fallbackAvatarUrl || "";
+    const userDisplayName = String(
+      userRow[col["displayName"]] || userRow[col["username"]] || "User",
+    );
+    const userCurrentStreak = userRow ? parseInt(userRow[col["currentStreak"]]) || 0 : 0;
     const progressSheetId = userRow ? userRow[col["progressSheetId"]] : null;
 
     // === 2. Read personal sheet data ===
@@ -3145,6 +3158,16 @@ function getDashboardData(userContext) {
 
     const responsePayload = {
       success: true,
+      user: {
+        userId: String(userRow[col["userId"]] || "").trim(),
+        email: userEmail,
+        username: String(userRow[col["username"]] || "").trim(),
+        displayName: userDisplayName,
+        avatarUrl: resolvedAvatarUrl,
+        totalXP: totalXP,
+        totalXQP: totalXQP,
+        currentStreak: userCurrentStreak,
+      },
       quickStats: {
         totalXP: totalXP,
         totalXQP: totalXQP,

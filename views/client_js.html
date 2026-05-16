@@ -32,6 +32,26 @@
     }
   }
 
+  function dispatchCurrentUserState(user) {
+    if (typeof window.dispatchEvent !== "function") return;
+
+    const payload =
+      user && typeof user === "object"
+        ? user
+        : window.currentUser || currentUser || getStoredCurrentUser();
+
+    window.dispatchEvent(
+      new CustomEvent("user-info-updated", {
+        detail: payload,
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent("top-nav-user-state-updated", {
+        detail: payload,
+      })
+    );
+  }
+
   function triggerDashboardRefreshWhenVisible(attempt) {
     const maxAttempts = 8;
     const currentAttempt = typeof attempt === "number" ? attempt : 0;
@@ -1326,6 +1346,7 @@
           currentUser = response.user;
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
+          dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
           startUserHeartbeat();
@@ -1437,6 +1458,7 @@
       currentUser = response.user;
       window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      dispatchCurrentUserState(response.user);
       console.log("âœ… Current user synced to window:", currentUser);
 
       // Show success message
@@ -1619,6 +1641,7 @@
           currentUser = response.user;
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
+          dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
           startUserHeartbeat();
           applyThemeFromAuthenticatedUser(response.user);
@@ -1752,6 +1775,7 @@
           currentUser = response.user;
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
+          dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
           startUserHeartbeat();
 
@@ -1799,6 +1823,7 @@
       currentUser = response.user;
       window.currentUser = response.user;
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      dispatchCurrentUserState(response.user);
       localStorage.setItem("isLoggedIn", "true");
       startUserHeartbeat();
       console.log("âœ… Current user synced to window:", currentUser.username);
@@ -1851,6 +1876,7 @@
     if (recoveredUser) {
       currentUser = recoveredUser;
       window.currentUser = recoveredUser;
+      dispatchCurrentUserState(recoveredUser);
     }
 
     if (typeof triggerDashboardRefreshWhenVisible === "function") {
