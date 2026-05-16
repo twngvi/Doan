@@ -609,6 +609,14 @@
         // Also update Pet XQP counter immediately if visible
         var xqpEl = document.getElementById("petXQPBalance");
         if (xqpEl) xqpEl.textContent = Number(data.quickStats.totalXQP).toLocaleString();
+
+        if (typeof window.dispatchEvent === "function") {
+          window.dispatchEvent(
+            new CustomEvent("top-nav-user-state-updated", {
+              detail: window.currentUser
+            })
+          );
+        }
       }
     }
   }
@@ -1500,6 +1508,14 @@
             if (xqpEl) xqpEl.textContent = Number(result.newTotalXQP).toLocaleString();
           }
 
+          if (typeof window.dispatchEvent === "function") {
+            window.dispatchEvent(
+              new CustomEvent("top-nav-user-state-updated", {
+                detail: window.currentUser
+              })
+            );
+          }
+
           if (typeof showToast === "function") {
             showToast(
               "Điểm danh thành công! 🔥 Chuỗi: " +
@@ -1564,6 +1580,9 @@
     }
     if (iconEl) iconEl.textContent = "✓";
     if (textEl) textEl.textContent = "Đã điểm danh";
+    if (typeof window.setTopNavCheckinState === "function") {
+      window.setTopNavCheckinState(true);
+    }
   }
 
   function setCheckinPending() {
@@ -1577,6 +1596,9 @@
     }
     if (iconEl) iconEl.textContent = "○";
     if (textEl) textEl.textContent = "Điểm danh";
+    if (typeof window.setTopNavCheckinState === "function") {
+      window.setTopNavCheckinState(false);
+    }
   }
 
   /**
@@ -1588,6 +1610,13 @@
 
     if (streakDaysEl)
       streakDaysEl.textContent = '' + (streakData.currentStreak || 0) + ' ngày';
+
+    if (typeof window.setTopNavCheckinState === "function") {
+      window.setTopNavCheckinState(
+        !!(streakData && streakData.checkedInToday),
+        (streakData && streakData.currentStreak) || 0
+      );
+    }
 
     if (streakData && streakData.checkedInToday) {
       setCheckinDone();

@@ -2,84 +2,130 @@
   (function () {
     "use strict";
 
-    // Danh sách các trang KHÔNG hiện sidebar (Public Pages + Admin Pages)
+    // Danh sách các trang KHÔNG hiện top nav (Public Pages + Admin Pages)
     const PUBLIC_PAGES = [
       "page-landing",
       "page-login",
       "page-register",
       "page-verify-email",
       "page-forgot-password",
-      "page-admin", // ⭐ Ẩn sidebar cho trang admin
+      "page-admin",
     ];
 
-    // Global Sidebar Management
+    function getStoredRole(storage) {
+      if (!storage) return "";
+      try {
+        const raw = storage.getItem("currentUser");
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        return (parsed.role || "").toString().toUpperCase();
+      } catch (err) {
+        return "";
+      }
+    }
+
+    function readStoredUser() {
+      if (window.currentUser && typeof window.currentUser === "object") {
+        return window.currentUser;
+      }
+
+      const raw = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
+      if (!raw) return {};
+
+      try {
+        return JSON.parse(raw) || {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function resolveDisplayName(user) {
+      const payload = user && typeof user === "object" ? user : {};
+      return (
+        payload.displayName ||
+        payload.fullName ||
+        payload.username ||
+        payload.name ||
+        "User"
+      );
+    }
+
+    function resolveAvatarUrl(user) {
+      const payload = user && typeof user === "object" ? user : {};
+      if (
+        payload.avatarUrl &&
+        payload.avatarUrl !== "" &&
+        payload.avatarUrl !== "undefined" &&
+        payload.avatarUrl !== "null"
+      ) {
+        return payload.avatarUrl;
+      }
+
+      return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        resolveDisplayName(payload)
+      )}&size=96&background=6b7280&color=fff`;
+    }
+
+    function resolveTotalXp(user) {
+      const payload = user && typeof user === "object" ? user : {};
+      const totalXP = Number(payload.totalXP);
+      if (!Number.isNaN(totalXP)) return totalXP;
+
+      const totalXp = Number(payload.totalXp);
+      if (!Number.isNaN(totalXp)) return totalXp;
+
+      return 0;
+    }
+
+    function openLogoutModal() {
+      const modal = document.getElementById("logoutModalOverlay");
+      if (modal) {
+        modal.classList.add("show");
+      }
+    }
+
+    function closeAvatarMenu() {
+      const shell = document.querySelector(".nav-avatar-shell");
+      const button = document.getElementById("globalAvatarButton");
+      if (shell) shell.classList.remove("open");
+      if (button) button.setAttribute("aria-expanded", "false");
+    }
+
+    function updateTopNavUserState(user) {
+      const baseUser = readStoredUser();
+      const payload = user && typeof user === "object" ? Object.assign({}, baseUser, user) : baseUser;
+
+      const xpValueEl = document.getElementById("global-xp-value");
+      if (xpValueEl) {
+        xpValueEl.textContent = resolveTotalXp(payload).toLocaleString();
+      }
+
+      const avatarEl = document.getElementById("globalAvatarImage");
+      if (avatarEl) {
+        avatarEl.src = resolveAvatarUrl(payload);
+      }
+    }
+
+    // Global top navigation management (legacy name kept for compatibility)
     const GlobalSidebar = {
       sidebar: null,
-      toggleBtn: null,
-      overlay: null,
-      isCollapsed: false,
-      isMobileOpen: false,
 
       init: function () {
         this.sidebar = document.getElementById("globalSidebar");
-        this.toggleBtn = document.getElementById("sidebarToggleBtn");
-        this.overlay = document.getElementById("sidebarOverlay");
 
         if (!this.sidebar) {
-          console.error("Global sidebar not found!");
+          console.error("Global top nav not found!");
           return;
         }
 
-        console.log("Global sidebar initialized");
-
-        // Load saved state
-        this.loadState();
-
-        // Setup event listeners
         this.setupEventListeners();
-
-        // Setup navigation
         this.setupNavigation();
-
-        // Kiểm tra ngay lập tức khi init
         this.checkVisibility(this.getCurrentPageId());
+        this.syncTopNavCheckinFromStorage();
       },
 
       setupEventListeners: function () {
-        // Desktop toggle
-        if (this.toggleBtn) {
-          this.toggleBtn.addEventListener("click", () => this.toggleCollapse());
-        }
-
-        // Mobile overlay
-        if (this.overlay) {
-          this.overlay.addEventListener("click", () => this.closeMobile());
-        }
-
-        // Window resize
-        window.addEventListener("resize", () => this.handleResize());
-
-        // Prevent sidebar close on sidebar click
-        if (this.sidebar) {
-          this.sidebar.addEventListener("click", (e) => {
-            e.stopPropagation();
-          });
-        }
-
-        // Search box - expand sidebar when clicked
-        const searchBox = document.getElementById("sidebarSearchBox");
-        const searchInput = document.getElementById("sidebarSearchInput");
-        if (searchBox && searchInput) {
-          searchBox.addEventListener("click", () => {
-            if (this.isCollapsed) {
-              this.isCollapsed = false;
-              this.updateCollapsedState();
-              this.saveState();
-              // Focus vào input sau khi expand
-              setTimeout(() => searchInput.focus(), 300);
-            }
-          });
-        }
+        window.addEventListener("storage", () => this.syncTopNavCheckinFromStorage());
       },
 
       setupNavigation: function () {
@@ -94,30 +140,71 @@
             navItems.forEach((nav) => nav.classList.remove("active"));
             item.classList.add("active");
 
-            // Clear currentPageParams when navigating from sidebar
-            // This ensures pages like MCQ show their selection screen
             window.currentPageParams = null;
 
-            // Navigate to page
             if (typeof showPage === "function") {
               showPage(targetPage);
             }
+          });
+        });
 
-            // Close mobile menu
-            if (window.innerWidth <= 768) {
-              this.closeMobile();
+        const checkinBtn = document.getElementById("global-checkin-fire");
+        if (checkinBtn) {
+          checkinBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (typeof window.handleDailyCheckin === "function") {
+              window.handleDailyCheckin();
             }
           });
+        }
+
+        const avatarButton = document.getElementById("globalAvatarButton");
+        const avatarMenu = document.getElementById("globalAvatarMenu");
+        if (avatarButton && avatarMenu) {
+          avatarButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const shell = avatarButton.closest(".nav-avatar-shell");
+            const isOpen = shell && shell.classList.contains("open");
+
+            closeAvatarMenu();
+            if (!isOpen && shell) {
+              shell.classList.add("open");
+              avatarButton.setAttribute("aria-expanded", "true");
+            }
+          });
+
+          avatarMenu.addEventListener("click", (e) => {
+            const actionBtn = e.target.closest(".nav-avatar-menu-item");
+            if (!actionBtn) return;
+
+            e.preventDefault();
+            const action = actionBtn.getAttribute("data-action");
+            closeAvatarMenu();
+
+            if (action === "profile") {
+              if (typeof showPage === "function") {
+                showPage("page-profile");
+              }
+            } else if (action === "logout") {
+              openLogoutModal();
+            }
+          });
+        }
+
+        document.addEventListener("click", (e) => {
+          const shell = document.querySelector(".nav-avatar-shell");
+          if (shell && !shell.contains(e.target)) {
+            closeAvatarMenu();
+          }
         });
 
         // Logout button - Show confirmation modal
         const logoutBtn = document.getElementById("globalLogoutBtn");
         if (logoutBtn) {
           logoutBtn.addEventListener("click", () => {
-            const modal = document.getElementById("logoutModalOverlay");
-            if (modal) {
-              modal.classList.add("show");
-            }
+            openLogoutModal();
           });
         }
 
@@ -178,170 +265,97 @@
         }
       },
 
-      toggleCollapse: function () {
-        this.isCollapsed = !this.isCollapsed;
-        this.updateCollapsedState();
-        this.saveState();
-      },
-
-      updateCollapsedState: function () {
-        if (this.isCollapsed) {
-          this.sidebar.classList.add("collapsed");
-          document.body.classList.add("sidebar-collapsed");
-        } else {
-          this.sidebar.classList.remove("collapsed");
-          document.body.classList.remove("sidebar-collapsed");
+      setTopNavCheckinState: function (hasCheckedInToday, streakValue) {
+        const checkinBtn = document.getElementById("global-checkin-fire");
+        const fireIcon = document.getElementById("global-fire-icon");
+        const streakValueEl = document.getElementById("global-streak-value");
+        if (checkinBtn) {
+          checkinBtn.classList.toggle("checked-in", !!hasCheckedInToday);
+          checkinBtn.title = hasCheckedInToday ? "Đã điểm danh hôm nay" : "Điểm danh";
+        }
+        if (fireIcon) {
+          fireIcon.src = hasCheckedInToday
+            ? CHECKIN_ICON_DONE
+            : CHECKIN_ICON_PENDING;
+        }
+        if (streakValueEl && typeof streakValue !== "undefined") {
+          streakValueEl.textContent = String(streakValue || 0);
         }
       },
 
-      openMobile: function () {
-        this.isMobileOpen = true;
-        this.sidebar.classList.add("mobile-open");
-        this.overlay.classList.add("active");
-        document.body.classList.add("sidebar-mobile-open");
-        document.body.style.overflow = "hidden";
+      syncTopNavCheckinFromStorage: function () {
+        try {
+          const raw = localStorage.getItem("streakData");
+          if (!raw) {
+            this.setTopNavCheckinState(false, 0);
+            return;
+          }
+          const streakData = JSON.parse(raw);
+          this.setTopNavCheckinState(
+            !!(streakData && streakData.checkedInToday),
+            (streakData && streakData.currentStreak) || 0
+          );
+          const streakValueEl = document.getElementById("global-streak-value");
+          if (streakValueEl) {
+            streakValueEl.textContent = String((streakData && streakData.currentStreak) || 0);
+          }
+        } catch (e) {}
       },
 
-      closeMobile: function () {
-        this.isMobileOpen = false;
-        this.sidebar.classList.remove("mobile-open");
-        this.overlay.classList.remove("active");
-        document.body.classList.remove("sidebar-mobile-open");
-        document.body.style.overflow = "";
+      resolveCurrentUserRole: function () {
+        if (window.currentUser && window.currentUser.role) {
+          return window.currentUser.role.toString().toUpperCase();
+        }
+
+        const localRole = getStoredRole(typeof localStorage !== "undefined" ? localStorage : null);
+        if (localRole) return localRole;
+
+        return getStoredRole(typeof sessionStorage !== "undefined" ? sessionStorage : null);
       },
 
-       handleResize: function () {
-         if (window.innerWidth > 768) {
-           this.closeMobile();
-         }
-       },
+      isAdminRoleActive: function () {
+        return this.resolveCurrentUserRole() === "ADMIN";
+      },
 
-       getStoredRole: function (storage) {
-         if (!storage) return "";
-         try {
-           const raw = storage.getItem("currentUser");
-           if (!raw) return "";
-           const parsed = JSON.parse(raw);
-           return (parsed.role || "").toString().toUpperCase();
-         } catch (err) {
-           return "";
-         }
-       },
-
-       resolveCurrentUserRole: function () {
-         if (window.currentUser?.role) {
-           return window.currentUser.role.toString().toUpperCase();
-         }
-
-         const localRole = this.getStoredRole(
-           typeof localStorage !== "undefined" ? localStorage : null,
-         );
-         if (localRole) return localRole;
-
-         return this.getStoredRole(
-           typeof sessionStorage !== "undefined" ? sessionStorage : null,
-         );
-       },
-
-       isAdminRoleActive: function () {
-         return this.resolveCurrentUserRole() === "ADMIN";
-       },
-
-       applyRoleSidebarState: function (isAdminActive) {
-         if (this.sidebar) {
-           if (isAdminActive) {
-             if (!this.sidebar.dataset.prevDisplay) {
-               this.sidebar.dataset.prevDisplay =
-                 this.sidebar.style.display || "";
-             }
-             this.sidebar.style.display = "none";
-             this.sidebar.setAttribute("aria-hidden", "true");
-           } else {
-             const prevDisplay = this.sidebar.dataset.prevDisplay || "";
-             this.sidebar.style.display = prevDisplay;
-             delete this.sidebar.dataset.prevDisplay;
-             this.sidebar.removeAttribute("aria-hidden");
-           }
-         }
-
-         const toggleables = [
-           this.toggleBtn,
-           this.overlay,
-           document.getElementById("mobileMenuToggleGlobal"),
-         ];
-
-         toggleables.forEach((el) => {
-           if (!el) return;
-           el.style.display = isAdminActive ? "none" : "";
-         });
-       },
-
-       // Thêm hàm lấy ID trang hiện tại an toàn hơn
-       getCurrentPageId: function () {
-         // Tìm page đang không ẩn
-         const pages = document.querySelectorAll(".page-content");
+      getCurrentPageId: function () {
+        const pages = document.querySelectorAll(".page-content");
         for (let page of pages) {
           if (page.style.display !== "none") return page.id;
         }
-        // Fallback: Kiểm tra URL hash
+
         const hash = window.location.hash.replace("#", "page-");
         if (hash && document.getElementById(hash)) return hash;
 
-        return "page-landing"; // Mặc định
+        return "page-landing";
       },
 
-       // Hàm xử lý hiển thị quan trọng nhất
-       checkVisibility: function (pageId) {
-         try {
-           console.log("Checking visibility for:", pageId);
+      checkVisibility: function (pageId) {
+        try {
+          const isAdminActive = this.isAdminRoleActive();
+          const isAdminPage = pageId === "page-admin";
 
-           const isAdminActive = this.isAdminRoleActive();
-           const isAdminPage = pageId === "page-admin";
+          if (isAdminActive || isAdminPage) {
+            document.body.classList.add("has-admin-sidebar");
+            document.body.classList.remove("has-sidebar");
+            document.body.classList.add("hide-sidebar");
+            return;
+          }
 
-           this.applyRoleSidebarState(isAdminActive);
+          document.body.classList.remove("has-admin-sidebar");
 
-           if (isAdminActive) {
-             document.body.classList.add("has-admin-sidebar");
-             document.body.classList.remove("has-sidebar");
-             document.body.classList.add("hide-sidebar");
-             console.log("Showing admin sidebar (role-based)");
-             return;
-           }
-
-           if (isAdminPage) {
-             document.body.classList.add("has-admin-sidebar");
-             document.body.classList.remove("has-sidebar");
-             document.body.classList.add("hide-sidebar");
-             console.log("Showing admin sidebar for admin page");
-             return;
-           }
-
-           document.body.classList.remove("has-admin-sidebar");
-
-           // Nếu pageId nằm trong danh sách Public -> Ẩn Sidebar
           if (PUBLIC_PAGES.includes(pageId)) {
             document.body.classList.remove("has-sidebar");
             document.body.classList.add("hide-sidebar");
-            console.log("Hiding sidebar for public page");
-            // When sidebar is hidden, ensure mobile menu button is visible
-            ensureMobileMenuButtonVisible();
           } else {
-            // Ngược lại -> Hiện Sidebar
             document.body.classList.add("has-sidebar");
             document.body.classList.remove("hide-sidebar");
             this.updateActiveNav(pageId);
-            console.log("Showing sidebar for authenticated page");
-            // When sidebar is visible we want the floating menu hidden — styles handle it
-            const btn = document.getElementById("mobileMenuToggleGlobal");
-            if (btn) {
-              btn.style.display = ""; // let CSS decide (body.has-sidebar rule will hide)
-            }
+            this.syncTopNavCheckinFromStorage();
           }
-         } catch (e) {
-           console.warn("⚠️ Error in checkVisibility (Ignored):", e);
-           // Không làm gì để trang vẫn hiển thị được
-         }
-       },
+        } catch (e) {
+          console.warn("Top nav visibility update error:", e);
+        }
+      },
 
       getCurrentPage: function () {
         return this.getCurrentPageId();
@@ -381,65 +395,37 @@
         }
       },
 
-      saveState: function () {
-        try {
-          localStorage.setItem("sidebarCollapsed", this.isCollapsed);
-        } catch (e) {
-          console.warn("Could not save sidebar state:", e);
-        }
-      },
-
-      loadState: function () {
-        try {
-          const saved = localStorage.getItem("sidebarCollapsed");
-          this.isCollapsed = saved === "true";
-          if (this.sidebar) {
-            // Cập nhật class collapsed ngay lập tức nếu cần
-            if (this.isCollapsed) {
-              this.sidebar.classList.add("collapsed");
-              document.body.classList.add("sidebar-collapsed");
-            }
-          }
-        } catch (e) {
-          console.warn("Could not load sidebar state:", e);
-        }
-      },
+      saveState: function () {},
+      loadState: function () {},
     };
 
-    // Initialize when DOM is ready
-    console.log("Sidebar script loaded, readyState:", document.readyState);
-
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => {
-        console.log("DOM loaded, initializing sidebar");
-        GlobalSidebar.init();
-      });
+      document.addEventListener("DOMContentLoaded", () => GlobalSidebar.init());
     } else {
-      console.log("DOM already loaded, initializing sidebar immediately");
       GlobalSidebar.init();
     }
 
-    // Make it globally accessible
     window.GlobalSidebar = GlobalSidebar;
+    window.setTopNavCheckinState = function (hasCheckedInToday, streakValue) {
+      if (window.GlobalSidebar && typeof window.GlobalSidebar.setTopNavCheckinState === "function") {
+        window.GlobalSidebar.setTopNavCheckinState(!!hasCheckedInToday, streakValue);
+      }
+      const streakValueEl = document.getElementById("global-streak-value");
+      if (streakValueEl && typeof streakValue !== "undefined" && streakValue !== null) {
+        streakValueEl.textContent = String(streakValue);
+      }
+    };
 
-    // --- SỬA ĐỔI QUAN TRỌNG: Ghi đè showPage để xử lý tức thì ---
     const originalShowPage = window.showPage;
-
-    // Ghi đè hàm showPage toàn cục
     window.showPage = function (pageId, params, addToHistory) {
-      console.log("Navigating to:", pageId);
-
-      // 1. Gọi hàm gốc để hiển thị nội dung trang TRƯỚC
       if (typeof originalShowPage === "function") {
         originalShowPage(pageId, params, addToHistory);
       }
 
-      // 2. Xử lý Sidebar SAU (Bọc trong try-catch)
       try {
         if (window.GlobalSidebar) {
-           window.GlobalSidebar.checkVisibility(pageId);
+          window.GlobalSidebar.checkVisibility(pageId);
         } else {
-          // Fallback nếu GlobalSidebar chưa load xong
           if (pageId === "page-admin") {
             document.body.classList.add("has-admin-sidebar");
             document.body.classList.remove("has-sidebar");
@@ -456,408 +442,9 @@
           }
         }
       } catch (e) {
-        console.warn("⚠️ Sidebar update error (Ignored):", e);
-        // Không làm gì để trang vẫn hiển thị được
+        console.warn("Top nav update error:", e);
       }
     };
-
-    const MOBILE_MENU_POS_KEY = "mobileMenuToggleGlobalPosV1";
-
-    function clamp(value, min, max) {
-      return Math.max(min, Math.min(max, value));
-    }
-
-    function saveMobileMenuPosition(left, top) {
-      try {
-        localStorage.setItem(
-          MOBILE_MENU_POS_KEY,
-          JSON.stringify({
-            left: Math.round(left),
-            top: Math.round(top),
-          }),
-        );
-      } catch (e) {}
-    }
-
-    function applySavedMobileMenuPosition(btn) {
-      if (!btn) return;
-      // ⭐ Không lưu vị trí - luôn reset về mặc định
-      // Menu button luôn trở về góc trái dưới khi load lại trang
-      // Chỉ di chuyển được trong phiên làm việc hiện tại
-    }
-
-    function enableMobileMenuDrag(btn) {
-      if (!btn || btn.dataset.dragBound === "1") return;
-
-      let isDragging = false;
-      let moved = false;
-      let pointerId = null;
-      let startX = 0;
-      let startY = 0;
-      let startLeft = 0;
-      let startTop = 0;
-      let suppressClickUntil = 0;
-
-      btn.addEventListener("dragstart", function (e) {
-        e.preventDefault();
-      });
-
-      btn.addEventListener("pointerdown", function (e) {
-        if (window.innerWidth > 768) return;
-        if (e.button !== undefined && e.button !== 0) return;
-
-        const rect = btn.getBoundingClientRect();
-        isDragging = true;
-        moved = false;
-        pointerId = e.pointerId;
-        startX = e.clientX;
-        startY = e.clientY;
-        startLeft = rect.left;
-        startTop = rect.top;
-
-        btn.style.left = rect.left + "px";
-        btn.style.top = rect.top + "px";
-        btn.style.bottom = "auto";
-        btn.style.right = "auto";
-        btn.classList.add("dragging");
-
-        if (btn.setPointerCapture) {
-          try {
-            btn.setPointerCapture(pointerId);
-          } catch (err) {}
-        }
-
-        e.preventDefault();
-      });
-
-      btn.addEventListener("pointermove", function (e) {
-        if (!isDragging || e.pointerId !== pointerId) return;
-
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
-
-        const viewportW = window.innerWidth;
-        const viewportH = window.innerHeight;
-        const rect = btn.getBoundingClientRect();
-        const margin = 8;
-
-        const nextLeft = clamp(
-          startLeft + dx,
-          margin,
-          viewportW - rect.width - margin,
-        );
-        const nextTop = clamp(
-          startTop + dy,
-          margin,
-          viewportH - rect.height - margin,
-        );
-
-        btn.style.left = nextLeft + "px";
-        btn.style.top = nextTop + "px";
-      });
-
-      function finishDrag(e) {
-        if (!isDragging || e.pointerId !== pointerId) return;
-
-        isDragging = false;
-        btn.classList.remove("dragging");
-
-        if (btn.releasePointerCapture) {
-          try {
-            btn.releasePointerCapture(pointerId);
-          } catch (err) {}
-        }
-
-        pointerId = null;
-
-        if (moved) {
-          // ⭐ Không lưu vị trí - chỉ di chuyển được trong phiên hiện tại
-          // const rect = btn.getBoundingClientRect();
-          // saveMobileMenuPosition(rect.left, rect.top);
-          suppressClickUntil = Date.now() + 250;
-          e.preventDefault();
-        }
-      }
-
-      btn.addEventListener("pointerup", finishDrag);
-      btn.addEventListener("pointercancel", finishDrag);
-
-      btn.addEventListener("click", function (e) {
-        if (Date.now() < suppressClickUntil) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        GlobalSidebar.openMobile();
-      });
-
-      btn.dataset.dragBound = "1";
-    }
-
-    function setupMobileMenuToggleButton(btn) {
-      if (!btn) return;
-      applySavedMobileMenuPosition(btn);
-      enableMobileMenuDrag(btn);
-    }
-
-    // Ensure mobile menu button is visible and properly set up
-    function ensureMobileMenuButtonVisible() {
-      const btn = document.getElementById("mobileMenuToggleGlobal");
-      if (btn) {
-        btn.style.display = "flex";
-        btn.style.visibility = "visible";
-        btn.style.pointerEvents = "auto";
-        setupMobileMenuToggleButton(btn);
-      }
-    }
-
-    // Add mobile menu toggle button dynamically
-    function addMobileMenuToggle() {
-      const existingBtn = document.getElementById("mobileMenuToggleGlobal");
-      if (
-        !existingBtn &&
-        !PUBLIC_PAGES.includes(window.GlobalSidebar?.getCurrentPageId()) &&
-        !(
-          window.GlobalSidebar?.isAdminRoleActive &&
-          window.GlobalSidebar.isAdminRoleActive()
-        )
-      ) {
-        const btn = document.createElement("button");
-        btn.id = "mobileMenuToggleGlobal";
-        btn.className = "mobile-menu-toggle";
-        btn.innerHTML = "☰";
-        document.body.appendChild(btn);
-        setupMobileMenuToggleButton(btn);
-        return;
-      }
-
-      if (existingBtn) {
-        setupMobileMenuToggleButton(existingBtn);
-      }
-    }
-
-    // Add mobile button after init
-    setTimeout(addMobileMenuToggle, 200);
-  })();
-</script>
-
-<!-- ============================================================
-     Game Flyout Submenu Controller
-     ============================================================ -->
-<script>
-  (function () {
-    "use strict";
-
-    // Submenu child pages for active-state detection
-    const GAME_CHILD_PAGES = ["page-mcq", "page-matching"];
-
-    let hideTimer = null;
-    let showTimer = null;
-    const SHOW_DELAY = 80;   // ms before showing (avoids flicker on fast mouse-through)
-    const HIDE_DELAY = 180;  // ms before hiding (allows bridge between item and flyout)
-
-    function getEls() {
-      return {
-        trigger: document.getElementById("navGameItem"),
-        flyout:  document.getElementById("gameSubmenu"),
-        arrow:   document.querySelector("#gameSubmenu .sidebar-flyout-arrow"),
-        items:   document.querySelectorAll("#gameSubmenu .sidebar-flyout-item"),
-        sidebar: document.getElementById("globalSidebar"),
-      };
-    }
-
-    // --------------- Positioning ---------------
-    function positionFlyout(trigger, flyout, sidebar) {
-      const tr   = trigger.getBoundingClientRect();
-      const fw   = flyout.offsetWidth  || 230;
-      const fh   = flyout.offsetHeight || 120;
-      
-      // Mobile handling (accordion style)
-      if (window.innerWidth <= 768) {
-        flyout.style.left = "1rem";
-        flyout.style.width = "calc(100% - 2rem)";
-        flyout.style.top = (tr.bottom + 4) + "px";
-        flyout.style.transform = "none";
-        if (flyout.querySelector(".sidebar-flyout-arrow")) {
-          flyout.querySelector(".sidebar-flyout-arrow").style.display = "none";
-        }
-        return;
-      }
-      
-      const sbW  = sidebar  ? sidebar.getBoundingClientRect().right : tr.right;
-
-      // Place to the right of sidebar, aligned vertically to trigger
-      let left = sbW + 8;
-      let top  = tr.top + tr.height / 2 - fh / 2;
-
-      // Clamp vertically inside viewport
-      const vp = window.innerHeight;
-      top = Math.max(8, Math.min(top, vp - fh - 8));
-
-      flyout.style.left = left + "px";
-      flyout.style.top  = top  + "px";
-      flyout.style.transform = "none";
-      flyout.style.width = "auto";
-      
-      if (flyout.querySelector(".sidebar-flyout-arrow")) {
-        flyout.querySelector(".sidebar-flyout-arrow").style.display = "block";
-      }
-
-      // Position arrow vertically relative to trigger center
-      const flyoutTop = parseFloat(flyout.style.top);
-      const arrowTop  = tr.top + tr.height / 2 - flyoutTop;
-      if (flyout.querySelector(".sidebar-flyout-arrow")) {
-        flyout.querySelector(".sidebar-flyout-arrow").style.top = arrowTop + "px";
-        flyout.querySelector(".sidebar-flyout-arrow").style.transform = "none";
-      }
-    }
-
-    // --------------- Show / Hide ---------------
-    function showFlyout() {
-      clearTimeout(hideTimer);
-      clearTimeout(showTimer);
-      showTimer = setTimeout(() => {
-        const { trigger, flyout, sidebar } = getEls();
-        if (!trigger || !flyout) return;
-        positionFlyout(trigger, flyout, sidebar);
-        flyout.classList.add("flyout-visible");
-        trigger.classList.add("submenu-open");
-        trigger.setAttribute("aria-expanded", "true");
-        updateFlyoutActiveItems();
-      }, SHOW_DELAY);
-    }
-
-    function hideFlyout() {
-      clearTimeout(showTimer);
-      clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        const { trigger, flyout } = getEls();
-        if (!flyout) return;
-        flyout.classList.remove("flyout-visible");
-        if (trigger) {
-          trigger.classList.remove("submenu-open");
-          trigger.setAttribute("aria-expanded", "false");
-        }
-      }, HIDE_DELAY);
-    }
-
-    function cancelHide() {
-      clearTimeout(hideTimer);
-    }
-
-    // --------------- Active child highlight ---------------
-    function updateGameItemActive(pageId) {
-      const { trigger, items } = getEls();
-      if (!trigger) return;
-      const isChild = GAME_CHILD_PAGES.includes(pageId);
-      trigger.classList.toggle("child-active", isChild);
-
-      // Update flyout item active state
-      items.forEach(item => {
-        const p = item.getAttribute("data-page");
-        item.classList.toggle("flyout-active", p === pageId);
-      });
-    }
-
-    function updateFlyoutActiveItems() {
-      const currentPage =
-        (window.GlobalSidebar && window.GlobalSidebar.getCurrentPageId
-          ? window.GlobalSidebar.getCurrentPageId()
-          : "") || "";
-      updateGameItemActive(currentPage);
-    }
-
-    // --------------- Navigation ---------------
-    function navigateTo(pageId) {
-      hideFlyout();
-      if (typeof showPage === "function") {
-        showPage(pageId);
-      }
-
-      // If we're on mobile, close the mobile sidebar after navigation
-      try {
-        if (
-          window.innerWidth <= 768 &&
-          window.GlobalSidebar &&
-          typeof window.GlobalSidebar.closeMobile === "function"
-        ) {
-          window.GlobalSidebar.closeMobile();
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    // --------------- Setup ---------------
-    function setupGameFlyout() {
-      const { trigger, flyout, items } = getEls();
-      if (!trigger || !flyout) return;
-
-      // Trigger hover
-      trigger.addEventListener("mouseenter", showFlyout);
-      trigger.addEventListener("mouseleave", hideFlyout);
-
-      // Keep open when mouse is over flyout
-      flyout.addEventListener("mouseenter", cancelHide);
-      flyout.addEventListener("mouseleave", hideFlyout);
-
-      // Click on trigger (prevents navigation, opens flyout)
-      trigger.addEventListener("click", function (e) {
-        e.preventDefault();
-        const isOpen = flyout.classList.contains("flyout-visible");
-        isOpen ? hideFlyout() : showFlyout();
-      });
-
-      // Click on flyout items → navigate
-      items.forEach(item => {
-        item.addEventListener("click", function (e) {
-          e.preventDefault();
-          const pageId = item.getAttribute("data-page");
-          if (pageId) navigateTo(pageId);
-        });
-      });
-
-      // Keyboard: Escape closes
-      document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") hideFlyout();
-      });
-
-      // Click outside closes
-      document.addEventListener("click", function (e) {
-        const { trigger: t, flyout: f } = getEls();
-        if (!f || !t) return;
-        if (!f.contains(e.target) && !t.contains(e.target)) {
-          hideFlyout();
-        }
-      });
-
-      // Reposition on resize/scroll
-      window.addEventListener("resize", function () {
-        const f = document.getElementById("gameSubmenu");
-        if (f && f.classList.contains("flyout-visible")) {
-          const { trigger: t, sidebar: s } = getEls();
-          positionFlyout(t, f, s);
-        }
-      });
-
-      // Hook into showPage to update active state
-      const _origShowPage2 = window.showPage;
-      window.showPage = function (pageId, ...rest) {
-        if (typeof _origShowPage2 === "function") _origShowPage2(pageId, ...rest);
-        updateGameItemActive(pageId);
-      };
-
-      // Initial active check
-      setTimeout(updateFlyoutActiveItems, 300);
-    }
-
-    // Init when DOM ready
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", setupGameFlyout);
-    } else {
-      setupGameFlyout();
-    }
   })();
 </script>
 
@@ -886,26 +473,6 @@
         tagClass: "tag-page",
         keywords: "topics chu de bai hoc",
         action: { type: "page", pageId: "page-topics" },
-      },
-      {
-        id: "page-mcq",
-        group: "pages",
-        title: "Quiz Visual",
-        subtitle: "Đi đến trang Quiz",
-        tag: "Trang",
-        tagClass: "tag-page",
-        keywords: "quiz mcq trac nghiem",
-        action: { type: "page", pageId: "page-mcq" },
-      },
-      {
-        id: "page-matching",
-        group: "pages",
-        title: "Matching Game",
-        subtitle: "Đi đến trang Matching",
-        tag: "Trang",
-        tagClass: "tag-page",
-        keywords: "matching noi cap game",
-        action: { type: "page", pageId: "page-matching" },
       },
       {
         id: "page-pet",
@@ -1827,20 +1394,67 @@
       const input = document.getElementById("sidebarSearchInput");
       const resultsEl = document.getElementById("sidebarSearchResults");
       const searchBox = document.getElementById("sidebarSearchBox");
+      const searchToggle = document.getElementById("sidebarSearchToggle");
+      const searchClear = document.getElementById("sidebarSearchClear");
+      const searchPanel = document.getElementById("sidebarSearchPanel");
       const sidebar = document.getElementById("globalSidebar");
 
-      if (!input || !resultsEl || !searchBox || !sidebar) {
+      if (!input || !resultsEl || !searchBox || !sidebar || !searchToggle || !searchClear || !searchPanel) {
         return;
+      }
+
+      function setSearchExpanded(isOpen) {
+        searchBox.classList.toggle("is-open", !!isOpen);
+        searchToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
+        if (isOpen) {
+          setTimeout(function () {
+            input.focus();
+          }, 0);
+        }
       }
 
       fetchTopicsForSearch();
       fetchLockDataForSearch();
 
+      searchToggle.addEventListener("click", function (e) {
+        e.preventDefault();
+
+        const isOpen = searchBox.classList.contains("is-open");
+        if (isOpen) {
+          setSearchExpanded(false);
+          clearResults();
+        } else {
+          setSearchExpanded(true);
+          if (input.value && input.value.trim()) {
+            runSearch(input.value);
+          }
+        }
+      });
+
+      searchClear.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        input.value = "";
+        setSearchExpanded(true);
+        clearResults();
+        input.focus();
+      });
+
+      searchPanel.addEventListener("click", function (e) {
+        e.stopPropagation();
+      });
+
       input.addEventListener("input", function (e) {
+        if (!searchBox.classList.contains("is-open")) {
+          setSearchExpanded(true);
+        }
         runSearch(e.target.value || "");
       });
 
       input.addEventListener("focus", function () {
+        setSearchExpanded(true);
         if (input.value && input.value.trim()) {
           runSearch(input.value);
         }
@@ -1863,11 +1477,11 @@
             activeIndex >= 0 ? currentResults[activeIndex] : currentResults[0];
           const didNavigate = navigateWithResult(selected);
           if (didNavigate) {
-            input.value = "";
             clearResults();
           }
         } else if (e.key === "Escape") {
           clearResults();
+          setSearchExpanded(false);
           input.blur();
         }
       });
@@ -1886,13 +1500,13 @@
 
         const didNavigate = navigateWithResult(currentResults[index]);
         if (didNavigate) {
-          input.value = "";
           clearResults();
         }
       });
 
       document.addEventListener("click", function (e) {
         if (!sidebar.contains(e.target)) {
+          setSearchExpanded(false);
           clearResults();
         }
       });
@@ -1921,62 +1535,38 @@
   (function () {
     console.log("🔧 Sidebar scripts loading...");
 
+    const CHECKIN_ICON_PENDING =
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png";
+    const CHECKIN_ICON_DONE =
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png";
+
     /**
      * ⭐ Update sidebar user info - IMPROVED
      */
     function updateSidebarUserInfo() {
-      // ⭐ Kiểm tra cả localStorage và sessionStorage
-      let savedUser = localStorage.getItem("currentUser");
-      if (!savedUser) {
-        savedUser = sessionStorage.getItem("currentUser");
+      const user = readStoredUser();
+
+      console.log("📊 Updating sidebar with user:", user);
+
+      const usernameEl = document.getElementById("sidebar-username");
+      if (usernameEl) {
+        usernameEl.textContent = resolveDisplayName(user);
       }
 
-      if (savedUser) {
-        try {
-          const user = JSON.parse(savedUser);
-          console.log("📊 Updating sidebar with user:", user);
-
-          // Update name
-          const usernameEl = document.getElementById("sidebar-username");
-          if (usernameEl) {
-            usernameEl.textContent =
-              user.displayName || user.fullName || user.username || "User";
-          }
-
-          // Update role
-          const roleEl = document.getElementById("sidebar-role");
-          if (roleEl) {
-            roleEl.textContent = user.role || "Student";
-          }
-
-          // ⭐ Update avatar
-          const avatarEl = document.getElementById("sidebar-avatar");
-          if (avatarEl) {
-            if (
-              user.avatarUrl &&
-              user.avatarUrl !== "" &&
-              user.avatarUrl !== "undefined" &&
-              user.avatarUrl !== "null"
-            ) {
-              avatarEl.src = user.avatarUrl;
-              console.log("✅ Sidebar avatar updated:", user.avatarUrl);
-            } else {
-              // Fallback to default
-              const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                user.displayName || user.fullName || user.username || "User",
-              )}&size=80&background=6366f1&color=fff`;
-              avatarEl.src = defaultAvatar;
-              console.log("⚠️ Using default avatar");
-            }
-          }
-
-          console.log("✅ Sidebar updated successfully");
-        } catch (error) {
-          console.error("❌ Error updating sidebar:", error);
-        }
-      } else {
-        console.log("⚠️ No user found in sessionStorage");
+      const roleEl = document.getElementById("sidebar-role");
+      if (roleEl) {
+        roleEl.textContent = user.role || "Student";
       }
+
+      const avatarEl = document.getElementById("sidebar-avatar");
+      if (avatarEl) {
+        avatarEl.src = resolveAvatarUrl(user);
+        console.log("✅ Sidebar avatar updated:", avatarEl.src);
+      }
+
+      updateTopNavUserState(user);
+
+      console.log("✅ Sidebar updated successfully");
     }
 
     // ⭐ Listen for avatar updates
@@ -1987,6 +1577,22 @@
       }
     });
 
+    window.addEventListener("user-info-updated", function (e) {
+      if (e && e.detail) {
+        updateTopNavUserState(e.detail);
+      } else {
+        updateTopNavUserState(readStoredUser());
+      }
+    });
+
+    window.addEventListener("top-nav-user-state-updated", function (e) {
+      if (e && e.detail) {
+        updateTopNavUserState(e.detail);
+      } else {
+        updateTopNavUserState(readStoredUser());
+      }
+    });
+
     // ⭐ Custom event for avatar update
     window.addEventListener("avatar-updated", function (e) {
       console.log("🔄 Avatar updated event received");
@@ -1994,6 +1600,10 @@
       if (avatarEl && e.detail && e.detail.url) {
         avatarEl.src = e.detail.url;
         console.log("✅ Sidebar avatar updated from event");
+      }
+
+      if (e && e.detail && e.detail.url) {
+        updateTopNavUserState({ avatarUrl: e.detail.url });
       }
     });
 
