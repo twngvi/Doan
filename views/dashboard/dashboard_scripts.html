@@ -9,9 +9,9 @@
   };
 
   const DASHBOARD_CHECKIN_ICON_PENDING =
-    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260516";
+    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260518";
   const DASHBOARD_CHECKIN_ICON_DONE =
-    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260516";
+    "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260518";
 
   function isDashboardUsableValue(value) {
     return (
@@ -210,10 +210,17 @@
    * Get/Save streak data from localStorage
    */
   function getStreakData() {
-    var streakData = localStorage.getItem("streakData");
-    if (streakData) {
+    var streakDataStr = localStorage.getItem("streakData");
+    if (streakDataStr) {
       try {
-        return JSON.parse(streakData);
+        var streakData = JSON.parse(streakDataStr);
+        if (streakData && streakData.checkedInToday) {
+          var todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+          if (streakData.lastActiveDate !== todayVN) {
+            streakData.checkedInToday = false;
+          }
+        }
+        return streakData;
       } catch (e) {}
     }
     return {
@@ -1697,6 +1704,7 @@
 
     if (fireIcon) {
       fireIcon.src = DASHBOARD_CHECKIN_ICON_DONE;
+      fireIcon.classList.remove("pulse-animation");
     }
 
     if (iconEl) iconEl.textContent = "✓";
@@ -1724,6 +1732,7 @@
 
     if (fireIcon) {
       fireIcon.src = DASHBOARD_CHECKIN_ICON_PENDING;
+      fireIcon.classList.add("pulse-animation");
     }
 
     if (iconEl) iconEl.textContent = "○";

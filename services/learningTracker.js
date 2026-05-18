@@ -495,7 +495,7 @@ function getUserStreakData(userContext) {
           currentStreak: parseInt(data[i][currentStreakCol]) || 0,
           longestStreak: parseInt(data[i][longestStreakCol]) || 0,
           lastActiveDate: lastActive,
-          checkedInToday: lastActive === today,
+          checkedInToday: false,
         };
       }
     }

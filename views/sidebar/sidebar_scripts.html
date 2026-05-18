@@ -12,9 +12,9 @@
     ];
 
     const CHECKIN_ICON_PENDING =
-      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260516";
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260518";
     const CHECKIN_ICON_DONE =
-      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260516";
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_do_da_diem_danh.png?v=20260518";
 
     function getStoredRole(storage) {
       if (!storage) return "";
@@ -504,6 +504,11 @@
           fireIcon.src = hasCheckedInToday
             ? CHECKIN_ICON_DONE
             : CHECKIN_ICON_PENDING;
+          if (hasCheckedInToday) {
+            fireIcon.classList.remove("pulse-animation");
+          } else {
+            fireIcon.classList.add("pulse-animation");
+          }
         }
 
         if (streakValueEl && typeof streakValue !== "undefined") {
@@ -519,8 +524,15 @@
             return;
           }
           const streakData = JSON.parse(raw);
+          let checkedIn = false;
+          if (streakData && streakData.checkedInToday) {
+            const todayVN = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+            if (streakData.lastActiveDate === todayVN) {
+              checkedIn = true;
+            }
+          }
           this.setTopNavCheckinState(
-            !!(streakData && streakData.checkedInToday),
+            checkedIn,
             (streakData && streakData.currentStreak) || 0
           );
           const streakValueEl = document.getElementById("global-streak-value");
