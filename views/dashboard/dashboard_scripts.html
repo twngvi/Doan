@@ -1580,11 +1580,28 @@
    */
   window.handleDailyCheckin = function () {
     var btn = document.getElementById("global-checkin-fire") || document.getElementById("checkin-btn");
+    var fireIcon = document.getElementById("global-fire-icon");
     if (btn && btn.disabled) return;
-    if (btn) btn.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+      if (fireIcon) {
+        fireIcon.classList.remove("pulse-animation");
+        fireIcon.style.opacity = "0.5";
+        fireIcon.style.transform = "scale(0.9)";
+        fireIcon.style.transition = "all 0.3s ease";
+      }
+    }
+    
+    if (typeof showToast === "function") {
+      showToast("Đang ghi nhận điểm danh...", "info");
+    }
 
     google.script.run
       .withSuccessHandler(function (result) {
+        if (fireIcon) {
+          fireIcon.style.opacity = "";
+          fireIcon.style.transform = "";
+        }
         if (result && result.success) {
           setCheckinDone();
 
@@ -1666,7 +1683,12 @@
               showToast("Hôm nay bạn đã điểm danh rồi!", "info");
             }
           } else {
-            if (btn) btn.disabled = false;
+            if (btn) {
+              btn.disabled = false;
+              if (fireIcon) {
+                fireIcon.classList.add("pulse-animation");
+              }
+            }
             if (typeof showToast === "function")
               showToast(
                 "Không thể điểm danh: " + ((result && result.message) || "Lỗi"),
@@ -1677,6 +1699,11 @@
       })
       .withFailureHandler(function (error) {
         console.error("Check-in failed:", error);
+        if (fireIcon) {
+          fireIcon.style.opacity = "";
+          fireIcon.style.transform = "";
+          fireIcon.classList.add("pulse-animation");
+        }
         if (btn) btn.disabled = false;
         if (typeof showToast === "function")
           showToast("Lỗi khi điểm danh", "error");
