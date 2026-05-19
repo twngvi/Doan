@@ -1381,27 +1381,47 @@ function normalizeYmdDate_(value) {
 
 function getSheetValuesTailWithHeader_(sheet, maxDataRows) {
   if (!sheet) return [];
-  const allData = sheet.getDataRange().getValues();
-  if (allData.length <= 1) return allData;
-
-  const header = allData[0];
   const safeMaxRows = Math.max(1, parseInt(maxDataRows, 10) || 1);
-  const dataRows = allData.slice(1);
-  const tail = dataRows.slice(-safeMaxRows);
-  return [header].concat(tail);
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow < 1 || lastCol < 1) return [];
+
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  if (lastRow <= 1) return [header];
+
+  const numRows = Math.min(safeMaxRows, lastRow - 1);
+  const startRow = lastRow - numRows + 1;
+
+  const rows = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
+
+  return [header].concat(rows);
+}
+
+function getTailRowsOnly_(sheet, maxDataRows) {
+  if (!sheet) return [];
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow <= 1 || lastCol < 1) return [];
+
+  const safeMaxRows = Math.max(1, parseInt(maxDataRows, 10) || 1);
+  const numRows = Math.min(safeMaxRows, lastRow - 1);
+  const startRow = lastRow - numRows + 1;
+
+  return sheet.getRange(startRow, 1, numRows, lastCol).getValues();
 }
 
 function hasCheckedInTodayFast_(spreadsheet, today, maxRowsToScan) {
   const checkinSheet = spreadsheet.getSheetByName("Checkin_History");
   if (!checkinSheet) return false;
 
-  const allData = checkinSheet.getDataRange().getValues();
-  if (allData.length <= 1) return false;
+  const rows = getTailRowsOnly_(checkinSheet, maxRowsToScan || 90);
 
-  const scanRows = Math.min(Math.max(1, maxRowsToScan || 90), allData.length - 1);
-  
-  for (let i = allData.length - 1; i >= allData.length - scanRows; i--) {
-    const rowDate = normalizeYmdDate_(allData[i][0]);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const rowDate = normalizeYmdDate_(rows[i][0]);
     if (!rowDate) continue;
     if (rowDate === today) return true;
     if (rowDate < today) break;
@@ -1415,17 +1435,14 @@ function getClaimedQuestMapForTodayFast_(spreadsheet, today, maxRowsToScan) {
   const xpSheet = spreadsheet.getSheetByName("XP_Log");
   if (!xpSheet) return claimedQuests;
 
-  const allData = xpSheet.getDataRange().getValues();
-  if (allData.length <= 1) return claimedQuests;
+  const rows = getTailRowsOnly_(xpSheet, maxRowsToScan || 600);
 
-  const scanRows = Math.min(Math.max(1, maxRowsToScan || 600), allData.length - 1);
-
-  for (let i = allData.length - 1; i >= allData.length - scanRows; i--) {
-    const dateStr = normalizeYmdDate_(allData[i][0]);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const dateStr = normalizeYmdDate_(rows[i][0]);
     if (!dateStr) continue;
 
     if (dateStr === today) {
-      const questId = String(allData[i][2] || "").trim();
+      const questId = String(rows[i][2] || "").trim();
       if (questId) claimedQuests[questId] = true;
       continue;
     }
@@ -3240,26 +3257,18 @@ function completeQuestAndAwardXP(questId, userContext) {
     }
 
     // Check if already claimed this quest today
-    const xpData = xpSheet.getDataRange().getValues();
-    for (let i = 1; i < xpData.length; i++) {
-      const xpDate = xpData[i][0];
-      let dateStr;
-      if (xpDate instanceof Date) {
-        dateStr = Utilities.formatDate(
-          xpDate,
-          "Asia/Ho_Chi_Minh",
-          "yyyy-MM-dd",
-        );
-      } else {
-        dateStr = String(xpDate).trim();
-      }
-      if (dateStr === today && xpData[i][2] === questId) {
+    const xpData = getTailRowsOnly_(xpSheet, 600);
+    for (let i = xpData.length - 1; i >= 0; i--) {
+      const dateStr = normalizeYmdDate_(xpData[i][0]);
+      if (!dateStr) continue;
+      if (dateStr === today && String(xpData[i][2] || "").trim() === questId) {
         return {
           success: false,
           alreadyClaimed: true,
           message: "Đã nhận thưởng rồi!",
         };
       }
+      if (dateStr < today) break;
     }
 
     // Validate quest completion
@@ -3365,7 +3374,7 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
       case "daily_perfect": {
         const actSheet = spreadsheet.getSheetByName("Activity_Log");
         if (!actSheet) return { done: false };
-        const actData = actSheet.getDataRange().getValues();
+        const actData = getSheetValuesTailWithHeader_(actSheet, 200);
         const actHeaders = actData[0];
         const ac = {};
         actHeaders.forEach((h, i) => (ac[h] = i));
@@ -3413,23 +3422,16 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
           "daily_matching",
           "daily_perfect",
         ];
-        const xpData = xpSheet.getDataRange().getValues();
+        const xpData = getTailRowsOnly_(xpSheet, 600);
         const claimedToday = new Set();
-        for (let i = 1; i < xpData.length; i++) {
-          const xpDate = xpData[i][0];
-          let dateStr;
-          if (xpDate instanceof Date) {
-            dateStr = Utilities.formatDate(
-              xpDate,
-              "Asia/Ho_Chi_Minh",
-              "yyyy-MM-dd",
-            );
-          } else {
-            dateStr = String(xpDate).trim();
-          }
+        for (let i = xpData.length - 1; i >= 0; i--) {
+          const dateStr = normalizeYmdDate_(xpData[i][0]);
+          if (!dateStr) continue;
           if (dateStr === today) {
-            claimedToday.add(xpData[i][2]);
+            claimedToday.add(String(xpData[i][2] || "").trim());
+            continue;
           }
+          if (dateStr < today) break;
         }
         const allClaimed = mainQuestIds.every((id) => claimedToday.has(id));
         return { done: allClaimed };
@@ -3467,7 +3469,7 @@ function getActivityLog(limit) {
       return { success: true, activities: [] };
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getSheetValuesTailWithHeader_(sheet, Math.max(50, limit || 10));
     if (data.length <= 1) {
       return { success: true, activities: [] };
     }
