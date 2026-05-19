@@ -35,6 +35,40 @@
       }
     }
 
+    // ===== UI ADJUSTMENTS: Sync widths between History and Quests =====
+    function syncHistoryAndQuestWidths() {
+      try {
+        var left = document.getElementById('activity-history-list');
+        var right = document.getElementById('quests-list');
+        if (!left || !right) return;
+
+        // Compute available inner width of left card
+        var leftRect = left.getBoundingClientRect();
+        var computed = window.getComputedStyle(left);
+        var leftPaddingLeft = parseFloat(computed.paddingLeft) || 0;
+        var leftPaddingRight = parseFloat(computed.paddingRight) || 0;
+        var targetWidth = Math.max(0, leftRect.width - leftPaddingLeft - leftPaddingRight);
+
+        right.style.width = targetWidth + 'px';
+        right.style.maxWidth = targetWidth + 'px';
+      } catch (e) {
+        console.warn('syncHistoryAndQuestWidths error', e);
+      }
+    }
+
+    // Run on load and resize (debounced)
+    var _dqTimer = null;
+    function _dqRun() {
+      if (_dqTimer) clearTimeout(_dqTimer);
+      _dqTimer = setTimeout(function() {
+        syncHistoryAndQuestWidths();
+      }, 80);
+    }
+
+    window.addEventListener('load', _dqRun);
+    window.addEventListener('resize', _dqRun);
+    setTimeout(_dqRun, 200); // run shortly after init
+
     return typeof fallback === "number" ? fallback : 0;
   }
 
