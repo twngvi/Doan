@@ -656,6 +656,60 @@
       }
     };
 
+    /* ===== SMART STICKY / AUTO-HIDE HEADER ===== */
+    (function initSmartStickyHeader() {
+      const SCROLL_THRESHOLD = 6;   // px – min scroll to trigger
+      const HIDE_OFFSET     = 80;   // px from top where hiding starts
+      let lastScrollY       = 0;
+      let ticking           = false;
+      let navEl             = null;
+
+      function getNav() {
+        if (!navEl) navEl = document.getElementById("globalSidebar");
+        return navEl;
+      }
+
+      function handleScroll() {
+        const nav = getNav();
+        if (!nav) return;
+
+        const currentY = window.scrollY || document.documentElement.scrollTop;
+        const delta    = currentY - lastScrollY;
+
+        // Mark as scrolled (deeper glass effect) once past HIDE_OFFSET
+        if (currentY > HIDE_OFFSET) {
+          nav.classList.add("nav-scrolled");
+        } else {
+          nav.classList.remove("nav-scrolled");
+          nav.classList.remove("nav-hidden");
+          lastScrollY = currentY;
+          ticking = false;
+          return;
+        }
+
+        if (Math.abs(delta) > SCROLL_THRESHOLD) {
+          if (delta > 0) {
+            // Scrolling DOWN – hide
+            nav.classList.add("nav-hidden");
+          } else {
+            // Scrolling UP – show
+            nav.classList.remove("nav-hidden");
+          }
+          lastScrollY = currentY;
+        }
+
+        ticking = false;
+      }
+
+      window.addEventListener("scroll", function () {
+        if (!ticking) {
+          requestAnimationFrame(handleScroll);
+          ticking = true;
+        }
+      }, { passive: true });
+    })();
+    /* ===== END SMART STICKY ===== */
+
     const originalShowPage = window.showPage;
     window.showPage = function (pageId, params, addToHistory) {
       if (typeof originalShowPage === "function") {
