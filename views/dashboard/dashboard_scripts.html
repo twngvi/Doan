@@ -374,13 +374,13 @@
           "🔄 Auto-refreshing dashboard data (history + leaderboard)..."
         );
         requestDashboardRefresh({
-          forceRefresh: true,
+          forceRefresh: false,
           backgroundRefresh: true,
           source: "auto-refresh",
-          minGapMs: 10000,
+          minGapMs: 30000,
         });
       }
-    }, 30000); // 30 giây
+    }, 60000); // 60 giây
   }
 
   function stopDashboardAutoRefresh() {
@@ -1262,20 +1262,19 @@
     if (!container) return;
 
     if (!leaderboard || leaderboard.length === 0) {
-      container.innerHTML = 
-        '<div class="empty-state">' +
+      container.innerHTML =
+        '<div class="lb-paper-empty">' +
           '<div class="empty-state-icon">🌱</div>' +
-          '<div class="empty-state-text">Chưa có nhà thám hiểm nào trên bảng xếp hạng</div>' +
+          '<div class="empty-state-text">Chưa có dữ liệu bảng xếp hạng</div>' +
           '<div class="empty-state-subtext">Hoàn thành bài học hoặc trò chơi để nhận XP đầu tiên.</div>' +
         '</div>';
       previousLeaderboard = null;
       return;
     }
 
-    // Build map of previous XP for change detection
     var prevMap = {};
     if (previousLeaderboard) {
-      previousLeaderboard.forEach(function(e) {
+      previousLeaderboard.forEach(function (e) {
         prevMap[e.name] = e.xp;
       });
     }
@@ -1286,91 +1285,103 @@
       minute: "2-digit",
     });
 
-    var top10 = leaderboard.slice(0, 10);
-    var maxXp = top10[0] ? Number(top10[0].xp) || 0 : 0;
-    var minXp = top10.length > 0 ? Number(top10[top10.length - 1].xp) || 0 : 0;
-    if (maxXp === minXp) {
-      minXp = Math.max(0, maxXp - 1);
-    }
+    var currentEmail =
+      window.currentUser && window.currentUser.email
+        ? String(window.currentUser.email).trim().toLowerCase()
+        : "";
 
-    var chartHtml = '<div class="forest-top10-stage is-revealing"><div class="forest-top10-grid">';
+    var top10 = leaderboard.slice(0, 10);
+    var rowsHtml = "";
 
     for (var i = 0; i < 10; i++) {
       var entry = top10[i] || null;
       var rank = i + 1;
-      var meClass = entry && entry.isMe ? "is-me" : "";
-      var displayName = entry && entry.name ? entry.name : "Ẩn danh";
-      var safeName = escapeLeaderboardHtml(displayName);
-      var avatarSrc = entry
-        ? entry.avatarUrl ||
-          ("https://ui-avatars.com/api/?name=" +
-            encodeURIComponent(entry.name) +
-            "&background=f4e7cd&color=5f3b1d")
-        : "";
 
-      var barHeight = 78;
-      var stairBase = 320;
-      var stairDrop = 26;
-      var revealDelay = i * 90;
+      var displayName = entry && entry.name ? entry.name : "Chưa có người chơi";
+      var safeName = escapeLeaderboardHtml(displayName);
+
+      var entryEmail =
+        entry && entry.email ? String(entry.email).trim().toLowerCase() : "";
+
+      var isMe =
+        entry &&
+        (
+          entry.isMe ||
+          entry.isCurrentUser ||
+          (currentEmail && entryEmail && currentEmail === entryEmail)
+        );
+
+      var avatarSrc = "";
       if (entry) {
-        var xpVal = Number(entry.xp) || 0;
-        var ratio = (xpVal - minXp) / (maxXp - minXp);
-        ratio = Math.max(0, Math.min(1, ratio));
-        barHeight = Math.max(62, Math.round(stairBase - i * stairDrop + ratio * 10));
-      } else {
-        barHeight = Math.max(58, stairBase - i * stairDrop);
+        avatarSrc =
+          entry.avatarUrl ||
+          "https://ui-avatars.com/api/?name=" +
+            encodeURIComponent(displayName) +
+            "&background=f4e7cd&color=5f3b1d";
       }
+
+      var xpText = entry ? formatLeaderboardCompactXP(entry.xp) + " XP" : "—";
 
       var changeHtml = "";
       if (entry && previousLeaderboard && prevMap[entry.name] !== undefined) {
-        var diff = entry.xp - prevMap[entry.name];
+        var diff = Number(entry.xp || 0) - Number(prevMap[entry.name] || 0);
         if (diff > 0) {
-          changeHtml = '<div class="lb-xp-change-pop">+' + diff + '</div>';
+          changeHtml =
+            '<span class="lb-paper-xp-plus"> + ' +
+            formatLeaderboardCompactXP(diff) +
+            '</span>';
         }
       }
 
-      var popName = entry ? safeName : "Hạng #" + rank + " chưa có người chơi";
-      var ariaLabel = entry
-        ? "Hiện tên người chơi hạng " + rank
-        : "Hạng " + rank + " chưa có dữ liệu";
+      rowsHtml +=
+        '<div class="lb-paper-row ' +
+          (entry ? "has-player" : "is-empty") +
+          (isMe ? " is-me" : "") +
+          '">' +
 
-      chartHtml +=
-        '<div class="forest-top10-col rank-' + rank + ' ' + meClass + '" style="--bar-height:' + barHeight + 'px;--reveal-delay:' + revealDelay + 'ms">' +
-          '<div class="forest-top10-avatar-wrap">' +
-            '<button type="button" class="forest-top10-avatar-btn" aria-label="' + escapeLeaderboardHtml(ariaLabel) + '">' +
-              '<span class="forest-top10-name-pop">' + popName + '</span>' +
-              '<div class="forest-top10-avatar-ring">' +
-                (entry
-                  ? '<img src="' + avatarSrc + '" alt="' + safeName + '" class="forest-top10-avatar">'
-                  : '<span class="forest-top10-avatar-empty">?</span>') +
-              '</div>' +
-            '</button>' +
-            changeHtml +
-          '</div>' +
-          '<div class="forest-top10-bar">' +
-            '<div class="forest-top10-xp">' +
-              (entry ? formatLeaderboardCompactXP(entry.xp) + ' XP' : '') +
-            '</div>' +
-            '<div class="forest-top10-inline-name">' +
-              (entry ? safeName : '--') +
-            '</div>' +
-            '<div class="forest-top10-rank-chip">' +
-              '# ' + rank +
-            '</div>' +
-          '</div>' +
+          '<div class="lb-paper-rank rank-' + rank + '">#' + rank + '</div>' +
+
+          '<button type="button" class="lb-paper-avatar-btn" aria-label="Hiện tên người chơi hạng ' + rank + '">' +
+            (
+              entry
+                ? '<img src="' + avatarSrc + '" alt="' + safeName + '">'
+                : '<span>?</span>'
+            ) +
+          '</button>' +
+
+          '<div class="lb-paper-name">' + safeName + '</div>' +
+
+          '<div class="lb-paper-xp">' + xpText + changeHtml + '</div>' +
         '</div>';
     }
 
-    chartHtml += '</div></div>';
+    container.innerHTML =
+      '<div class="lb-paper-board">' +
+        '<div class="lb-paper-tape tape-left"></div>' +
+        '<div class="lb-paper-tape tape-right"></div>' +
+        '<div class="lb-paper-rows">' +
+          rowsHtml +
+        '</div>' +
+        '<div class="forest-leaderboard-footer">Cập nhật lúc ' + timeStr + '</div>' +
+      '</div>';
 
-    var footerHtml = '<div class="forest-leaderboard-footer">Cập nhật lúc ' + timeStr + '</div>';
+    var avatarBtns = container.querySelectorAll(".lb-paper-avatar-btn");
+    avatarBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        btn.classList.remove("is-bouncing");
+        void btn.offsetWidth;
+        btn.classList.add("is-bouncing");
+        setTimeout(function () {
+          btn.classList.remove("is-bouncing");
+        }, 460);
+      });
+    });
 
-    container.innerHTML = chartHtml + footerHtml;
-  bindTop10AvatarInteractions(container);
-
-    // Save current as previous for next comparison
-    previousLeaderboard = leaderboard.slice(0, 10).map(function(e) {
-      return { name: e.name, xp: e.xp };
+    previousLeaderboard = leaderboard.slice(0, 10).map(function (e) {
+      return {
+        name: e.name,
+        xp: e.xp,
+      };
     });
   }
 

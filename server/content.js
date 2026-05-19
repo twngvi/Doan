@@ -1381,36 +1381,27 @@ function normalizeYmdDate_(value) {
 
 function getSheetValuesTailWithHeader_(sheet, maxDataRows) {
   if (!sheet) return [];
+  const allData = sheet.getDataRange().getValues();
+  if (allData.length <= 1) return allData;
 
-  const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  if (lastRow < 1 || lastCol < 1) return [];
-
-  const header = sheet.getRange(1, 1, 1, lastCol).getValues();
-  if (lastRow === 1) return header;
-
+  const header = allData[0];
   const safeMaxRows = Math.max(1, parseInt(maxDataRows, 10) || 1);
-  const startRow = Math.max(2, lastRow - safeMaxRows + 1);
-  const rowCount = lastRow - startRow + 1;
-  if (rowCount <= 0) return header;
-
-  const rows = sheet.getRange(startRow, 1, rowCount, lastCol).getValues();
-  return header.concat(rows);
+  const dataRows = allData.slice(1);
+  const tail = dataRows.slice(-safeMaxRows);
+  return [header].concat(tail);
 }
 
 function hasCheckedInTodayFast_(spreadsheet, today, maxRowsToScan) {
   const checkinSheet = spreadsheet.getSheetByName("Checkin_History");
   if (!checkinSheet) return false;
 
-  const lastRow = checkinSheet.getLastRow();
-  if (lastRow <= 1) return false;
+  const allData = checkinSheet.getDataRange().getValues();
+  if (allData.length <= 1) return false;
 
-  const scanRows = Math.min(Math.max(1, maxRowsToScan || 90), lastRow - 1);
-  const startRow = lastRow - scanRows + 1;
-  const dateValues = checkinSheet.getRange(startRow, 1, scanRows, 1).getValues();
-
-  for (let i = dateValues.length - 1; i >= 0; i--) {
-    const rowDate = normalizeYmdDate_(dateValues[i][0]);
+  const scanRows = Math.min(Math.max(1, maxRowsToScan || 90), allData.length - 1);
+  
+  for (let i = allData.length - 1; i >= allData.length - scanRows; i--) {
+    const rowDate = normalizeYmdDate_(allData[i][0]);
     if (!rowDate) continue;
     if (rowDate === today) return true;
     if (rowDate < today) break;
@@ -1424,20 +1415,17 @@ function getClaimedQuestMapForTodayFast_(spreadsheet, today, maxRowsToScan) {
   const xpSheet = spreadsheet.getSheetByName("XP_Log");
   if (!xpSheet) return claimedQuests;
 
-  const lastRow = xpSheet.getLastRow();
-  if (lastRow <= 1) return claimedQuests;
+  const allData = xpSheet.getDataRange().getValues();
+  if (allData.length <= 1) return claimedQuests;
 
-  const scanRows = Math.min(Math.max(1, maxRowsToScan || 600), lastRow - 1);
-  const startRow = lastRow - scanRows + 1;
-  // Need date (col 1) and questId (col 3)
-  const rows = xpSheet.getRange(startRow, 1, scanRows, 3).getValues();
+  const scanRows = Math.min(Math.max(1, maxRowsToScan || 600), allData.length - 1);
 
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const dateStr = normalizeYmdDate_(rows[i][0]);
+  for (let i = allData.length - 1; i >= allData.length - scanRows; i--) {
+    const dateStr = normalizeYmdDate_(allData[i][0]);
     if (!dateStr) continue;
 
     if (dateStr === today) {
-      const questId = String(rows[i][2] || "").trim();
+      const questId = String(allData[i][2] || "").trim();
       if (questId) claimedQuests[questId] = true;
       continue;
     }

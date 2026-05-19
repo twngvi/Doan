@@ -853,20 +853,46 @@
         return;
       }
 
-      // ⭐ Check if topic has content
-      if (!topicHasContent(topic)) {
-        showNotification(
-          '⚠️ Chủ đề "' +
-            topic.title +
-            '" chưa có nội dung. Sẽ được cập nhật sớm!',
-          "warning",
-        );
-        return;
-      }
-
-      console.log("🚀 Starting topic directly:", topic.topicId);
-      navigateToLesson(topic);
+      console.log("🚀 Showing action page for topic:", topic.topicId);
+      showTopicActionPage(topic);
     }
+
+    function showTopicActionPage(topic) {
+      currentSelectedTopic = topic;
+      
+      // Ẩn grid/journey/loading/empty/error
+      document.getElementById("topicsGrid").style.display = "none";
+      document.getElementById("topicsJourney").style.display = "none";
+      document.getElementById("topicsLoading").style.display = "none";
+      document.getElementById("topicsError").style.display = "none";
+      document.getElementById("topicsEmpty").style.display = "none";
+      
+      // Ẩn header tìm kiếm
+      const header = document.querySelector(".topics-header");
+      if (header) header.style.display = "none";
+
+      // Hiện action page
+      const actionPage = document.getElementById("topicActionPage");
+      if (actionPage) actionPage.style.display = "block";
+    }
+
+    function closeTopicActionPage() {
+      // Ẩn action page
+      const actionPage = document.getElementById("topicActionPage");
+      if (actionPage) actionPage.style.display = "none";
+      
+      // Hiện lại header tìm kiếm
+      const header = document.querySelector(".topics-header");
+      if (header) header.style.display = "block";
+
+      // Khôi phục lại view lúc trước
+      if (currentView === "grid") {
+        document.getElementById("topicsGrid").style.display = "grid";
+      } else {
+        document.getElementById("topicsJourney").style.display = "block";
+      }
+    }
+
 
     /**
      * Start topic - Show lesson content first
@@ -976,6 +1002,25 @@
         topicId: topic.topicId,
         topicTitle: topic.title,
         mode: "quiz",
+      });
+    }
+
+    /**
+     * Navigate to Matching Game
+     */
+    function navigateToMatching(topic) {
+      // Save to recent activities
+      if (typeof window.saveRecentActivity === "function") {
+        window.saveRecentActivity({
+          topicId: topic.topicId,
+          topicTitle: topic.title,
+          activityType: "matching",
+        });
+      }
+
+      showPage("page-matching", {
+        topicId: topic.topicId,
+        topicTitle: topic.title,
       });
     }
 
@@ -1309,6 +1354,25 @@
     window.navigateToLesson = navigateToLesson;
     window.navigateToQuiz = navigateToQuiz;
     window.getTopicStatus = getTopicStatus;
+    
+    // Xuất các hàm cho Action Page
+    window.closeTopicActionPage = closeTopicActionPage;
+    window.startLessonAction = function() {
+      if (!currentSelectedTopic) return;
+      if (!topicHasContent(currentSelectedTopic)) {
+         showNotification('⚠️ Chủ đề "' + currentSelectedTopic.title + '" chưa có nội dung lý thuyết!', "warning");
+         return;
+      }
+      navigateToLesson(currentSelectedTopic);
+    };
+    window.startQuizAction = function() {
+      if (!currentSelectedTopic) return;
+      navigateToQuiz(currentSelectedTopic);
+    };
+    window.startMatchingAction = function() {
+      if (!currentSelectedTopic) return;
+      navigateToMatching(currentSelectedTopic);
+    };
 
     // ========================================
     // AUTO-INITIALIZE SETUP
