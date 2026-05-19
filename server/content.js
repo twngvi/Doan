@@ -1436,8 +1436,8 @@ function getClaimedQuestMapForTodayFast_(spreadsheet, today, maxRowsToScan) {
   return claimedQuests;
 }
 
-const DASHBOARD_CACHE_TTL_SECONDS = 45;
-const DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS = 45;
+const DASHBOARD_CACHE_TTL_SECONDS = 120;
+const DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS = 600;
 const DASHBOARD_LEADERBOARD_CACHE_KEY = "dashboard_leaderboard_top10_v1";
 
 function getDashboardCacheKeyForEmail_(email) {
@@ -2645,9 +2645,9 @@ function getDashboardData(userContext) {
       }
     }
 
-    const DASHBOARD_ACTIVITY_SCAN_ROWS = 200;
-    const DASHBOARD_QUIZ_SCAN_ROWS = 200;
-    const DASHBOARD_XPLOG_SCAN_ROWS = 200;
+    const DASHBOARD_ACTIVITY_SCAN_ROWS = 50;
+    const DASHBOARD_QUIZ_SCAN_ROWS = 50;
+    const DASHBOARD_XPLOG_SCAN_ROWS = 50;
     const DASHBOARD_CHECKIN_SCAN_ROWS = 120;
 
     // === 1. Read from Master DB (User row) ===

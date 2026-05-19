@@ -414,7 +414,7 @@
           minGapMs: 30000,
         });
       }
-    }, 60000); // 60 giây
+    }, 120000); // Increased from 60s to 120s to reduce API calls with improved backend caching
   }
 
   function stopDashboardAutoRefresh() {
@@ -482,7 +482,7 @@
         return;
       }
       createMeteor();
-    }, 800);
+    }, 1200); // Increased from 800ms to reduce CPU load during dashboard view
 
     createMeteor();
   }
@@ -655,8 +655,8 @@
 
         requestDashboardDataWithTimeout(retryContext, {
           label: "retry",
-          hardTimeoutMs: 14000,
-          slowWarningMs: 7000,
+          hardTimeoutMs: 6000,
+          slowWarningMs: 3000,
           onSuccess: (retryResponse) => {
             if (applySuccessResponse(retryResponse)) return;
             handleLoadError(
@@ -683,8 +683,8 @@
 
     requestDashboardDataWithTimeout(requestContext, {
       label: "initial",
-      hardTimeoutMs: 18000,
-      slowWarningMs: 9000,
+      hardTimeoutMs: 8000,
+      slowWarningMs: 4000,
       onSuccess: (response) => {
         if (applySuccessResponse(response)) return;
 
@@ -1291,6 +1291,25 @@
     });
   }
 
+  /**
+   * Event delegation handler for leaderboard avatar button clicks
+   * Replaces per-button event listeners with a single delegated listener
+   */
+  function handleLeaderboardAvatarClick(evt) {
+    var btn = evt.target.closest(".lb-paper-avatar-btn");
+    if (!btn) return;
+    
+    evt.preventDefault();
+    
+    // Trigger bounce animation
+    btn.classList.remove("is-bouncing");
+    void btn.offsetWidth; // Force reflow to restart animation
+    btn.classList.add("is-bouncing");
+    setTimeout(function () {
+      btn.classList.remove("is-bouncing");
+    }, 460);
+  }
+
   function renderLeaderboard(leaderboard) {
     var container = document.getElementById("leaderboard-list");
     if (!container) return;
@@ -1399,17 +1418,9 @@
         '<div class="forest-leaderboard-footer">Cập nhật lúc ' + timeStr + '</div>' +
       '</div>';
 
-    var avatarBtns = container.querySelectorAll(".lb-paper-avatar-btn");
-    avatarBtns.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        btn.classList.remove("is-bouncing");
-        void btn.offsetWidth;
-        btn.classList.add("is-bouncing");
-        setTimeout(function () {
-          btn.classList.remove("is-bouncing");
-        }, 460);
-      });
-    });
+    // Event delegation: single listener on container instead of one per button
+    container.removeEventListener("click", handleLeaderboardAvatarClick);
+    container.addEventListener("click", handleLeaderboardAvatarClick);
 
     previousLeaderboard = leaderboard.slice(0, 10).map(function (e) {
       return {
