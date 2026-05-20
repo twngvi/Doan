@@ -5,8 +5,18 @@
   window.DashboardCache = window.DashboardCache || {
     data: null,
     lastFetch: null,
-    cacheTimeout: 60000,
+    cacheTimeout: 120000,
   };
+
+  const DASHBOARD_DEBUG = false;
+
+  function dashLog() {
+    if (DASHBOARD_DEBUG) console.log.apply(console, arguments);
+  }
+
+  function dashWarn() {
+    if (DASHBOARD_DEBUG) console.warn.apply(console, arguments);
+  }
 
   const DASHBOARD_CHECKIN_ICON_PENDING =
     "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/Lua_xanh_chua_diem_danh.png?v=20260518";
@@ -158,27 +168,27 @@
   }
 
   /**
-   * Force refresh dashboard when user returns to dashboard page
+   * Refresh dashboard when user returns to dashboard page
    * Called from showPage() in client_js.html
    */
   window.refreshDashboardOnReturn = function () {
     triggerQuickStatsDropAnimation();
 
-    // If dashboard was never initialized, do full init
     if (typeof dashboardInitialized === "undefined" || !dashboardInitialized) {
-      console.log("🔄 First-time Dashboard init on navigation...");
       initDashboard();
       return;
     }
 
-    console.log(
-      "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)..."
-    );
+    if (window.DashboardCache && window.DashboardCache.data) {
+      renderAllZones(window.DashboardCache.data);
+      dashboardHasLoadedOnce = true;
+    }
+
     requestDashboardRefresh({
-      forceRefresh: true,
+      forceRefresh: false,
       backgroundRefresh: true,
       source: "route-return",
-      minGapMs: 3000,
+      minGapMs: 60000,
     });
     startDashboardAutoRefresh();
   };
@@ -284,16 +294,13 @@
   function getDashboardDebugSnapshot(source) {
     var auth = getDashboardAuthContext();
     var storageUser = getUserData();
-    var isLoggedInRaw = localStorage.getItem("isLoggedIn");
     return {
-      source,
+      source: source,
       visible: isDashboardVisible(),
-      isLoggedInRaw: isLoggedInRaw,
+      hasAuthContext: !!(auth && (auth.userId || auth.email)),
       hasWindowCurrentUser: !!window.currentUser,
       hasStorageUser: !!storageUser,
-      userId: auth && auth.userId ? auth.userId : "",
-      email: auth && auth.email ? auth.email : "",
-      dashboardInitialized,
+      dashboardInitialized: dashboardInitialized,
     };
   }
 
@@ -312,14 +319,14 @@
         : DASHBOARD_REFRESH_MIN_GAP_MS;
 
     if (!isDashboardVisible()) {
-      console.log(
+      dashLog(
         "⏭️ requestDashboardRefresh skipped - dashboard not visible",
         getDashboardDebugSnapshot(source)
       );
       return;
     }
 
-    console.log("🔄 requestDashboardRefresh()", getDashboardDebugSnapshot(source));
+    dashLog("🔄 requestDashboardRefresh()", getDashboardDebugSnapshot(source));
 
     var now = Date.now();
     if (
@@ -574,13 +581,12 @@
     var initialLoad = !dashboardHasLoadedOnce && !window.DashboardCache.data;
     var requestContext = getDashboardRequestContext(forceRefresh);
 
-    console.log("📡 loadAllDashboardData()", {
-      forceRefresh,
-      backgroundRefresh,
-      initialLoad,
+    dashLog("📡 loadAllDashboardData()", {
+      forceRefresh: forceRefresh,
+      backgroundRefresh: backgroundRefresh,
+      initialLoad: initialLoad,
       visible: isDashboardVisible(),
-      userId: (requestContext && requestContext.userId) || "",
-      email: (requestContext && requestContext.email) || "",
+      source: opts.source || "unknown",
     });
 
     var finishLoad = () => {
@@ -647,9 +653,7 @@
 
       setTimeout(() => {
         var retryContext = getDashboardRequestContext(true);
-        console.log("📡 Dashboard retry context", {
-          userId: (retryContext && retryContext.userId) || "",
-          email: (retryContext && retryContext.email) || "",
+        dashLog("📡 Dashboard retry context", {
           reason: reasonMessage,
         });
 
@@ -674,10 +678,11 @@
       }, 1200);
     };
 
-    console.log("📡 Dashboard request context", {
-      userId: (requestContext && requestContext.userId) || "",
-      email: (requestContext && requestContext.email) || "",
-      forceRefresh,
+    dashLog("📡 Dashboard request context", {
+      forceRefresh: forceRefresh,
+      backgroundRefresh: backgroundRefresh,
+      initialLoad: initialLoad,
+      visible: isDashboardVisible(),
       source: opts.source || "unknown",
     });
 
@@ -1891,12 +1896,10 @@
     if (e.detail) updateDashboardUserInfo(e.detail);
 
     var shouldReinit = isDashboardVisible() && !dashboardInitialized;
-    console.log("👤 user-info-updated", {
-      shouldReinit,
+    dashLog("👤 user-info-updated", {
+      shouldReinit: shouldReinit,
       dashboardVisible: isDashboardVisible(),
-      dashboardInitialized,
-      detailEmail: (e && e.detail && e.detail.email) || "",
-      detailUserId: (e && e.detail && e.detail.userId) || "",
+      dashboardInitialized: dashboardInitialized,
     });
 
     if (shouldReinit) {
@@ -1916,14 +1919,12 @@
       streakData.sessionStartTime = Date.now();
       saveStreakData(streakData);
 
-      // Force refresh dashboard (leaderboard + history) when tab becomes visible
       if (isDashboardVisible()) {
-        console.log("🔄 Tab visible — refreshing leaderboard + history...");
         requestDashboardRefresh({
-          forceRefresh: true,
+          forceRefresh: false,
           backgroundRefresh: true,
           source: "tab-visible",
-          minGapMs: 6000,
+          minGapMs: 60000,
         });
       }
     }
