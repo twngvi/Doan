@@ -1,11 +1,22 @@
 <script>
   // ===== DASHBOARD - GAMIFICATION 4-ZONE =====
 
+  // Debug flag — set to true only in dev to expose userId/email in console
+  var DASHBOARD_DEBUG = false;
+
+  function dashLog() {
+    if (DASHBOARD_DEBUG) console.log.apply(console, arguments);
+  }
+
+  function dashWarn() {
+    if (DASHBOARD_DEBUG) console.warn.apply(console, arguments);
+  }
+
   // 1. Define global exposure early to avoid 'undefined' errors during navigation
   window.DashboardCache = window.DashboardCache || {
     data: null,
     lastFetch: null,
-    cacheTimeout: 60000,
+    cacheTimeout: 120000, // 2 phút — tăng từ 60s để giảm số lần gọi API
   };
 
   const DASHBOARD_CHECKIN_ICON_PENDING =
@@ -166,20 +177,25 @@
 
     // If dashboard was never initialized, do full init
     if (typeof dashboardInitialized === "undefined" || !dashboardInitialized) {
-      console.log("🔄 First-time Dashboard init on navigation...");
+      dashLog("🔄 First-time Dashboard init on navigation...");
       initDashboard();
       return;
     }
 
-    console.log(
-      "🔄 Returning to Dashboard — force refreshing all data (leaderboard + history)..."
-    );
+    // Hiển thị cache ngay lập tức — không chờ API
+    if (window.DashboardCache && window.DashboardCache.data) {
+      renderAllZones(window.DashboardCache.data);
+      dashboardHasLoadedOnce = true;
+    }
+
+    // Refresh nền — không bypass cache server (forceRefresh: false)
     requestDashboardRefresh({
-      forceRefresh: true,
+      forceRefresh: false,
       backgroundRefresh: true,
       source: "route-return",
-      minGapMs: 3000,
+      minGapMs: 60000,
     });
+
     startDashboardAutoRefresh();
   };
 
@@ -284,16 +300,13 @@
   function getDashboardDebugSnapshot(source) {
     var auth = getDashboardAuthContext();
     var storageUser = getUserData();
-    var isLoggedInRaw = localStorage.getItem("isLoggedIn");
     return {
-      source,
+      source: source,
       visible: isDashboardVisible(),
-      isLoggedInRaw: isLoggedInRaw,
+      hasAuthContext: !!(auth && (auth.userId || auth.email)),
       hasWindowCurrentUser: !!window.currentUser,
       hasStorageUser: !!storageUser,
-      userId: auth && auth.userId ? auth.userId : "",
-      email: auth && auth.email ? auth.email : "",
-      dashboardInitialized,
+      dashboardInitialized: dashboardInitialized,
     };
   }
 
@@ -312,21 +325,21 @@
         : DASHBOARD_REFRESH_MIN_GAP_MS;
 
     if (!isDashboardVisible()) {
-      console.log(
+      dashLog(
         "⏭️ requestDashboardRefresh skipped - dashboard not visible",
         getDashboardDebugSnapshot(source)
       );
       return;
     }
 
-    console.log("🔄 requestDashboardRefresh()", getDashboardDebugSnapshot(source));
+    dashLog("🔄 requestDashboardRefresh()", getDashboardDebugSnapshot(source));
 
     var now = Date.now();
     if (
       backgroundRefresh &&
       now - dashboardLastBackgroundRefreshAt < minGapMs
     ) {
-      console.log("⏭️ Dashboard refresh throttled:", source);
+      dashLog("⏭️ Dashboard refresh throttled:", source);
       return;
     }
 
@@ -345,17 +358,17 @@
     var auth = getDashboardAuthContext();
     var hasAuthContext = !!(auth && (auth.userId || auth.email));
 
-    console.log("📊 initDashboard() called", getDashboardDebugSnapshot("init"));
+    dashLog("📊 initDashboard() called", getDashboardDebugSnapshot("init"));
 
     if (!isDashboardVisible()) {
-      console.log("📊 Dashboard init skipped - page not visible yet");
+      dashLog("📊 Dashboard init skipped - page not visible yet");
       return;
     }
 
     if (!hasAuthContext) {
       if (dashboardInitRetryCount < 8) {
         dashboardInitRetryCount++;
-        console.log(
+        dashLog(
           "⏳ Dashboard waiting for user context before loading data...",
           getDashboardDebugSnapshot("init-retry")
         );
@@ -370,7 +383,7 @@
 
     dashboardInitRetryCount = 0;
 
-    console.log("📊 Initializing Dashboard (Gamification)...");
+    dashLog("📊 Initializing Dashboard (Gamification)...");
     dashboardInitialized = true;
 
     triggerQuickStatsDropAnimation();
@@ -556,13 +569,13 @@
             ? pendingOpts.minGapMs
             : DASHBOARD_REFRESH_MIN_GAP_MS,
       };
-      console.log(
+      dashLog(
         "📋 Dashboard load already in progress, queued trailing refresh"
       );
       return;
     }
 
-    console.log("📋 Loading all dashboard data (single API)...");
+    dashLog("📋 Loading all dashboard data (single API)...");
     _dashboardIsLoading = true;
 
     var opts =
@@ -574,13 +587,12 @@
     var initialLoad = !dashboardHasLoadedOnce && !window.DashboardCache.data;
     var requestContext = getDashboardRequestContext(forceRefresh);
 
-    console.log("📡 loadAllDashboardData()", {
-      forceRefresh,
-      backgroundRefresh,
-      initialLoad,
+    dashLog("📡 loadAllDashboardData()", {
+      forceRefresh: forceRefresh,
+      backgroundRefresh: backgroundRefresh,
+      initialLoad: initialLoad,
       visible: isDashboardVisible(),
-      userId: (requestContext && requestContext.userId) || "",
-      email: (requestContext && requestContext.email) || "",
+      source: opts.source || "unknown",
     });
 
     var finishLoad = () => {
@@ -601,7 +613,7 @@
       window.DashboardCache.lastFetch &&
       now - window.DashboardCache.lastFetch < window.DashboardCache.cacheTimeout
     ) {
-      console.log("📦 Using cached dashboard data");
+      dashLog("📦 Using cached dashboard data");
       renderAllZones(window.DashboardCache.data);
       dashboardHasLoadedOnce = true;
       finishLoad();
@@ -643,13 +655,11 @@
     };
 
     var runRetryOnce = (reasonMessage) => {
-      console.warn("🔁 Dashboard retrying once:", reasonMessage);
+      dashWarn("🔁 Dashboard retrying once:", reasonMessage);
 
       setTimeout(() => {
         var retryContext = getDashboardRequestContext(true);
-        console.log("📡 Dashboard retry context", {
-          userId: (retryContext && retryContext.userId) || "",
-          email: (retryContext && retryContext.email) || "",
+        dashLog("📡 Dashboard retry context", {
           reason: reasonMessage,
         });
 
@@ -674,10 +684,8 @@
       }, 1200);
     };
 
-    console.log("📡 Dashboard request context", {
-      userId: (requestContext && requestContext.userId) || "",
-      email: (requestContext && requestContext.email) || "",
-      forceRefresh,
+    dashLog("📡 Dashboard request context", {
+      forceRefresh: forceRefresh,
       source: opts.source || "unknown",
     });
 
@@ -1881,7 +1889,7 @@
   // Self-heal init path for restored sessions: visible dashboard should not stay uninitialized.
   setTimeout(() => {
     if (isDashboardVisible() && !dashboardInitialized) {
-      console.log("🩹 Delayed dashboard self-heal init");
+      dashLog("🩹 Delayed dashboard self-heal init");
       initDashboard();
     }
   }, 400);
@@ -1891,12 +1899,10 @@
     if (e.detail) updateDashboardUserInfo(e.detail);
 
     var shouldReinit = isDashboardVisible() && !dashboardInitialized;
-    console.log("👤 user-info-updated", {
-      shouldReinit,
+    dashLog("👤 user-info-updated", {
+      shouldReinit: shouldReinit,
       dashboardVisible: isDashboardVisible(),
-      dashboardInitialized,
-      detailEmail: (e && e.detail && e.detail.email) || "",
-      detailUserId: (e && e.detail && e.detail.userId) || "",
+      dashboardInitialized: dashboardInitialized,
     });
 
     if (shouldReinit) {
@@ -1916,14 +1922,14 @@
       streakData.sessionStartTime = Date.now();
       saveStreakData(streakData);
 
-      // Force refresh dashboard (leaderboard + history) when tab becomes visible
+      // Refresh nền khi tab hiện lại — không bypass cache
       if (isDashboardVisible()) {
-        console.log("🔄 Tab visible — refreshing leaderboard + history...");
+        dashLog("🔄 Tab visible — background refresh leaderboard + history...");
         requestDashboardRefresh({
-          forceRefresh: true,
+          forceRefresh: false,
           backgroundRefresh: true,
           source: "tab-visible",
-          minGapMs: 6000,
+          minGapMs: 60000,
         });
       }
     }
@@ -1943,5 +1949,5 @@
     }
   });
 
-  console.log("✅ Dashboard scripts loaded (Gamification 4-Zone)");
+  dashLog("✅ Dashboard scripts loaded (Gamification 4-Zone)");
 </script>

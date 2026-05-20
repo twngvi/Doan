@@ -1453,8 +1453,8 @@ function getClaimedQuestMapForTodayFast_(spreadsheet, today, maxRowsToScan) {
   return claimedQuests;
 }
 
-const DASHBOARD_CACHE_TTL_SECONDS = 120;
-const DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS = 600;
+const DASHBOARD_CACHE_TTL_SECONDS = 180;
+const DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS = 900;
 const DASHBOARD_LEADERBOARD_CACHE_KEY = "dashboard_leaderboard_top10_v1";
 
 function getDashboardCacheKeyForEmail_(email) {
@@ -3164,8 +3164,6 @@ function getDashboardData(userContext) {
     const responsePayload = {
       success: true,
       user: {
-        userId: String(userRow[col["userId"]] || "").trim(),
-        email: userEmail,
         username: String(userRow[col["username"]] || "").trim(),
         displayName: userDisplayName,
         avatarUrl: resolvedAvatarUrl,
