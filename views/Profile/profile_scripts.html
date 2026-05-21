@@ -69,11 +69,34 @@
 
   bindPasswordUiHandlers();
 
-  // ⭐ COLLAPSIBLE TOGGLE FUNCTION
+  // ⭐ COLLAPSIBLE TOGGLE FUNCTION (Accordion: only one open at a time)
   function toggleCollapsible(button) {
     const section = button.closest(".collapsible-section");
-    if (section) {
-      section.classList.toggle("open");
+    if (!section) return;
+
+    const list = document.querySelectorAll(
+      ".profile-settings-list .collapsible-section",
+    );
+
+    const isOpen = section.classList.contains("open");
+
+    // Close all sections first
+    list.forEach((s) => s.classList.remove("open"));
+
+    // If it was previously closed, open it now
+    if (!isOpen) {
+      section.classList.add("open");
+
+      // Smooth scroll so the opened section is visible (account for fixed headers)
+      setTimeout(() => {
+        const rect = section.getBoundingClientRect();
+        const headerOffset = 80; // assume top nav height
+        const targetTop = rect.top + window.scrollY - headerOffset - 8;
+        window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+      }, 80);
+    } else {
+      // It was open and user closed it; nothing else to do
+      // keep page position unchanged
     }
   }
 
@@ -90,7 +113,13 @@
     const sectionToOpen = targetSection || sections[0];
 
     sectionToOpen.classList.add("open");
-    sectionToOpen.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Smooth scroll with offset for fixed header
+    setTimeout(() => {
+      const rect = sectionToOpen.getBoundingClientRect();
+      const headerOffset = 80;
+      const targetTop = rect.top + window.scrollY - headerOffset - 8;
+      window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+    }, 60);
   }
 
   function triggerProfileSearchAction(actionKey) {
