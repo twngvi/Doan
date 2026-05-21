@@ -559,8 +559,10 @@
       const hasContent = topicHasContent(topic);
       card.className =
         "topic-card status-" + status + (hasContent ? "" : " no-content");
-      // ⭐ SKIP POPUP - Go directly to lesson
-      card.onclick = () => startTopicDirect(topic);
+      card.onclick = (e) => {
+        e.stopPropagation();
+        openTopicActionMenu(topic, card);
+      };
 
       // Get user progress for this topic
       const progress = userProgress[topic.topicId] || {
@@ -836,62 +838,7 @@
       return "available";
     }
 
-    /**
-     * ⭐ Start topic directly without popup
-     */
-    function startTopicDirect(topic) {
-      if (!topic) {
-        showNotification("Topic not found", "error");
-        return;
-      }
 
-      if (!checkTopicUnlocked(topic)) {
-        showNotification(
-          "Chủ đề này đang bị khóa. Hoàn thành bài học trước để mở khóa.",
-          "warning",
-        );
-        return;
-      }
-
-      console.log("🚀 Showing action page for topic:", topic.topicId);
-      showTopicActionPage(topic);
-    }
-
-    function showTopicActionPage(topic) {
-      currentSelectedTopic = topic;
-      
-      // Ẩn grid/journey/loading/empty/error
-      document.getElementById("topicsGrid").style.display = "none";
-      document.getElementById("topicsJourney").style.display = "none";
-      document.getElementById("topicsLoading").style.display = "none";
-      document.getElementById("topicsError").style.display = "none";
-      document.getElementById("topicsEmpty").style.display = "none";
-      
-      // Ẩn header tìm kiếm
-      const header = document.querySelector(".topics-header");
-      if (header) header.style.display = "none";
-
-      // Hiện action page
-      const actionPage = document.getElementById("topicActionPage");
-      if (actionPage) actionPage.style.display = "block";
-    }
-
-    function closeTopicActionPage() {
-      // Ẩn action page
-      const actionPage = document.getElementById("topicActionPage");
-      if (actionPage) actionPage.style.display = "none";
-      
-      // Hiện lại header tìm kiếm
-      const header = document.querySelector(".topics-header");
-      if (header) header.style.display = "block";
-
-      // Khôi phục lại view lúc trước
-      if (currentView === "grid") {
-        document.getElementById("topicsGrid").style.display = "grid";
-      } else {
-        document.getElementById("topicsJourney").style.display = "block";
-      }
-    }
 
 
     /**
@@ -1027,6 +974,49 @@
     // ========================================
     // HELPER FUNCTIONS
     // ========================================
+    function getTopicQuizPercent(topicId) {
+      try {
+        const raw = localStorage.getItem("oq_quiz_stats_cache_v1");
+        if (!raw) return 0;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.stats || !parsed.stats[topicId]) return 0;
+        const stats = parsed.stats[topicId];
+        
+        const byPercent = Number(stats.bestPercent);
+        if (Number.isFinite(byPercent) && byPercent >= 0) return Math.min(100, Math.round(byPercent));
+        
+        const byScore = Number(stats.bestScore);
+        const byTotal = Number(stats.bestTotal);
+        if (Number.isFinite(byScore) && Number.isFinite(byTotal) && byTotal > 0) {
+          return Math.max(0, Math.min(100, Math.round((byScore / byTotal) * 100)));
+        }
+      } catch(e) {}
+      return 0;
+    }
+
+    function getTopicMatchingPercent(topicId) {
+      try {
+        const raw = localStorage.getItem("oq_matching_stats_cache_v1");
+        if (!raw) return 0;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.stats || !parsed.stats[topicId]) return 0;
+        const stats = parsed.stats[topicId];
+        
+        const byAccuracy = Number(stats.bestAccuracy);
+        if (Number.isFinite(byAccuracy) && byAccuracy >= 0) return Math.min(100, Math.round(byAccuracy));
+        
+        const byPercent = Number(stats.bestPercent);
+        if (Number.isFinite(byPercent) && byPercent >= 0) return Math.min(100, Math.round(byPercent));
+        
+        const byScore = Number(stats.bestScore);
+        const byTotalPairs = Number(stats.bestTotalPairs);
+        if (Number.isFinite(byScore) && Number.isFinite(byTotalPairs) && byTotalPairs > 0) {
+          return Math.max(0, Math.min(100, Math.round((byScore / byTotalPairs) * 100)));
+        }
+      } catch(e) {}
+      return 0;
+    }
+
     function checkTopicUnlocked(topic) {
       if (!allTopics || allTopics.length === 0) return true;
 
@@ -1042,6 +1032,13 @@
 
       // Phải hoàn thành 100% topic trước đó mới được mở topic này
       if (!prevProgress || !prevProgress.completed) {
+        return false;
+      }
+      
+      const prevQuizPercent = getTopicQuizPercent(prevTopic.topicId);
+      const prevMatchingPercent = getTopicMatchingPercent(prevTopic.topicId);
+      
+      if (prevQuizPercent < 80 || prevMatchingPercent < 80) {
         return false;
       }
 
@@ -1347,32 +1344,137 @@
     window.filterTopics = filterTopics;
     window.searchTopics = searchTopics;
     window.toggleView = toggleView;
+
+    // ========================================
+    // ACTION MENU STATE MANAGEMENT
+    // ========================================
+    let currentActiveCard = null;
+
+    function closeTopicActionMenu() {
+      if (currentActiveCard) {
+        currentActiveCard.classList.remove('selected');
+        const menu = currentActiveCard.querySelector('.topic-action-menu');
+        if (menu) menu.remove();
+        currentActiveCard = null;
+      }
+    }
+
+    // Đóng action menu khi click ra ngoài card
+    document.addEventListener("click", function(event) {
+      if (currentActiveCard && !event.target.closest('.topic-card.selected')) {
+        closeTopicActionMenu();
+      }
+    });
+
+    function navigateToLessonFromMenu(topicId) {
+      closeTopicActionMenu();
+      const topic = allTopics.find(t => t.topicId === topicId);
+      if (topic) {
+        if (!topicHasContent(topic)) {
+          showNotification('⚠️ Chủ đề "' + topic.title + '" chưa có nội dung. Sẽ được cập nhật sớm!', "warning");
+          return;
+        }
+        navigateToLesson(topic);
+      }
+    }
+
+    function navigateToQuizFromMenu(topicId) {
+      closeTopicActionMenu();
+      const topic = allTopics.find(t => t.topicId === topicId);
+      if (topic) navigateToQuiz(topic);
+    }
+
+    function navigateToMatchingFromMenu(topicId) {
+      closeTopicActionMenu();
+      const topic = allTopics.find(t => t.topicId === topicId);
+      if (topic) navigateToMatching(topic);
+    }
+
+    function openTopicActionMenu(topic, cardElement) {
+      // Bấm vào card đang chọn -> đóng menu
+      if (currentActiveCard === cardElement) {
+        closeTopicActionMenu();
+        return;
+      }
+
+      // Kiểm tra xem đã mở khóa chưa
+      if (!checkTopicUnlocked(topic)) {
+        showNotification("Chủ đề này đang bị khóa. Hoàn thành Bài học (100%), Quiz (>=80%) và Matching (>=80%) của chủ đề trước để mở khóa.", "warning");
+        return;
+      }
+
+      // Đóng menu cũ nếu có
+      closeTopicActionMenu();
+      
+      currentActiveCard = cardElement;
+      cardElement.classList.add('selected');
+      
+      const rect = cardElement.getBoundingClientRect();
+      // Nếu card nằm ở nửa phải màn hình, menu hiện bên trái, ngược lại hiện bên phải
+      const positionClass = rect.right > window.innerWidth / 2 ? 'menu-left' : 'menu-right';
+
+      const progress = userProgress[topic.topicId] || {};
+      const isLessonCompleted = progress.completed;
+      
+      const quizPercent = getTopicQuizPercent(topic.topicId);
+      const matchingPercent = getTopicMatchingPercent(topic.topicId);
+      
+      const isQuizUnlocked = isLessonCompleted;
+      const isMatchingUnlocked = isLessonCompleted;
+      const isSortUnlocked = false; // Always locked
+      
+      const quizCompleted = quizPercent > 0; 
+      const matchingCompleted = matchingPercent > 0; 
+      
+      function getClass(isUnlocked, isCompleted, type) {
+        if (!isUnlocked) return 'locked';
+        if (isCompleted) return 'completed-' + type;
+        return 'unlocked-' + type;
+      }
+
+      const lessonClass = isLessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
+      const quizClass = getClass(isQuizUnlocked, quizCompleted, 'quiz');
+      const matchingClass = getClass(isMatchingUnlocked, matchingCompleted, 'matching');
+      const sortClass = getClass(isSortUnlocked, false, 'sort');
+
+      const menuHTML = `
+        <div class="topic-action-menu ${positionClass}" onclick="event.stopPropagation()">
+          <div class="action-btn-item ${lessonClass}" onclick="event.stopPropagation(); navigateToLessonFromMenu('${topic.topicId}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Lý thuyết
+          </div>
+          <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); ${isQuizUnlocked ? `navigateToQuizFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Quiz
+          </div>
+          <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); ${isMatchingUnlocked ? `navigateToMatchingFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            Matching
+          </div>
+          <div class="action-btn-item ${sortClass}" onclick="event.stopPropagation(); showNotification('Đang phát triển', 'info')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Sắp xếp
+          </div>
+        </div>
+      `;
+
+      cardElement.insertAdjacentHTML('beforeend', menuHTML);
+    }
+    window.closeTopicActionMenu = closeTopicActionMenu;
+    window.navigateToLessonFromMenu = navigateToLessonFromMenu;
+    window.navigateToQuizFromMenu = navigateToQuizFromMenu;
+    window.navigateToMatchingFromMenu = navigateToMatchingFromMenu;
+
+    // Export functions
     window.showTopicDetail = showTopicDetail;
     window.closeTopicDetail = closeTopicDetail;
     window.startTopic = startTopic;
-    window.startTopicDirect = startTopicDirect;
+
     window.navigateToLesson = navigateToLesson;
     window.navigateToQuiz = navigateToQuiz;
     window.getTopicStatus = getTopicStatus;
     
-    // Xuất các hàm cho Action Page
-    window.closeTopicActionPage = closeTopicActionPage;
-    window.startLessonAction = function() {
-      if (!currentSelectedTopic) return;
-      if (!topicHasContent(currentSelectedTopic)) {
-         showNotification('⚠️ Chủ đề "' + currentSelectedTopic.title + '" chưa có nội dung lý thuyết!', "warning");
-         return;
-      }
-      navigateToLesson(currentSelectedTopic);
-    };
-    window.startQuizAction = function() {
-      if (!currentSelectedTopic) return;
-      navigateToQuiz(currentSelectedTopic);
-    };
-    window.startMatchingAction = function() {
-      if (!currentSelectedTopic) return;
-      navigateToMatching(currentSelectedTopic);
-    };
+
 
     // ========================================
     // AUTO-INITIALIZE SETUP
