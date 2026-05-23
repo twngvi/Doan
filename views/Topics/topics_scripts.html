@@ -1293,7 +1293,7 @@
 
       container.addEventListener("mousemove", function (e) {
         const card = e.target.closest(".topic-card");
-        if (!card) return;
+        if (!card || card.classList.contains("selected")) return;
 
         const rect = card.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -1312,7 +1312,7 @@
         "mouseleave",
         function (e) {
           const card = e.target.closest(".topic-card");
-          if (card) {
+          if (card && !card.classList.contains("selected")) {
             card.style.transform = "";
             card.style.transition = "transform 0.4s ease, box-shadow 0.3s ease";
           }
@@ -1322,7 +1322,7 @@
 
       container.addEventListener("mouseout", function (e) {
         const card = e.target.closest(".topic-card");
-        if (card && !card.contains(e.relatedTarget)) {
+        if (card && !card.contains(e.relatedTarget) && !card.classList.contains("selected")) {
           card.style.transform = "";
           card.style.transition = "transform 0.4s ease, box-shadow 0.3s ease";
         }
@@ -1353,6 +1353,8 @@
     function closeTopicActionMenu() {
       if (currentActiveCard) {
         currentActiveCard.classList.remove('selected');
+        currentActiveCard.style.transform = '';
+        currentActiveCard.style.transition = '';
         const menu = currentActiveCard.querySelector('.topic-action-menu');
         if (menu) menu.remove();
         currentActiveCard = null;
@@ -1408,6 +1410,8 @@
       
       currentActiveCard = cardElement;
       cardElement.classList.add('selected');
+      cardElement.style.transform = '';
+      cardElement.style.transition = 'transform 0.3s ease';
       
       const rect = cardElement.getBoundingClientRect();
       // Nếu card nằm ở nửa phải màn hình, menu hiện bên trái, ngược lại hiện bên phải
@@ -1600,6 +1604,7 @@
       const cards = document.querySelectorAll("#topicsGrid .topic-card");
       cards.forEach((card) => {
         card.addEventListener("mousemove", function (e) {
+          if (card.classList.contains("selected")) return;
           const rect = card.getBoundingClientRect();
           const x = e.clientX - rect.left;
           const y = e.clientY - rect.top;
@@ -1610,6 +1615,7 @@
           card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.03)`;
         });
         card.addEventListener("mouseleave", function () {
+          if (card.classList.contains("selected")) return;
           card.style.transform =
             "perspective(600px) rotateX(0) rotateY(0) scale(1)";
           card.style.transition = "transform 0.4s ease";
@@ -1618,6 +1624,7 @@
           }, 400);
         });
         card.addEventListener("mouseenter", function () {
+          if (card.classList.contains("selected")) return;
           card.style.transition = "transform 0.15s ease-out";
           setTimeout(() => {
             card.style.transition = "transform 0.08s ease-out";
