@@ -557,11 +557,15 @@
       const card = document.createElement("div");
       const status = getTopicStatus(topic, window.currentPageParams);
       const hasContent = topicHasContent(topic);
+      const canShowMenu = status !== "locked";
+      card.dataset.topicId = topic.topicId;
       card.className =
         "topic-card status-" + status + (hasContent ? "" : " no-content");
+      // Clicking the card opens the action menu (unless click is inside the menu)
       card.onclick = (e) => {
-        e.stopPropagation();
-        openTopicActionMenu(topic, card);
+        if (e.target.closest(".topic-action-menu")) return;
+        // Open the menu for this card
+        toggleTopicCardMenu(card, e);
       };
 
       // Get user progress for this topic
@@ -599,6 +603,7 @@
                 : ""
           }
         </div>
+        <!-- Menu opens when clicking the card; explicit menu button removed -->
       </div>
       <h3 class="topic-title">${topic.title}</h3>
       <p class="topic-description">${truncateText(topic.description, 120)}</p>
@@ -1287,13 +1292,40 @@
     // ========================================
     // CARD TILT EFFECT
     // ========================================
+    function isTopicActionMenuOpen() {
+      return !!currentActiveCard;
+    }
+
+    function resetTopicCardHoverState() {
+      document.querySelectorAll("#topicsGrid .topic-card").forEach((card) => {
+        if (!card.classList.contains("selected")) {
+          card.style.transform = "";
+          card.style.transition = "";
+        }
+      });
+    }
+
+    function setTopicMenuOpenState(isOpen) {
+      const topicsPage = document.getElementById("page-topics");
+      if (!topicsPage) return;
+      topicsPage.classList.toggle("topic-menu-open", !!isOpen);
+      if (isOpen) {
+        resetTopicCardHoverState();
+      }
+    }
+
     function setupCardTiltEffect() {
       const container = document.querySelector(".topics-grid, .journey-view");
       if (!container) return;
 
       container.addEventListener("mousemove", function (e) {
         const card = e.target.closest(".topic-card");
-        if (!card || card.classList.contains("selected")) return;
+        if (!card || card.classList.contains("menu-open") || isTopicActionMenuOpen()) {
+          if (card && !card.classList.contains("menu-open")) {
+            card.style.transform = "";
+          }
+          return;
+        }
 
         const rect = card.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -1312,7 +1344,7 @@
         "mouseleave",
         function (e) {
           const card = e.target.closest(".topic-card");
-          if (card && !card.classList.contains("selected")) {
+          if (card && !card.classList.contains("menu-open") && !isTopicActionMenuOpen()) {
             card.style.transform = "";
             card.style.transition = "transform 0.4s ease, box-shadow 0.3s ease";
           }
@@ -1322,7 +1354,12 @@
 
       container.addEventListener("mouseout", function (e) {
         const card = e.target.closest(".topic-card");
-        if (card && !card.contains(e.relatedTarget) && !card.classList.contains("selected")) {
+        if (
+          card &&
+          !card.contains(e.relatedTarget) &&
+          !card.classList.contains("menu-open") &&
+          !isTopicActionMenuOpen()
+        ) {
           card.style.transform = "";
           card.style.transition = "transform 0.4s ease, box-shadow 0.3s ease";
         }
@@ -1350,26 +1387,134 @@
     // ========================================
     let currentActiveCard = null;
 
-    function closeTopicActionMenu() {
-      if (currentActiveCard) {
-        currentActiveCard.classList.remove('selected');
-        currentActiveCard.style.transform = '';
-        currentActiveCard.style.transition = '';
-        const menu = currentActiveCard.querySelector('.topic-action-menu');
+    function clearTopicMenuState() {
+      const openedCard = document.querySelector('.topic-card.menu-open');
+      const pageTopics = document.getElementById('page-topics');
+
+      if (openedCard) {
+        openedCard.classList.remove('menu-open', 'selected');
+        openedCard.style.transform = '';
+        openedCard.style.transition = '';
+        const menu = openedCard.querySelector('.topic-action-menu');
         if (menu) menu.remove();
-        currentActiveCard = null;
       }
+
+      if (pageTopics) {
+        pageTopics.classList.remove('topic-menu-open');
+      }
+
+      currentActiveCard = null;
     }
 
-    // Đóng action menu khi click ra ngoài card
-    document.addEventListener("click", function(event) {
-      if (currentActiveCard && !event.target.closest('.topic-card.selected')) {
-        closeTopicActionMenu();
+    function toggleTopicCardMenu(targetOrButton, event) {
+      if (event && event.stopPropagation) event.stopPropagation();
+
+      const pageTopics = document.getElementById("page-topics");
+
+      // Accept either the menu button element or the card element itself
+      let card = null;
+      try {
+        if (targetOrButton && targetOrButton.classList && targetOrButton.classList.contains && targetOrButton.classList.contains('topic-card')) {
+          card = targetOrButton;
+        } else if (targetOrButton && typeof targetOrButton.closest === 'function') {
+          card = targetOrButton.closest('.topic-card');
+        }
+      } catch (e) {
+        card = null;
+      }
+
+      if (!card || !pageTopics) return;
+
+      const isOpening = !card.classList.contains("menu-open");
+
+      document.querySelectorAll(".topic-card.menu-open").forEach(function (item) {
+        item.classList.remove("menu-open", "selected");
+        item.style.transform = "";
+        item.style.transition = "";
+        const menu = item.querySelector(".topic-action-menu");
+        if (menu) menu.remove();
+      });
+
+      if (isOpening) {
+        card.classList.add("menu-open", "selected");
+        pageTopics.classList.add("topic-menu-open");
+        currentActiveCard = card;
+
+        card.style.transform = "";
+        card.style.transition = "transform 0.3s ease";
+
+        const rect = card.getBoundingClientRect();
+        const positionClass = rect.right > window.innerWidth / 2 ? 'menu-left' : 'menu-right';
+
+        const topicId = card.dataset.topicId;
+        const topic = allTopics.find(function (item) {
+          return item.topicId === topicId;
+        });
+        if (!topic) return;
+
+        const progress = userProgress[topic.topicId] || {};
+        const isLessonCompleted = progress.completed;
+        const quizPercent = getTopicQuizPercent(topic.topicId);
+        const matchingPercent = getTopicMatchingPercent(topic.topicId);
+        const isQuizUnlocked = isLessonCompleted;
+        const isMatchingUnlocked = isLessonCompleted;
+        const isSortUnlocked = false;
+        const quizCompleted = quizPercent > 0;
+        const matchingCompleted = matchingPercent > 0;
+
+        function getClass(isUnlocked, isCompleted, type) {
+          if (!isUnlocked) return 'locked';
+          if (isCompleted) return 'completed-' + type;
+          return 'unlocked-' + type;
+        }
+
+        const lessonClass = isLessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
+        const quizClass = getClass(isQuizUnlocked, quizCompleted, 'quiz');
+        const matchingClass = getClass(isMatchingUnlocked, matchingCompleted, 'matching');
+        const sortClass = getClass(isSortUnlocked, false, 'sort');
+
+        const menuHTML = `
+          <div class="topic-action-menu ${positionClass}" onclick="event.stopPropagation()">
+            <div class="action-btn-item ${lessonClass}" onclick="event.stopPropagation(); navigateToLessonFromMenu('${topic.topicId}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              Lý thuyết
+            </div>
+            <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); ${isQuizUnlocked ? `navigateToQuizFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Quiz
+            </div>
+            <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); ${isMatchingUnlocked ? `navigateToMatchingFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              Matching
+            </div>
+            <div class="action-btn-item ${sortClass}" onclick="event.stopPropagation(); showNotification('Đang phát triển', 'info')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Sắp xếp
+            </div>
+          </div>
+        `;
+
+        card.insertAdjacentHTML('beforeend', menuHTML);
+      } else {
+        clearTopicMenuState();
+      }
+
+      setTopicMenuOpenState(isOpening);
+    }
+
+    document.addEventListener("click", function (event) {
+      const pageTopics = document.getElementById("page-topics");
+      const openedCard = document.querySelector(".topic-card.menu-open");
+
+      if (!openedCard || !pageTopics) return;
+
+      if (!openedCard.contains(event.target)) {
+        clearTopicMenuState();
       }
     });
 
     function navigateToLessonFromMenu(topicId) {
-      closeTopicActionMenu();
+      clearTopicMenuState();
       const topic = allTopics.find(t => t.topicId === topicId);
       if (topic) {
         if (!topicHasContent(topic)) {
@@ -1381,90 +1526,17 @@
     }
 
     function navigateToQuizFromMenu(topicId) {
-      closeTopicActionMenu();
+      clearTopicMenuState();
       const topic = allTopics.find(t => t.topicId === topicId);
       if (topic) navigateToQuiz(topic);
     }
 
     function navigateToMatchingFromMenu(topicId) {
-      closeTopicActionMenu();
+      clearTopicMenuState();
       const topic = allTopics.find(t => t.topicId === topicId);
       if (topic) navigateToMatching(topic);
     }
-
-    function openTopicActionMenu(topic, cardElement) {
-      // Bấm vào card đang chọn -> đóng menu
-      if (currentActiveCard === cardElement) {
-        closeTopicActionMenu();
-        return;
-      }
-
-      // Kiểm tra xem đã mở khóa chưa
-      if (!checkTopicUnlocked(topic)) {
-        showNotification("Chủ đề này đang bị khóa. Hoàn thành Bài học (100%), Quiz (>=80%) và Matching (>=80%) của chủ đề trước để mở khóa.", "warning");
-        return;
-      }
-
-      // Đóng menu cũ nếu có
-      closeTopicActionMenu();
-      
-      currentActiveCard = cardElement;
-      cardElement.classList.add('selected');
-      cardElement.style.transform = '';
-      cardElement.style.transition = 'transform 0.3s ease';
-      
-      const rect = cardElement.getBoundingClientRect();
-      // Nếu card nằm ở nửa phải màn hình, menu hiện bên trái, ngược lại hiện bên phải
-      const positionClass = rect.right > window.innerWidth / 2 ? 'menu-left' : 'menu-right';
-
-      const progress = userProgress[topic.topicId] || {};
-      const isLessonCompleted = progress.completed;
-      
-      const quizPercent = getTopicQuizPercent(topic.topicId);
-      const matchingPercent = getTopicMatchingPercent(topic.topicId);
-      
-      const isQuizUnlocked = isLessonCompleted;
-      const isMatchingUnlocked = isLessonCompleted;
-      const isSortUnlocked = false; // Always locked
-      
-      const quizCompleted = quizPercent > 0; 
-      const matchingCompleted = matchingPercent > 0; 
-      
-      function getClass(isUnlocked, isCompleted, type) {
-        if (!isUnlocked) return 'locked';
-        if (isCompleted) return 'completed-' + type;
-        return 'unlocked-' + type;
-      }
-
-      const lessonClass = isLessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
-      const quizClass = getClass(isQuizUnlocked, quizCompleted, 'quiz');
-      const matchingClass = getClass(isMatchingUnlocked, matchingCompleted, 'matching');
-      const sortClass = getClass(isSortUnlocked, false, 'sort');
-
-      const menuHTML = `
-        <div class="topic-action-menu ${positionClass}" onclick="event.stopPropagation()">
-          <div class="action-btn-item ${lessonClass}" onclick="event.stopPropagation(); navigateToLessonFromMenu('${topic.topicId}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            Lý thuyết
-          </div>
-          <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); ${isQuizUnlocked ? `navigateToQuizFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Quiz
-          </div>
-          <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); ${isMatchingUnlocked ? `navigateToMatchingFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            Matching
-          </div>
-          <div class="action-btn-item ${sortClass}" onclick="event.stopPropagation(); showNotification('Đang phát triển', 'info')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            Sắp xếp
-          </div>
-        </div>
-      `;
-
-      cardElement.insertAdjacentHTML('beforeend', menuHTML);
-    }
-    window.closeTopicActionMenu = closeTopicActionMenu;
+    window.toggleTopicCardMenu = toggleTopicCardMenu;
     window.navigateToLessonFromMenu = navigateToLessonFromMenu;
     window.navigateToQuizFromMenu = navigateToQuizFromMenu;
     window.navigateToMatchingFromMenu = navigateToMatchingFromMenu;
@@ -1522,6 +1594,68 @@
       console.log("Force refreshing topics...");
       loadTopics(true); // true = force refresh, bỏ qua cache
     };
+
+    // ========================================
+    // TOPIC COMPLETION / EXTERNAL UPDATE HOOKS
+    // - Listen for a custom event `topicCompleted` or calls to `window.notifyTopicCompleted`
+    // - Also listen to localStorage `storage` events for lesson/quiz/matching keys
+    // When triggered, invalidate caches and refresh topics/progress.
+    // ========================================
+    function handleTopicCompleted(topicId) {
+      try {
+        console.log('🔔 Topic completed handler called for:', topicId);
+        if (typeof window.invalidateTopicsLocalCache === 'function') {
+          window.invalidateTopicsLocalCache();
+        } else {
+          // fallback: clear local caches
+          topicsCache = null;
+          progressCache = null;
+          lastLoadTime = 0;
+        }
+
+        // Force refresh from server so badges/progress update immediately
+        loadTopics(true);
+      } catch (e) {
+        console.warn('⚠️ Error in handleTopicCompleted:', e);
+      }
+    }
+
+    // Listen for dispatched custom events from other pages/scripts
+    document.addEventListener('topicCompleted', function (ev) {
+      var topicId = ev && ev.detail && ev.detail.topicId;
+      handleTopicCompleted(topicId);
+    });
+
+    // Convenience global for other modules to call after finishing a topic
+    window.notifyTopicCompleted = function (topicId) {
+      try {
+        document.dispatchEvent(
+          new CustomEvent('topicCompleted', { detail: { topicId: topicId } }),
+        );
+      } catch (e) {
+        console.warn('⚠️ notifyTopicCompleted failed:', e);
+      }
+    };
+
+    // Detect relevant localStorage changes (e.g., lesson_progress_<topicId>, quiz/matching stats)
+    window.addEventListener('storage', function (e) {
+      try {
+        if (!e || !e.key) return;
+        if (
+          e.key.indexOf('lesson_progress_') === 0 ||
+          e.key.indexOf('oq_quiz_stats_cache_v1') === 0 ||
+          e.key.indexOf('oq_matching_stats_cache_v1') === 0
+        ) {
+          console.log('🔁 Detected storage change for key:', e.key);
+          if (window._topicsReloadTimeout) clearTimeout(window._topicsReloadTimeout);
+          window._topicsReloadTimeout = setTimeout(function () {
+            loadTopics(true);
+          }, 300);
+        }
+      } catch (err) {
+        console.warn('⚠️ storage listener error:', err);
+      }
+    });
 
     // ===== METEOR SHOWER FOR TOPICS HEADER =====
     let topicsMeteorInterval = null;
@@ -1604,7 +1738,12 @@
       const cards = document.querySelectorAll("#topicsGrid .topic-card");
       cards.forEach((card) => {
         card.addEventListener("mousemove", function (e) {
-          if (card.classList.contains("selected")) return;
+          if (card.classList.contains("selected") || isTopicActionMenuOpen()) {
+            if (!card.classList.contains("selected")) {
+              card.style.transform = "";
+            }
+            return;
+          }
           const rect = card.getBoundingClientRect();
           const x = e.clientX - rect.left;
           const y = e.clientY - rect.top;
@@ -1615,7 +1754,7 @@
           card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.03)`;
         });
         card.addEventListener("mouseleave", function () {
-          if (card.classList.contains("selected")) return;
+          if (card.classList.contains("selected") || isTopicActionMenuOpen()) return;
           card.style.transform =
             "perspective(600px) rotateX(0) rotateY(0) scale(1)";
           card.style.transition = "transform 0.4s ease";
@@ -1624,7 +1763,7 @@
           }, 400);
         });
         card.addEventListener("mouseenter", function () {
-          if (card.classList.contains("selected")) return;
+          if (card.classList.contains("selected") || isTopicActionMenuOpen()) return;
           card.style.transition = "transform 0.15s ease-out";
           setTimeout(() => {
             card.style.transition = "transform 0.08s ease-out";

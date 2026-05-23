@@ -2989,6 +2989,14 @@
           refreshMatchingProgressFromServer();
         }
 
+        try {
+          if (typeof window.notifyTopicCompleted === 'function' && matchingState.currentTopicId) {
+            window.notifyTopicCompleted(matchingState.currentTopicId);
+          }
+        } catch (e) {
+          console.warn('⚠️ notifyTopicCompleted failed in matching page:', e);
+        }
+
         // 2. Save activity log entry AFTER matching result is saved (avoid concurrent writes)
         google.script.run
           .withSuccessHandler(function () {
