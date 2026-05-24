@@ -1567,6 +1567,88 @@
   }
 
   /**
+   * Update dashboard pet welcome block
+   */
+  function updateDashboardPetWelcome(user) {
+    if (!user) user = window.currentUser || getUserData() || {};
+    var petImageEl = document.getElementById("dashboardPetImage");
+    var welcomeTextEl = document.getElementById("dashboardWelcomeText");
+    if (!petImageEl || !welcomeTextEl) return;
+
+    // 1. Logic for Greeting
+    var nameCandidates = [
+      user.displayName,
+      user.fullName,
+      user.username,
+      user.name,
+      "User"
+    ];
+    var userName = "User";
+    for (var i = 0; i < nameCandidates.length; i++) {
+      if (nameCandidates[i] && typeof nameCandidates[i] === "string" && nameCandidates[i].trim() !== "") {
+        userName = nameCandidates[i].trim();
+        break;
+      }
+    }
+
+    // Try fallback from DOM if still "User"
+    if (userName === "User") {
+      var fallbackSelectors = ["#sidebar-username", "#sidebar-user-name", ".sidebar-username", "#profile-fullname"];
+      for (var j = 0; j < fallbackSelectors.length; j++) {
+        var el = document.querySelector(fallbackSelectors[j]);
+        if (el && el.textContent.trim() && el.textContent.trim() !== "User") {
+          userName = el.textContent.trim();
+          break;
+        }
+      }
+    }
+
+    var hour = new Date().getHours();
+    var greeting = "Chào buổi tối";
+    if (hour >= 5 && hour < 11) greeting = "Chào buổi sáng";
+    else if (hour >= 11 && hour < 18) greeting = "Chào buổi chiều";
+    welcomeTextEl.textContent = greeting + ", " + userName;
+
+    // 2. Logic for Pet Image
+    var petConfig = user.petConfig || {};
+    var petUrl = "";
+
+    // Priority 1: Favorite pet
+    var favoriteUrl = petConfig.favoritePetImageUrl || user.favoritePetImageUrl;
+    var favoriteId = petConfig.favoriteVariantId || user.favoriteVariantId;
+    if (favoriteUrl && typeof favoriteUrl === "string" && favoriteUrl.trim() !== "") {
+      petUrl = favoriteUrl.trim();
+    } else if (favoriteId && typeof window.resolvePetThumbUrlByVariantId === "function") {
+      petUrl = window.resolvePetThumbUrlByVariantId(favoriteId);
+    } else {
+      // Priority 2: First owned pet
+      var ownedPets = petConfig.ownedVariants || user.ownedVariants || [];
+      if (Array.isArray(ownedPets) && ownedPets.length > 0) {
+        var firstPet = ownedPets[0];
+        if (typeof firstPet === "object" && firstPet.imageUrl) {
+          petUrl = firstPet.imageUrl;
+        } else if (typeof firstPet === "string" && typeof window.resolvePetThumbUrlByVariantId === "function") {
+          petUrl = window.resolvePetThumbUrlByVariantId(firstPet);
+        }
+      }
+    }
+
+    // Priority 3: Random default egg
+    if (!petUrl) {
+      var defaultEggs = [
+        "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/PET/Trung_lua_nho.png",
+        "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/PET/Trung_dat_nho.png",
+        "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/PET/Trung_nuoc_nho.png"
+      ];
+      var eggIndex = (userName.length) % defaultEggs.length;
+      petUrl = defaultEggs[eggIndex];
+    }
+
+    // Apply URL
+    petImageEl.src = petUrl;
+  }
+
+  /**
    * Update dashboard user info
    */
   function updateDashboardUserInfo(user) {
@@ -1604,6 +1686,7 @@
     }
 
     updateGreeting();
+    updateDashboardPetWelcome(normalizedUser);
 
     if (typeof window.updateAllUserNames === "function")
       window.updateAllUserNames(displayName);
