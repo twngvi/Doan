@@ -656,59 +656,123 @@
       }
     };
 
-    /* ===== SMART STICKY / AUTO-HIDE HEADER ===== */
+    /* ===== SMART AUTO-HIDE TOP NAV ===== */
     (function initSmartStickyHeader() {
-      const SCROLL_THRESHOLD = 6;   // px – min scroll to trigger
-      const HIDE_OFFSET     = 80;   // px from top where hiding starts
-      let lastScrollY       = 0;
-      let ticking           = false;
-      let navEl             = null;
+      const SCROLL_THRESHOLD = 4; // Lướt nhẹ lên/xuống bao nhiêu px thì nhận
+      const HIDE_OFFSET = 70;     // Cuộn qua bao nhiêu px thì mới bắt đầu ẩn header
+
+      let lastScrollY = 0;
+      let ticking = false;
+      const boundTargets = new WeakSet();
 
       function getNav() {
-        if (!navEl) navEl = document.getElementById("globalSidebar");
-        return navEl;
+        return document.getElementById("globalSidebar");
       }
 
-      function handleScroll() {
+      function getVisiblePage() {
+        const pages = Array.from(document.querySelectorAll(".page-content"));
+
+        return pages.find(function (el) {
+          const style = window.getComputedStyle(el);
+          return style.display !== "none" && style.visibility !== "hidden";
+        });
+      }
+
+      function getScrollTop() {
+        const visiblePage = getVisiblePage();
+
+        if (
+          visiblePage &&
+          visiblePage.scrollHeight > visiblePage.clientHeight
+        ) {
+          return visiblePage.scrollTop;
+        }
+
+        const dashboard = document.getElementById("page-dashboard");
+
+        if (
+          dashboard &&
+          dashboard.scrollHeight > dashboard.clientHeight
+        ) {
+          return dashboard.scrollTop;
+        }
+
+        return window.scrollY || document.documentElement.scrollTop || 0;
+      }
+
+      function updateHeaderByScroll() {
         const nav = getNav();
         if (!nav) return;
 
-        const currentY = window.scrollY || document.documentElement.scrollTop;
-        const delta    = currentY - lastScrollY;
+        const currentY = Math.max(0, getScrollTop());
+        const delta = currentY - lastScrollY;
 
-        // Mark as scrolled (deeper glass effect) once past HIDE_OFFSET
-        if (currentY > HIDE_OFFSET) {
-          nav.classList.add("nav-scrolled");
-        } else {
-          nav.classList.remove("nav-scrolled");
-          nav.classList.remove("nav-hidden");
+        // Ở gần đầu trang thì luôn hiện header
+        if (currentY <= HIDE_OFFSET) {
+          nav.classList.remove("nav-hidden", "nav-scrolled");
           lastScrollY = currentY;
           ticking = false;
           return;
         }
 
-        if (Math.abs(delta) > SCROLL_THRESHOLD) {
+        nav.classList.add("nav-scrolled");
+
+        if (Math.abs(delta) >= SCROLL_THRESHOLD) {
           if (delta > 0) {
-            // Scrolling DOWN – hide
+            // Scroll xuống -> ẩn header
             nav.classList.add("nav-hidden");
           } else {
-            // Scrolling UP – show
+            // Scroll lên -> hiện header
             nav.classList.remove("nav-hidden");
           }
+
           lastScrollY = currentY;
         }
 
         ticking = false;
       }
 
-      window.addEventListener("scroll", function () {
-        if (!ticking) {
-          requestAnimationFrame(handleScroll);
-          ticking = true;
+      function requestUpdate() {
+        if (ticking) return;
+
+        ticking = true;
+        requestAnimationFrame(updateHeaderByScroll);
+      }
+
+      function bindScrollTarget(target) {
+        if (!target || boundTargets.has(target)) return;
+
+        target.addEventListener("scroll", requestUpdate, { passive: true });
+        boundTargets.add(target);
+      }
+
+      function bindAllScrollTargets() {
+        bindScrollTarget(window);
+
+        document
+          .querySelectorAll(".page-content, #page-dashboard, main")
+          .forEach(bindScrollTarget);
+      }
+
+      window.resetSmartTopNav = function () {
+        const nav = getNav();
+
+        if (nav) {
+          nav.classList.remove("nav-hidden", "nav-scrolled");
         }
-      }, { passive: true });
+
+        lastScrollY = getScrollTop();
+        bindAllScrollTargets();
+      };
+
+      bindAllScrollTargets();
+
+      window.addEventListener("resize", window.resetSmartTopNav, {
+        passive: true,
+      });
+
+      setTimeout(window.resetSmartTopNav, 100);
     })();
-    /* ===== END SMART STICKY ===== */
 
     const originalShowPage = window.showPage;
     window.showPage = function (pageId, params, addToHistory) {
@@ -734,6 +798,10 @@
               document.body.classList.remove("hide-sidebar");
             }
           }
+        }
+
+        if (typeof window.resetSmartTopNav === "function") {
+          setTimeout(window.resetSmartTopNav, 0);
         }
       } catch (e) {
         console.warn("Top nav update error:", e);
