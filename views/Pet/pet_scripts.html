@@ -620,19 +620,19 @@
       return sanitizePetName(getPetDisplayNameByVariantId(getActiveVariantId()) || DEFAULT_PET_NAME);
     }
 
-    function getPetPopoverText(panelKey) {
-      const petName = getActivePetDisplayLabel();
-      if (panelKey === "accessory") return "Pet đang gắn phụ kiện: " + petName;
-      if (panelKey === "food") return "Pet đang được cho ăn: " + petName;
-      if (panelKey === "background") return "Nền cho pet: " + petName;
-      return "Pet đang chọn: " + petName;
-    }
+    function getPetPopoverTitle(panelKey, itemData, itemType) {
+      const safeName = String((itemData && (itemData.name || itemData.title)) || "").trim();
 
-    function getPetPopoverMetaLabel(panelKey) {
-      if (panelKey === "accessory") return "Chạm vào item để xem và gắn phụ kiện";
-      if (panelKey === "food") return "Chạm vào item để xem và cho ăn";
-      if (panelKey === "background") return "Chạm vào item để xem và đổi nền";
-      return "Chạm vào pet để xem thông tin";
+      if (safeName) {
+        return safeName;
+      }
+
+      if (panelKey === "accessory") return "Không gắn phụ kiện";
+      if (panelKey === "background") return "Nền";
+      if (panelKey === "food") return getActivePetDisplayLabel();
+      if (panelKey === "settings") return getActivePetDisplayLabel();
+
+      return String(itemType || panelKey || "").trim();
     }
 
     function getPetPopoverPreviewElement(panelKey) {
@@ -657,10 +657,10 @@
       return contextId ? document.getElementById(contextId) : null;
     }
 
-    function updatePetPopoverContext(panelKey) {
+    function updatePetPopoverContext(panelKey, itemData, itemType) {
       const contextEl = getPetPopoverContextElement(panelKey);
       if (contextEl) {
-        contextEl.textContent = getPetPopoverText(panelKey);
+        contextEl.textContent = getPetPopoverTitle(panelKey, itemData, itemType);
       }
     }
 
@@ -668,61 +668,12 @@
       const previewEl = getPetPopoverPreviewElement(panelKey);
       if (!previewEl) return;
 
-      if (!itemData) {
-        previewEl.innerHTML =
-          '<div class="preview-name">' + escapeHtml(getActivePetDisplayLabel()) + '</div>' +
-          '<div class="preview-meta">' + escapeHtml(getPetPopoverMetaLabel(panelKey)) + '</div>';
-        return;
-      }
-
-      const safeName = escapeHtml(itemData.name || itemData.title || getActivePetDisplayLabel());
-      const metaParts = [];
-      const unlockMeta = itemData.unlockCondition ? describeUnlockCondition(itemData.unlockCondition) : "";
-      let topLineRight = "";
-
-      if (itemType === "variant") {
-        if (itemData.isOwned) {
-          topLineRight = "Đã sở hữu";
-        } else {
-          const secondPetPrice = Math.max(0, toNonNegativeNumber(itemData.secondPetPriceXqp, 500));
-          topLineRight = secondPetPrice + " XQP";
-          metaParts.push("Chưa sở hữu");
-        }
-      }
-
-      if (itemType === "background") {
-        metaParts.push(unlockMeta ? "Điều kiện: " + unlockMeta : "Đang chọn nền");
-      }
-
-      if (itemType === "accessory") {
-        const safePriceXqp = Math.max(0, toNonNegativeNumber(itemData.priceXqp, 0));
-        if (safePriceXqp > 0) topLineRight = safePriceXqp + " XQP";
-        if (itemData.description) metaParts.push(String(itemData.description));
-        if (unlockMeta) metaParts.push("Điều kiện: " + unlockMeta);
-      }
-
-      if (itemType === "food") {
-        const safePriceXqp = Math.max(0, toNonNegativeNumber(itemData.priceXqp, 0));
-        const safeFoodXpGain = Math.max(0, toNonNegativeNumber(itemData.petXpGain, 0));
-        if (safePriceXqp > 0) topLineRight = safePriceXqp + " XQP";
-        metaParts.push("+" + safeFoodXpGain + " XP");
-        if (unlockMeta) metaParts.push("Điều kiện: " + unlockMeta);
-      }
-
-      if (itemData.description && itemType !== "accessory" && itemType !== "food") {
-        metaParts.push(String(itemData.description));
-      }
-
-      previewEl.innerHTML =
-        '<div class="preview-topline"><div class="preview-name">' + safeName + '</div>' +
-        (topLineRight ? '<div class="preview-money">' + escapeHtml(topLineRight) + '</div>' : '') +
-        '</div>' +
-        '<div class="preview-meta">' + escapeHtml(metaParts.filter(Boolean).join(" · ") || getPetPopoverMetaLabel(panelKey)) + '</div>';
+      const safeName = escapeHtml(getPetPopoverTitle(panelKey, itemData, itemType));
+      previewEl.innerHTML = '<div class="preview-topline"><div class="preview-name">' + safeName + '</div></div>';
     }
 
     function syncPetPopoverHeader(panelKey, itemData, itemType) {
-      updatePetPopoverContext(panelKey);
-      updatePetPopoverPreview(panelKey, itemData || null, itemType || panelKey);
+      updatePetPopoverContext(panelKey, itemData || null, itemType || panelKey);
     }
 
     function getCurrentPanelSelection(panelKey) {
