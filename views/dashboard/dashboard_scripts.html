@@ -12,6 +12,26 @@
     if (DASHBOARD_DEBUG) console.warn.apply(console, arguments);
   }
 
+  /**
+   * Trigger drop animation for quick stats cards
+   * Re-applies the CSS animation class so cards animate in when dashboard is shown
+   */
+  function triggerQuickStatsDropAnimation() {
+    try {
+      var statsRow = document.querySelector('.quick-stats-row');
+      if (!statsRow) return;
+      var cards = statsRow.querySelectorAll('.quick-stat-card, .stat-card');
+      cards.forEach(function(card, index) {
+        card.style.animation = 'none';
+        card.offsetHeight; // force reflow
+        card.style.animation = '';
+        card.style.animationDelay = (index * 0.08) + 's';
+      });
+    } catch (e) {
+      // silently ignore animation errors
+    }
+  }
+
   // 1. Define global exposure early to avoid 'undefined' errors during navigation
   window.DashboardCache = window.DashboardCache || {
     data: null,

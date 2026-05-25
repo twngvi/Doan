@@ -5,18 +5,73 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Doanv3 - Learning Management System</title>
 
+    <!-- 🔒 Production Console Suppressor - Security: Hide all debug/personal info -->
+    <script>
+      (function() {
+        // Save original console methods for internal use if needed
+        var _origLog = console.log;
+        var _origWarn = console.warn;
+        var _origInfo = console.info;
+        var _origDebug = console.debug;
+        var _origError = console.error;
+
+        // Helper: check if any argument contains the allowed message
+        function isAllowed(args) {
+          for (var i = 0; i < args.length; i++) {
+            if (typeof args[i] === 'string' && args[i].indexOf('Net state changed') !== -1) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        // Override all console methods - only allow "Net state changed" messages
+        console.log = function() {
+          if (isAllowed(arguments)) _origLog.apply(console, arguments);
+        };
+        console.warn = function() {
+          if (isAllowed(arguments)) _origWarn.apply(console, arguments);
+        };
+        console.info = function() {
+          if (isAllowed(arguments)) _origInfo.apply(console, arguments);
+        };
+        console.debug = function() {
+          if (isAllowed(arguments)) _origDebug.apply(console, arguments);
+        };
+        console.error = function() {
+          if (isAllowed(arguments)) _origError.apply(console, arguments);
+        };
+
+        // Also suppress console.table, console.dir, console.trace, console.group
+        console.table = function() {};
+        console.dir = function() {};
+        console.trace = function() {};
+        console.group = function() {};
+        console.groupCollapsed = function() {};
+        console.groupEnd = function() {};
+        console.count = function() {};
+        console.countReset = function() {};
+        console.time = function() {};
+        console.timeEnd = function() {};
+        console.timeLog = function() {};
+        console.assert = function() {};
+        console.clear = function() {};
+        console.profile = function() {};
+        console.profileEnd = function() {};
+      })();
+    </script>
+
     <!-- ⚠️ REMOVED: Google Sign-In Library (gây lỗi FedCM trong Apps Script iframe) -->
     <!-- Sử dụng OAuth2 flow truyền thống qua backend thay thế -->
     <!-- <script src="https://accounts.google.com/gsi/client" async defer></script> -->
 
-    <!-- ⭐ Inject URL Parameters and Page from server -->
+    <!-- ⭐ Inject URL Parameters and Page from server (suppressed by console filter) -->
     <script>
       window.SERVER_PARAMS = {
         page: "<?= page || '' ?>",
         action: "<?= params.action || '' ?>",
         token: "<?= params.token || '' ?>",
       };
-      console.log("📦 Server params injected:", window.SERVER_PARAMS);
     </script>
 
     <!-- Theme Config (must load before styles) -->

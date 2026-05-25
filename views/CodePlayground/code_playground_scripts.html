@@ -421,7 +421,15 @@
       el.stateBadge.textContent = 'Completed';
       return;
     }
-    el.stateBadge.textContent = ide.dirty ? 'Unsaved' : 'Saved';
+    if (ide.dirty) {
+      el.stateBadge.textContent = 'Unsaved';
+      el.stateBadge.style.background = 'var(--cp-pastel-yellow)';
+      el.stateBadge.style.color = 'var(--cp-text-secondary)';
+    } else {
+      el.stateBadge.textContent = 'Saved';
+      el.stateBadge.style.background = 'var(--cp-pastel-green)';
+      el.stateBadge.style.color = '#1f4d36';
+    }
   }
 
   function setEngineLabels() {
@@ -571,10 +579,6 @@
   }
 
   function resolveEditorTheme() {
-    var s = ide.state.settings;
-    if (s.theme === 'light') return 'default';
-    if (s.theme === 'dark') return 'dracula';
-    // auto: follow body class (forest is light), but IDE is dark -> keep dracula.
     return 'dracula';
   }
 
@@ -1660,50 +1664,30 @@
   }
 
   /* ================================================================
-     SETTINGS PANEL
+     THEME
      ================================================================ */
-  var settingsToggleLockedUntil = 0;
+  function applyThemeFromState() {
+    if (!el.root) return;
+    var theme = ide.state.settings.theme; // 'light' or 'dark'
+    if (theme !== 'light' && theme !== 'dark') {
+      theme = 'dark'; // Default to dark
+    }
+    el.root.classList.remove('cp-theme-light', 'cp-theme-dark');
+    el.root.classList.add('cp-theme-' + theme);
 
-  function lockSettingsToggle(ms) {
-    settingsToggleLockedUntil = Date.now() + (Number(ms) || 250);
+    if (el.themeIcon) {
+      el.themeIcon.textContent = (theme === 'light') ? 'dark_mode' : 'light_mode';
+    }
   }
 
-  function canToggleSettings() {
-    return Date.now() >= settingsToggleLockedUntil;
-  }
-
-  function openSettings() {
-    setHidden(el.backdrop, false);
-    setHidden(el.settings, false);
-    syncSettingsUiFromState();
-  }
-
-  function closeSettings() {
-    // Prevent immediate re-open caused by click-through on touch devices.
-    lockSettingsToggle(250);
-    setHidden(el.backdrop, true);
-    setHidden(el.settings, true);
-  }
-
-  function isSettingsOpen() {
-    return !!(el.settings && !el.settings.hasAttribute('hidden'));
-  }
-
-  function toggleSettings() {
-    if (!canToggleSettings()) return;
-    if (isSettingsOpen()) closeSettings();
-    else openSettings();
-  }
-
-  function syncSettingsUiFromState() {
-    var s = ide.state.settings;
-    if (el.setFontSize) el.setFontSize.value = String(s.fontSize || 14);
-    if (el.setFontSizeVal) el.setFontSizeVal.textContent = String(s.fontSize || 14) + 'px';
-    if (el.setWordWrap) el.setWordWrap.checked = !!s.wordWrap;
-    if (el.setAutoRun) el.setAutoRun.checked = !!s.autoRun;
-    if (el.setTabSize) el.setTabSize.value = String(s.tabSize || 2);
-    if (el.setTheme) el.setTheme.value = s.theme || 'auto';
-    if (el.setTabletLayout) el.setTabletLayout.value = s.tabletLayout || 'auto';
+  function toggleTheme() {
+    var theme = ide.state.settings.theme;
+    var next = (theme === 'light') ? 'dark' : 'light';
+    ide.state.settings.theme = next;
+    ide.dirty = true;
+    updateStateBadge();
+    scheduleDraftSave();
+    applyThemeFromState();
   }
 
   function applyTabletLayoutSetting() {
@@ -1809,7 +1793,8 @@
     el.resetBtn = byId('cpResetBtn');
     el.copyBtn = byId('cpCopyBtn');
     el.shareBtn = byId('cpShareBtn');
-    el.settingsBtn = byId('cpSettingsBtn');
+    el.themeBtn = byId('cpThemeBtn');
+    el.themeIcon = byId('cpThemeIcon');
     el.fullscreenBtn = byId('cpFullscreenBtn');
     el.fsIcon = byId('cpFsIcon');
     el.moreBtn = byId('cpMoreBtn');
@@ -1870,16 +1855,7 @@
 
     el.mobileTabs = byId('cpMobileTabs');
 
-    el.settings = byId('cpSettings');
-    el.backdrop = byId('cpBackdrop');
-    el.settingsCloseBtn = byId('cpSettingsCloseBtn');
-    el.setFontSize = byId('cpSetFontSize');
-    el.setFontSizeVal = byId('cpSetFontSizeVal');
-    el.setWordWrap = byId('cpSetWordWrap');
-    el.setAutoRun = byId('cpSetAutoRun');
-    el.setTabSize = byId('cpSetTabSize');
-    el.setTheme = byId('cpSetTheme');
-    el.setTabletLayout = byId('cpSetTabletLayout');
+
   }
 
   function bindEvents() {
@@ -1962,12 +1938,11 @@
     if (el.resetBtn) el.resetBtn.addEventListener('click', resetWorkspace);
     if (el.copyBtn) el.copyBtn.addEventListener('click', copyCurrentFile);
     if (el.shareBtn) el.shareBtn.addEventListener('click', downloadWorkspaceSources);
-    if (el.settingsBtn) {
-      el.settingsBtn.addEventListener('click', function (e) {
+    if (el.themeBtn) {
+      el.themeBtn.addEventListener('click', function (e) {
         if (e && e.preventDefault) e.preventDefault();
         if (e && e.stopPropagation) e.stopPropagation();
-        if (!canToggleSettings()) return;
-        toggleSettings();
+        toggleTheme();
       });
     }
     if (el.fullscreenBtn) el.fullscreenBtn.addEventListener('click', toggleFullscreen);
@@ -2042,74 +2017,7 @@
       });
     }
 
-    if (el.settingsCloseBtn) {
-      el.settingsCloseBtn.addEventListener('pointerdown', function (e) {
-        if (e && e.preventDefault) e.preventDefault();
-        if (e && e.stopPropagation) e.stopPropagation();
-        closeSettings();
-      });
-      el.settingsCloseBtn.addEventListener('click', function (e) {
-        if (e && e.preventDefault) e.preventDefault();
-        if (e && e.stopPropagation) e.stopPropagation();
-        closeSettings();
-      });
-    }
-    if (el.backdrop) {
-      el.backdrop.addEventListener('pointerdown', function (e) {
-        if (e && e.preventDefault) e.preventDefault();
-        if (e && e.stopPropagation) e.stopPropagation();
-        closeSettings();
-      });
-      el.backdrop.addEventListener('click', function (e) {
-        if (e && e.preventDefault) e.preventDefault();
-        if (e && e.stopPropagation) e.stopPropagation();
-        closeSettings();
-      });
-    }
 
-    if (el.setFontSize) el.setFontSize.addEventListener('input', function () {
-      ide.state.settings.fontSize = Number(el.setFontSize.value) || 14;
-      if (el.setFontSizeVal) el.setFontSizeVal.textContent = ide.state.settings.fontSize + 'px';
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-      applySettingsToEditor();
-    });
-    if (el.setWordWrap) el.setWordWrap.addEventListener('change', function () {
-      ide.state.settings.wordWrap = !!el.setWordWrap.checked;
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-      applySettingsToEditor();
-    });
-    if (el.setAutoRun) el.setAutoRun.addEventListener('change', function () {
-      ide.state.settings.autoRun = !!el.setAutoRun.checked;
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-    });
-    if (el.setTabSize) el.setTabSize.addEventListener('change', function () {
-      ide.state.settings.tabSize = Number(el.setTabSize.value) || 2;
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-      applySettingsToEditor();
-    });
-    if (el.setTheme) el.setTheme.addEventListener('change', function () {
-      ide.state.settings.theme = el.setTheme.value || 'auto';
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-      applySettingsToEditor();
-    });
-    if (el.setTabletLayout) el.setTabletLayout.addEventListener('change', function () {
-      ide.state.settings.tabletLayout = el.setTabletLayout.value || 'auto';
-      ide.dirty = true;
-      updateStateBadge();
-      scheduleDraftSave();
-      applyTabletLayoutSetting();
-      setTimeout(function () { if (cmEditor) cmEditor.refresh(); }, 60);
-    });
 
     window.addEventListener('resize', function () {
       applyTabletLayoutSetting();
@@ -2124,6 +2032,7 @@
     setEngineLabels();
     applyPreviewVisibilityForWorkspace();
     applyTabletLayoutSetting();
+    applyThemeFromState();
     applyZoom();
     clearConsole();
 
