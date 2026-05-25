@@ -467,16 +467,40 @@
             }
             if (result && (result.success || result.status === "success")) {
               if (result.user) {
+                // ⭐ Lưu session đầy đủ
+                currentUser = result.user;
+                window.currentUser = result.user;
                 localStorage.setItem("currentUser", JSON.stringify(result.user));
                 localStorage.setItem("isLoggedIn", "true");
-                window.currentUser = result.user;
+                localStorage.setItem("userId", result.user.userId);
+
+                // ⭐ Dispatch user state cho các component khác
+                if (typeof dispatchCurrentUserState === "function") {
+                  dispatchCurrentUserState(result.user);
+                }
+
+                // ⭐ Khởi động heartbeat
+                if (typeof startUserHeartbeat === "function") {
+                  startUserHeartbeat();
+                }
+
+                // ⭐ Áp dụng theme
+                if (typeof applyThemeFromAuthenticatedUser === "function") {
+                  applyThemeFromAuthenticatedUser(result.user);
+                }
               }
+
+              // ⭐ Redirect dựa vào role - ADMIN vào admin panel, USER vào dashboard
+              const userRole = result.user && result.user.role;
+              const redirectPage = (userRole === "ADMIN") ? "page-admin" : "page-dashboard";
+
+              console.log("🛡️ Login redirect - Role:", userRole, "→ Page:", redirectPage);
 
               // Show galaxy-themed success popup
               showAuthSuccessAndRedirect(
                 "Đăng nhập thành công!",
-                "Chào mừng bạn quay trở lại",
-                "page-dashboard",
+                userRole === "ADMIN" ? "Chào mừng Admin quay trở lại" : "Chào mừng bạn quay trở lại",
+                redirectPage,
                 1800,
               );
             } else {
@@ -1282,19 +1306,28 @@
 
   // ===== CHECK AUTH STATUS =====
   function checkAuthStatus() {
-    const currentUser =
+    const currentUserStr =
       localStorage.getItem("currentUser") ||
       sessionStorage.getItem("currentUser");
 
-    if (currentUser) {
+    if (currentUserStr) {
+      // ⭐ Kiểm tra role để redirect đúng
+      let userRole = "";
+      try {
+        const parsed = JSON.parse(currentUserStr);
+        userRole = (parsed.role || "").toString().toUpperCase();
+      } catch(e) {}
+
       // User is logged in, update CTA
       const ctaPrimary = document.querySelector(".cta-primary");
       if (ctaPrimary) {
-        ctaPrimary.innerHTML =
-          '<span class="cta-icon">🚀</span><span>Vào Dashboard</span>';
+        const isAdmin = userRole === "ADMIN";
+        ctaPrimary.innerHTML = isAdmin
+          ? '<span class="cta-icon">🛡️</span><span>Vào Admin Panel</span>'
+          : '<span class="cta-icon">🚀</span><span>Vào Dashboard</span>';
         ctaPrimary.onclick = () => {
           if (typeof showPage === "function") {
-            showPage("page-dashboard");
+            showPage(isAdmin ? "page-admin" : "page-dashboard");
           }
         };
       }
@@ -1419,6 +1452,19 @@
 
   // Khôi phục trạng thái auth panel khi reload
   function restoreAuthPanelState() {
+    // ⭐ Nếu user đã login (có currentUser hợp lệ) → KHÔNG restore auth panel
+    // Vì user đã đăng nhập, sẽ được redirect đến dashboard/admin
+    try {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+      if (savedUser && savedUser.userId) {
+        console.log("🔄 Skip auth panel restore - user already logged in:", savedUser.email);
+        // Xóa trạng thái auth panel cũ
+        sessionStorage.removeItem("authPanelOpen");
+        sessionStorage.removeItem("authFormType");
+        return;
+      }
+    } catch(e) {}
+
     const savedPanelOpen = sessionStorage.getItem("authPanelOpen");
     const savedFormType = sessionStorage.getItem("authFormType");
 
