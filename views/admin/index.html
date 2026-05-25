@@ -422,9 +422,9 @@
 <!-- Admin Panel Init Script -->
 <script>
   (function() {
-    // Only verify access, don't add has-admin-sidebar here
-    // It will be managed by GlobalSidebar.checkVisibility
-    setTimeout(checkAdminAccess, 100);
+    // ⭐ Delay đủ lâu để DOMContentLoaded khôi phục session trước
+    // DOMContentLoaded cần thời gian set window.currentUser
+    setTimeout(checkAdminAccess, 500);
     
     const onlineStatsNav = document.querySelector('.admin-sidebar .nav-item[data-page="page-online-stats"]');
     if (onlineStatsNav) {
@@ -432,23 +432,37 @@
     }
   })();
   
+  var _adminAccessRetries = 0;
+  var _adminAccessMaxRetries = 5;
+  
   function checkAdminAccess() {
     let user = null;
     
-    try {
-      user = JSON.parse(localStorage.getItem('currentUser') || 'null');
-    } catch(e) {
-      console.error('Error parsing currentUser:', e);
-    }
-    
-    if (!user && window.currentUser) {
+    // Ưu tiên 1: window.currentUser (set bởi DOMContentLoaded)
+    if (window.currentUser && window.currentUser.userId) {
       user = window.currentUser;
     }
     
-    console.log('🔍 Admin Check - User:', user);
+    // Ưu tiên 2: localStorage
+    if (!user) {
+      try {
+        user = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      } catch(e) {
+        console.error('Error parsing currentUser:', e);
+      }
+    }
     
+    console.log('🔍 Admin Check - User:', user, '(retry:', _adminAccessRetries + ')');
+    
+    // ⭐ Nếu chưa có user, RETRY thay vì phá hủy content
     if (!user || !user.userId) {
-      console.log('❌ No user logged in');
+      _adminAccessRetries++;
+      if (_adminAccessRetries <= _adminAccessMaxRetries) {
+        console.log('⏳ User not ready yet, retrying in 500ms... (attempt ' + _adminAccessRetries + '/' + _adminAccessMaxRetries + ')');
+        setTimeout(checkAdminAccess, 500);
+        return;
+      }
+      console.log('❌ No user logged in after ' + _adminAccessMaxRetries + ' retries');
       showAccessDenied('Bạn chưa đăng nhập.');
       return;
     }
@@ -463,6 +477,9 @@
     
     console.log('✅ Admin access granted!');
     
+    // ⭐ Ẩn access denied overlay nếu có
+    hideAccessDenied();
+    
     if (typeof updateAdminInfo === 'function') {
       updateAdminInfo({
         name: user.displayName || user.email,
@@ -472,25 +489,51 @@
   }
   
   function showAccessDenied(message) {
-    const mainContent = document.querySelector('.admin-main-content');
-    if (mainContent) {
-      mainContent.innerHTML = 
-        '<div class="admin-page-placeholder" style="background: var(--theme-dashboard-bg);">' +
-          '<span class="material-symbols-sharp" style="color: #ef4444;">block</span>' +
-          '<h2 style="color: #ef4444;">Không có quyền truy cập</h2>' +
-          '<p>' + message + '</p>' +
-          '<button onclick="handleAdminLogout()" style="' +
-            'margin-top: 1.5rem;' +
-            'background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);' +
-            'color: white;' +
-            'border: none;' +
-            'padding: 0.75rem 2rem;' +
-            'border-radius: 10px;' +
-            'font-size: 1rem;' +
-            'font-weight: 600;' +
-            'cursor: pointer;' +
-          '">Đăng xuất</button>' +
-        '</div>';
+    // ⭐ Dùng overlay thay vì phá hủy innerHTML
+    let overlay = document.getElementById('admin-access-denied-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'admin-access-denied-overlay';
+      overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--theme-dashboard-bg, #071a33);z-index:100;';
+      
+      const adminPanel = document.getElementById('admin-panel');
+      if (adminPanel) {
+        adminPanel.style.position = 'relative';
+        adminPanel.appendChild(overlay);
+      } else {
+        const mainContent = document.querySelector('.admin-main-content');
+        if (mainContent) {
+          mainContent.style.position = 'relative';
+          mainContent.appendChild(overlay);
+        }
+      }
+    }
+    
+    overlay.innerHTML = 
+      '<div class="admin-page-placeholder" style="background: transparent;">' +
+        '<span class="material-symbols-sharp" style="color: #ef4444; font-size: 5rem;">block</span>' +
+        '<h2 style="color: #ef4444;">Không có quyền truy cập</h2>' +
+        '<p style="color: var(--theme-text-secondary, #9ca3af);">' + message + '</p>' +
+        '<button onclick="handleAdminLogout()" style="' +
+          'margin-top: 1.5rem;' +
+          'background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);' +
+          'color: white;' +
+          'border: none;' +
+          'padding: 0.75rem 2rem;' +
+          'border-radius: 10px;' +
+          'font-size: 1rem;' +
+          'font-weight: 600;' +
+          'cursor: pointer;' +
+        '">Đăng xuất</button>' +
+      '</div>';
+    
+    overlay.style.display = 'flex';
+  }
+  
+  function hideAccessDenied() {
+    const overlay = document.getElementById('admin-access-denied-overlay');
+    if (overlay) {
+      overlay.style.display = 'none';
     }
   }
   

@@ -478,13 +478,31 @@
       const savedUserStr = localStorage.getItem("currentUser");
       const isLoggedInStr = localStorage.getItem("isLoggedIn");
 
-      if (savedUserStr && isLoggedInStr === "true") {
-        const user = JSON.parse(savedUserStr);
-        // Đồng bộ vào biến toàn cục
+      // ⭐ Robust check: nếu currentUser có userId hợp lệ → khôi phục session
+      // Không chỉ phụ thuộc vào isLoggedIn flag
+      let user = null;
+      if (savedUserStr) {
+        try {
+          user = JSON.parse(savedUserStr);
+        } catch(parseErr) {
+          user = null;
+        }
+      }
+
+      if (user && user.userId) {
+        // Có currentUser hợp lệ → khôi phục session
         currentUser = user;
         window.currentUser = user;
-        console.log(" Session recovered for:", user.email || user.username);
+
+        // ⭐ Auto-fix: đảm bảo isLoggedIn flag đồng bộ
+        if (isLoggedInStr !== "true") {
+          console.warn("⚠️ isLoggedIn flag missing, auto-restoring...");
+          localStorage.setItem("isLoggedIn", "true");
+        }
+
+        console.log("✅ Session recovered for:", user.email || user.username);
         console.log("🎭 Display Name:", user.displayName);
+        console.log("🛡️ Role:", user.role);
 
         // ⭐ CẬP NHẬT UI NGAY - Tất cả vị trí hiển thị tên
         setTimeout(() => {
@@ -504,10 +522,14 @@
         console.log("ℹ No active session found");
         currentUser = null;
         window.currentUser = null;
+        // ⭐ Dọn dẹp nếu currentUser không hợp lệ
+        localStorage.removeItem("currentUser");
+        localStorage.removeItem("isLoggedIn");
       }
     } catch (e) {
-      console.error(" Error recovering session:", e);
-      localStorage.clear();
+      console.error("❌ Error recovering session:", e);
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("isLoggedIn");
       currentUser = null;
       window.currentUser = null;
     }
@@ -601,6 +623,14 @@
         // ⭐ Admin vào trang admin, User vào dashboard
         finalPageName =
           window.currentUser.role === "ADMIN" ? "admin" : "dashboard";
+      }
+    }
+
+    // ⭐ FORCE OVERRIDE: Admin đang có lastActivePage là user page → chuyển về admin
+    if (window.currentUser && window.currentUser.role === "ADMIN") {
+      if (userOnlyPages.includes(finalPageName)) {
+        console.log("🛡️ Admin override: '" + finalPageName + "' → 'admin'");
+        finalPageName = "admin";
       }
     }
 
@@ -1008,6 +1038,34 @@
             setTimeout(runProfileInit, 500);
           }
         }
+
+        // ⭐ ADMIN PAGE INITIALIZATION
+        if (pageId === "page-admin") {
+          // 1. Đóng auth panel nếu đang mở
+          if (typeof closeAuthPanel === "function") {
+            try { closeAuthPanel(); } catch(e) {}
+          }
+          sessionStorage.removeItem("authPanelOpen");
+          sessionStorage.removeItem("authFormType");
+
+          // 2. Đảm bảo body classes đúng
+          document.body.classList.add("has-admin-sidebar");
+          document.body.classList.remove("has-sidebar");
+          document.body.classList.add("hide-sidebar");
+
+          // 3. Ẩn access denied overlay nếu admin hợp lệ
+          if (window.currentUser && window.currentUser.role === "ADMIN") {
+            if (typeof hideAccessDenied === "function") {
+              hideAccessDenied();
+            }
+          }
+
+          // 4. Re-run admin access check
+          if (typeof checkAdminAccess === "function") {
+            _adminAccessRetries = 0;
+            setTimeout(checkAdminAccess, 200);
+          }
+        }
       } catch (subPageError) {
         console.error("Error initializing sub-page:", subPageError);
       }
@@ -1123,10 +1181,20 @@
       // Navigate to the page from history without adding to history again
       showPage(event.state.pageId, event.state.params || {}, false);
     } else {
-      // No state - go to default page
+      // No state - go to default page based on role
       const savedUser = localStorage.getItem("currentUser");
       if (savedUser) {
-        showPage("page-dashboard", {}, false);
+        try {
+          const parsedUser = JSON.parse(savedUser);
+          const userRole = (parsedUser.role || "").toString().toUpperCase();
+          if (userRole === "ADMIN") {
+            showPage("page-admin", {}, false);
+          } else {
+            showPage("page-dashboard", {}, false);
+          }
+        } catch(e) {
+          showPage("page-dashboard", {}, false);
+        }
       } else {
         showPage("page-landing", {}, false);
       }
@@ -1136,7 +1204,19 @@
   // Initialize history state on first load
   window.addEventListener("load", function () {
     if (!history.state) {
-      const currentPage = localStorage.getItem("lastActivePage") || "landing";
+      let currentPage = localStorage.getItem("lastActivePage") || "landing";
+      
+      // ⭐ Đảm bảo admin không bị set về user pages
+      try {
+        const savedUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+        if (savedUser && (savedUser.role || "").toString().toUpperCase() === "ADMIN") {
+          // Admin chỉ được vào trang admin
+          if (currentPage !== "admin" && currentPage !== "landing") {
+            currentPage = "admin";
+          }
+        }
+      } catch(e) {}
+      
       const pageId = "page-" + currentPage;
       const state = { pageId: pageId, params: {} };
       history.replaceState(
