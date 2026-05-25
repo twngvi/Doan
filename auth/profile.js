@@ -528,9 +528,17 @@ function evaluateSinglePetUnlockCondition_(condition, context) {
 
 function evaluatePetUnlockConditionForPurchase_(unlockCondition, config) {
   var normalizedUnlock = normalizePetUnlockCondition_(unlockCondition);
-  var progressionXP = parseInt(config && config.progressionXP, 10) || 0;
+  var maxXP = parseInt(config && config.progressionXP, 10) || 0;
+  if (config && config.petProgressByVariantId) {
+    for (var key in config.petProgressByVariantId) {
+      if (Object.prototype.hasOwnProperty.call(config.petProgressByVariantId, key)) {
+        var xp = parseInt(config.petProgressByVariantId[key], 10) || 0;
+        if (xp > maxXP) maxXP = xp;
+      }
+    }
+  }
   var context = {
-    userLevel: Math.floor(progressionXP / 100) + 1,
+    userLevel: Math.floor(maxXP / 100) + 1,
     progressMap: {},
   };
 
