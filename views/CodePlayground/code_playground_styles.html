@@ -3,32 +3,41 @@
      CODE PLAYGROUND – Mini Online IDE (scoped)
      ===================================================== */
   #page-code-playground {
-    min-height: 100dvh;
-    background: var(--theme-bg);
+    height: calc(100dvh - var(--top-nav-height, 72px));
+    overflow: hidden;
+    background: var(--cp-bg, #0d1117);
     font-family: Inter, 'Segoe UI', system-ui, sans-serif;
   }
 
+  /* Ẩn thanh cuộn nhưng vẫn cho phép cuộn */
+  #page-code-playground * {
+    scrollbar-width: none !important;
+  }
+  #page-code-playground *::-webkit-scrollbar {
+    display: none !important;
+  }
+
   #page-code-playground .cp-root {
-    height: 100dvh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
 
-    /* IDE palette – derived from theme tokens + neutral overlays */
-    --cp-bg: var(--theme-sidebar-bg, var(--theme-gradient));
-    --cp-panel: rgba(0, 0, 0, 0.26);
-    --cp-panel-2: rgba(0, 0, 0, 0.34);
-    --cp-border: rgba(255, 255, 255, 0.10);
-    --cp-border-2: rgba(255, 255, 255, 0.14);
-    --cp-text: var(--theme-text-on-dark, #f5fff6);
-    --cp-text-muted: var(--theme-text-on-dark-muted, rgba(245, 255, 246, 0.68));
-    --cp-text-secondary: var(--theme-text-on-dark-secondary, rgba(245, 255, 246, 0.86));
+    /* Distinct vibrant dark theme for CodePlayground to stand out */
+    --cp-bg: #0d1117;
+    --cp-panel: #161b22;
+    --cp-panel-2: #21262d;
+    --cp-border: #30363d;
+    --cp-border-2: #8b949e;
+    --cp-text: #c9d1d9;
+    --cp-text-muted: #8b949e;
+    --cp-text-secondary: #ffffff;
 
-    --cp-accent: var(--theme-sidebar-accent, var(--theme-primary));
-    --cp-accent-2: var(--theme-sidebar-accent-secondary, var(--theme-secondary));
-    --cp-run: var(--theme-success);
-    --cp-warn: var(--theme-warning);
-    --cp-danger: var(--theme-danger);
+    --cp-accent: #58a6ff;
+    --cp-accent-2: #1f6feb;
+    --cp-run: #238636;
+    --cp-warn: #d29922;
+    --cp-danger: #da3633;
   }
 
   /* =====================================================
@@ -110,9 +119,9 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.45rem 0.75rem;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--cp-border);
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--cp-panel-2);
     color: var(--cp-text-secondary);
     font-size: 0.82rem;
     font-weight: 700;
@@ -124,9 +133,10 @@
   }
 
   #page-code-playground .cp-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.10);
+    background: var(--cp-border);
     border-color: var(--cp-border-2);
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
   #page-code-playground .cp-btn:active:not(:disabled) {
@@ -144,10 +154,10 @@
   }
 
   #page-code-playground .cp-btn-run {
-    background: var(--theme-gradient);
+    background: var(--cp-run);
     border-color: rgba(255, 255, 255, 0.12);
-    color: var(--theme-text-on-dark, #f5fff6);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(35, 134, 54, 0.4);
   }
 
   #page-code-playground .cp-btn-run.running {
@@ -157,9 +167,9 @@
   }
 
   #page-code-playground .cp-btn-stop {
-    background: rgba(184, 92, 74, 0.18);
-    border-color: rgba(184, 92, 74, 0.35);
-    color: var(--cp-text-secondary);
+    background: rgba(218, 54, 51, 0.15);
+    border-color: rgba(218, 54, 51, 0.4);
+    color: #ff7b72;
   }
 
   @keyframes cp-pulse {
@@ -177,9 +187,9 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.45rem 0.7rem;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--cp-border);
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--cp-panel-2);
     color: var(--cp-text-secondary);
     font-weight: 800;
     font-size: 0.82rem;
@@ -364,18 +374,22 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.4rem 0.6rem;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--cp-text-secondary);
+    border-radius: 8px 8px 0 0;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--cp-text-muted);
     font-weight: 800;
     font-size: 0.78rem;
     cursor: pointer;
     user-select: none;
+    border-bottom: none;
+    margin-bottom: -1px;
   }
   #page-code-playground .cp-filetab.active {
-    background: rgba(74, 155, 95, 0.18);
-    border-color: rgba(74, 155, 95, 0.35);
+    background: var(--cp-panel);
+    border-color: var(--cp-border);
+    border-bottom-color: var(--cp-panel);
+    color: var(--cp-text-secondary);
   }
   #page-code-playground .cp-filetab .material-symbols-sharp { font-size: 1rem; color: var(--cp-accent); }
 
@@ -435,7 +449,7 @@
     align-items: center;
     gap: 0.35rem;
     padding: 0.4rem 0.65rem;
-    border-radius: 10px;
+    border-radius: 8px 8px 0 0;
     border: 1px solid transparent;
     background: transparent;
     color: var(--cp-text-muted);
@@ -443,15 +457,18 @@
     font-size: 0.78rem;
     font-weight: 900;
     user-select: none;
+    border-bottom: none;
+    margin-bottom: -1px;
   }
   #page-code-playground .cp-output-tab:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.05);
     color: var(--cp-text-secondary);
   }
   #page-code-playground .cp-output-tab.active {
-    background: rgba(74, 155, 95, 0.18);
-    border-color: rgba(74, 155, 95, 0.35);
-    color: var(--cp-text-secondary);
+    background: var(--cp-panel);
+    border-color: var(--cp-border);
+    border-bottom-color: var(--cp-panel);
+    color: var(--cp-accent);
   }
   #page-code-playground .cp-output-tab .material-symbols-sharp { font-size: 1rem; }
   #page-code-playground .cp-tabs-spacer { flex: 1; }
