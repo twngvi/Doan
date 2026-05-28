@@ -2882,7 +2882,7 @@
   z-index: 3;
   opacity: 0;
   transform-origin: left bottom;
-  animation: petBubbleWallPeek 9s ease-in-out infinite;
+  animation: petBubbleWallPeek 25s ease-in-out infinite;
 }
 
 #page-dashboard .welcome-bubble-bg {
@@ -2922,43 +2922,100 @@
 
   transform-origin: 18% 62%;
   filter: drop-shadow(0 18px 28px rgba(56, 91, 50, 0.16));
-  animation: petWallPeek 9s ease-in-out infinite;
+  animation: petWallPeek 25s ease-in-out infinite;
 }
 
-/* Pet xuất hiện, nghiêng ra, lắc nhẹ rồi ẩn */
+/*
+  Pet animation timeline (25s total):
+  0%        = 0.0s  → Hidden (off-screen left)
+  5%        = 1.25s → Start sliding in
+  12%       = 3.0s  → Fully visible, stick out more (translateX 60px)
+  16%       = 4.0s  → Small wiggle
+  20%       = 5.0s  → Settle into idle position (sticking out)
+  68%       = 17.0s → Still idle (~15s wait done), start jump 1
+  70%       = 17.5s → Jump 1 peak
+  72%       = 18.0s → Jump 1 land
+  74%       = 18.5s → Jump 2 peak
+  76%       = 19.0s → Jump 2 land
+  78%       = 19.5s → Jump 3 peak
+  80%       = 20.0s → Jump 3 land
+  88%       = 22.0s → Sliding back in
+  94%       = 23.5s → Hidden again
+  100%      = 25.0s → Stay hidden
+*/
 @keyframes petWallPeek {
-  0%,
-  8%,
-  100% {
+  /* Hidden off-screen */
+  0%, 5% {
     opacity: 0.95;
     transform: translateX(-330px) rotate(-7deg);
   }
 
-  15% {
+  /* Slide in — stick out MORE (60px further right) */
+  12% {
     opacity: 1;
-    transform: translateX(0) rotate(7deg);
+    transform: translateX(60px) rotate(7deg);
   }
 
-  22% {
-    transform: translateX(8px) rotate(-4deg);
+  /* Small wiggle after appearing */
+  16% {
+    transform: translateX(70px) rotate(-3deg);
   }
 
-  30% {
-    transform: translateX(0) rotate(3deg);
+  /* Settle into idle — pet sticks out significantly */
+  20%, 66% {
+    opacity: 1;
+    transform: translateX(60px) rotate(0deg);
   }
 
-  38%,
+  /* ===== 3 JUMPS ===== */
+  /* Jump 1 — launch */
+  68% {
+    opacity: 1;
+    transform: translateX(60px) translateY(0px) rotate(0deg);
+  }
+  /* Jump 1 — peak */
+  70% {
+    opacity: 1;
+    transform: translateX(60px) translateY(-45px) rotate(3deg);
+  }
+  /* Jump 1 — land */
   72% {
     opacity: 1;
-    transform: translateX(0) rotate(0deg);
+    transform: translateX(60px) translateY(0px) rotate(-1deg);
+  }
+  /* Jump 2 — peak */
+  74% {
+    opacity: 1;
+    transform: translateX(60px) translateY(-50px) rotate(-3deg);
+  }
+  /* Jump 2 — land */
+  76% {
+    opacity: 1;
+    transform: translateX(60px) translateY(0px) rotate(1deg);
+  }
+  /* Jump 3 — peak (highest!) */
+  78% {
+    opacity: 1;
+    transform: translateX(60px) translateY(-60px) rotate(4deg);
+  }
+  /* Jump 3 — land */
+  80% {
+    opacity: 1;
+    transform: translateX(60px) translateY(0px) rotate(0deg);
   }
 
-  80% {
+  /* ===== SLIDE BACK IN ===== */
+  84% {
+    opacity: 1;
+    transform: translateX(20px) rotate(-4deg);
+  }
+
+  88% {
     opacity: 1;
     transform: translateX(-40px) rotate(-6deg);
   }
 
-  90% {
+  94%, 100% {
     opacity: 0.95;
     transform: translateX(-330px) rotate(-7deg);
   }
@@ -2966,31 +3023,67 @@
 
 /* Khung thoại hiện cùng lúc với pet */
 @keyframes petBubbleWallPeek {
-  0%,
-  8%,
-  100% {
+  /* Hidden */
+  0%, 5% {
     opacity: 0;
     transform: translateX(-45px) translateY(10px) scale(0.9);
   }
 
-  15% {
+  /* Appear with pet */
+  12% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1.04);
+    transform: translateX(15px) translateY(0) scale(1.04);
   }
 
-  22% {
-    transform: translateX(4px) translateY(0) scale(1);
+  /* Settle */
+  16% {
+    transform: translateX(18px) translateY(0) scale(1);
   }
 
-  30%,
+  20%, 66% {
+    opacity: 1;
+    transform: translateX(15px) translateY(0) scale(1);
+  }
+
+  /* Follow jumps — bounce slightly with pet */
+  68% {
+    opacity: 1;
+    transform: translateX(15px) translateY(0px) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(15px) translateY(-20px) scale(1.03);
+  }
   72% {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    transform: translateX(15px) translateY(0px) scale(0.98);
+  }
+  74% {
+    opacity: 1;
+    transform: translateX(15px) translateY(-22px) scale(1.03);
+  }
+  76% {
+    opacity: 1;
+    transform: translateX(15px) translateY(0px) scale(0.98);
+  }
+  78% {
+    opacity: 1;
+    transform: translateX(15px) translateY(-26px) scale(1.04);
+  }
+  80% {
+    opacity: 1;
+    transform: translateX(15px) translateY(0px) scale(1);
   }
 
-  82% {
+  /* Fade out with pet */
+  86% {
     opacity: 0;
     transform: translateX(-35px) translateY(8px) scale(0.92);
+  }
+
+  94%, 100% {
+    opacity: 0;
+    transform: translateX(-45px) translateY(10px) scale(0.9);
   }
 }
 
