@@ -853,8 +853,28 @@
       },
     };
 
-    // Chỉ hiển thị tối đa 4 hoạt động gần nhất
-    var recentActivities = activities.slice(0, 4);
+    // Deduplicate consecutive identical activities (same type + same topicId)
+    var uniqueActivities = [];
+    if (Array.isArray(activities)) {
+      for (var i = 0; i < activities.length; i++) {
+        var act = activities[i];
+        if (uniqueActivities.length === 0) {
+          uniqueActivities.push(act);
+        } else {
+          var lastAct = uniqueActivities[uniqueActivities.length - 1];
+          var isDuplicate = 
+            act.type === lastAct.type && 
+            String(act.topicId || "").trim() === String(lastAct.topicId || "").trim();
+          
+          if (!isDuplicate) {
+            uniqueActivities.push(act);
+          }
+        }
+      }
+    }
+
+    // Chỉ hiển thị tối đa 4 hoạt động gần nhất sau khi lọc trùng
+    var recentActivities = uniqueActivities.slice(0, 4);
 
     container.innerHTML = recentActivities
       .map((act) => {
