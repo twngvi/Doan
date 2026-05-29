@@ -1026,6 +1026,44 @@
       .getUserStatsFullHtml();
   }
 
+  let questionManagerLoaded = false;
+
+  function initquestionmanager() {
+    if (questionManagerLoaded) {
+      if (typeof initQuestionManager === 'function') {
+        initQuestionManager();
+      }
+      return;
+    }
+    loadQuestionManagerContent();
+  }
+
+  function loadQuestionManagerContent() {
+    const container = document.getElementById('question-manager-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        questionManagerLoaded = true;
+        executeScriptsInContainer(container);
+        setTimeout(function() {
+          if (typeof initQuestionManager === 'function') {
+            initQuestionManager();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý câu hỏi: ' + error.message + '</div>';
+      })
+      .getQuestionManagerHtml();
+  }
+
   let quizManagementLoaded = false;
 
   function initquizmanagement() {

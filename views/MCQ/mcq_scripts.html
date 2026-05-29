@@ -2045,25 +2045,12 @@
       var elapsed = Math.round((Date.now() - loadStartTime) / 1000);
       var hint = document.querySelector("#quiz-loading .quiz-loading-hint");
       if (hint) {
-        if (elapsed < 5) {
-          hint.textContent = "Đang kiểm tra dữ liệu cache...";
-        } else if (elapsed < 12) {
-          hint.textContent = "Đang đọc tài liệu bài học...";
-        } else if (elapsed < 20) {
-          hint.textContent = "AI đang phân tích nội dung học thuật... (" + elapsed + "s)";
-        } else if (elapsed < 35) {
-          hint.textContent = "Đang soạn thảo bộ câu hỏi trắc nghiệm... (" + elapsed + "s)";
-        } else if (elapsed < 60) {
-          hint.textContent = "Đang kiểm soát chất lượng câu hỏi... (" + elapsed + "s)";
-        } else {
-          hint.textContent = "Quá trình hoàn tất chậm hơn dự kiến, vui lòng đợi thêm chút... (" + elapsed + "s)";
-        }
+        hint.textContent = "Đang tải dữ liệu bộ câu hỏi... (" + elapsed + "s)";
       }
 
-      // ⭐ GLOBAL TIMEOUT: 120s
-      if (elapsed > 120) {
+      if (elapsed > 30) {
          clearInterval(loadingInterval);
-         handleLoadError("Quá trình tạo câu hỏi quá lâu (hơn 2 phút). Vui lòng thử lại sau hoặc kiểm tra kết nối mạng.");
+         handleLoadError("Quá trình tải quá lâu. Vui lòng thử lại sau.");
       }
     }, 1000);
 
@@ -2093,7 +2080,6 @@
       .withSuccessHandler(function (ids) {
         clearTimeout(masteredTimeout);
         if (masteredLoaded && masteredIds.length === 0) {
-           // Đã bị timeout trước đó, không ghi đè lại nếu đã xử lý
            return;
         }
         masteredIds = ids || [];
@@ -2109,7 +2095,7 @@
       })
       .getMasteredQuestionIds(quizState.topicId);
 
-    // ⭐ PARALLEL 2: Load questions from AI/cache
+    // ⭐ PARALLEL 2: Load questions from DB
     google.script.run
       .withSuccessHandler(function (response) {
         questionsResult = response;
@@ -2118,14 +2104,9 @@
       })
       .withFailureHandler(function (error) {
         clearInterval(loadingInterval);
-        if (isMissingGeminiKeyError(error)) {
-          showGeminiKeyConfigWarning(error?.message || error?.toString());
-        }
         handleLoadError(error);
       })
-      .getAIContentForWeb(quizState.topicId, "questions", forceRegenerate, {
-        userId: currentUser?.userId || window.currentUser?.userId || "",
-      });
+      .getApprovedQuestionsForTopic(quizState.topicId);
   }
 
   /**
@@ -2162,11 +2143,12 @@
       if (
         !parsedData ||
         !parsedData.questions ||
-        !Array.isArray(parsedData.questions)
+        !Array.isArray(parsedData.questions) ||
+        parsedData.questions.length === 0
       ) {
-        console.error("❌ Invalid question format:", parsedData);
+        console.error("❌ Invalid or empty question format:", parsedData);
         quizState.error =
-          "Dữ liệu câu hỏi không hợp lệ. Nhấn 'Tạo lại câu hỏi' để thử.";
+          "Chưa có câu hỏi nào được phê duyệt cho Topic này. Vui lòng liên hệ Admin.";
         showError(quizState.error);
         return;
       }

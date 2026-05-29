@@ -1,0 +1,427 @@
+<script>
+let qmTopics = [];
+let qmCurrentQuestions = [];
+
+// Khởi tạo
+function initQuestionManager() {
+  if (qmTopics.length === 0) {
+    qmLoadTopics();
+  }
+  
+  // Set up observer in case user navigates away and comes back
+  const pageElement = document.getElementById("page-question-manager");
+  if (pageElement && !pageElement.dataset.observerSetup) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.target.id === "page-question-manager" && mutation.target.classList.contains("active")) {
+          if (qmTopics.length === 0) {
+            qmLoadTopics();
+          }
+        }
+      });
+    });
+    observer.observe(pageElement, { attributes: true, attributeFilter: ["class"] });
+    pageElement.dataset.observerSetup = "true";
+  }
+}
+
+// Fallback for static load (if any)
+document.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("page-question-manager")) {
+    initQuestionManager();
+  }
+});
+
+function qmShowLoading(text) {
+  document.getElementById("qmLoadingText").textContent = text;
+  document.getElementById("qmLoadingState").style.display = "flex";
+  document.getElementById("qmQuestionsArea").style.display = "none";
+  document.getElementById("qmEmptyState").style.display = "none";
+}
+
+function qmHideLoading() {
+  document.getElementById("qmLoadingState").style.display = "none";
+}
+
+function qmLoadTopics() {
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (response.success) {
+        qmTopics = response.topics;
+        const select = document.getElementById("qmTopicSelect");
+        select.innerHTML = '<option value="">-- Chọn Topic --</option>';
+        
+        qmTopics.forEach(t => {
+          const stats = t.questionStats ? ` (${t.questionStats.total} câu)` : '';
+          select.innerHTML += `<option value="${t.topicId}">${t.title}${stats}</option>`;
+        });
+      }
+    })
+    .withFailureHandler((err) => {
+      console.error(err);
+      alert("Lỗi tải danh sách Topic");
+    })
+    .adminGetTopicsWithQuizStatus();
+}
+
+function qmLoadTopicQuestions() {
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) {
+    document.getElementById("qmTopicStats").style.display = "none";
+    document.getElementById("qmQuestionsArea").style.display = "none";
+    document.getElementById("qmEmptyState").style.display = "flex";
+    return;
+  }
+  
+  const topic = qmTopics.find(t => t.topicId === topicId);
+  if (topic) {
+    document.getElementById("qmTopicStats").style.display = "flex";
+    
+    // Update Badge
+    const badge = document.getElementById("qmTopicStatusBadge");
+    const statusMap = {
+      'need_questions': 'Chưa có câu hỏi',
+      'ai_generated': 'AI vừa tạo (Nháp)',
+      'ready': 'Đã có câu hỏi (Ready)',
+      'published': 'Đã công bố'
+    };
+    const s = topic.quizStatus || 'need_questions';
+    badge.textContent = statusMap[s] || s;
+    badge.className = "qm-badge " + s;
+    
+    document.getElementById("qmPublishBtn").style.display = (s === 'ready' || s === 'published') ? 'inline-flex' : 'none';
+    if (s === 'published') {
+      document.getElementById("qmPublishBtn").innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">block</span> Hủy công bố';
+      document.getElementById("qmPublishBtn").classList.replace("qm-btn-success", "qm-btn-danger");
+    } else {
+      document.getElementById("qmPublishBtn").innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">publish</span> Công bố Topic';
+      document.getElementById("qmPublishBtn").classList.replace("qm-btn-danger", "qm-btn-success");
+    }
+  }
+
+  qmShowLoading("Đang tải danh sách câu hỏi...");
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      qmHideLoading();
+      if (response.success) {
+        qmCurrentQuestions = response.questions || [];
+        qmRenderQuestions();
+        qmUpdateStats();
+      } else {
+        alert("Lỗi: " + response.message);
+      }
+    })
+    .withFailureHandler((err) => {
+      qmHideLoading();
+      alert("Lỗi mạng: " + err);
+    })
+    .adminGetQuestionsForTopic(topicId);
+}
+
+function qmUpdateStats() {
+  let approved = 0;
+  let draft = 0;
+  qmCurrentQuestions.forEach(q => {
+    if (q.status === 'approved') approved++;
+    else if (q.status === 'draft') draft++;
+  });
+  
+  document.getElementById("qmApprovedCount").textContent = approved;
+  document.getElementById("qmDraftCount").textContent = draft;
+  document.getElementById("qmListCount").textContent = qmCurrentQuestions.length;
+}
+
+function qmGenerateAIQuestions() {
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) {
+    alert("Vui lòng chọn Topic trước");
+    return;
+  }
+  
+  const count = document.getElementById("qmAiCount").value;
+  const diff = document.getElementById("qmAiDifficulty").value;
+  
+  qmShowLoading(`AI đang tạo ${count} câu hỏi... Có thể mất 15-30 giây.`);
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      qmHideLoading();
+      if (response.success) {
+        // Prepend new questions
+        const newQs = response.questions || [];
+        qmCurrentQuestions = [...newQs, ...qmCurrentQuestions];
+        qmRenderQuestions();
+        qmUpdateStats();
+        
+        // Cập nhật lại list topic để có trạng thái mới
+        qmLoadTopics();
+      } else {
+        alert("Lỗi tạo AI: " + response.message);
+      }
+    })
+    .withFailureHandler((err) => {
+      qmHideLoading();
+      alert("Lỗi kết nối AI: " + err);
+    })
+    .adminGenerateQuestionsByAI(topicId, count, diff);
+}
+
+function qmRenderQuestions() {
+  const listEl = document.getElementById("qmQuestionsList");
+  
+  if (qmCurrentQuestions.length === 0) {
+    document.getElementById("qmQuestionsArea").style.display = "none";
+    document.getElementById("qmEmptyState").style.display = "flex";
+    return;
+  }
+  
+  document.getElementById("qmQuestionsArea").style.display = "block";
+  document.getElementById("qmEmptyState").style.display = "none";
+  
+  let html = '';
+  
+  qmCurrentQuestions.forEach((q, index) => {
+    const isChecked = q.status === 'approved' || q.status === 'draft'; // Chọn mặc định nếu approved hoặc nháp
+    
+    html += `
+      <div class="qm-question-card ${isChecked ? 'selected' : ''}" id="qmCard_${index}">
+        <div class="qm-q-header">
+          <div class="qm-q-header-left">
+            <input type="checkbox" class="qm-checkbox qm-q-select" data-index="${index}" ${isChecked ? 'checked' : ''} onchange="qmToggleSelect(${index}, this)">
+            <strong>Câu ${index + 1}</strong>
+            <div class="qm-q-meta">
+              <span class="qm-meta-tag ${q.source === 'ai_generated' ? 'qm-tag-ai' : 'qm-tag-manual'}">${q.source === 'ai_generated' ? 'AI' : 'Manual'}</span>
+              <span class="qm-meta-tag qm-tag-${q.difficulty || 'medium'}">${q.difficulty || 'Medium'}</span>
+              <span class="qm-meta-tag" style="background:${q.status==='approved'?'#dcfce7':'#fef08a'}; color:${q.status==='approved'?'#166534':'#854d0e'}">${q.status === 'approved' ? 'Approved' : 'Draft'}</span>
+            </div>
+          </div>
+          <div>
+            <button class="qm-btn qm-btn-outline" onclick="qmToggleEdit(${index})" style="padding: 4px 10px; font-size: 13px;">
+              <span class="material-symbols-sharp" style="font-size: 16px;">edit</span> Sửa
+            </button>
+            <button class="qm-btn qm-btn-outline" onclick="qmDeleteQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5;">
+              <span class="material-symbols-sharp" style="font-size: 16px;">delete</span>
+            </button>
+          </div>
+        </div>
+        
+        <!-- View Mode -->
+        <div class="qm-q-body">
+          <p class="qm-q-text">${q.questionText || ''}</p>
+          <div class="qm-options-grid">
+            <div class="qm-option-item ${q.correctAnswer === 'A' ? 'correct' : ''}"><div class="qm-option-letter">A</div><div>${q.optionA || ''}</div></div>
+            <div class="qm-option-item ${q.correctAnswer === 'B' ? 'correct' : ''}"><div class="qm-option-letter">B</div><div>${q.optionB || ''}</div></div>
+            <div class="qm-option-item ${q.correctAnswer === 'C' ? 'correct' : ''}"><div class="qm-option-letter">C</div><div>${q.optionC || ''}</div></div>
+            <div class="qm-option-item ${q.correctAnswer === 'D' ? 'correct' : ''}"><div class="qm-option-letter">D</div><div>${q.optionD || ''}</div></div>
+          </div>
+          ${q.explanation ? `<div class="qm-explanation"><strong>Giải thích:</strong> ${q.explanation}</div>` : ''}
+        </div>
+        
+        <!-- Edit Mode -->
+        <div class="qm-edit-form" id="qmEditForm_${index}">
+          <div class="qm-form-group" style="margin-bottom: 12px;">
+            <label>Nội dung câu hỏi</label>
+            <textarea class="qm-input" id="qmEditQ_${index}">${q.questionText || ''}</textarea>
+          </div>
+          <div class="qm-options-grid">
+            <div class="qm-form-group">
+              <label><input type="radio" name="qmCorrect_${index}" value="A" ${q.correctAnswer === 'A' ? 'checked' : ''}> Đáp án A (Đúng)</label>
+              <input type="text" class="qm-input" id="qmEditA_${index}" value="${(q.optionA || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="qm-form-group">
+              <label><input type="radio" name="qmCorrect_${index}" value="B" ${q.correctAnswer === 'B' ? 'checked' : ''}> Đáp án B (Đúng)</label>
+              <input type="text" class="qm-input" id="qmEditB_${index}" value="${(q.optionB || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="qm-form-group">
+              <label><input type="radio" name="qmCorrect_${index}" value="C" ${q.correctAnswer === 'C' ? 'checked' : ''}> Đáp án C (Đúng)</label>
+              <input type="text" class="qm-input" id="qmEditC_${index}" value="${(q.optionC || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="qm-form-group">
+              <label><input type="radio" name="qmCorrect_${index}" value="D" ${q.correctAnswer === 'D' ? 'checked' : ''}> Đáp án D (Đúng)</label>
+              <input type="text" class="qm-input" id="qmEditD_${index}" value="${(q.optionD || '').replace(/"/g, '&quot;')}">
+            </div>
+          </div>
+          <div class="qm-form-group" style="margin-bottom: 12px;">
+            <label>Giải thích</label>
+            <textarea class="qm-input" id="qmEditExp_${index}">${q.explanation || ''}</textarea>
+          </div>
+          <div class="qm-form-row">
+            <div class="qm-form-group">
+              <label>Độ khó</label>
+              <select class="qm-input" id="qmEditDiff_${index}">
+                <option value="easy" ${q.difficulty === 'easy' ? 'selected' : ''}>Dễ</option>
+                <option value="medium" ${q.difficulty === 'medium' ? 'selected' : ''}>Trung bình</option>
+                <option value="hard" ${q.difficulty === 'hard' ? 'selected' : ''}>Khó</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top: 16px; text-align: right;">
+            <button class="qm-btn qm-btn-outline" onclick="qmToggleEdit(${index})">Hủy</button>
+            <button class="qm-btn qm-btn-primary" onclick="qmSaveEdit(${index})">Xong</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  listEl.innerHTML = html;
+  
+  // Update "Select All" checkbox state
+  qmUpdateSelectAllCheckbox();
+}
+
+function qmToggleSelect(index, checkbox) {
+  const card = document.getElementById(`qmCard_${index}`);
+  if (checkbox.checked) {
+    card.classList.add("selected");
+  } else {
+    card.classList.remove("selected");
+  }
+  qmUpdateSelectAllCheckbox();
+}
+
+function qmToggleSelectAll(checkbox) {
+  const checkboxes = document.querySelectorAll('.qm-q-select');
+  checkboxes.forEach(cb => {
+    cb.checked = checkbox.checked;
+    qmToggleSelect(cb.dataset.index, cb);
+  });
+}
+
+function qmUpdateSelectAllCheckbox() {
+  const checkboxes = document.querySelectorAll('.qm-q-select');
+  const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+  const someChecked = Array.from(checkboxes).some(cb => cb.checked);
+  
+  const selectAllCb = document.getElementById("qmSelectAll");
+  selectAllCb.checked = allChecked;
+  selectAllCb.indeterminate = someChecked && !allChecked;
+}
+
+function qmToggleEdit(index) {
+  const card = document.getElementById(`qmCard_${index}`);
+  card.classList.toggle("editing");
+}
+
+function qmSaveEdit(index) {
+  const q = qmCurrentQuestions[index];
+  
+  q.questionText = document.getElementById(`qmEditQ_${index}`).value;
+  q.optionA = document.getElementById(`qmEditA_${index}`).value;
+  q.optionB = document.getElementById(`qmEditB_${index}`).value;
+  q.optionC = document.getElementById(`qmEditC_${index}`).value;
+  q.optionD = document.getElementById(`qmEditD_${index}`).value;
+  q.explanation = document.getElementById(`qmEditExp_${index}`).value;
+  q.difficulty = document.getElementById(`qmEditDiff_${index}`).value;
+  
+  const radios = document.getElementsByName(`qmCorrect_${index}`);
+  for (let r of radios) {
+    if (r.checked) q.correctAnswer = r.value;
+  }
+  
+  qmRenderQuestions();
+}
+
+function qmDeleteQuestion(index) {
+  if (confirm("Xóa câu hỏi này khỏi danh sách?")) {
+    // If it has a real ID, we should also delete from DB if we implement delete backend.
+    // For now, we just filter it out from the current array before saving.
+    qmCurrentQuestions.splice(index, 1);
+    qmRenderQuestions();
+    qmUpdateStats();
+  }
+}
+
+function qmAddNewManualQuestion() {
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) return;
+  
+  qmCurrentQuestions.unshift({
+    id: "TEMP_" + Date.now(),
+    topicId: topicId,
+    questionText: "",
+    optionA: "", optionB: "", optionC: "", optionD: "",
+    correctAnswer: "A",
+    explanation: "",
+    difficulty: "medium",
+    status: "draft",
+    source: "manual"
+  });
+  
+  qmRenderQuestions();
+  qmToggleEdit(0); // Open edit form for the new question
+}
+
+function qmSaveApprovedQuestions() {
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) return;
+  
+  const checkboxes = document.querySelectorAll('.qm-q-select');
+  const questionsToSave = [];
+  
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const idx = cb.dataset.index;
+      const q = qmCurrentQuestions[idx];
+      q.status = "approved"; // If checked, mark as approved
+      questionsToSave.push(q);
+    } else {
+      const idx = cb.dataset.index;
+      const q = qmCurrentQuestions[idx];
+      if (q.questionId && !q.questionId.startsWith("TEMP_")) {
+        // If it was already in DB but now unchecked, maybe mark as draft or rejected?
+        q.status = "draft";
+        questionsToSave.push(q);
+      }
+    }
+  });
+  
+  if (questionsToSave.length === 0) {
+    alert("Không có câu hỏi nào để lưu.");
+    return;
+  }
+  
+  qmShowLoading("Đang lưu câu hỏi...");
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      qmHideLoading();
+      if (response.success) {
+        alert("Lưu thành công " + response.approvedCount + " câu hỏi đã duyệt!");
+        qmLoadTopicQuestions(); // Reload
+        qmLoadTopics(); // Update badge in topic list
+      } else {
+        alert("Lỗi lưu: " + response.message);
+      }
+    })
+    .withFailureHandler((err) => {
+      qmHideLoading();
+      alert("Lỗi kết nối: " + err);
+    })
+    .adminSaveQuestions(topicId, questionsToSave);
+}
+
+function qmPublishTopicQuiz() {
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) return;
+  
+  const badge = document.getElementById("qmTopicStatusBadge");
+  const isPublishing = badge.textContent !== 'Đã công bố';
+  const newStatus = isPublishing ? 'published' : 'ready';
+  const msg = isPublishing ? "Công bố Topic này để người dùng có thể làm Quiz?" : "Hủy công bố Topic này?";
+  
+  if (!confirm(msg)) return;
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (response.success) {
+        qmLoadTopics();
+        qmLoadTopicQuestions();
+      } else {
+        alert(response.message);
+      }
+    })
+    .adminUpdateTopicQuizStatus(topicId, newStatus);
+}
+</script>

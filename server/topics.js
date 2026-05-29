@@ -88,6 +88,7 @@ function getAllTopics() {
       updatedAt: headers.indexOf("updatedAt"),
       contentDocId: headers.indexOf("contentDocId"),
       contentDocUrl: headers.indexOf("contentDocUrl"),
+      quizStatus: headers.indexOf("quizStatus"),
     };
 
     const topics = [];
@@ -168,6 +169,12 @@ function getAllTopics() {
           col.contentDocUrl >= 0 && row[col.contentDocUrl] !== undefined
             ? String(row[col.contentDocUrl] || "")
             : "",
+
+        // ⭐ THÊM CỘT QUIZ STATUS
+        quizStatus:
+          col.quizStatus >= 0 && row[col.quizStatus] !== undefined
+            ? String(row[col.quizStatus] || "need_questions")
+            : "need_questions",
 
         // Map thêm trường cho Frontend hiển thị
         journey: mapCategoryToJourney(

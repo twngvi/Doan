@@ -160,6 +160,7 @@ const DB_CONFIG = {
         "updatedAt",
         "contentDocId", // ⭐ THÊM CỘT MỚI
         "contentDocUrl",
+        "quizStatus",
       ],
     },
 
@@ -183,6 +184,14 @@ const DB_CONFIG = {
         "imageUrl",
         "timeLimit",
         "aiPromptTemplate",
+        "status",
+        "source",
+        "createdBy",
+        "reviewedBy",
+        "createdAt",
+        "updatedAt",
+        "publishedAt",
+        "topicTitle",
       ],
     },
 
