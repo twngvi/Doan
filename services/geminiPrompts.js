@@ -302,6 +302,36 @@ YÊU CẦU:
 - Độ khó tương đương hoặc cao hơn một chút`,
 
   /**
+   * Tạo variant hàng loạt cho nhiều câu hỏi (khi user trả lời sai nhiều câu)
+   */
+  BATCH_QUESTION_VARIANTS: `Bạn là chuyên gia giáo dục. Biến đổi danh sách các câu hỏi sau thành dạng khác để kiểm tra lại kiến thức.
+GIỮ NGUYÊN ý nghĩa cốt lõi của từng câu, nhưng THAY ĐỔI cách hỏi, từ ngữ, hoặc đặt vào tình huống khác.
+
+=== DANH SÁCH CÂU HỎI GỐC ===
+{wrongQuestionsJson}
+=== KẾT THÚC ===
+
+Trả về CHÍNH XÁC format JSON sau (trả về một mảng chứa các câu hỏi đã biến đổi tương ứng với thứ tự câu hỏi gốc):
+[
+  {
+    "id": "ID_GOC",
+    "question": "Câu hỏi đã biến đổi",
+    "options": ["Đáp án A mới", "Đáp án B mới", "Đáp án C mới", "Đáp án D mới"],
+    "correctAnswer": 2,
+    "explanation": "Giải thích chi tiết",
+    "hint": "Gợi ý",
+    "difficulty": "medium"
+  }
+]
+
+LƯU Ý FORMAT CỰC KỲ QUAN TRỌNG:
+- Trả về ĐÚNG MỘT MẢNG JSON, số lượng phần tử phải BẰNG ĐÚNG số lượng câu hỏi đầu vào.
+- Trường "id" PHẢI GIỮ NGUYÊN id của câu hỏi gốc tương ứng.
+- "options" phải là mảng CHÍNH XÁC 4 chuỗi (không phải object).
+- "correctAnswer" là số từ 0-3 (index của đáp án đúng).
+- KHÔNG trả về thêm bất kỳ văn bản nào ngoài JSON.`,
+
+  /**
    * Tạo bài học tóm tắt (Lesson Summary)
    */
   LESSON_SUMMARY: `Bạn là giáo viên giỏi. Tạo bài giảng tóm tắt từ tài liệu sau.
@@ -570,11 +600,44 @@ const ContentGenerator = {
 
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
-      temperature: 0.7,
-      maxTokens: 1500,
+      temperature: 0.8,
+      maxTokens: 1000,
       topicId: requestMeta?.topicId || "",
       contentType: "question_variant",
     }, userContext);
+  },
+
+  /**
+   * Tạo variant cho nhiều câu hỏi cùng lúc
+   * @param {Array} wrongQuestions - Danh sách các câu hỏi sai
+   * @returns {Array} Danh sách các variant questions
+   */
+  generateBatchQuestionVariants: function (wrongQuestions, userContext, requestMeta) {
+    if (!wrongQuestions || wrongQuestions.length === 0) return [];
+    
+    // Rút gọn thông tin để tránh vượt quá token limit
+    const simplifiedQuestions = wrongQuestions.map(q => ({
+      id: q.id,
+      question: q.question,
+      options: q.options,
+      correctAnswer: q.correctAnswer
+    }));
+    
+    const prompt = PROMPT_TEMPLATES.BATCH_QUESTION_VARIANTS.replace(
+      "{wrongQuestionsJson}",
+      JSON.stringify(simplifiedQuestions, null, 2),
+    );
+
+    const result = GeminiService.callWithRetry(prompt, {
+      expectJson: true,
+      temperature: 0.8,
+      maxTokens: Math.max(1000, simplifiedQuestions.length * 500),
+      model: AI_CONFIG.GEMINI_MODEL_ADVANCED, // Dùng model mạnh hơn cho việc xử lý batch
+      topicId: requestMeta?.topicId || "",
+      contentType: "batch_question_variants",
+    }, userContext);
+    
+    return result;
   },
 
   /**

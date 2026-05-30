@@ -444,20 +444,64 @@ function getApprovedQuestionsForTopic(topicId) {
       }
     }
     
-    // Shuffle the questions array
-    for (let i = questions.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [questions[i], questions[j]] = [questions[j], questions[i]];
+    // Phân loại câu hỏi theo độ khó
+    const easyQuestions = [];
+    const mediumQuestions = [];
+    const hardQuestions = [];
+    
+    questions.forEach(q => {
+      const diff = (q.difficulty || "medium").toLowerCase();
+      if (diff === "easy") easyQuestions.push(q);
+      else if (diff === "hard") hardQuestions.push(q);
+      else mediumQuestions.push(q);
+    });
+    
+    // Shuffle từng nhóm
+    const shuffleArray = (array) => {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    };
+    
+    shuffleArray(easyQuestions);
+    shuffleArray(mediumQuestions);
+    shuffleArray(hardQuestions);
+    
+    // Lấy số lượng theo tỷ lệ yêu cầu: 12 Easy, 6 Medium, 2 Hard (tổng 20)
+    let finalQuestions = [];
+    
+    const takeQuestions = (sourceArray, count) => {
+      const taken = sourceArray.splice(0, count);
+      finalQuestions = finalQuestions.concat(taken);
+      return count - taken.length; // Trả về số lượng còn thiếu
+    };
+    
+    let missingEasy = takeQuestions(easyQuestions, 12);
+    let missingMedium = takeQuestions(mediumQuestions, 6);
+    let missingHard = takeQuestions(hardQuestions, 2);
+    
+    // Tổng số lượng còn thiếu
+    let totalMissing = missingEasy + missingMedium + missingHard;
+    
+    // Nếu thiếu, bù đắp từ các nhóm còn dư theo thứ tự: Medium -> Easy -> Hard
+    if (totalMissing > 0) {
+      if (mediumQuestions.length > 0) totalMissing = takeQuestions(mediumQuestions, totalMissing);
+      if (totalMissing > 0 && easyQuestions.length > 0) totalMissing = takeQuestions(easyQuestions, totalMissing);
+      if (totalMissing > 0 && hardQuestions.length > 0) totalMissing = takeQuestions(hardQuestions, totalMissing);
     }
     
-    // Limit to max 20 questions
-    const finalQuestions = questions.slice(0, 20);
+    // Shuffle lần cuối toàn bộ 20 câu
+    shuffleArray(finalQuestions);
+    
+    // Cache the original full list inside 'data' so client can use it if needed? 
+    // No, client specifically wants to load faster by getting a smaller payload.
+    // If they retry, they get a NEW set of 20 random questions, which is actually better for practice!
     
     return { 
       success: true, 
-      data: {
-        questions: finalQuestions
-      } 
+      data: JSON.stringify({ questions: finalQuestions }) 
     };
   } catch (error) {
     Logger.log("Error in getApprovedQuestionsForTopic: " + error.toString());

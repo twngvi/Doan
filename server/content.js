@@ -190,6 +190,55 @@ function getAIContentForWeb(topicId, contentType, forceRegenerate, userContext) 
   }
 }
 
+/**
+ * Tạo biến thể câu hỏi (variants) cho các câu hỏi user làm sai
+ * @param {Array} wrongQuestions - Mảng chứa các câu sai
+ * @param {string} topicId - Topic ID
+ * @param {Object} userContext - Chứa userId và email
+ */
+function generateAIReviewQuestions(wrongQuestions, topicId, userContext) {
+  Logger.log("🌐 generateAIReviewQuestions CALLED");
+  try {
+    if (!wrongQuestions || wrongQuestions.length === 0) {
+      return { success: false, message: "Không có câu hỏi sai nào để ôn tập" };
+    }
+    
+    // Kiểm tra API Key
+    let resolvedUser;
+    try {
+      const required = GeminiService.requireUserApiKey(userContext);
+      resolvedUser = { userId: required.userId, email: required.email };
+    } catch (keyError) {
+      return {
+        success: false,
+        code: keyError.code || "AI_KEY_REQUIRED",
+        message: keyError.message || "Bạn chưa cấu hình Gemini API key cá nhân."
+      };
+    }
+    
+    // Gọi AI
+    const result = ContentGenerator.generateBatchQuestionVariants(
+      wrongQuestions,
+      resolvedUser,
+      { topicId: topicId }
+    );
+    
+    if (!result || result.error) {
+      return { success: false, message: "AI không thể tạo câu hỏi ôn tập: " + (result?.error || "Unknown error") };
+    }
+    
+    // Đảm bảo trả về mảng kết quả JSON stringified để tránh lỗi serialization
+    return {
+      success: true,
+      data: JSON.stringify({ questions: result })
+    };
+    
+  } catch (error) {
+    Logger.log("❌ Error in generateAIReviewQuestions: " + error.toString());
+    return { success: false, message: "Lỗi server: " + error.toString() };
+  }
+}
+
 function getMiniQuizQuestionValidationKey(questionText) {
   return String(questionText || "")
     .toLowerCase()

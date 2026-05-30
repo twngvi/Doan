@@ -3217,6 +3217,15 @@
       feedbackElement.style.color = "#DC2626";
     }
 
+    const aiReviewBtn = document.getElementById("btn-ai-review");
+    if (aiReviewBtn) {
+      if (percentage < 100 && percentage >= 0) { // Có câu sai
+        aiReviewBtn.style.display = "inline-flex";
+      } else {
+        aiReviewBtn.style.display = "none";
+      }
+    }
+
     generateAnswerReview();
   }
 
@@ -3574,6 +3583,78 @@
     // Use the full loadQuizQuestions flow with forceRegenerate = true
     // This reloads mastered IDs in parallel and properly processes everything
     loadQuizQuestions(true);
+  }
+
+  /**
+   * Start AI Review Session for wrong questions
+   */
+  window.startAIReviewSession = function() {
+    console.log("🔥 Bắt đầu ôn tập câu sai bằng AI...");
+    
+    const wrongQuestions = [];
+    quizState.questions.forEach((q, index) => {
+      const userAnswer = quizState.userAnswers[index];
+      const isCorrect = q.questionType === "fill-blank"
+        ? checkFillBlankAnswer(userAnswer, q.correctAnswer)
+        : userAnswer === q.correctAnswer;
+        
+      if (!isCorrect) {
+        wrongQuestions.push(q);
+      }
+    });
+    
+    if (wrongQuestions.length === 0) {
+      showSaveNotification(false, "Không có câu hỏi sai nào để ôn tập!");
+      return;
+    }
+
+    // Hide results screen and show loading
+    document.getElementById("quiz-results").style.display = "none";
+    showGeneratingModal();
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        hideGeneratingModal();
+        if (response && response.success) {
+          try {
+            const parsedData = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+            if (parsedData && parsedData.questions && parsedData.questions.length > 0) {
+              const newQuestions = parsedData.questions.map((q, idx) => {
+                // Ensure options format and correctAnswer index
+                const options = Array.isArray(q.options) ? q.options : [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean);
+                return {
+                  id: q.id || ("AI_REV_" + Date.now() + "_" + idx),
+                  question: q.question,
+                  options: options,
+                  correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+                  explanation: q.explanation || "",
+                  hint: q.hint || "",
+                  difficulty: q.difficulty || "medium"
+                };
+              });
+              
+              // Reset state for new AI review session
+              quizState.quizMode = "ai_review";
+              quizState.questions = newQuestions;
+              quizState.filteredQuestions = newQuestions;
+              shuffleQuestionsAndOptions();
+              resetQuizForRetry();
+              startQuizSession();
+              return;
+            }
+          } catch(e) {
+            console.error("Lỗi parse dữ liệu AI:", e);
+          }
+        }
+        showSaveNotification(false, "AI không thể tạo câu hỏi ôn tập. Vui lòng thử lại sau.");
+        document.getElementById("quiz-results").style.display = "block";
+      })
+      .withFailureHandler(function (error) {
+        hideGeneratingModal();
+        showSaveNotification(false, "Lỗi kết nối AI: " + error.message);
+        document.getElementById("quiz-results").style.display = "block";
+      })
+      .generateAIReviewQuestions(wrongQuestions, quizState.topicId);
   }
 
   /**
