@@ -97,11 +97,25 @@ function qmOnTopicSearch() {
   const input = document.getElementById("qmTopicSelectInput");
   const val = input.value.toLowerCase();
   
+  const clearBtn = document.getElementById("qmClearSearchBtn");
+  if (clearBtn) {
+    clearBtn.style.display = val.length > 0 ? "block" : "none";
+  }
+  
   qmSelectedTopicIdStr = "";
   
   const filtered = qmTopics.filter(t => t.title.toLowerCase().includes(val));
   qmRenderTopicDropdown(filtered);
   qmShowTopicDropdown();
+}
+
+function qmClearSearch() {
+  const input = document.getElementById("qmTopicSelectInput");
+  if (input) {
+    input.value = "";
+    qmOnTopicSearch();
+    input.focus();
+  }
 }
 
 function qmShowTopicDropdown() {
@@ -114,7 +128,7 @@ function qmHideTopicDropdown() {
   if (dropdown) dropdown.style.display = "none";
 }
 
-function qmLoadTopicQuestions(topicIdParam) {
+function qmLoadTopicQuestions(topicIdParam, isSilent = false) {
   const topicId = topicIdParam || qmGetSelectedTopicId();
   if (!topicId) {
     document.getElementById("qmTopicStats").style.display = "none";
@@ -151,21 +165,21 @@ function qmLoadTopicQuestions(topicIdParam) {
     }
   }
 
-  qmShowLoading("Đang tải danh sách câu hỏi...");
+  if (!isSilent) qmShowLoading("Đang tải danh sách câu hỏi...");
   
   google.script.run
     .withSuccessHandler((response) => {
-      qmHideLoading();
+      if (!isSilent) qmHideLoading();
       if (response.success) {
         qmCurrentQuestions = response.questions || [];
         qmUpdateStats();
-        qmSetFilter('all');
+        qmSetFilter(isSilent ? qmFilterStatus : 'all');
       } else {
         showToast("Lỗi: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
-      qmHideLoading();
+      if (!isSilent) qmHideLoading();
       showToast("Lỗi mạng: " + err, "error");
     })
     .adminGetQuestionsForTopic(topicId);
@@ -281,7 +295,7 @@ function qmRenderQuestions() {
     // We need original index for correct updates
     const index = qmCurrentQuestions.indexOf(q);
     const s = (q.status || "").trim().toLowerCase();
-    const isChecked = s === 'approved' || s === 'draft'; // Chọn mặc định nếu approved hoặc nháp
+    const isChecked = false; // Không chọn mặc định
     
     html += `
       <div class="qm-question-card ${isChecked ? 'selected' : ''}" id="qmCard_${index}">
@@ -398,15 +412,16 @@ function qmToggleSelectAll(checkbox) {
     }
   });
 
-  function qmRemoveQuestionsByIds(questionIds) {
-    if (!Array.isArray(questionIds) || questionIds.length === 0) return;
-
-    const idsToRemove = new Set(questionIds.map(id => String(id).trim()));
-    qmCurrentQuestions = qmCurrentQuestions.filter(q => !idsToRemove.has(String(q.questionId || '').trim()));
-    qmRenderQuestions();
-    qmUpdateStats();
-  }
   qmUpdateSelectAllCheckbox();
+}
+
+function qmRemoveQuestionsByIds(questionIds) {
+  if (!Array.isArray(questionIds) || questionIds.length === 0) return;
+
+  const idsToRemove = new Set(questionIds.map(id => String(id).trim()));
+  qmCurrentQuestions = qmCurrentQuestions.filter(q => !idsToRemove.has(String(q.questionId || '').trim()));
+  qmRenderQuestions();
+  qmUpdateStats();
 }
 
 function qmUpdateSelectAllCheckbox() {
@@ -463,19 +478,22 @@ function qmSaveSingleQuestion(index) {
     q.status = "draft";
   }
   
-  qmShowLoading("Đang lưu câu hỏi...");
+  // Cập nhật giao diện ngay
+  qmRenderQuestions();
+  qmUpdateStats();
+  
   google.script.run
     .withSuccessHandler((response) => {
-      qmHideLoading();
       if (response.success) {
         showToast("Lưu câu hỏi thành công!", "success");
-        qmLoadTopicQuestions();
+        if (q.questionId && String(q.questionId).startsWith("TEMP_")) {
+          qmLoadTopicQuestions(topicId, true);
+        }
       } else {
         showToast("Lỗi lưu: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
-      qmHideLoading();
       showToast("Lỗi mạng: " + err, "error");
     })
     .adminSaveQuestions(topicId, [q]);
@@ -490,25 +508,17 @@ function qmDeleteQuestion(index) {
       return;
     }
 
+    // Xóa khỏi giao diện ngay lập tức
+    qmRemoveQuestionsByIds([questionId]);
+
     if (!questionId.startsWith("TEMP_")) {
-      qmShowLoading("Đang xóa câu hỏi...");
       google.script.run
-        .withSuccessHandler((res) => {
-          qmHideLoading();
-          if (res.success && Number(res.deletedCount || 0) > 0) {
-            showToast("Đã xóa câu hỏi khỏi Database", "success");
-            qmRemoveQuestionsByIds([questionId]);
-          } else {
-            showToast("Lỗi xóa: " + res.message, "error");
-          }
-        })
         .withFailureHandler((err) => {
-          qmHideLoading();
-          showToast("Lỗi mạng: " + err, "error");
+          showToast("Lỗi mạng khi xóa: " + err, "error");
         })
         .adminDeleteQuestions([questionId]);
     } else {
-      qmRemoveQuestionsByIds([questionId]);
+      showToast("Đã xóa câu hỏi", "success");
     }
   });
 }
@@ -538,26 +548,16 @@ function qmDeleteSelectedQuestions() {
   }
   
   qmShowConfirmDeleteModal(`Bạn có chắc muốn XÓA vĩnh viễn ${idsToRemove.length} câu hỏi đã chọn?`, function() {
+    // Xóa ngay khỏi giao diện
+    qmRemoveQuestionsByIds(idsToRemove);
+
     if (idsToDelete.length > 0) {
-      qmShowLoading("Đang xóa câu hỏi...");
       google.script.run
-        .withSuccessHandler((res) => {
-          qmHideLoading();
-          if (res.success && Number(res.deletedCount || 0) > 0) {
-            showToast(`Đã xóa thành công ${res.deletedCount} câu hỏi`, "success");
-            qmRemoveQuestionsByIds(idsToRemove);
-          } else {
-            showToast("Lỗi xóa: " + res.message, "error");
-          }
-        })
         .withFailureHandler((err) => {
-          qmHideLoading();
-          showToast("Lỗi mạng: " + err, "error");
+          showToast("Lỗi mạng khi xóa: " + err, "error");
         })
         .adminDeleteQuestions(idsToDelete);
     } else {
-      // Chỉ xóa nháp local
-      qmRemoveQuestionsByIds(idsToRemove);
       showToast(`Đã xóa ${idsToRemove.length} câu nháp`, "success");
     }
   });
@@ -607,7 +607,7 @@ function qmAddNewManualQuestion() {
   const topicId = qmGetSelectedTopicId();
   if (!topicId) return;
   
-  qmCurrentQuestions.unshift({
+  qmCurrentQuestions.push({
     questionId: "TEMP_" + Date.now(),
     topicId: topicId,
     questionText: "",
@@ -620,7 +620,15 @@ function qmAddNewManualQuestion() {
   });
   
   qmRenderQuestions();
-  qmToggleEdit(0); // Open edit form for the new question
+  const newIndex = qmCurrentQuestions.length - 1;
+  qmToggleEdit(newIndex); // Open edit form for the new question
+  
+  setTimeout(() => {
+    const newCard = document.getElementById(`qmCard_${newIndex}`);
+    if (newCard) {
+      newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
 }
 
 function qmSaveApprovedQuestions() {
@@ -653,21 +661,21 @@ function qmSaveApprovedQuestions() {
     return;
   }
   
-  qmShowLoading("Đang lưu câu hỏi...");
+  // Cập nhật giao diện ngay
+  qmRenderQuestions();
+  qmUpdateStats();
   
   google.script.run
     .withSuccessHandler((response) => {
-      qmHideLoading();
       if (response.success) {
         showToast("Lưu thành công " + response.approvedCount + " câu hỏi đã duyệt!", "success");
-        qmLoadTopicQuestions(); // Reload
+        qmLoadTopicQuestions(topicId, true); // Reload ngầm
         qmLoadTopics(); // Update badge in topic list
       } else {
         showToast("Lỗi lưu: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
-      qmHideLoading();
       showToast("Lỗi kết nối: " + err, "error");
     })
     .adminSaveQuestions(topicId, questionsToSave);
