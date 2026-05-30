@@ -215,13 +215,16 @@ VÍ DỤ CHUẨN:
 === KẾT THÚC TÀI LIỆU ===
 
 Phân tích: {analysis}
-Độ khó yêu cầu: {difficulty}
 Các khái niệm cần tập trung: {focusConcepts}
+
+=== DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI ===
+{existingQuestionsText}
+=== KẾT THÚC CÂU HỎI TỒN TẠI ===
 
 Trả về CHÍNH XÁC format JSON sau:
 {
   "quizTitle": "Tên bài quiz",
-  "totalQuestions": {questionCount},
+  "totalQuestions": 30,
   "questions": [
     {
       "id": "Q001",
@@ -240,30 +243,25 @@ Trả về CHÍNH XÁC format JSON sau:
 }
 
 YÊU CẦU CỰC KỲ QUAN TRỌNG:
-- Tạo CHÍNH XÁC {questionCount} câu hỏi (KHÔNG ĐƯỢC ÍT HƠN {questionCount} CÂU).
+- Tạo CHÍNH XÁC 30 câu hỏi (KHÔNG ĐƯỢC ÍT HƠN, KHÔNG ĐƯỢC NHIỀU HƠN).
+- Bắt buộc phân bổ độ khó theo đúng số lượng sau: 15 câu easy (dễ), 9 câu medium (trung bình), 6 câu hard (khó).
+- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các câu hỏi có ý tưởng hoặc cách hỏi trùng lặp với các câu hỏi đã tồn tại. Nếu tài liệu không đủ ý để tạo 30 câu mới, hãy đi sâu vào chi tiết hoặc đặt tình huống (scenario).
 - Mỗi câu hỏi phải là DUY NHẤT, không trùng lặp nội dung với câu khác trong bộ này.
-- KHÔNG tạo các biến thể quá giống nhau của cùng một câu hỏi.
-- Bao phủ TOÀN BỘ các ý chính trong tài liệu.
 
 LƯU Ý FORMAT:
 - "options" phải là mảng 4 chuỗi (không phải object)
 - "correctAnswer" là số từ 0-3 (index của đáp án đúng, không phải chữ A/B/C/D)
 - Ví dụ: correctAnswer = 0 nghĩa là đáp án đầu tiên đúng
-- Ví dụ: correctAnswer = 1 nghĩa là đáp án thứ hai đúng
 
 YÊU CẦU:
-- Tạo CHÍNH XÁC {questionCount} câu hỏi (nên tạo dư 2-3 câu nếu được để đảm bảo độ đa dạng)
 - Phân bố Bloom's Taxonomy:
   + 30% remember (nhớ)
   + 30% understand (hiểu)
   + 25% apply (áp dụng)
   + 15% analyze (phân tích)
-- Phân bố độ khó: 30% easy, 50% medium, 20% hard
 - Đáp án sai phải hợp lý (không quá hiển nhiên)
 - explanation chi tiết, giáo dục
-- CHỈ dùng kiến thức trong tài liệu
-- KHÔNG hỏi những thông tin không có trong tài liệu
-- Các câu hỏi PHẢI khác biệt hoàn toàn về nội dung, tránh trùng lặp ý tưởng.`,
+- CHỈ dùng kiến thức trong tài liệu, KHÔNG hỏi những thông tin không có trong tài liệu`,
 
   /**
    * Tạo variant cho câu hỏi (khi user trả lời sai)
@@ -530,12 +528,11 @@ const ContentGenerator = {
    * Tạo câu hỏi MCQ
    * @param {string} docContent
    * @param {Object} analysis
-   * @param {Object} options - { questionCount, difficulty, focusConcepts }
+   * @param {Object} options - { existingQuestionsText, focusConcepts }
    * @returns {Object} Questions data
    */
   generateQuestions: function (docContent, analysis, options = {}, userContext, requestMeta) {
-    const questionCount = options.questionCount || 20;
-    const difficulty = options.difficulty || "mixed";
+    const existingQuestionsText = options.existingQuestionsText || "Không có câu hỏi cũ nào.";
     const focusConcepts = options.focusConcepts || [];
 
     const prompt = PROMPT_TEMPLATES.MCQ_GENERATION.replace(
@@ -543,8 +540,7 @@ const ContentGenerator = {
       docContent,
     )
       .replace("{analysis}", JSON.stringify(analysis))
-      .replace("{questionCount}", questionCount.toString())
-      .replace("{difficulty}", difficulty)
+      .replace("{existingQuestionsText}", existingQuestionsText)
       .replace(
         "{focusConcepts}",
         focusConcepts.length > 0 ? focusConcepts.join(", ") : "Tất cả",

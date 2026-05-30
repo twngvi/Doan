@@ -8,6 +8,8 @@ function initQuestionManager() {
     qmLoadTopics();
   }
   
+  qmCheckGeminiKeyStatus();
+  
   // Set up observer in case user navigates away and comes back
   const pageElement = document.getElementById("page-question-manager");
   if (pageElement && !pageElement.dataset.observerSetup) {
@@ -17,6 +19,7 @@ function initQuestionManager() {
           if (qmTopics.length === 0) {
             qmLoadTopics();
           }
+          qmCheckGeminiKeyStatus();
         }
       });
     });
@@ -59,7 +62,7 @@ function qmLoadTopics() {
     })
     .withFailureHandler((err) => {
       console.error(err);
-      alert("Lỗi tải danh sách Topic");
+      showToast("Lỗi tải danh sách Topic", "error");
     })
     .adminGetTopicsWithQuizStatus();
 }
@@ -106,25 +109,28 @@ function qmLoadTopicQuestions() {
       qmHideLoading();
       if (response.success) {
         qmCurrentQuestions = response.questions || [];
-        qmRenderQuestions();
         qmUpdateStats();
+        qmSetFilter('all');
       } else {
-        alert("Lỗi: " + response.message);
+        showToast("Lỗi: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
       qmHideLoading();
-      alert("Lỗi mạng: " + err);
+      showToast("Lỗi mạng: " + err, "error");
     })
     .adminGetQuestionsForTopic(topicId);
 }
+
+let qmFilterStatus = 'all';
 
 function qmUpdateStats() {
   let approved = 0;
   let draft = 0;
   qmCurrentQuestions.forEach(q => {
-    if (q.status === 'approved') approved++;
-    else if (q.status === 'draft') draft++;
+    const s = (q.status || "").trim().toLowerCase();
+    if (s === 'approved') approved++;
+    else draft++; // Default any non-approved to draft for counting
   });
   
   document.getElementById("qmApprovedCount").textContent = approved;
@@ -132,39 +138,51 @@ function qmUpdateStats() {
   document.getElementById("qmListCount").textContent = qmCurrentQuestions.length;
 }
 
+function qmSetFilter(status) {
+  qmFilterStatus = status;
+  qmRenderQuestions();
+  
+  // Cập nhật UI filter
+  document.querySelectorAll('.qm-stat-item').forEach(el => el.classList.remove('active-filter'));
+  if (status === 'approved') {
+    document.getElementById("qmStatApproved").classList.add('active-filter');
+  } else if (status === 'draft') {
+    document.getElementById("qmStatDraft").classList.add('active-filter');
+  } else {
+    document.getElementById("qmStatAll").classList.add('active-filter');
+  }
+}
+
 function qmGenerateAIQuestions() {
   const topicId = document.getElementById("qmTopicSelect").value;
   if (!topicId) {
-    alert("Vui lòng chọn Topic trước");
+    showToast("Vui lòng chọn Topic trước", "warning");
     return;
   }
   
-  const count = document.getElementById("qmAiCount").value;
-  const diff = document.getElementById("qmAiDifficulty").value;
-  
-  qmShowLoading(`AI đang tạo ${count} câu hỏi... Có thể mất 15-30 giây.`);
+  qmShowLoading(`AI đang phân tích tài liệu và tạo 30 câu hỏi... Việc này mất khoảng 20-45 giây.`);
   
   google.script.run
     .withSuccessHandler((response) => {
       qmHideLoading();
       if (response.success) {
-        // Prepend new questions
-        const newQs = response.questions || [];
-        qmCurrentQuestions = [...newQs, ...qmCurrentQuestions];
+        // Now it returns the full merged list of questions directly
+        qmCurrentQuestions = response.questions || [];
         qmRenderQuestions();
         qmUpdateStats();
         
+        showToast("Đã tạo và lưu nháp 30 câu hỏi mới!", "success");
         // Cập nhật lại list topic để có trạng thái mới
         qmLoadTopics();
       } else {
-        alert("Lỗi tạo AI: " + response.message);
+        showToast("Lỗi tạo AI: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
       qmHideLoading();
-      alert("Lỗi kết nối AI: " + err);
+      showToast("Lỗi kết nối AI: " + err, "error");
     })
-    .adminGenerateQuestionsByAI(topicId, count, diff);
+    .adminGenerateQuestionsByAI(topicId);
 }
 
 function qmRenderQuestions() {
@@ -181,8 +199,23 @@ function qmRenderQuestions() {
   
   let html = '';
   
-  qmCurrentQuestions.forEach((q, index) => {
-    const isChecked = q.status === 'approved' || q.status === 'draft'; // Chọn mặc định nếu approved hoặc nháp
+  const filteredQuestions = qmCurrentQuestions.filter(q => {
+    if (qmFilterStatus === 'all') return true;
+    const s = (q.status || "").trim().toLowerCase();
+    if (qmFilterStatus === 'approved') return s === 'approved';
+    if (qmFilterStatus === 'draft') return s !== 'approved';
+    return true;
+  });
+  
+  if (filteredQuestions.length === 0) {
+    html = '<div style="text-align:center; padding: 20px; color: #64748b;">Không có câu hỏi nào trong mục này.</div>';
+  }
+  
+  filteredQuestions.forEach((q) => {
+    // We need original index for correct updates
+    const index = qmCurrentQuestions.indexOf(q);
+    const s = (q.status || "").trim().toLowerCase();
+    const isChecked = s === 'approved' || s === 'draft'; // Chọn mặc định nếu approved hoặc nháp
     
     html += `
       <div class="qm-question-card ${isChecked ? 'selected' : ''}" id="qmCard_${index}">
@@ -193,14 +226,17 @@ function qmRenderQuestions() {
             <div class="qm-q-meta">
               <span class="qm-meta-tag ${q.source === 'ai_generated' ? 'qm-tag-ai' : 'qm-tag-manual'}">${q.source === 'ai_generated' ? 'AI' : 'Manual'}</span>
               <span class="qm-meta-tag qm-tag-${q.difficulty || 'medium'}">${q.difficulty || 'Medium'}</span>
-              <span class="qm-meta-tag" style="background:${q.status==='approved'?'#dcfce7':'#fef08a'}; color:${q.status==='approved'?'#166534':'#854d0e'}">${q.status === 'approved' ? 'Approved' : 'Draft'}</span>
+              <span class="qm-meta-tag" style="background:${s==='approved'?'#dcfce7':'#fef08a'}; color:${s==='approved'?'#166534':'#854d0e'}">${s === 'approved' ? 'Approved' : 'Draft'}</span>
             </div>
           </div>
           <div>
             <button class="qm-btn qm-btn-outline" onclick="qmToggleEdit(${index})" style="padding: 4px 10px; font-size: 13px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">edit</span> Sửa
             </button>
-            <button class="qm-btn qm-btn-outline" onclick="qmDeleteQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5;">
+            <button class="qm-btn qm-btn-primary" onclick="qmSaveSingleQuestion(${index})" style="padding: 4px 10px; font-size: 13px; margin-left: 4px;">
+              <span class="material-symbols-sharp" style="font-size: 16px;">save</span> Lưu
+            </button>
+            <button class="qm-btn qm-btn-outline" onclick="qmDeleteQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5; margin-left: 4px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">delete</span>
             </button>
           </div>
@@ -282,11 +318,18 @@ function qmToggleSelect(index, checkbox) {
 }
 
 function qmToggleSelectAll(checkbox) {
+  const targetChecked = checkbox.checked;
   const checkboxes = document.querySelectorAll('.qm-q-select');
   checkboxes.forEach(cb => {
-    cb.checked = checkbox.checked;
-    qmToggleSelect(cb.dataset.index, cb);
+    cb.checked = targetChecked;
+    const card = document.getElementById(`qmCard_${cb.dataset.index}`);
+    if (targetChecked) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
   });
+  qmUpdateSelectAllCheckbox();
 }
 
 function qmUpdateSelectAllCheckbox() {
@@ -323,13 +366,116 @@ function qmSaveEdit(index) {
   qmRenderQuestions();
 }
 
+function qmSaveSingleQuestion(index) {
+  const q = qmCurrentQuestions[index];
+  const topicId = document.getElementById("qmTopicSelect").value;
+  if (!topicId) return;
+  
+  // Lấy trạng thái của checkbox xem có đang được chọn không
+  const cb = document.querySelector(`.qm-q-select[data-index="${index}"]`);
+  if (cb && cb.checked) {
+    q.status = "approved";
+  } else if (!q.status) {
+    q.status = "draft";
+  }
+  
+  qmShowLoading("Đang lưu câu hỏi...");
+  google.script.run
+    .withSuccessHandler((response) => {
+      qmHideLoading();
+      if (response.success) {
+        showToast("Lưu câu hỏi thành công!", "success");
+        qmLoadTopicQuestions();
+      } else {
+        showToast("Lỗi lưu: " + response.message, "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      qmHideLoading();
+      showToast("Lỗi mạng: " + err, "error");
+    })
+    .adminSaveQuestions(topicId, [q]);
+}
+
 function qmDeleteQuestion(index) {
   if (confirm("Xóa câu hỏi này khỏi danh sách?")) {
-    // If it has a real ID, we should also delete from DB if we implement delete backend.
-    // For now, we just filter it out from the current array before saving.
-    qmCurrentQuestions.splice(index, 1);
-    qmRenderQuestions();
-    qmUpdateStats();
+    const q = qmCurrentQuestions[index];
+    if (q && q.questionId && !q.questionId.startsWith("TEMP_")) {
+      qmShowLoading("Đang xóa câu hỏi...");
+      google.script.run
+        .withSuccessHandler((res) => {
+          qmHideLoading();
+          if (res.success) {
+            showToast("Đã xóa câu hỏi khỏi Database", "success");
+            qmCurrentQuestions.splice(index, 1);
+            qmRenderQuestions();
+            qmUpdateStats();
+          } else {
+            showToast("Lỗi xóa: " + res.message, "error");
+          }
+        })
+        .withFailureHandler((err) => {
+          qmHideLoading();
+          showToast("Lỗi mạng: " + err, "error");
+        })
+        .adminDeleteQuestions([q.questionId]);
+    } else {
+      qmCurrentQuestions.splice(index, 1);
+      qmRenderQuestions();
+      qmUpdateStats();
+    }
+  }
+}
+
+function qmDeleteSelectedQuestions() {
+  const checkboxes = document.querySelectorAll('.qm-q-select');
+  const idsToDelete = [];
+  const indicesToRemove = [];
+  
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const idx = parseInt(cb.dataset.index);
+      indicesToRemove.push(idx);
+      const q = qmCurrentQuestions[idx];
+      if (q && q.questionId && !q.questionId.startsWith("TEMP_")) {
+        idsToDelete.push(q.questionId);
+      }
+    }
+  });
+  
+  if (indicesToRemove.length === 0) {
+    showToast("Vui lòng chọn ít nhất 1 câu hỏi để xóa", "warning");
+    return;
+  }
+  
+  if (confirm(`Bạn có chắc muốn XÓA vĩnh viễn ${indicesToRemove.length} câu hỏi đã chọn?`)) {
+    if (idsToDelete.length > 0) {
+      qmShowLoading("Đang xóa câu hỏi...");
+      google.script.run
+        .withSuccessHandler((res) => {
+          qmHideLoading();
+          if (res.success) {
+            showToast(`Đã xóa thành công ${indicesToRemove.length} câu hỏi`, "success");
+            qmLoadTopicQuestions(); // Tải lại từ DB cho chắc
+          } else {
+            showToast("Lỗi xóa: " + res.message, "error");
+          }
+        })
+        .withFailureHandler((err) => {
+          qmHideLoading();
+          showToast("Lỗi mạng: " + err, "error");
+        })
+        .adminDeleteQuestions(idsToDelete);
+    } else {
+      // Chỉ xóa nháp local
+      // Sort descending to remove without affecting indices
+      indicesToRemove.sort((a, b) => b - a).forEach(idx => {
+        qmCurrentQuestions.splice(idx, 1);
+      });
+      qmRenderQuestions();
+      qmUpdateStats();
+      showToast(`Đã xóa ${indicesToRemove.length} câu nháp`, "success");
+    }
   }
 }
 
@@ -338,7 +484,7 @@ function qmAddNewManualQuestion() {
   if (!topicId) return;
   
   qmCurrentQuestions.unshift({
-    id: "TEMP_" + Date.now(),
+    questionId: "TEMP_" + Date.now(),
     topicId: topicId,
     questionText: "",
     optionA: "", optionB: "", optionC: "", optionD: "",
@@ -369,7 +515,8 @@ function qmSaveApprovedQuestions() {
     } else {
       const idx = cb.dataset.index;
       const q = qmCurrentQuestions[idx];
-      if (q.questionId && !q.questionId.startsWith("TEMP_")) {
+      const qId = q.questionId ? String(q.questionId) : "";
+      if (qId && !qId.startsWith("TEMP_")) {
         // If it was already in DB but now unchecked, maybe mark as draft or rejected?
         q.status = "draft";
         questionsToSave.push(q);
@@ -378,7 +525,7 @@ function qmSaveApprovedQuestions() {
   });
   
   if (questionsToSave.length === 0) {
-    alert("Không có câu hỏi nào để lưu.");
+    showToast("Không có câu hỏi nào để lưu.", "warning");
     return;
   }
   
@@ -388,16 +535,16 @@ function qmSaveApprovedQuestions() {
     .withSuccessHandler((response) => {
       qmHideLoading();
       if (response.success) {
-        alert("Lưu thành công " + response.approvedCount + " câu hỏi đã duyệt!");
+        showToast("Lưu thành công " + response.approvedCount + " câu hỏi đã duyệt!", "success");
         qmLoadTopicQuestions(); // Reload
         qmLoadTopics(); // Update badge in topic list
       } else {
-        alert("Lỗi lưu: " + response.message);
+        showToast("Lỗi lưu: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {
       qmHideLoading();
-      alert("Lỗi kết nối: " + err);
+      showToast("Lỗi kết nối: " + err, "error");
     })
     .adminSaveQuestions(topicId, questionsToSave);
 }
@@ -418,10 +565,90 @@ function qmPublishTopicQuiz() {
       if (response.success) {
         qmLoadTopics();
         qmLoadTopicQuestions();
+        showToast("Đã cập nhật trạng thái Topic", "success");
       } else {
-        alert(response.message);
+        showToast(response.message, "error");
       }
     })
     .adminUpdateTopicQuizStatus(topicId, newStatus);
+}
+function qmCheckGeminiKeyStatus() {
+  const btn = document.getElementById("qmGeminiKeyBtn");
+  const icon = document.getElementById("qmGeminiKeyIcon");
+  const text = document.getElementById("qmGeminiKeyText");
+  
+  if (!btn) return;
+  
+  btn.style.opacity = '0.5';
+  
+  google.script.run
+    .withSuccessHandler((res) => {
+      btn.style.opacity = '1';
+      if (res && res.success && res.hasKey && res.isValid) {
+        btn.style.background = '#dcfce7';
+        btn.style.color = '#166534';
+        btn.style.borderColor = '#bbf7d0';
+        icon.textContent = 'key';
+        text.textContent = 'Gemini Key Sẵn Sàng';
+      } else {
+        btn.style.background = '#fee2e2';
+        btn.style.color = '#b91c1c';
+        btn.style.borderColor = '#fecaca';
+        icon.textContent = 'key_off';
+        text.textContent = res ? (res.hasKey ? 'Key Lỗi/Hết Hạn' : 'Thiếu Gemini Key') : 'Thiếu Gemini Key';
+      }
+    })
+    .withFailureHandler(() => {
+      btn.style.opacity = '1';
+    })
+    .getUserGeminiKeyStatus(null);
+}
+
+function qmOpenGeminiKeyModal() {
+  document.getElementById("qmGeminiKeyModal").style.display = "flex";
+  document.getElementById("qmGeminiKeyInput").value = "";
+  document.getElementById("qmGeminiKeyFeedback").style.display = "none";
+}
+
+function qmCloseGeminiKeyModal() {
+  document.getElementById("qmGeminiKeyModal").style.display = "none";
+}
+
+function qmSaveGeminiKey() {
+  const keyInput = document.getElementById("qmGeminiKeyInput").value.trim();
+  const feedback = document.getElementById("qmGeminiKeyFeedback");
+  const saveBtn = document.getElementById("qmSaveGeminiKeyBtn");
+  
+  if (!keyInput) {
+    feedback.textContent = "Vui lòng nhập API key";
+    feedback.style.color = "#dc2626";
+    feedback.style.display = "block";
+    return;
+  }
+  
+  feedback.textContent = "Đang kiểm tra và lưu...";
+  feedback.style.color = "#2563eb";
+  feedback.style.display = "block";
+  saveBtn.disabled = true;
+  
+  google.script.run
+    .withSuccessHandler((res) => {
+      saveBtn.disabled = false;
+      if (res && res.success) {
+        feedback.textContent = "Lưu API Key thành công!";
+        feedback.style.color = "#166534";
+        qmCheckGeminiKeyStatus();
+        setTimeout(() => qmCloseGeminiKeyModal(), 1500);
+      } else {
+        feedback.textContent = "Lỗi: " + (res?.message || "Vui lòng kiểm tra lại Key.");
+        feedback.style.color = "#dc2626";
+      }
+    })
+    .withFailureHandler((err) => {
+      saveBtn.disabled = false;
+      feedback.textContent = "Lỗi kết nối: " + err;
+      feedback.style.color = "#dc2626";
+    })
+    .upsertUserGeminiApiKey(null, keyInput);
 }
 </script>

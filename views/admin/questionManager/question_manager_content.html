@@ -1,12 +1,20 @@
   <div class="question-manager-page">
-    <div class="admin-unified-header" style="margin-bottom: 24px;">
-      <div class="admin-unified-header-main">
-        <div class="admin-unified-header-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
-          <span class="material-symbols-sharp" style="font-size: 28px;">quiz</span>
+    <div class="admin-unified-header" style="margin-bottom: 24px; position: relative;">
+      <div class="admin-unified-header-main" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="admin-unified-header-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+            <span class="material-symbols-sharp" style="font-size: 28px;">quiz</span>
+          </div>
+          <div class="admin-unified-header-text">
+            <h1 class="admin-unified-header-title">Quản lý câu hỏi Quiz</h1>
+            <p class="admin-unified-header-subtitle">Duyệt và tạo câu hỏi trắc nghiệm tự động bằng AI</p>
+          </div>
         </div>
-        <div class="admin-unified-header-text">
-          <h1 class="admin-unified-header-title">Quản lý câu hỏi Quiz</h1>
-          <p class="admin-unified-header-subtitle">Duyệt và tạo câu hỏi trắc nghiệm tự động bằng AI</p>
+        
+        <!-- Gemini Key Status Button -->
+        <div class="qm-gemini-key-btn" id="qmGeminiKeyBtn" onclick="qmOpenGeminiKeyModal()" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+          <span class="material-symbols-sharp" id="qmGeminiKeyIcon" style="font-size: 20px;">key_off</span>
+          <span style="font-weight: 600; font-size: 14px;" id="qmGeminiKeyText">Thiếu Gemini Key</span>
         </div>
       </div>
     </div>
@@ -16,51 +24,31 @@
       <div class="qm-card-body">
         <div class="qm-form-row">
           <div class="qm-form-group" style="flex: 2;">
-            <label>Chọn Topic</label>
             <select id="qmTopicSelect" class="qm-input" onchange="qmLoadTopicQuestions()">
-              <option value="">-- Đang tải danh sách topic --</option>
+              <option value="">-- Chọn Topic --</option>
             </select>
           </div>
           
-          <div class="qm-form-group">
-            <label>Số lượng tạo</label>
-            <select id="qmAiCount" class="qm-input">
-              <option value="5">5 câu</option>
-              <option value="10" selected>10 câu</option>
-              <option value="15">15 câu</option>
-              <option value="20">20 câu</option>
-            </select>
-          </div>
-          
-          <div class="qm-form-group">
-            <label>Mức độ</label>
-            <select id="qmAiDifficulty" class="qm-input">
-              <option value="easy">Dễ</option>
-              <option value="medium">Trung bình</option>
-              <option value="hard">Khó</option>
-              <option value="mixed" selected>Hỗn hợp</option>
-            </select>
-          </div>
-          
-          <div class="qm-form-group" style="display: flex; align-items: flex-end;">
+          <div class="qm-form-group" style="display: flex; align-items: flex-end; flex-grow: 1; max-width: 250px;">
             <button class="qm-btn qm-btn-primary" id="qmGenerateBtn" onclick="qmGenerateAIQuestions()" style="width: 100%;">
               <span class="material-symbols-sharp" style="font-size: 18px; margin-right: 8px;">auto_awesome</span>
-              Tạo bằng AI
+              Tạo bằng AI (30 câu)
             </button>
           </div>
         </div>
         
         <!-- Topic Stats -->
+        <div class="qm-stats-banner">
         <div class="qm-topic-stats" id="qmTopicStats" style="display: none;">
-          <div class="qm-stat-item">
+          <div class="qm-stat-item active-filter" id="qmStatAll" onclick="qmSetFilter('all')">
             <span class="qm-stat-label">Trạng thái Quiz:</span>
             <span class="qm-badge" id="qmTopicStatusBadge">--</span>
           </div>
-          <div class="qm-stat-item">
+          <div class="qm-stat-item" id="qmStatApproved" onclick="qmSetFilter('approved')">
             <span class="qm-stat-label">Đã duyệt:</span>
             <strong class="qm-text-success" id="qmApprovedCount">0</strong>
           </div>
-          <div class="qm-stat-item">
+          <div class="qm-stat-item" id="qmStatDraft" onclick="qmSetFilter('draft')">
             <span class="qm-stat-label">Bản nháp:</span>
             <strong class="qm-text-warning" id="qmDraftCount">0</strong>
           </div>
@@ -87,10 +75,13 @@
     <div id="qmQuestionsArea" style="display: none;">
       <div class="qm-action-bar">
         <h3>Danh sách câu hỏi <span class="qm-count-badge" id="qmListCount">0</span></h3>
-        <div class="qm-actions">
-          <label class="qm-checkbox-label">
+        <div class="qm-actions" style="display: flex; gap: 12px; align-items: center;">
+          <label class="qm-checkbox-label" style="margin-bottom: 0;">
             <input type="checkbox" id="qmSelectAll" onchange="qmToggleSelectAll(this)"> Chọn tất cả
           </label>
+          <button class="qm-btn qm-btn-outline" onclick="qmDeleteSelectedQuestions()" style="color: #ef4444; border-color: #fca5a5;">
+            <span class="material-symbols-sharp" style="font-size: 18px;">delete_sweep</span> Xóa
+          </button>
           <button class="qm-btn qm-btn-primary" onclick="qmSaveApprovedQuestions()">
             <span class="material-symbols-sharp" style="font-size: 18px;">save</span> Lưu câu hỏi đã chọn
           </button>
@@ -107,5 +98,29 @@
       <span class="material-symbols-sharp" style="font-size: 64px; color: #cbd5e1; margin-bottom: 16px;">quiz</span>
       <h3 style="color: #64748b;">Chưa có câu hỏi nào</h3>
       <p style="color: #94a3b8; max-width: 400px; margin: 8px auto 0;">Hãy chọn Topic và bấm "Tạo bằng AI" hoặc "Thêm thủ công" để bắt đầu xây dựng kho câu hỏi.</p>
+    </div>
+
+    <!-- Gemini Key Modal -->
+    <div id="qmGeminiKeyModal" class="qm-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+      <div class="qm-modal-content" style="background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-sharp" style="color: #3b82f6;">vpn_key</span>
+          Cấu hình Gemini API Key
+        </h3>
+        <p style="font-size: 14px; color: #475569; margin-bottom: 16px;">
+          Để tạo câu hỏi tự động bằng AI, bạn cần cung cấp Gemini API Key. Key này sẽ được mã hóa và lưu trữ an toàn.
+        </p>
+        <div class="qm-form-group" style="margin-bottom: 16px;">
+          <label for="qmGeminiKeyInput">Gemini API Key</label>
+          <input type="password" id="qmGeminiKeyInput" class="qm-input" placeholder="Nhập API key (bắt đầu bằng AIza...)" style="width: 100%; box-sizing: border-box; margin-top: 8px;">
+        </div>
+        <div id="qmGeminiKeyFeedback" style="font-size: 13px; margin-bottom: 16px; display: none;"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+          <button class="qm-btn qm-btn-outline" onclick="qmCloseGeminiKeyModal()">Hủy</button>
+          <button class="qm-btn qm-btn-primary" id="qmSaveGeminiKeyBtn" onclick="qmSaveGeminiKey()">
+            <span class="material-symbols-sharp" style="font-size: 18px;">save</span> Lưu Key
+          </button>
+        </div>
+      </div>
     </div>
   </div>

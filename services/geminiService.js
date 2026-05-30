@@ -45,7 +45,8 @@ const GeminiService = {
 
   _isValidApiKeyFormat: function (apiKey) {
     const key = this._normalizeApiKey(apiKey);
-    return /^AIza[\w-]{30,}$/.test(key);
+    // Google API keys usually start with 'AIza' or 'AQ.' and are around 39-50 chars long
+    return /^(AIza|AQ\.)[\w.-]{30,}$/.test(key);
   },
 
   _getEncryptionSecret: function () {

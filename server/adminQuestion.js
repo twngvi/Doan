@@ -115,7 +115,7 @@ function adminUpdateTopicQuizStatus(topicId, newStatus) {
 /**
  * Generate Questions via AI for Admin
  */
-function adminGenerateQuestionsByAI(topicId, count, difficulty) {
+function adminGenerateQuestionsByAI(topicId) {
   try {
     // 1. Get Topic Info
     const topicResult = getTopicById(topicId);
@@ -131,6 +131,15 @@ function adminGenerateQuestionsByAI(topicId, count, difficulty) {
     const userId = Session.getActiveUser().getEmail() || "admin";
     const userContext = { userId: userId, email: userId }; // Fallback to email as userId for admin tools
     
+    // Lấy danh sách câu hỏi hiện có để truyền cho AI chống trùng lặp
+    const existingQuestionsResult = adminGetQuestionsForTopic(topicId);
+    let existingQuestionsText = "Không có câu hỏi cũ nào.";
+    if (existingQuestionsResult.success && existingQuestionsResult.questions && existingQuestionsResult.questions.length > 0) {
+      existingQuestionsText = existingQuestionsResult.questions
+        .map((q, idx) => `${idx + 1}. ${q.questionText}`)
+        .join("\n");
+    }
+
     // 2. Read Google Doc
     const docResult = GeminiService.readGoogleDoc(topic.contentDocId);
     if (!docResult.success) {
@@ -148,7 +157,7 @@ function adminGenerateQuestionsByAI(topicId, count, difficulty) {
     const questionsResult = ContentGenerator.generateQuestions(
       docResult.content,
       analysis,
-      { questionCount: parseInt(count) || 10, difficulty: difficulty || "mixed" },
+      { existingQuestionsText: existingQuestionsText },
       userContext,
       { topicId: topicId }
     );
@@ -157,7 +166,7 @@ function adminGenerateQuestionsByAI(topicId, count, difficulty) {
     if (questionsResult && questionsResult.questions) {
       // Map to the format we need in DB
       const formattedQuestions = questionsResult.questions.map((q, index) => ({
-        id: "TEMP_" + Date.now() + "_" + index, // Temporary ID
+        questionId: "TEMP_" + Date.now() + "_" + index, // Dùng questionId để adminSaveQuestions nhận diện là câu mới
         topicId: topicId,
         questionText: q.question,
         optionA: q.options[0] || "",
@@ -166,7 +175,7 @@ function adminGenerateQuestionsByAI(topicId, count, difficulty) {
         optionD: q.options[3] || "",
         correctAnswer: q.correctAnswer === 0 ? "A" : q.correctAnswer === 1 ? "B" : q.correctAnswer === 2 ? "C" : "D",
         explanation: q.explanation || "",
-        difficulty: q.difficulty || difficulty || "medium",
+        difficulty: q.difficulty || "medium",
         status: "draft",
         source: "ai_generated",
         bloomLevel: q.bloomLevel || "understand"
@@ -175,9 +184,15 @@ function adminGenerateQuestionsByAI(topicId, count, difficulty) {
       // Update topic status to ai_generated
       adminUpdateTopicQuizStatus(topicId, "ai_generated");
       
+      // Tự động lưu các câu hỏi nháp này vào Database
+      adminSaveQuestions(topicId, formattedQuestions);
+
+      // Trả về danh sách câu hỏi mới nhất từ Database (bao gồm cả cũ và mới)
+      const latestQuestionsResult = adminGetQuestionsForTopic(topicId);
+      
       return {
         success: true,
-        questions: formattedQuestions
+        questions: latestQuestionsResult.success ? latestQuestionsResult.questions : formattedQuestions
       };
     } else {
       return { success: false, message: "AI trả về dữ liệu không hợp lệ" };
@@ -208,7 +223,11 @@ function adminGetQuestionsForTopic(topicId) {
       if (data[i][topicIdCol] === topicId) {
         const q = {};
         headers.forEach((h, idx) => {
-          q[h] = data[i][idx];
+          let val = data[i][idx];
+          if (val instanceof Date) {
+            val = val.toISOString();
+          }
+          q[h] = val;
         });
         questions.push(q);
       }
@@ -241,20 +260,39 @@ function adminSaveQuestions(topicId, questions) {
     const topicResult = getTopicById(topicId);
     const topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
     
-    // Prepare column indices
-    const qIdCol = headers.indexOf("questionId");
-    if (qIdCol === -1) return { success: false, message: "questionId column missing" };
+    // Prepare column indices and auto-add missing columns
+    let qIdCol = headers.indexOf("questionId");
+    if (qIdCol === -1) return { success: false, message: "Lỗi nghiêm trọng: Thiếu cột 'questionId' gốc trong Sheet MCQ_Questions." };
+    
+    // Tự động thêm các cột bị thiếu vào cuối dòng tiêu đề (cho các CSDL cũ)
+    const requiredColumns = ["status", "source"];
+    let addedColumns = false;
+    requiredColumns.forEach(col => {
+      if (headers.indexOf(col) === -1) {
+        headers.push(col);
+        addedColumns = true;
+      }
+    });
+    
+    if (addedColumns) {
+      // Ghi lại mảng headers mới vào dòng 1
+      mcqSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      SpreadsheetApp.flush();
+    }
     
     const existingIds = {};
     for (let i = 1; i < data.length; i++) {
-      existingIds[data[i][qIdCol]] = i + 1; // row index (1-based)
+      if (data[i][qIdCol]) {
+        existingIds[String(data[i][qIdCol]).trim()] = i + 1; // row index (1-based)
+      }
     }
     
     let approvedCount = 0;
     
     questions.forEach(q => {
-      const isNew = !q.questionId || q.questionId.startsWith("TEMP_");
-      const questionId = isNew ? generateId("MCQ") : q.questionId;
+      const qIdStr = q.questionId ? String(q.questionId).trim() : "";
+      const isNew = !qIdStr || qIdStr.startsWith("TEMP_");
+      const questionId = isNew ? generateId("MCQ") : qIdStr;
       
       const status = q.status || "approved";
       if (status === "approved") approvedCount++;
@@ -301,9 +339,54 @@ function adminSaveQuestions(topicId, questions) {
       adminUpdateTopicQuizStatus(topicId, "need_questions");
     }
     
+    SpreadsheetApp.flush(); // Đảm bảo ghi dữ liệu thành công trước khi trả về
+    
     return { success: true, message: "Lưu câu hỏi thành công", approvedCount: approvedCount };
   } catch (error) {
     Logger.log("Error in adminSaveQuestions: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Xóa danh sách câu hỏi khỏi Database
+ * @param {Array} questionIds - Mảng các ID câu hỏi cần xóa
+ */
+function adminDeleteQuestions(questionIds) {
+  try {
+    if (!questionIds || questionIds.length === 0) return { success: true };
+    
+    const ss = getOrCreateDatabase();
+    const mcqSheet = ss.getSheetByName("MCQ_Questions");
+    if (!mcqSheet) return { success: false, message: "MCQ_Questions sheet not found" };
+    
+    const data = mcqSheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: true };
+    
+    const headers = data[0];
+    const qIdCol = headers.indexOf("questionId");
+    if (qIdCol === -1) return { success: false, message: "questionId column missing" };
+    
+    // Tìm index của các row cần xóa
+    const rowsToDelete = [];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][qIdCol]) {
+        const id = String(data[i][qIdCol]).trim();
+        if (questionIds.includes(id)) {
+          rowsToDelete.push(i + 1); // 1-based index
+        }
+      }
+    }
+    
+    // Xóa từ dưới lên trên để không làm sai lệch index
+    rowsToDelete.sort((a, b) => b - a);
+    rowsToDelete.forEach(rowIndex => {
+      mcqSheet.deleteRow(rowIndex);
+    });
+    
+    return { success: true, message: `Đã xóa ${rowsToDelete.length} câu hỏi`, deletedCount: rowsToDelete.length };
+  } catch (error) {
+    Logger.log("Error in adminDeleteQuestions: " + error.toString());
     return { success: false, message: error.toString() };
   }
 }
@@ -332,7 +415,11 @@ function getApprovedQuestionsForTopic(topicId) {
       if (data[i][topicIdCol] === topicId && data[i][statusCol] === "approved") {
         const q = {};
         headers.forEach((h, idx) => {
-          q[h] = data[i][idx];
+          let val = data[i][idx];
+          if (val instanceof Date) {
+            val = val.toISOString();
+          }
+          q[h] = val;
         });
         
         // Format options array to match frontend expectation
