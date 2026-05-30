@@ -356,6 +356,9 @@ function adminDeleteQuestions(questionIds) {
   try {
     if (!questionIds || questionIds.length === 0) return { success: true };
     
+    // Đảm bảo tất cả ID từ client gửi lên đều là string để so sánh an toàn
+    const strQuestionIds = questionIds.map(id => String(id).trim());
+    
     const ss = getOrCreateDatabase();
     const mcqSheet = ss.getSheetByName("MCQ_Questions");
     if (!mcqSheet) return { success: false, message: "MCQ_Questions sheet not found" };
@@ -372,7 +375,7 @@ function adminDeleteQuestions(questionIds) {
     for (let i = 1; i < data.length; i++) {
       if (data[i][qIdCol]) {
         const id = String(data[i][qIdCol]).trim();
-        if (questionIds.includes(id)) {
+        if (strQuestionIds.includes(id)) {
           rowsToDelete.push(i + 1); // 1-based index
         }
       }
@@ -383,8 +386,13 @@ function adminDeleteQuestions(questionIds) {
     rowsToDelete.forEach(rowIndex => {
       mcqSheet.deleteRow(rowIndex);
     });
-    
-    return { success: true, message: `Đã xóa ${rowsToDelete.length} câu hỏi`, deletedCount: rowsToDelete.length };
+
+    const deletedCount = rowsToDelete.length;
+    if (deletedCount === 0) {
+      return { success: false, message: "Không tìm thấy câu hỏi để xóa", deletedCount: 0 };
+    }
+
+    return { success: true, message: `Đã xóa ${deletedCount} câu hỏi`, deletedCount: deletedCount };
   } catch (error) {
     Logger.log("Error in adminDeleteQuestions: " + error.toString());
     return { success: false, message: error.toString() };
