@@ -102,7 +102,12 @@ function qmOnTopicSearch() {
     clearBtn.style.display = val.length > 0 ? "block" : "none";
   }
   
-  qmSelectedTopicIdStr = "";
+  if (val.length === 0 && qmSelectedTopicIdStr !== "") {
+    qmSelectedTopicIdStr = "";
+    qmLoadTopicQuestions(''); // Trigger empty state
+  } else {
+    qmSelectedTopicIdStr = "";
+  }
   
   const filtered = qmTopics.filter(t => t.title.toLowerCase().includes(val));
   qmRenderTopicDropdown(filtered);
@@ -129,7 +134,7 @@ function qmHideTopicDropdown() {
 }
 
 function qmLoadTopicQuestions(topicIdParam, isSilent = false) {
-  const topicId = topicIdParam || qmGetSelectedTopicId();
+  const topicId = topicIdParam !== undefined ? topicIdParam : qmGetSelectedTopicId();
   if (!topicId) {
     document.getElementById("qmTopicStats").style.display = "none";
     document.getElementById("qmQuestionsArea").style.display = "none";
