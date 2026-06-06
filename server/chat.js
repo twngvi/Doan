@@ -1,0 +1,918 @@
+/**
+ * chat.js - Server backend cho tính năng Chat và Kết bạn
+ * Chứa logic xử lý tìm kiếm bạn bè, gửi lời mời, chat
+ */
+
+/**
+ * Lấy index các cột của sheet
+ */
+function getSheetColumnMap(sheetData) {
+  const headers = sheetData[0] || [];
+  const map = {};
+  headers.forEach((h, i) => {
+    map[h] = i;
+  });
+  return map;
+}
+
+/**
+ * Lấy trạng thái quan hệ giữa currentUserId và các users khác
+ * Trả về một Map với key là userId, value là status ('friends', 'request_sent', 'request_received')
+ */
+function getRelationshipsMap(currentUserId) {
+  const relMap = {};
+  try {
+    const ss = getOrCreateDatabase();
+
+    // 1. Kiểm tra bảng Friends
+    const friendsSheet = ss.getSheetByName("Friends");
+    if (friendsSheet) {
+      const fData = friendsSheet.getDataRange().getValues();
+      const fCols = getSheetColumnMap(fData);
+      
+      for (let i = 1; i < fData.length; i++) {
+        const row = fData[i];
+        const u1 = row[fCols["userId1"]];
+        const u2 = row[fCols["userId2"]];
+        const status = row[fCols["status"]];
+        
+        if (status === "active") {
+          if (u1 === currentUserId) relMap[u2] = "friends";
+          if (u2 === currentUserId) relMap[u1] = "friends";
+        }
+      }
+    }
+
+    // 2. Kiểm tra bảng FriendRequests
+    const reqSheet = ss.getSheetByName("FriendRequests");
+    if (reqSheet) {
+      const rData = reqSheet.getDataRange().getValues();
+      const rCols = getSheetColumnMap(rData);
+      
+      for (let i = 1; i < rData.length; i++) {
+        const row = rData[i];
+        const fromU = row[rCols["fromUserId"]];
+        const toU = row[rCols["toUserId"]];
+        const status = row[rCols["status"]];
+        
+        if (status === "pending") {
+          if (fromU === currentUserId && !relMap[toU]) {
+            relMap[toU] = "request_sent";
+          }
+          if (toU === currentUserId && !relMap[fromU]) {
+            relMap[fromU] = "request_received";
+          }
+        }
+      }
+    }
+  } catch (error) {
+    Logger.log("Lỗi getRelationshipsMap: " + error.toString());
+  }
+  
+  return relMap;
+}
+
+/**
+ * Tìm kiếm người chơi theo từ khóa
+ * @param {string} currentUserId - ID người dùng hiện tại
+ * @param {string} keyword - Từ khóa tìm kiếm
+ */
+function searchPlayers(currentUserId, keyword) {
+  try {
+    if (!keyword || String(keyword).trim() === "") {
+      return { success: true, results: [] };
+    }
+
+    const kw = String(keyword).trim().toLowerCase();
+
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
+
+    if (!usersSheet) {
+      return { success: false, message: "Không tìm thấy sheet Users." };
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    if (!data || data.length < 2) {
+      return { success: true, results: [] };
+    }
+
+    const headers = data[0].map(h => String(h || "").trim());
+
+    const userIdCol = headers.indexOf("userId");
+    const playerIdCol = headers.indexOf("playerId");
+    const displayNameCol = headers.indexOf("displayName");
+    const usernameCol = headers.indexOf("username");
+    const avatarCol = headers.indexOf("avatarUrl");
+    const emailCol = headers.indexOf("email");
+    const isActiveCol = headers.indexOf("isActive");
+
+    if (userIdCol < 0) return { success: false, message: "Thiếu cột userId trong Users." };
+    if (playerIdCol < 0) return { success: false, message: "Thiếu cột playerId trong Users." };
+    if (displayNameCol < 0) return { success: false, message: "Thiếu cột displayName trong Users." };
+
+    const results = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const userId = String(row[userIdCol] || "").trim();
+      const playerId = String(row[playerIdCol] || "").trim();
+      const displayName = String(row[displayNameCol] || "").trim();
+      const username = usernameCol >= 0 ? String(row[usernameCol] || "").trim() : "";
+      const avatar = avatarCol >= 0 ? String(row[avatarCol] || "").trim() : "";
+      const email = emailCol >= 0 ? String(row[emailCol] || "").trim() : "";
+
+      if (!userId) continue;
+
+      if (isActiveCol >= 0) {
+        const activeValue = row[isActiveCol];
+        if (activeValue === false || String(activeValue).toLowerCase() === "false") continue;
+      }
+
+      const haystack = [playerId, displayName, username, email].join(" ").toLowerCase();
+      if (!haystack.includes(kw)) continue;
+
+      results.push({
+        userId: userId,
+        playerId: playerId || "N/A",
+        displayName: displayName || "Người dùng",
+        username: username,
+        avatar: avatar || "https://www.gravatar.com/avatar/?d=mp",
+        relationship: userId === currentUserId ? "self" : "none"
+      });
+
+      if (results.length >= 20) break;
+    }
+
+    return { success: true, results: results };
+  } catch (error) {
+    Logger.log("Error in searchPlayers: " + error.toString());
+    return { success: false, message: "Lỗi tìm kiếm: " + error.toString() };
+  }
+}
+
+/**
+ * Gửi lời mời kết bạn
+ * @param {string} fromUserId - ID người gửi
+ * @param {string} toUserId - ID người nhận
+ */
+function sendFriendRequestApi(fromUserId, toUserId) {
+  try {
+    Logger.log("sendFriendRequestApi called with fromUserId=" + fromUserId + ", toUserId=" + toUserId);
+    if (!fromUserId || !toUserId) {
+      return { success: false, message: "Thông tin không hợp lệ." };
+    }
+    
+    if (fromUserId === toUserId) {
+      return { success: false, message: "Không thể gửi lời mời cho chính mình." };
+    }
+    
+    const ss = getOrCreateDatabase();
+    
+    // 1. Kiểm tra tồn tại của người nhận (có thể bỏ qua nếu frontend đã truyền đúng, nhưng để chắc chắn ta có thể kiểm tra)
+    const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) {
+      return { success: false, message: "Lỗi hệ thống: Không tìm thấy bảng Users" };
+    }
+    
+    const uData = usersSheet.getDataRange().getValues();
+    const uCols = getSheetColumnMap(uData);
+    let toUserExists = false;
+    for (let i = 1; i < uData.length; i++) {
+      if (uData[i][uCols["userId"]] === toUserId) {
+        toUserExists = true;
+        break;
+      }
+    }
+    if (!toUserExists) {
+      return { success: false, message: "Người nhận không tồn tại." };
+    }
+
+    // 2. Kiểm tra mối quan hệ hiện tại
+    const relMap = getRelationshipsMap(fromUserId);
+    const currentStatus = relMap[toUserId];
+    
+    if (currentStatus === "friends") {
+      return { success: false, message: "Hai người đã là bạn bè." };
+    }
+    if (currentStatus === "request_sent") {
+      return { success: false, message: "Bạn đã gửi lời mời trước đó." };
+    }
+    if (currentStatus === "request_received") {
+      return { success: false, message: "Người chơi này đã gửi lời mời cho bạn." };
+    }
+    
+    // 3. Tiến hành tạo Request
+    const reqSheet = ss.getSheetByName("FriendRequests");
+    if (!reqSheet) {
+      return { success: false, message: "Lỗi hệ thống: Không tìm thấy bảng FriendRequests" };
+    }
+    
+    // Bug #12 fix: Xóa các request cũ đã rejected giữa 2 người trước khi tạo mới
+    const rData = reqSheet.getDataRange().getValues();
+    const rColsClean = getSheetColumnMap(rData);
+    for (let i = rData.length - 1; i >= 1; i--) {
+      const rFrom = rData[i][rColsClean["fromUserId"]];
+      const rTo = rData[i][rColsClean["toUserId"]];
+      const rStatus = rData[i][rColsClean["status"]];
+      if (rStatus === "rejected" && 
+          ((rFrom === fromUserId && rTo === toUserId) || (rFrom === toUserId && rTo === fromUserId))) {
+        reqSheet.deleteRow(i + 1);
+      }
+    }
+    
+    const requestId = generateNextId(reqSheet, "FRQ");
+    const now = new Date();
+    
+    // Cột theo DB_CONFIG: requestId, fromUserId, toUserId, status, createdAt, updatedAt
+    const newRow = [
+      requestId,
+      fromUserId,
+      toUserId,
+      "pending",
+      now,
+      now
+    ];
+    
+    reqSheet.appendRow(newRow);
+    Logger.log("Friend request appended: requestId=" + requestId + ", from=" + fromUserId + ", to=" + toUserId);
+    
+    return { success: true, message: "Đã gửi lời mời kết bạn.", requestId: requestId };
+  } catch (error) {
+    Logger.log("Error in sendFriendRequestApi: " + error.toString());
+    return { success: false, message: "Lỗi hệ thống: " + error.toString() };
+  }
+}
+
+/**
+ * Lấy danh sách lời mời kết bạn đang chờ (Pending)
+ */
+function getFriendRequestsApi(userId) {
+  try {
+    Logger.log("getFriendRequestsApi called for userId=" + userId);
+    const ss = getOrCreateDatabase();
+    const reqSheet = ss.getSheetByName("FriendRequests");
+    const usersSheet = ss.getSheetByName("Users");
+    
+    if (!reqSheet || !usersSheet) {
+      return { success: false, message: "Lỗi hệ thống database." };
+    }
+    
+    const rData = reqSheet.getDataRange().getValues();
+    const rCols = getSheetColumnMap(rData);
+    const uData = usersSheet.getDataRange().getValues();
+    const uCols = getSheetColumnMap(uData);
+    
+    // Map thông tin users by trimmed string userId
+    const userMap = {};
+    for (let i = 1; i < uData.length; i++) {
+      const uidRaw = uData[i][uCols["userId"]];
+      const uid = (uidRaw || "").toString().trim();
+      if (!uid) continue;
+      userMap[uid] = {
+        userId: uid,
+        playerId: (uData[i][uCols["playerId"]] || "N/A").toString(),
+        displayName: (uData[i][uCols["displayName"]] || "Ẩn danh").toString(),
+        avatar: (uData[i][uCols["avatarUrl"]] || getGravatarUrl(uData[i][uCols["email"]] || "")).toString()
+      };
+    }
+    
+    const requests = [];
+    const userIdTrim = (userId || "").toString().trim();
+    for (let i = 1; i < rData.length; i++) {
+      const row = rData[i];
+      const toId = (row[rCols["toUserId"]] || "").toString().trim();
+      const status = (row[rCols["status"]] || "").toString().trim();
+      if (toId === userIdTrim && status === "pending") {
+        const fromUserId = (row[rCols["fromUserId"]] || "").toString().trim();
+        let userInfo = userMap[fromUserId];
+        if (!userInfo) {
+          userInfo = { userId: fromUserId, playerId: "N/A", displayName: "Ẩn danh", avatar: getGravatarUrl("") };
+        }
+
+        const createdAtVal = row[rCols["createdAt"]];
+        const createdAtStr = createdAtVal ? new Date(createdAtVal).toISOString() : "";
+
+        requests.push({
+          requestId: (row[rCols["requestId"]] || "").toString(),
+          sender: userInfo,
+          createdAt: createdAtStr
+        });
+      }
+    }
+
+    Logger.log("getFriendRequestsApi: found " + requests.length + " pending requests for " + userIdTrim);
+    for (let i = 0; i < requests.length; i++) {
+      const r = requests[i];
+      Logger.log("FRQ_FOUND: requestId=" + r.requestId + ", to=" + userIdTrim + ", from=" + (r.sender && r.sender.userId ? r.sender.userId : "?") + ", createdAt=" + r.createdAt);
+    }
+
+    return { success: true, results: requests, _debug: { calledUserId: userIdTrim, totalRows: rData.length - 1 } };
+  } catch (error) {
+    Logger.log("Error getFriendRequestsApi: " + error.toString());
+    return { success: false, message: "Lỗi lấy danh sách lời mời." };
+  }
+}
+
+/**
+ * Chấp nhận hoặc Từ chối lời mời kết bạn
+ */
+function respondFriendRequestApi(requestId, currentUserId, action) {
+  try {
+    const ss = getOrCreateDatabase();
+    const reqSheet = ss.getSheetByName("FriendRequests");
+    if (!reqSheet) return { success: false, message: "Database lỗi." };
+    
+    const rData = reqSheet.getDataRange().getValues();
+    const rCols = getSheetColumnMap(rData);
+    
+    let targetRowIndex = -1;
+    let fromUserId = null;
+    
+    for (let i = 1; i < rData.length; i++) {
+      if (rData[i][rCols["requestId"]] === requestId) {
+        if (rData[i][rCols["toUserId"]] !== currentUserId) {
+          return { success: false, message: "Bạn không có quyền xử lý lời mời này." };
+        }
+        if (rData[i][rCols["status"]] !== "pending") {
+          return { success: false, message: "Lời mời này đã được xử lý." };
+        }
+        targetRowIndex = i + 1;
+        fromUserId = rData[i][rCols["fromUserId"]];
+        break;
+      }
+    }
+    
+    if (targetRowIndex === -1) {
+      return { success: false, message: "Không tìm thấy lời mời." };
+    }
+    
+    const now = new Date();
+    
+    if (action === "accept") {
+      // Cập nhật trạng thái thành accepted
+      reqSheet.getRange(targetRowIndex, rCols["status"] + 1).setValue("accepted");
+      reqSheet.getRange(targetRowIndex, rCols["updatedAt"] + 1).setValue(now);
+      
+      // Tạo bản ghi trong Friends
+      const friendsSheet = ss.getSheetByName("Friends");
+      if (friendsSheet) {
+        const fData = friendsSheet.getDataRange().getValues();
+        const fCols = getSheetColumnMap(fData);
+        let alreadyFriends = false;
+        
+        // Kiểm tra tránh trùng (có thể ai đó spam click)
+        for(let i = 1; i < fData.length; i++) {
+          const u1 = fData[i][fCols["userId1"]];
+          const u2 = fData[i][fCols["userId2"]];
+          const st = fData[i][fCols["status"]];
+          if (st === "active" && ((u1 === currentUserId && u2 === fromUserId) || (u1 === fromUserId && u2 === currentUserId))) {
+            alreadyFriends = true;
+            break;
+          }
+        }
+        
+        if (!alreadyFriends) {
+          const friendshipId = generateNextId(friendsSheet, "FRD");
+          // Quy tắc: userId1 là chuỗi nhỏ hơn (theo ABC) để tránh trùng ngược
+          const u1 = currentUserId < fromUserId ? currentUserId : fromUserId;
+          const u2 = currentUserId < fromUserId ? fromUserId : currentUserId;
+          
+          friendsSheet.appendRow([friendshipId, u1, u2, "active", now, now]);
+        }
+      }
+      return { success: true, message: "Đã chấp nhận lời mời kết bạn." };
+      
+    } else if (action === "reject") {
+      // Cập nhật trạng thái thành rejected
+      reqSheet.getRange(targetRowIndex, rCols["status"] + 1).setValue("rejected");
+      reqSheet.getRange(targetRowIndex, rCols["updatedAt"] + 1).setValue(now);
+      return { success: true, message: "Đã từ chối lời mời." };
+    }
+    
+    return { success: false, message: "Hành động không hợp lệ." };
+    
+  } catch (error) {
+    Logger.log("Error respondFriendRequestApi: " + error.toString());
+    return { success: false, message: "Lỗi hệ thống: " + error.toString() };
+  }
+}
+
+/**
+ * Lấy danh sách bạn bè
+ */
+function getFriendsApi(userId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const friendsSheet = ss.getSheetByName("Friends");
+    const usersSheet = ss.getSheetByName("Users");
+    
+    if (!friendsSheet || !usersSheet) {
+      return { success: false, message: "Lỗi hệ thống database." };
+    }
+    
+    const fData = friendsSheet.getDataRange().getValues();
+    const fCols = getSheetColumnMap(fData);
+    
+    // Lấy danh sách ID bạn bè
+    const friendIds = [];
+    for (let i = 1; i < fData.length; i++) {
+      const status = fData[i][fCols["status"]];
+      if (status === "active") {
+        const u1 = fData[i][fCols["userId1"]];
+        const u2 = fData[i][fCols["userId2"]];
+        if (u1 === userId) friendIds.push(u2);
+        else if (u2 === userId) friendIds.push(u1);
+      }
+    }
+    
+    if (friendIds.length === 0) {
+      return { success: true, results: [] };
+    }
+    
+    // Lấy thông tin user
+    const uData = usersSheet.getDataRange().getValues();
+    const uCols = getSheetColumnMap(uData);
+    const friends = [];
+    
+    for (let i = 1; i < uData.length; i++) {
+      const uid = uData[i][uCols["userId"]];
+      if (friendIds.indexOf(uid) !== -1) {
+        const lastActive = uData[i][uCols["lastActiveDate"]] || uData[i][uCols["lastLogin"]];
+        let isOnline = false;
+        if (lastActive) {
+          const diff = new Date().getTime() - new Date(lastActive).getTime();
+          if (diff < 15 * 60 * 1000) { // 15 phút
+            isOnline = true;
+          }
+        }
+        
+        friends.push({
+          userId: uid,
+          playerId: uData[i][uCols["playerId"]] || "N/A",
+          displayName: uData[i][uCols["displayName"]] || "Ẩn danh",
+          username: uData[i][uCols["username"]] || "",
+          avatar: uData[i][uCols["avatarUrl"]] || getGravatarUrl(uData[i][uCols["email"]] || ""),
+          isOnline: isOnline,
+          lastActive: lastActive,
+          // mockup fields cho GĐ sau
+          unreadCount: 0,
+          lastMessage: "" 
+        });
+      }
+    }
+    
+    return { success: true, results: friends };
+  } catch (error) {
+    Logger.log("Error getFriendsApi: " + error.toString());
+    return { success: false, message: "Lỗi lấy danh sách bạn bè." };
+  }
+}
+
+/**
+ * Hủy kết bạn
+ */
+function unfriendApi(currentUserId, targetUserId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const friendsSheet = ss.getSheetByName("Friends");
+    
+    if (!friendsSheet) return { success: false, message: "Lỗi database." };
+    
+    const fData = friendsSheet.getDataRange().getValues();
+    const fCols = getSheetColumnMap(fData);
+    
+    let targetRow = -1;
+    for (let i = 1; i < fData.length; i++) {
+      const u1 = fData[i][fCols["userId1"]];
+      const u2 = fData[i][fCols["userId2"]];
+      const st = fData[i][fCols["status"]];
+      
+      if (st === "active" && ((u1 === currentUserId && u2 === targetUserId) || (u1 === targetUserId && u2 === currentUserId))) {
+        targetRow = i + 1;
+        break;
+      }
+    }
+    
+    if (targetRow !== -1) {
+      const now = new Date();
+      friendsSheet.getRange(targetRow, fCols["status"] + 1).setValue("removed");
+      friendsSheet.getRange(targetRow, fCols["updatedAt"] + 1).setValue(now);
+      
+      // Bug #3 fix: Xóa/ẩn conversation liên quan khi hủy kết bạn
+      try {
+        const convSheet = ss.getSheetByName("Conversations");
+        if (convSheet) {
+          const cData = convSheet.getDataRange().getValues();
+          const cCols = getSheetColumnMap(cData);
+          // Duyệt từ dưới lên để xóa an toàn
+          for (let i = cData.length - 1; i >= 1; i--) {
+            const cu1 = cData[i][cCols["userId1"]];
+            const cu2 = cData[i][cCols["userId2"]];
+            if ((cu1 === currentUserId && cu2 === targetUserId) || (cu1 === targetUserId && cu2 === currentUserId)) {
+              convSheet.deleteRow(i + 1);
+            }
+          }
+        }
+      } catch (convError) {
+        Logger.log("Warning: Không thể xóa conversation khi unfriend: " + convError.toString());
+      }
+      
+      return { success: true, message: "Đã hủy kết bạn." };
+    }
+    
+    return { success: false, message: "Không tìm thấy quan hệ bạn bè hợp lệ." };
+  } catch (error) {
+    Logger.log("Error unfriendApi: " + error.toString());
+    return { success: false, message: "Lỗi xử lý hủy kết bạn." };
+  }
+}
+
+/**
+ * Khởi tạo hoặc lấy ID cuộc trò chuyện (Conversation) 1-1
+ */
+function openConversationApi(currentUserId, targetUserId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const friendsSheet = ss.getSheetByName("Friends");
+    const convSheet = ss.getSheetByName("Conversations");
+    const usersSheet = ss.getSheetByName("Users");
+    
+    if (!friendsSheet || !convSheet || !usersSheet) {
+      return { success: false, message: "Lỗi truy cập dữ liệu." };
+    }
+    
+    // 1. Kiểm tra phải bạn bè không
+    const fData = friendsSheet.getDataRange().getValues();
+    const fCols = getSheetColumnMap(fData);
+    let isFriend = false;
+    
+    for (let i = 1; i < fData.length; i++) {
+      const u1 = fData[i][fCols["userId1"]];
+      const u2 = fData[i][fCols["userId2"]];
+      const st = fData[i][fCols["status"]];
+      if (st === "active" && ((u1 === currentUserId && u2 === targetUserId) || (u1 === targetUserId && u2 === currentUserId))) {
+        isFriend = true;
+        break;
+      }
+    }
+    
+    if (!isFriend) {
+      return { success: false, message: "Chỉ có thể chat với người dùng trong danh sách bạn bè." };
+    }
+    
+    // 2. Lấy thông tin targetUser
+    const uData = usersSheet.getDataRange().getValues();
+    const uCols = getSheetColumnMap(uData);
+    let targetUserInfo = null;
+    for(let i=1; i < uData.length; i++) {
+      if(uData[i][uCols["userId"]] === targetUserId) {
+        targetUserInfo = {
+          userId: targetUserId,
+          displayName: uData[i][uCols["displayName"]],
+          avatar: uData[i][uCols["avatarUrl"]] || getGravatarUrl(uData[i][uCols["email"]] || ""),
+          playerId: uData[i][uCols["playerId"]]
+        };
+        break;
+      }
+    }
+    
+    // 3. Tìm Conversation đã có
+    const cData = convSheet.getDataRange().getValues();
+    const cCols = getSheetColumnMap(cData);
+    let conversationId = null;
+    
+    for(let i = 1; i < cData.length; i++) {
+      const u1 = cData[i][cCols["userId1"]];
+      const u2 = cData[i][cCols["userId2"]];
+      if ((u1 === currentUserId && u2 === targetUserId) || (u1 === targetUserId && u2 === currentUserId)) {
+        conversationId = cData[i][cCols["conversationId"]];
+        break;
+      }
+    }
+    
+    const now = new Date();
+    
+    // 4. Nếu chưa có -> tạo mới
+    if (!conversationId) {
+      conversationId = generateNextId(convSheet, "CNV");
+      // Quy tắc userId1 < userId2 
+      const u1 = currentUserId < targetUserId ? currentUserId : targetUserId;
+      const u2 = currentUserId < targetUserId ? targetUserId : currentUserId;
+      
+      // conversationId, userId1, userId2, lastMessage, lastMessageAt, createdAt, updatedAt
+      convSheet.appendRow([conversationId, u1, u2, "", "", now, now]);
+    }
+    
+    // (Ở giai đoạn này chúng ta chưa lấy Messages, sẽ xử lý ở GĐ10)
+    // Trả về info để UI vẽ khung Chat
+    return {
+      success: true,
+      conversationId: conversationId,
+      friendInfo: targetUserInfo
+    };
+    
+  } catch(error) {
+    Logger.log("Error openConversationApi: " + error.toString());
+    return { success: false, message: "Lỗi mở cuộc trò chuyện." };
+  }
+}
+
+/**
+ * Lấy lịch sử tin nhắn
+ */
+function getMessagesApi(payload) {
+  try {
+    const { conversationId, beforeTimestamp, afterTimestamp } = payload;
+    
+    const ss = getOrCreateDatabase();
+    const msgSheet = ss.getSheetByName("Messages");
+    if (!msgSheet) return { success: false, message: "Lỗi database" };
+    
+    const mData = msgSheet.getDataRange().getValues();
+    const mCols = getSheetColumnMap(mData);
+    
+    const messages = [];
+    
+    // Parse timestamps if provided
+    const beforeTime = beforeTimestamp ? new Date(beforeTimestamp).getTime() : null;
+    const afterTime = afterTimestamp ? new Date(afterTimestamp).getTime() : null;
+    
+    // Quét từ dưới lên để lấy tin nhắn
+    for (let i = mData.length - 1; i >= 1; i--) {
+      if (mData[i][mCols["conversationId"]] === conversationId) {
+        const msgTime = new Date(mData[i][mCols["createdAt"]]).getTime();
+        
+        if (beforeTime && msgTime >= beforeTime) continue;
+        if (afterTime && msgTime <= afterTime) continue;
+        
+        messages.unshift({ // đẩy vào đầu mảng để giữ đúng thứ tự thời gian (cũ -> mới)
+          messageId: mData[i][mCols["messageId"]],
+          senderId: mData[i][mCols["senderId"]],
+          receiverId: mData[i][mCols["receiverId"]],
+          text: mData[i][mCols["messageText"]],
+          isRead: mData[i][mCols["isRead"]],
+          createdAt: mData[i][mCols["createdAt"]]
+        });
+        
+        if (messages.length >= 50 && !afterTime) break; // Chỉ lấy tối đa 50 tin cũ, còn lấy tin mới thì lấy hết
+      }
+    }
+    
+    return { success: true, results: messages };
+  } catch(error) {
+    Logger.log("Error getMessagesApi: " + error.toString());
+    return { success: false, message: "Lỗi lấy tin nhắn." };
+  }
+}
+
+/**
+ * Gửi tin nhắn
+ */
+function sendMessageApi(conversationId, senderId, receiverId, text) {
+  try {
+    if (!text || text.trim() === "") {
+      return { success: false, message: "Tin nhắn không được để trống." };
+    }
+    if (text.length > 1000) {
+      return { success: false, message: "Tin nhắn quá dài." };
+    }
+    
+    const ss = getOrCreateDatabase();
+    
+    // Validate Friend
+    const friendsSheet = ss.getSheetByName("Friends");
+    const fData = friendsSheet.getDataRange().getValues();
+    const fCols = getSheetColumnMap(fData);
+    let isFriend = false;
+    for (let i = 1; i < fData.length; i++) {
+      const u1 = fData[i][fCols["userId1"]];
+      const u2 = fData[i][fCols["userId2"]];
+      const st = fData[i][fCols["status"]];
+      if (st === "active" && ((u1 === senderId && u2 === receiverId) || (u1 === receiverId && u2 === senderId))) {
+        isFriend = true;
+        break;
+      }
+    }
+    
+    if (!isFriend) {
+      return { success: false, message: "Bạn chỉ có thể nhắn tin với bạn bè." };
+    }
+    
+    const msgSheet = ss.getSheetByName("Messages");
+    const convSheet = ss.getSheetByName("Conversations");
+    
+    if (!msgSheet || !convSheet) return { success: false, message: "Lỗi database" };
+    
+    const now = new Date();
+    const messageId = generateNextId(msgSheet, "MSG");
+    
+    // Lưu Message: messageId, conversationId, senderId, receiverId, messageText, isRead, createdAt
+    msgSheet.appendRow([messageId, conversationId, senderId, receiverId, text, false, now]);
+    
+    // Cập nhật Conversation
+    const cData = convSheet.getDataRange().getValues();
+    const cCols = getSheetColumnMap(cData);
+    for (let i = 1; i < cData.length; i++) {
+      if (cData[i][cCols["conversationId"]] === conversationId) {
+        convSheet.getRange(i + 1, cCols["lastMessage"] + 1).setValue(text);
+        convSheet.getRange(i + 1, cCols["lastMessageAt"] + 1).setValue(now);
+        convSheet.getRange(i + 1, cCols["updatedAt"] + 1).setValue(now);
+        break;
+      }
+    }
+    
+    return { success: true, data: {
+      messageId: messageId,
+      senderId: senderId,
+      text: text,
+      createdAt: now
+    }};
+    
+  } catch(error) {
+    Logger.log("Error sendMessageApi: " + error.toString());
+    return { success: false, message: "Không thể gửi tin nhắn." };
+  }
+}
+
+/**
+ * Đánh dấu tin nhắn đã đọc
+ */
+function markMessagesAsReadApi(conversationId, currentUserId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const msgSheet = ss.getSheetByName("Messages");
+    if (!msgSheet) return { success: false };
+    
+    const mData = msgSheet.getDataRange().getValues();
+    const mCols = getSheetColumnMap(mData);
+    
+    let updated = false;
+    // Quét từ dưới lên, đánh dấu tất cả các tin chưa đọc mà mình là receiver
+    for (let i = mData.length - 1; i >= 1; i--) {
+      if (mData[i][mCols["conversationId"]] === conversationId && 
+          mData[i][mCols["receiverId"]] === currentUserId &&
+          mData[i][mCols["isRead"]] === false) {
+        
+        msgSheet.getRange(i + 1, mCols["isRead"] + 1).setValue(true);
+        updated = true;
+      }
+      
+      // Tối ưu: Nếu quét xuống gặp tin đã đọc của conversation này thì có thể break (vì tin mới nhất đã đọc thì tin cũ cũng thường đã đọc, nhưng để an toàn cứ quét một chút hoặc quét hết)
+      // Để an toàn và đơn giản với lượng dữ liệu nhỏ, quét hết.
+    }
+    
+    return { success: true, updated: updated };
+  } catch(error) {
+    Logger.log("Error markMessagesAsReadApi: " + error.toString());
+    return { success: false };
+  }
+}
+
+/**
+ * Lấy danh sách Cuộc trò chuyện (Conversations)
+ */
+function getConversationsApi(currentUserId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const convSheet = ss.getSheetByName("Conversations");
+    const msgSheet = ss.getSheetByName("Messages");
+    const usersSheet = ss.getSheetByName("Users");
+    
+    if (!convSheet || !msgSheet || !usersSheet) {
+      return { success: false, message: "Lỗi cơ sở dữ liệu." };
+    }
+    
+    const cData = convSheet.getDataRange().getValues();
+    const cCols = getSheetColumnMap(cData);
+    
+    const userConversations = [];
+    
+    for (let i = 1; i < cData.length; i++) {
+      const u1 = cData[i][cCols["userId1"]];
+      const u2 = cData[i][cCols["userId2"]];
+      
+      if (u1 === currentUserId || u2 === currentUserId) {
+        const friendId = (u1 === currentUserId) ? u2 : u1;
+        userConversations.push({
+          conversationId: cData[i][cCols["conversationId"]],
+          friendId: friendId,
+          lastMessage: cData[i][cCols["lastMessage"]],
+          lastMessageAt: cData[i][cCols["lastMessageAt"]],
+          unreadCount: 0 // Sẽ đếm sau
+        });
+      }
+    }
+    
+    if (userConversations.length === 0) {
+      return { success: true, results: [] };
+    }
+    
+    // Đếm unread từ Messages (Quét 1 lần)
+    const mData = msgSheet.getDataRange().getValues();
+    const mCols = getSheetColumnMap(mData);
+    
+    for (let i = 1; i < mData.length; i++) {
+      const receiver = mData[i][mCols["receiverId"]];
+      const isRead = mData[i][mCols["isRead"]];
+      
+      if (receiver === currentUserId && isRead === false) {
+        const cid = mData[i][mCols["conversationId"]];
+        const conv = userConversations.find(c => c.conversationId === cid);
+        if (conv) {
+          conv.unreadCount += 1;
+        }
+      }
+    }
+    
+    // Map User Info
+    const uData = usersSheet.getDataRange().getValues();
+    const uCols = getSheetColumnMap(uData);
+    
+    userConversations.forEach(conv => {
+      let fName = "Ẩn danh";
+      let fAvatar = "https://www.gravatar.com/avatar/?d=mp";
+      let pId = "";
+      
+      const userIdTrim = (userId || "").toString().trim();
+      for (let i = 1; i < rData.length; i++) {
+        const row = rData[i];
+        const toId = (row[rCols["toUserId"]] || "").toString().trim();
+        const status = (row[rCols["status"]] || "").toString().trim();
+        if (toId === userIdTrim && status === "pending") {
+          const fromUserId = (row[rCols["fromUserId"]] || "").toString().trim();
+          let userInfo = userMap[fromUserId];
+          if (!userInfo) {
+            // fallback: try to build minimal info from Users sheet row if possible
+            userInfo = { userId: fromUserId, playerId: "N/A", displayName: "Ẩn danh", avatar: getGravatarUrl("") };
+          }
+
+          // Normalize createdAt to ISO string to avoid client Date issues
+          const createdAtVal = row[rCols["createdAt"]];
+          const createdAtStr = createdAtVal ? new Date(createdAtVal).toISOString() : "";
+
+          requests.push({
+            requestId: (row[rCols["requestId"]] || "").toString(),
+            sender: userInfo,
+            createdAt: createdAtStr
+          });
+        }
+      }
+      const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      Logger.log("getFriendRequestsApi: found " + requests.length + " pending requests for " + userIdTrim);
+      return dateB - dateA;
+    });
+    
+    return { success: true, results: userConversations };
+    
+  } catch(error) {
+    Logger.log("Error getConversationsApi: " + error.toString());
+    return { success: false, message: "Lỗi lấy danh sách cuộc trò chuyện." };
+  }
+}
+
+/**
+ * Lấy số lượng thông báo (tin nhắn chưa đọc + lời mời pending)
+ * API nhẹ dùng cho global badge trên thanh nav
+ */
+function getNotificationCountsApi(currentUserId) {
+  try {
+    const ss = getOrCreateDatabase();
+    let totalUnread = 0;
+    let pendingRequests = 0;
+    
+    // Đếm tin nhắn chưa đọc
+    const msgSheet = ss.getSheetByName("Messages");
+    if (msgSheet) {
+      const mData = msgSheet.getDataRange().getValues();
+      const mCols = getSheetColumnMap(mData);
+      
+      for (let i = 1; i < mData.length; i++) {
+        if (mData[i][mCols["receiverId"]] === currentUserId && mData[i][mCols["isRead"]] === false) {
+          totalUnread++;
+        }
+      }
+    }
+    
+    // Đếm lời mời pending
+    const reqSheet = ss.getSheetByName("FriendRequests");
+    if (reqSheet) {
+      const rData = reqSheet.getDataRange().getValues();
+      const rCols = getSheetColumnMap(rData);
+      
+      for (let i = 1; i < rData.length; i++) {
+        if (rData[i][rCols["toUserId"]] === currentUserId && rData[i][rCols["status"]] === "pending") {
+          pendingRequests++;
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      totalUnread: totalUnread,
+      pendingRequests: pendingRequests
+    };
+  } catch(error) {
+    Logger.log("Error getNotificationCountsApi: " + error.toString());
+    return { success: false, totalUnread: 0, pendingRequests: 0 };
+  }
+}

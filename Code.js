@@ -209,6 +209,59 @@ function updateUserXQP(userEmail, amount, source) {
 // This just ensures it's properly exposed to the frontend via google.script.run
 
 // ========================================
+// CHAT & FRIENDS WRAPPERS
+// ========================================
+
+function apiSearchPlayers(payload) {
+  // Extract parameters securely from payload
+  return searchPlayers(payload.userId, payload.keyword);
+}
+
+function apiSendFriendRequest(payload) {
+  return sendFriendRequestApi(payload.fromUserId, payload.toUserId);
+}
+
+function apiGetFriendRequests(userId) {
+  return getFriendRequestsApi(userId);
+}
+
+function apiRespondFriendRequest(payload) {
+  return respondFriendRequestApi(payload.requestId, payload.userId, payload.action);
+}
+
+function apiGetFriends(userId) {
+  return getFriendsApi(userId);
+}
+
+function apiUnfriend(payload) {
+  return unfriendApi(payload.userId, payload.friendId);
+}
+
+function apiOpenConversation(payload) {
+  return openConversationApi(payload.userId, payload.friendId);
+}
+
+function apiGetMessages(payload) {
+  return getMessagesApi(payload);
+}
+
+function apiSendMessage(payload) {
+  return sendMessageApi(payload.conversationId, payload.senderId, payload.receiverId, payload.text);
+}
+
+function apiMarkMessagesAsRead(payload) {
+  return markMessagesAsReadApi(payload.conversationId, payload.userId);
+}
+
+function apiGetConversations(userId) {
+  return getConversationsApi(userId);
+}
+
+function apiGetNotificationCounts(userId) {
+  return getNotificationCountsApi(userId);
+}
+
+// ========================================
 // CONTENT MANAGEMENT WRAPPERS
 // ========================================
 
@@ -246,5 +299,15 @@ function testGetTopicContent() {
 function testGetAllTopics() {
   const result = getAllTopics();
   Logger.log("Topics test result: " + JSON.stringify(result));
+  return result;
+}
+
+function testSearchPlayersNow() {
+  const result = apiSearchPlayers({
+    userId: "USR_1774157076464",
+    keyword: "Shin"
+  });
+
+  Logger.log(JSON.stringify(result, null, 2));
   return result;
 }

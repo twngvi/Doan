@@ -16,6 +16,9 @@ function getOrCreateDatabase() {
       try {
         const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
         Logger.log("Using hard-coded database ID: " + DB_CONFIG.SPREADSHEET_ID);
+        
+        ensureChatSheets(ss);
+        
         return ss;
       } catch (e) {
         Logger.log(
@@ -33,6 +36,9 @@ function getOrCreateDatabase() {
       try {
         ss = SpreadsheetApp.openById(cachedId);
         Logger.log("Found database from cache: " + cachedId);
+        
+        ensureChatSheets(ss);
+        
         return ss;
       } catch (e) {
         Logger.log("Cached ID invalid, searching again...");
@@ -54,12 +60,14 @@ function getOrCreateDatabase() {
       cache.put("DB_MASTER_ID", ss.getId(), 21600);
     }
 
-    // Ensure Users sheet exists
+    // Ensure core sheets exist
     let usersSheet = ss.getSheetByName("Users");
     if (!usersSheet) {
-      Logger.log("Initializing database...");
+      Logger.log("Initializing database (missing core sheets)...");
       createAllSheets();
     }
+    
+    ensureChatSheets(ss);
 
     return ss;
   } catch (error) {
@@ -68,6 +76,68 @@ function getOrCreateDatabase() {
       "Không thể tạo hoặc truy cập database: " + error.toString(),
     );
   }
+}
+
+/**
+ * Đảm bảo các sheet liên quan tới Chat tồn tại
+ */
+function ensureChatSheets(ss) {
+  const chatSheets = {
+    FriendRequests: [
+      "requestId",
+      "fromUserId",
+      "toUserId",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
+    Friends: [
+      "friendshipId",
+      "userId1",
+      "userId2",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
+    Conversations: [
+      "conversationId",
+      "userId1",
+      "userId2",
+      "lastMessage",
+      "lastMessageAt",
+      "createdAt",
+      "updatedAt",
+    ],
+    Messages: [
+      "messageId",
+      "conversationId",
+      "senderId",
+      "receiverId",
+      "messageText",
+      "isRead",
+      "createdAt",
+    ],
+  };
+
+  Object.keys(chatSheets).forEach(function (sheetName) {
+    const headers = chatSheets[sheetName];
+    let sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
+      Logger.log("Created missing chat sheet: " + sheetName);
+      return;
+    }
+
+    if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
+    }
+  });
 }
 
 /**
@@ -391,6 +461,7 @@ function processGoogleUserLogin(googleProfile) {
       true, // 26: emailVerified
       "", // 27: verificationToken
       "", // 28: verificationExpires
+      generatePlayerId(), // 29: playerId
     ];
 
     userSheet.appendRow(newRow);

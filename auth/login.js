@@ -44,6 +44,7 @@ function loginWithEmail(credentials) {
     const verifiedIndex = headers.indexOf("emailVerified");
     const isActiveIndex = headers.indexOf("isActive");
     const lastLoginIndex = headers.indexOf("lastLogin");
+    const playerIdIndex = headers.indexOf("playerId");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailIndex] === credentials.email) {
@@ -141,6 +142,7 @@ function loginWithEmail(credentials) {
             totalXP: data[i][totalXPIndex],
             totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             progressSheetId: data[i][progressSheetIdIndex],
+            playerId: playerIdIndex >= 0 ? data[i][playerIdIndex] : "",
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
@@ -178,6 +180,7 @@ function getUserSession(userId) {
     const headers = data[0] || [];
     const themeIndex = headers.indexOf("theme");
     const totalXQPIndex = headers.indexOf("totalXQP");
+    const playerIdIndex = headers.indexOf("playerId");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
@@ -198,6 +201,7 @@ function getUserSession(userId) {
             totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             lastLogin: data[i][15],
             isActive: data[i][17],
+            playerId: playerIdIndex >= 0 ? data[i][playerIdIndex] : "",
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])

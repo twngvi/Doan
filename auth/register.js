@@ -216,6 +216,7 @@ function registerWithEmail(userData) {
       false,
       verificationToken,
       verificationExpires,
+      generatePlayerId(usersSheet), // 29: playerId
     ];
 
     usersSheet.appendRow(newUser);

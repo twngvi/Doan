@@ -138,6 +138,7 @@ const DB_CONFIG = {
         "emailVerified",
         "verificationToken",
         "verificationExpires",
+        "playerId", // ID người chơi dùng để tìm kiếm (được thêm vào sau cùng)
       ],
     },
 
@@ -401,6 +402,62 @@ const DB_CONFIG = {
       name: "Error_Logs",
       idPrefix: "ERR",
       columns: ["timestamp", "step", "error", "userId", "duration", "stack"],
+    },
+
+    // ========== CHAT & FRIENDS SYSTEM ==========
+
+    FRIEND_REQUESTS: {
+      name: "FriendRequests",
+      idPrefix: "FRQ",
+      columns: [
+        "requestId",
+        "fromUserId",
+        "toUserId",
+        "status",
+        "createdAt",
+        "updatedAt",
+      ],
+    },
+
+    FRIENDS: {
+      name: "Friends",
+      idPrefix: "FRD",
+      columns: [
+        "friendshipId",
+        "userId1",
+        "userId2",
+        "status",
+        "createdAt",
+        "updatedAt",
+      ],
+    },
+
+    CONVERSATIONS: {
+      name: "Conversations",
+      idPrefix: "CNV",
+      columns: [
+        "conversationId",
+        "userId1",
+        "userId2",
+        "lastMessage",
+        "lastMessageAt",
+        "createdAt",
+        "updatedAt",
+      ],
+    },
+
+    MESSAGES: {
+      name: "Messages",
+      idPrefix: "MSG",
+      columns: [
+        "messageId",
+        "conversationId",
+        "senderId",
+        "receiverId",
+        "messageText",
+        "isRead",
+        "createdAt",
+      ],
     },
 
     // ========== AI LEARNING SYSTEM TABLES ==========

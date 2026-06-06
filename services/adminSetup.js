@@ -16,9 +16,48 @@ function onOpen() {
     .addSeparator()
     .addItem("📊 View All Topics", "ADMIN_viewTopics")
     .addItem("🗑️ Clear Cache", "ADMIN_clearCache")
+    .addSeparator()
+    .addItem("🎮 Generate Player IDs", "ADMIN_generatePlayerIds")
     .addToUi();
 
   Logger.log("✅ Admin menu created");
+}
+
+/**
+ * [ADMIN] Generate Player IDs cho user cũ
+ * Tự động quét bảng Users, những user nào chưa có playerId sẽ được tạo.
+ */
+function ADMIN_generatePlayerIds() {
+  try {
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) {
+      SpreadsheetApp.getUi().alert("❌ Không tìm thấy bảng Users");
+      return;
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    let playerIdIndex = headers.indexOf("playerId");
+
+    // Nếu chưa có cột playerId trong DB thực tế, phải gọi updateSheetSchema
+    if (playerIdIndex === -1) {
+      updateSheetSchema(usersSheet, DB_CONFIG.SHEETS.USERS);
+      playerIdIndex = DB_CONFIG.SHEETS.USERS.columns.indexOf("playerId");
+    }
+
+    let count = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][playerIdIndex]) {
+        usersSheet.getRange(i + 1, playerIdIndex + 1).setValue(generatePlayerId());
+        count++;
+      }
+    }
+
+    SpreadsheetApp.getUi().alert("✅ Thành công", `Đã tạo playerId cho ${count} người dùng.`, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (error) {
+    SpreadsheetApp.getUi().alert("❌ Lỗi", error.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
+  }
 }
 
 /**

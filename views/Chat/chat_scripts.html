@@ -1,0 +1,1152 @@
+<script>
+/**
+ * chat_scripts.html
+ * Chứa logic frontend cho tính năng Chat và Kết bạn
+ * GĐ 1-17
+ */
+
+let notificationInterval = null; // Polling thông báo trên thanh nav
+
+// Khởi tạo trang Chat khi người dùng mở trang
+let chatPageInitialized = false;
+
+function initChatPage() {
+  if (!window.currentUser || !window.currentUser.userId) {
+    console.warn("⚠️ initChatPage: Chưa có currentUser");
+    return;
+  }
+  
+  if (!chatPageInitialized) {
+    chatPageInitialized = true;
+    checkNotifications(); // Kiểm tra thông báo và bắt đầu polling
+  }
+  
+  loadFriendRequests(); // Lấy số lượng lời mời hiển thị badge
+  switchChatTab('conversations'); // Mặc định mở tab Tin nhắn
+}
+
+// Chuyển đổi giữa các Tabs
+function switchChatTab(tabName) {
+  // Update buttons
+  document.querySelectorAll('.chat-tab').forEach(btn => btn.classList.remove('active'));
+  
+  // Hide all areas
+  document.getElementById('tabSearchArea').style.display = 'none';
+  document.getElementById('tabRequestsArea').style.display = 'none';
+  document.getElementById('tabFriendsArea').style.display = 'none';
+  document.getElementById('tabConversationsArea').style.display = 'none';
+  document.getElementById('searchHeaderRow').style.display = 'none';
+  
+  if (tabName === 'conversations') {
+    document.querySelectorAll('.chat-tab')[0].classList.add('active');
+    document.getElementById('tabConversationsArea').style.display = 'block';
+    loadConversations();
+  } else if (tabName === 'friends') {
+    document.querySelectorAll('.chat-tab')[1].classList.add('active');
+    document.getElementById('tabFriendsArea').style.display = 'block';
+    loadFriends();
+  } else if (tabName === 'search') {
+    document.querySelectorAll('.chat-tab')[2].classList.add('active');
+    document.getElementById('tabSearchArea').style.display = 'block';
+    document.getElementById('searchHeaderRow').style.display = 'block';
+  } else if (tabName === 'requests') {
+    document.querySelectorAll('.chat-tab')[3].classList.add('active');
+    document.getElementById('tabRequestsArea').style.display = 'block';
+    loadFriendRequests();
+  }
+}
+
+// Hàm xử lý khi nhấn phím trên Input tìm kiếm
+function handleSearchKeyPress(event) {
+  if (event.key === 'Enter') {
+    executePlayerSearch();
+  }
+}
+
+// Thực thi tìm kiếm
+function executePlayerSearch() {
+  if (!window.currentUser || !window.currentUser.userId) {
+    showToast('Lỗi: Bạn chưa đăng nhập hoặc không lấy được thông tin tài khoản.', 'error');
+    return;
+  }
+
+  const input = document.getElementById('searchPlayersInput');
+  const keyword = input.value.trim();
+
+  if (!keyword) {
+    showChatState('empty');
+    return;
+  }
+
+  showChatState('loading');
+
+  const searchBtn = document.querySelector('.search-player-btn');
+  if (searchBtn) {
+    searchBtn.disabled = true;
+    searchBtn.textContent = 'Đang tìm...';
+  }
+
+  let finished = false;
+
+  const timeoutId = setTimeout(function () {
+    if (finished) return;
+
+    finished = true;
+    showChatState('empty');
+
+    if (searchBtn) {
+      searchBtn.disabled = false;
+      searchBtn.textContent = 'Tìm';
+    }
+
+    showToast('Tìm kiếm quá lâu. Có thể backend đang lỗi hoặc chưa deploy bản mới.', 'error');
+  }, 15000);
+
+  const payload = {
+    userId: window.currentUser.userId,
+    keyword: keyword
+  };
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutId);
+
+      if (searchBtn) {
+        searchBtn.disabled = false;
+        searchBtn.textContent = 'Tìm';
+      }
+
+      if (!response) {
+        showChatState('empty');
+        showToast('Backend không trả dữ liệu.', 'error');
+        return;
+      }
+
+      if (response.success) {
+        renderSearchResults(response.results || []);
+      } else {
+        showToast('Lỗi: ' + (response.message || 'Không rõ lỗi'), 'error');
+        showChatState('empty');
+      }
+    })
+    .withFailureHandler(function(error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutId);
+
+      if (searchBtn) {
+        searchBtn.disabled = false;
+        searchBtn.textContent = 'Tìm';
+      }
+
+      showToast('Lỗi kết nối: ' + (error && error.message ? error.message : error), 'error');
+      showChatState('empty');
+    })
+    .apiSearchPlayers(payload);
+}
+
+// Hiển thị trạng thái view
+function showChatState(stateName) {
+  document.getElementById('chatSearchEmpty').style.display = 'none';
+  document.getElementById('chatSearchLoading').style.display = 'none';
+  document.getElementById('chatSearchNoResults').style.display = 'none';
+  document.getElementById('chatSearchResults').style.display = 'none';
+  
+  if (stateName === 'empty') {
+    document.getElementById('chatSearchEmpty').style.display = 'flex';
+  } else if (stateName === 'loading') {
+    document.getElementById('chatSearchLoading').style.display = 'flex';
+  } else if (stateName === 'no_results') {
+    document.getElementById('chatSearchNoResults').style.display = 'flex';
+  } else if (stateName === 'results') {
+    document.getElementById('chatSearchResults').style.display = 'grid';
+  }
+}
+
+// Bug #1 fix: Hàm escape để dùng trong attribute HTML (onclick, title...)
+function escapeAttr(str) {
+  return (str || '').toString()
+    .replace(/&/g, '&amp;')
+    .replace(/'/g, '&#39;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Render kết quả tìm kiếm ra giao diện
+function renderSearchResults(results) {
+  const container = document.getElementById('chatSearchResults');
+  container.innerHTML = '';
+  
+  if (!results || results.length === 0) {
+    showChatState('no_results');
+    return;
+  }
+  
+  results.forEach(function(player) {
+    const card = document.createElement('div');
+    card.className = 'player-card';
+    
+    // Bug #1 fix: Dùng escapeAttr cho tất cả giá trị trong onclick/title
+    const safeUserId = escapeAttr(player.userId);
+    const safeName = escapeAttr(player.displayName);
+    
+    // Tạo nội dung HTML trước (không có nút action)
+    card.innerHTML = `
+      <img src="${player.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+      <div class="player-info">
+        <div class="player-name" title="${safeName}">${escapeHtml(player.displayName)}</div>
+        <div class="player-id">#${escapeHtml(player.playerId)}</div>
+      </div>
+      <div class="player-action"></div>
+    `;
+    
+    // Bug #1 fix: Dùng addEventListener thay vì inline onclick
+    const actionDiv = card.querySelector('.player-action');
+    const btn = document.createElement('button');
+    
+    switch(player.relationship) {
+      case 'none':
+        btn.className = 'btn-relationship is-none';
+        btn.textContent = 'Kết bạn';
+        btn.setAttribute('data-friend-action', player.userId);
+        btn.addEventListener('click', function() { sendFriendRequest(player.userId); });
+        actionDiv.appendChild(btn);
+        break;
+      case 'friends':
+        btn.className = 'btn-relationship is-friends';
+        btn.textContent = 'Đã là bạn bè';
+        actionDiv.appendChild(btn);
+        break;
+      case 'request_sent':
+        btn.className = 'btn-relationship is-sent';
+        btn.textContent = 'Đã gửi lời mời';
+        actionDiv.appendChild(btn);
+        break;
+      case 'request_received':
+        btn.className = 'btn-relationship is-received';
+        btn.textContent = 'Chấp nhận';
+        btn.addEventListener('click', function() { acceptFriendRequestFromSearch(player.userId); });
+        actionDiv.appendChild(btn);
+        break;
+      case 'self':
+        const span = document.createElement('span');
+        span.className = 'btn-relationship is-self';
+        span.textContent = 'Bạn';
+        actionDiv.appendChild(span);
+        break;
+    }
+    
+    container.appendChild(card);
+  });
+  
+  showChatState('results');
+}
+
+// Gửi lời mời kết bạn
+function sendFriendRequest(targetUserId) {
+  // Tìm button bằng data attribute (đã set trong renderSearchResults)
+  const buttons = document.querySelectorAll(`[data-friend-action="${targetUserId}"]`);
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = 'Đang gửi...';
+  });
+  
+  const payload = {
+    fromUserId: window.currentUser.userId,
+    toUserId: targetUserId
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        showToast('Đã gửi lời mời kết bạn.', 'success');
+        buttons.forEach(btn => {
+          btn.className = 'btn-relationship is-sent';
+          btn.textContent = 'Đã gửi lời mời';
+          // Xóa sự kiện click
+          btn.replaceWith(btn.cloneNode(true));
+        });
+      } else {
+        showToast(response.message, 'error');
+        buttons.forEach(btn => {
+          btn.disabled = false;
+          btn.textContent = 'Kết bạn';
+        });
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      buttons.forEach(btn => {
+        btn.disabled = false;
+        btn.textContent = 'Kết bạn';
+      });
+    })
+    .apiSendFriendRequest(payload);
+}
+
+// Bug #5 fix: Chấp nhận lời mời từ màn hình tìm kiếm (tìm requestId rồi accept)
+function acceptFriendRequestFromSearch(targetUserId) {
+  // Tìm requestId bằng cách load danh sách lời mời, sau đó tìm lời mời từ targetUserId
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success && response.results) {
+        const matchingRequest = response.results.find(function(req) {
+          return req.sender && req.sender.userId === targetUserId;
+        });
+        
+        if (matchingRequest) {
+          // Tìm thấy → accept trực tiếp
+          respondToRequest(matchingRequest.requestId, 'accept', null);
+          // Cập nhật nút trên UI search
+          showToast('Đang xử lý chấp nhận lời mời...', 'info');
+        } else {
+          showToast('Không tìm thấy lời mời từ người này. Hãy kiểm tra tab Lời mời.', 'warning');
+          switchChatTab('requests');
+        }
+      } else {
+        showToast('Không thể tải danh sách lời mời.', 'error');
+        switchChatTab('requests');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      switchChatTab('requests');
+    })
+    .apiGetFriendRequests(window.currentUser.userId);
+}
+
+// Tải danh sách Lời mời kết bạn
+function loadFriendRequests() {
+  document.getElementById('requestsEmpty').style.display = 'none';
+  document.getElementById('requestsList').style.display = 'none';
+  document.getElementById('requestsLoading').style.display = 'flex';
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (!response) {
+        showToast('Backend không trả dữ liệu.', 'error');
+        document.getElementById('requestsLoading').style.display = 'none';
+        document.getElementById('requestsEmpty').style.display = 'flex';
+        return;
+      }
+
+      if (response.success) {
+        renderFriendRequests(response.results || []);
+      } else {
+        showToast('Lỗi tải lời mời: ' + response.message, 'error');
+        document.getElementById('requestsLoading').style.display = 'none';
+        document.getElementById('requestsEmpty').style.display = 'flex';
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      document.getElementById('requestsLoading').style.display = 'none';
+      document.getElementById('requestsEmpty').style.display = 'flex';
+    })
+    .apiGetFriendRequests(window.currentUser.userId);
+}
+
+// Render Lời mời kết bạn
+function renderFriendRequests(requests) {
+  document.getElementById('requestsLoading').style.display = 'none';
+  
+  // Bảo vệ khi server trả về null/undefined
+  if (!requests || !Array.isArray(requests) || requests.length === 0) {
+    const badge = document.getElementById('friendRequestBadge');
+    if (badge) badge.style.display = 'none';
+    document.getElementById('requestsList').style.display = 'none';
+    document.getElementById('requestsEmpty').style.display = 'flex';
+    return;
+  }
+
+  // Cập nhật Badge
+  const badge = document.getElementById('friendRequestBadge');
+  if (requests.length > 0) {
+    badge.textContent = requests.length;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  const container = document.getElementById('requestsList');
+  container.innerHTML = '';
+  
+  if (!requests || requests.length === 0) {
+    document.getElementById('requestsEmpty').style.display = 'flex';
+    return;
+  }
+  
+  requests.forEach(function(req) {
+    const card = document.createElement('div');
+    card.className = 'player-card';
+    card.id = `request-${req.requestId}`;
+    
+    // Tính toán thời gian
+    const date = new Date(req.createdAt);
+    const dateString = date.toLocaleDateString('vi-VN');
+    
+    card.innerHTML = `
+      <img src="${req.sender.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+      <div class="player-info">
+        <div class="player-name" title="${req.sender.displayName}">${req.sender.displayName}</div>
+        <div class="player-id">#${req.sender.playerId} &bull; ${dateString}</div>
+      </div>
+      <div class="player-action request-actions">
+        <button class="btn-relationship is-received" onclick="respondToRequest('${req.requestId}', 'accept', this)">Chấp nhận</button>
+        <button class="btn-relationship is-reject" onclick="respondToRequest('${req.requestId}', 'reject', this)">Từ chối</button>
+      </div>
+    `;
+    
+    container.appendChild(card);
+  });
+  
+  container.style.display = 'grid';
+}
+
+// Xử lý Accept/Reject
+function respondToRequest(requestId, action, btnElement) {
+  // Disable buttons
+  const card = document.getElementById(`request-${requestId}`);
+  if (card) {
+    const buttons = card.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true);
+  }
+  
+  const payload = {
+    userId: window.currentUser.userId,
+    requestId: requestId,
+    action: action
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        showToast(response.message, 'success');
+        // Xóa card khỏi giao diện
+        if (card) card.remove();
+        
+        // Bug #10 fix: Dùng Number() và kiểm tra NaN
+        const badge = document.getElementById('friendRequestBadge');
+        let count = Number(badge.textContent) || 0;
+        count = count - 1;
+        if (count > 0) {
+          badge.textContent = count;
+        } else {
+          badge.style.display = 'none';
+          // Kiểm tra còn card nào trong list không
+          const remainingCards = document.querySelectorAll('#requestsList .player-card');
+          if (remainingCards.length === 0) {
+            document.getElementById('requestsList').style.display = 'none';
+            document.getElementById('requestsEmpty').style.display = 'flex';
+          }
+        }
+      } else {
+        showToast('Lỗi: ' + response.message, 'error');
+        if (card) {
+          const buttons = card.querySelectorAll('button');
+          buttons.forEach(b => b.disabled = false);
+        }
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      if (card) {
+        const buttons = card.querySelectorAll('button');
+        buttons.forEach(b => b.disabled = false);
+      }
+    })
+    .apiRespondFriendRequest(payload);
+}
+
+// ==========================================
+// FRIENDS LIST
+// ==========================================
+let allFriendsData = []; // Lưu cache để lọc cục bộ
+
+function loadFriends() {
+  document.getElementById('friendsEmpty').style.display = 'none';
+  document.getElementById('friendsList').style.display = 'none';
+  document.getElementById('friendsLoading').style.display = 'flex';
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        allFriendsData = response.results || [];
+        renderFriends(allFriendsData);
+      } else {
+        showToast('Lỗi tải bạn bè: ' + response.message, 'error');
+        document.getElementById('friendsLoading').style.display = 'none';
+        document.getElementById('friendsEmpty').style.display = 'flex';
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      document.getElementById('friendsLoading').style.display = 'none';
+      document.getElementById('friendsEmpty').style.display = 'flex';
+    })
+    .apiGetFriends(window.currentUser.userId);
+}
+
+function renderFriends(friends) {
+  document.getElementById('friendsLoading').style.display = 'none';
+  const container = document.getElementById('friendsList');
+  container.innerHTML = '';
+  
+  if (!friends || friends.length === 0) {
+    document.getElementById('friendsEmpty').style.display = 'flex';
+    return;
+  }
+  
+  document.getElementById('friendsEmpty').style.display = 'none';
+  
+  friends.forEach(function(friend) {
+    const card = document.createElement('div');
+    card.className = 'player-card';
+    
+    // Status text
+    const statusClass = friend.isOnline ? 'is-online' : '';
+    const statusText = friend.isOnline ? 'Đang hoạt động' : 'Offline';
+    
+    // Bug #1 fix: Dùng escapeAttr và escapeHtml cho dữ liệu user
+    const safeName = escapeAttr(friend.displayName);
+    
+    card.innerHTML = `
+      <img src="${friend.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+      <div class="player-info">
+        <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}</div>
+        <div class="player-id">
+          <span class="status-indicator ${statusClass}"></span>
+          ${statusText} &bull; #${escapeHtml(friend.playerId)}
+        </div>
+      </div>
+      <div class="player-action request-actions"></div>
+    `;
+    
+    // Bug #1 fix: Dùng addEventListener thay vì inline onclick
+    const actionDiv = card.querySelector('.player-action');
+    
+    const chatBtn = document.createElement('button');
+    chatBtn.className = 'btn-relationship btn-chat';
+    chatBtn.textContent = 'Nhắn tin';
+    chatBtn.addEventListener('click', function() { openChat(friend.userId); });
+    actionDiv.appendChild(chatBtn);
+    
+    const unfriendBtn = document.createElement('button');
+    unfriendBtn.className = 'btn-relationship is-reject';
+    unfriendBtn.textContent = 'Hủy kết bạn';
+    unfriendBtn.addEventListener('click', function() { unfriend(friend.userId, friend.displayName); });
+    actionDiv.appendChild(unfriendBtn);
+    
+    container.appendChild(card);
+  });
+  
+  container.style.display = 'grid';
+}
+
+function filterFriends(keyword) {
+  if (!keyword || keyword.trim() === '') {
+    renderFriends(allFriendsData);
+    return;
+  }
+  
+  const lowerKw = keyword.toLowerCase();
+  const filtered = allFriendsData.filter(f => 
+    (f.displayName && f.displayName.toLowerCase().includes(lowerKw)) || 
+    (f.playerId && f.playerId.toLowerCase().includes(lowerKw)) ||
+    (f.username && f.username.toLowerCase().includes(lowerKw))
+  );
+  
+  renderFriends(filtered);
+  
+  // Nếu lọc không ra ai mà mảng gốc có người
+  if (filtered.length === 0 && allFriendsData.length > 0) {
+    document.getElementById('friendsEmpty').style.display = 'flex';
+    document.getElementById('friendsEmpty').querySelector('h3').textContent = 'Không tìm thấy';
+    document.getElementById('friendsEmpty').querySelector('p').textContent = 'Không có người bạn nào khớp với từ khóa.';
+  } else if (allFriendsData.length > 0) {
+    document.getElementById('friendsEmpty').querySelector('h3').textContent = 'Chưa có bạn bè';
+    document.getElementById('friendsEmpty').querySelector('p').textContent = 'Bạn chưa có bạn bè nào. Hãy sang tab Tìm kiếm để kết bạn nhé!';
+  }
+}
+
+// ==========================================
+// UNFRIEND & OPEN CHAT (GĐ8, GĐ9)
+// ==========================================
+
+// Bug #11 fix: Dùng showAppConfirm thay vì confirm() native (bị block trong iframe)
+async function unfriend(friendId, friendName) {
+  const confirmed = await showAppConfirm(
+    `Bạn có chắc muốn hủy kết bạn với ${friendName}? Lịch sử trò chuyện cũng sẽ bị xóa.`,
+    {
+      title: 'Hủy kết bạn',
+      confirmText: 'Hủy kết bạn',
+      cancelText: 'Không'
+    }
+  );
+  
+  if (!confirmed) return;
+  
+  const payload = {
+    userId: window.currentUser.userId,
+    friendId: friendId
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if(response.success) {
+        showToast('Đã hủy kết bạn.', 'success');
+        loadFriends(); // Load lại danh sách
+      } else {
+        showToast('Lỗi: ' + response.message, 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+    })
+    .apiUnfriend(payload);
+}
+
+let currentConversationId = null;
+
+function openChat(friendId) {
+  // Bug #9 fix: Ẩn TẤT CẢ tab areas, không chỉ tabFriendsArea
+  document.querySelector('.chat-tabs').style.display = 'none';
+  document.getElementById('tabFriendsArea').style.display = 'none';
+  document.getElementById('tabConversationsArea').style.display = 'none';
+  document.getElementById('tabSearchArea').style.display = 'none';
+  document.getElementById('tabRequestsArea').style.display = 'none';
+  document.getElementById('searchHeaderRow').style.display = 'none';
+  
+  const roomArea = document.getElementById('chatRoomArea');
+  roomArea.style.display = 'flex';
+  
+  // Reset room UI
+  document.getElementById('chatRoomName').textContent = 'Đang tải...';
+  document.getElementById('chatRoomStatus').textContent = 'Đang kết nối...';
+  document.getElementById('chatRoomAvatar').src = 'https://www.gravatar.com/avatar/?d=mp';
+  document.getElementById('chatRoomMessages').innerHTML = '<div class="chat-room-loading"><div class="chat-loading-spinner"></div></div>';
+  document.getElementById('chatMessageInput').disabled = true;
+  document.getElementById('chatSendBtn').disabled = true;
+  
+  const payload = {
+    userId: window.currentUser.userId,
+    friendId: friendId
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        currentConversationId = response.conversationId;
+        const friend = response.friendInfo;
+        
+        // Bug #6+7 fix: Set currentChatTargetId ngay ở đây, không đợi render tin nhắn
+        currentChatTargetId = friend.userId;
+        
+        // Cập nhật Header
+        document.getElementById('chatRoomName').textContent = friend.displayName;
+        document.getElementById('chatRoomAvatar').src = friend.avatar;
+        document.getElementById('chatRoomStatus').textContent = '#' + friend.playerId;
+        
+        // Mở khóa nhập liệu
+        document.getElementById('chatMessageInput').disabled = false;
+        document.getElementById('chatSendBtn').disabled = false;
+        document.getElementById('chatMessageInput').focus();
+        
+        // Gọi load Messages
+        loadMessages(currentConversationId);
+        
+      } else {
+        showToast('Lỗi: ' + response.message, 'error');
+        closeChatRoom(); // Lỗi thì quay ra
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      closeChatRoom();
+    })
+    .apiOpenConversation(payload);
+}
+
+function closeChatRoom() {
+  if (chatPollingInterval) {
+    clearInterval(chatPollingInterval);
+    chatPollingInterval = null;
+  }
+  
+  currentConversationId = null;
+  currentChatTargetId = null;
+  oldestMessageDate = null;
+  newestMessageDate = null;
+  
+  document.getElementById('chatRoomArea').style.display = 'none';
+  document.querySelector('.chat-tabs').style.display = 'flex';
+  
+  // Về lại tab Tin nhắn và load lại để update text / unread
+  switchChatTab('conversations'); 
+}
+
+// ==========================================
+// MESSAGES (GĐ10, GĐ11, GĐ12, GĐ13)
+// ==========================================
+
+let currentChatTargetId = null; // Lưu ID người đang chat để gửi
+let oldestMessageDate = null;
+let newestMessageDate = null;
+let chatPollingInterval = null;
+
+function loadMessages(conversationId) {
+  const payload = {
+    conversationId: conversationId
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if(response.success) {
+        renderMessages(response.results, true); // true = initial load
+        
+        // Mark as read
+        markAsRead(conversationId);
+        
+        // Bug #8 fix: Nếu conversation trống (chưa có tin nhắn), vẫn start polling
+        // nhưng dùng timestamp hiện tại làm mốc
+        if (!newestMessageDate) {
+          newestMessageDate = new Date().toISOString();
+        }
+        
+        // Start polling sau khi load xong (chỉ start 1 lần)
+        if (!chatPollingInterval) {
+          chatPollingInterval = setInterval(pollNewMessages, 4000);
+        }
+      } else {
+        document.getElementById('chatRoomMessages').innerHTML = '<p style="text-align:center; color: var(--error-main);">Lỗi tải tin nhắn.</p>';
+      }
+    })
+    .withFailureHandler(function(error) {
+      document.getElementById('chatRoomMessages').innerHTML = '<p style="text-align:center; color: var(--error-main);">Lỗi kết nối.</p>';
+    })
+    .apiGetMessages(payload);
+}
+
+function renderMessages(messages, isInitial = false, isPrepend = false) {
+  const container = document.getElementById('chatRoomMessages');
+  
+  if (isInitial) {
+    container.innerHTML = ''; // Xóa loading
+    
+    if (!messages || messages.length === 0) {
+      container.innerHTML = '<p style="text-align:center; color: var(--text-tertiary); margin-top: 20px;" id="emptyMsgPrompt">Hãy bắt đầu cuộc trò chuyện!</p>';
+      return;
+    }
+  }
+  
+  if (!messages || messages.length === 0) return;
+  
+  const currentUserId = window.currentUser.userId;
+  
+  // Xóa empty prompt nếu có
+  const emptyPrompt = document.getElementById('emptyMsgPrompt');
+  if (emptyPrompt) emptyPrompt.remove();
+  
+  // Lưu mốc thời gian
+  if (isInitial) {
+    oldestMessageDate = messages[0].createdAt;
+    newestMessageDate = messages[messages.length - 1].createdAt;
+  } else if (isPrepend) {
+    oldestMessageDate = messages[0].createdAt; // Cập nhật mốc cũ nhất
+  } else {
+    // Append (Polling)
+    newestMessageDate = messages[messages.length - 1].createdAt; // Cập nhật mốc mới nhất
+  }
+  
+  // Helper render 1 block tin nhắn
+  const buildMessageHTML = (msg) => {
+    // Bug #6 fix: Không còn set currentChatTargetId ở đây nữa (đã set trong openChat)
+    
+    const msgDate = new Date(msg.createdAt);
+    const timeStr = msgDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const isMe = msg.senderId === currentUserId;
+    
+    let html = '';
+    html += `<div class="chat-message-row ${isMe ? 'is-me' : 'is-friend'}">
+      <div>
+        <div class="chat-bubble ${isMe ? 'is-optimistic-remove' : ''}">
+          ${escapeHtml(msg.text)}
+        </div>
+        <div class="chat-time">${timeStr}</div>
+      </div>
+    </div>`;
+    return html;
+  };
+  
+  if (isPrepend) {
+    // Giữ vị trí scroll
+    const oldScrollHeight = container.scrollHeight;
+    
+    // Remove old "Load more" button
+    const oldLoadMore = document.getElementById('loadMoreBtn');
+    if (oldLoadMore) oldLoadMore.remove();
+    
+    let htmlStr = '';
+    // Thêm nút load more mới nếu cần (giả sử nếu trả về 50 tin thì có thể còn nữa)
+    if (messages.length === 50) {
+      htmlStr += `<button id="loadMoreBtn" onclick="loadMoreMessages()" style="display:block; margin: 10px auto; padding: 6px 12px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: 99px; cursor: pointer; color: var(--text-secondary); font-size: 0.85rem;">Tải thêm tin nhắn cũ</button>`;
+    }
+    
+    messages.forEach(msg => {
+      htmlStr += buildMessageHTML(msg);
+    });
+    
+    container.insertAdjacentHTML('afterbegin', htmlStr);
+    
+    // Restore scroll position
+    const newScrollHeight = container.scrollHeight;
+    container.scrollTop = newScrollHeight - oldScrollHeight;
+    
+  } else {
+    // Append (Initial or Polling)
+    let htmlStr = '';
+    
+    // Thêm nút load more nếu initial và có 50 tin
+    if (isInitial && messages.length === 50) {
+      htmlStr += `<button id="loadMoreBtn" onclick="loadMoreMessages()" style="display:block; margin: 10px auto; padding: 6px 12px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: 99px; cursor: pointer; color: var(--text-secondary); font-size: 0.85rem;">Tải thêm tin nhắn cũ</button>`;
+    }
+    
+    messages.forEach(msg => {
+      htmlStr += buildMessageHTML(msg);
+    });
+    
+    container.insertAdjacentHTML('beforeend', htmlStr);
+    
+    if (isInitial || !isPrepend) {
+      scrollToBottom();
+    }
+  }
+}
+
+function loadMoreMessages() {
+  if (!currentConversationId || !oldestMessageDate) return;
+  
+  const btn = document.getElementById('loadMoreBtn');
+  if (btn) btn.textContent = 'Đang tải...';
+  
+  const payload = {
+    conversationId: currentConversationId,
+    beforeTimestamp: oldestMessageDate
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if(response.success) {
+        if (response.results && response.results.length > 0) {
+          renderMessages(response.results, false, true); // prepend
+        } else {
+          if (btn) btn.remove(); // Hết tin nhắn
+        }
+      } else {
+        if (btn) btn.textContent = 'Lỗi tải. Thử lại';
+      }
+    })
+    .withFailureHandler(function(error) {
+      if (btn) btn.textContent = 'Lỗi mạng. Thử lại';
+    })
+    .apiGetMessages(payload);
+}
+
+function pollNewMessages() {
+  if (!currentConversationId || !newestMessageDate) return;
+  
+  const payload = {
+    conversationId: currentConversationId,
+    afterTimestamp: newestMessageDate
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if(response.success && response.results && response.results.length > 0) {
+        renderMessages(response.results, false, false); // append
+        markAsRead(currentConversationId); // Nếu có tin nhắn mới tràn xuống thì đánh dấu đã đọc
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.error("Polling error:", error);
+    })
+    .apiGetMessages(payload);
+}
+
+function markAsRead(conversationId) {
+  const payload = {
+    conversationId: conversationId,
+    userId: window.currentUser.userId
+  };
+  google.script.run.apiMarkMessagesAsRead(payload);
+}
+
+// ==========================================
+// CONVERSATIONS LIST (GĐ15)
+// ==========================================
+
+function loadConversations() {
+  document.getElementById('conversationsEmpty').style.display = 'none';
+  document.getElementById('conversationsList').style.display = 'none';
+  document.getElementById('conversationsLoading').style.display = 'flex';
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        renderConversations(response.results);
+      } else {
+        showToast('Lỗi tải tin nhắn: ' + response.message, 'error');
+        document.getElementById('conversationsLoading').style.display = 'none';
+        document.getElementById('conversationsEmpty').style.display = 'flex';
+      }
+    })
+    .withFailureHandler(function(error) {
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      document.getElementById('conversationsLoading').style.display = 'none';
+      document.getElementById('conversationsEmpty').style.display = 'flex';
+    })
+    .apiGetConversations(window.currentUser.userId);
+}
+
+function renderConversations(conversations) {
+  document.getElementById('conversationsLoading').style.display = 'none';
+  const container = document.getElementById('conversationsList');
+  container.innerHTML = '';
+  
+  if (!conversations || conversations.length === 0) {
+    document.getElementById('conversationsEmpty').style.display = 'flex';
+    return;
+  }
+  
+  document.getElementById('conversationsEmpty').style.display = 'none';
+  
+  conversations.forEach(conv => {
+    const item = document.createElement('div');
+    item.className = 'conversation-item';
+    item.onclick = () => openChat(conv.friendId);
+    
+    // Format Time
+    let timeStr = '';
+    if (conv.lastMessageAt) {
+      const msgDate = new Date(conv.lastMessageAt);
+      const now = new Date();
+      if (msgDate.toDateString() === now.toDateString()) {
+        timeStr = msgDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      } else {
+        timeStr = msgDate.toLocaleDateString('vi-VN');
+      }
+    }
+    
+    let unreadHtml = '';
+    if (conv.unreadCount > 0) {
+      unreadHtml = `<div class="conversation-badge">${conv.unreadCount}</div>`;
+    }
+    
+    const lastMsg = conv.lastMessage || 'Hãy bắt đầu cuộc trò chuyện!';
+    
+    item.innerHTML = `
+      <img src="${conv.friendAvatar}" class="conversation-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+      <div class="conversation-info">
+        <div class="conversation-header">
+          <div class="conversation-name" title="${conv.friendName}">${conv.friendName}</div>
+          <div class="conversation-time">${timeStr}</div>
+        </div>
+        <div class="conversation-body">
+          <div class="conversation-last-msg">${escapeHtml(lastMsg)}</div>
+          ${unreadHtml}
+        </div>
+      </div>
+    `;
+    
+    container.appendChild(item);
+  });
+  
+  container.style.display = 'flex';
+}
+
+function sendChatMessage() {
+  const input = document.getElementById('chatMessageInput');
+  const text = input.value.trim();
+  
+  if (!text) {
+    showToast('Tin nhắn không được để trống.', 'warning');
+    return;
+  }
+  
+  if (!currentConversationId || !currentChatTargetId) {
+    showToast('Lỗi hệ thống: Không xác định được phòng chat.', 'error');
+    return;
+  }
+  
+  // 1. Optimistic UI: Vẽ ra màn hình ngay lập tức
+  const container = document.getElementById('chatRoomMessages');
+  // Nếu đang là "Hãy bắt đầu...", xóa đi
+  if (container.innerHTML.includes('Hãy bắt đầu')) {
+    container.innerHTML = '';
+  }
+  
+  const tempId = 'temp-' + Date.now();
+  const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  
+  const row = document.createElement('div');
+  row.className = 'chat-message-row is-me';
+  row.id = tempId;
+  row.innerHTML = `
+    <div>
+      <div class="chat-bubble is-optimistic">
+        ${escapeHtml(text)}
+      </div>
+      <div class="chat-time">Đang gửi...</div>
+    </div>
+  `;
+  container.appendChild(row);
+  scrollToBottom();
+  
+  // Disable input & button while sending
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('chatSendBtn').disabled = true;
+  
+  const payload = {
+    conversationId: currentConversationId,
+    senderId: window.currentUser.userId,
+    receiverId: currentChatTargetId,
+    text: text
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      input.disabled = false;
+      document.getElementById('chatSendBtn').disabled = false;
+      input.focus();
+      
+      const tempEl = document.getElementById(tempId);
+      if (response.success) {
+        if (tempEl) {
+          tempEl.querySelector('.chat-bubble').classList.remove('is-optimistic');
+          tempEl.querySelector('.chat-time').textContent = timeStr;
+        }
+        // Bug #2 fix: Cập nhật newestMessageDate từ response.data (đã đổi tên từ response.message)
+        if (response.data && response.data.createdAt) {
+          newestMessageDate = response.data.createdAt;
+        }
+      } else {
+        showToast('Lỗi gửi tin nhắn: ' + response.message, 'error');
+        if (tempEl) tempEl.remove();
+        input.value = text; // Khôi phục text
+      }
+    })
+    .withFailureHandler(function(error) {
+      input.disabled = false;
+      document.getElementById('chatSendBtn').disabled = false;
+      const tempEl = document.getElementById(tempId);
+      if (tempEl) tempEl.remove();
+      showToast('Lỗi kết nối: ' + error.message, 'error');
+      input.value = text;
+    })
+    .apiSendMessage(payload);
+}
+
+function handleChatKeyPress(event) {
+  if (event.key === 'Enter') {
+    sendChatMessage();
+  }
+}
+
+function scrollToBottom() {
+  const container = document.getElementById('chatRoomMessages');
+  container.scrollTop = container.scrollHeight;
+}
+
+// Hàm chống XSS cho text chat
+function escapeHtml(unsafe) {
+    return (unsafe || '').toString()
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;")
+         .replace(/\n/g, "<br>");
+}
+
+// ==========================================
+// NOTIFICATIONS (GĐ16)
+// ==========================================
+
+function checkNotifications() {
+  if (!window.currentUser || !window.currentUser.userId) return;
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        updateGlobalChatBadge(response.totalUnread);
+        updateTabBadges(response.totalUnread, response.pendingRequests);
+      }
+    })
+    .withFailureHandler(function(error) {
+      console.error('Notification check error:', error);
+    })
+    .apiGetNotificationCounts(window.currentUser.userId);
+  
+  // Start polling notifications every 30s (if not already running)
+  if (!notificationInterval) {
+    notificationInterval = setInterval(function() {
+      if (!window.currentUser || !window.currentUser.userId) return;
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response && response.success) {
+            updateGlobalChatBadge(response.totalUnread);
+            updateTabBadges(response.totalUnread, response.pendingRequests);
+          }
+        })
+        .apiGetNotificationCounts(window.currentUser.userId);
+    }, 30000);
+  }
+}
+
+function updateGlobalChatBadge(totalUnread) {
+  const badge = document.getElementById('globalChatBadge');
+  if (!badge) return;
+  
+  if (totalUnread > 0) {
+    badge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function updateTabBadges(totalUnread, pendingRequests) {
+  // Tab "Tin nhắn" badge
+  const msgTab = document.querySelectorAll('.chat-tab')[0];
+  if (msgTab) {
+    let msgBadge = msgTab.querySelector('.tab-unread-badge');
+    if (totalUnread > 0) {
+      if (!msgBadge) {
+        msgBadge = document.createElement('span');
+        msgBadge.className = 'badge tab-unread-badge';
+        msgTab.appendChild(msgBadge);
+      }
+      msgBadge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+      msgBadge.style.display = 'inline-block';
+    } else {
+      if (msgBadge) msgBadge.style.display = 'none';
+    }
+  }
+  
+  // Tab "Lời mời" badge
+  const reqBadge = document.getElementById('friendRequestBadge');
+  if (reqBadge) {
+    if (pendingRequests > 0) {
+      reqBadge.textContent = pendingRequests;
+      reqBadge.style.display = 'inline-block';
+    } else {
+      reqBadge.style.display = 'none';
+    }
+  }
+}
+
+</script>
