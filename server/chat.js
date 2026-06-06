@@ -636,14 +636,25 @@ function openConversationApi(currentUserId, targetUserId) {
  */
 function getMessagesApi(payload) {
   try {
-    const { conversationId, beforeTimestamp, afterTimestamp } = payload;
+    const request = payload || {};
+    const conversationId = String(request.conversationId || "").trim();
+    const beforeTimestamp = request.beforeTimestamp;
+    const afterTimestamp = request.afterTimestamp;
     
     const ss = getOrCreateDatabase();
     const msgSheet = ss.getSheetByName("Messages");
     if (!msgSheet) return { success: false, message: "Lỗi database" };
-    
-    const mData = msgSheet.getDataRange().getValues();
-    const mCols = getSheetColumnMap(mData);
+    if (!conversationId) return { success: false, message: "Thiếu conversationId." };
+
+    const lastRow = msgSheet.getLastRow();
+    if (lastRow < 2) return { success: true, results: [] };
+
+    const lastCol = msgSheet.getLastColumn();
+    const maxRowsToScan = 300;
+    const startRow = Math.max(2, lastRow - maxRowsToScan + 1);
+    const mData = msgSheet.getRange(startRow, 1, lastRow - startRow + 1, lastCol).getValues();
+    const headerData = msgSheet.getRange(1, 1, 1, lastCol).getValues();
+    const mCols = getSheetColumnMap(headerData);
     
     const messages = [];
     
@@ -652,9 +663,10 @@ function getMessagesApi(payload) {
     const afterTime = afterTimestamp ? new Date(afterTimestamp).getTime() : null;
     
     // Quét từ dưới lên để lấy tin nhắn
-    for (let i = mData.length - 1; i >= 1; i--) {
-      if (mData[i][mCols["conversationId"]] === conversationId) {
-        const msgTime = new Date(mData[i][mCols["createdAt"]]).getTime();
+    for (let i = mData.length - 1; i >= 0; i--) {
+      if (String(mData[i][mCols["conversationId"]] || "").trim() === conversationId) {
+        const createdAtRaw = mData[i][mCols["createdAt"]];
+        const msgTime = createdAtRaw ? new Date(createdAtRaw).getTime() : 0;
         
         if (beforeTime && msgTime >= beforeTime) continue;
         if (afterTime && msgTime <= afterTime) continue;
@@ -665,10 +677,10 @@ function getMessagesApi(payload) {
           receiverId: mData[i][mCols["receiverId"]],
           text: mData[i][mCols["messageText"]],
           isRead: mData[i][mCols["isRead"]],
-          createdAt: mData[i][mCols["createdAt"]]
+          createdAt: createdAtRaw ? new Date(createdAtRaw).toISOString() : ""
         });
         
-        if (messages.length >= 50 && !afterTime) break; // Chỉ lấy tối đa 50 tin cũ, còn lấy tin mới thì lấy hết
+        if (messages.length >= 40 && !afterTime) break; // Giảm tải initial load/polling
       }
     }
     
