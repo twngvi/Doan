@@ -473,6 +473,14 @@ function loadFriends() {
 
   google.script.run
     .withSuccessHandler(function(response) {
+      console.log('apiGetFriends response:', response);
+      if (!response) {
+        showToast('Backend không trả dữ liệu.', 'error');
+        document.getElementById('friendsLoading').style.display = 'none';
+        document.getElementById('friendsEmpty').style.display = 'flex';
+        return;
+      }
+
       if (response.success) {
         allFriendsData = response.results || [];
         renderFriends(allFriendsData);
@@ -487,7 +495,9 @@ function loadFriends() {
       document.getElementById('friendsLoading').style.display = 'none';
       document.getElementById('friendsEmpty').style.display = 'flex';
     })
-    .apiGetFriends(window.currentUser.userId);
+    .apiGetFriends({
+      userId: window.currentUser.userId
+    });
 }
 
 function renderFriends(friends) {

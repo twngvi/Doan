@@ -229,8 +229,27 @@ function apiRespondFriendRequest(payload) {
   return respondFriendRequestApi(payload.requestId, payload.userId, payload.action);
 }
 
-function apiGetFriends(userId) {
-  return getFriendsApi(userId);
+function apiGetFriends(payload) {
+  try {
+    const userId = typeof payload === "object"
+      ? String(payload.userId || "").trim()
+      : String(payload || "").trim();
+
+    Logger.log("apiGetFriends wrapper called, userId=" + userId);
+
+    const result = getFriendsApi(userId);
+
+    Logger.log("apiGetFriends wrapper returning: " + JSON.stringify(result));
+
+    return result;
+  } catch (error) {
+    Logger.log("apiGetFriends wrapper error: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi apiGetFriends wrapper: " + error.toString(),
+      results: []
+    };
+  }
 }
 
 function apiUnfriend(payload) {

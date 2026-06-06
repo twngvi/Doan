@@ -10,7 +10,7 @@ function getSheetColumnMap(sheetData) {
   const headers = sheetData[0] || [];
   const map = {};
   headers.forEach((h, i) => {
-    map[h] = i;
+    map[String(h || "").trim()] = i;
   });
   return map;
 }
@@ -85,6 +85,9 @@ function searchPlayers(currentUserId, keyword) {
 
     const kw = String(keyword).trim().toLowerCase();
 
+    // Build relationships map so we can report relationship status per result
+    const relMap = getRelationshipsMap(currentUserId);
+
     const ss = getOrCreateDatabase();
     const usersSheet = ss.getSheetByName("Users");
 
@@ -137,7 +140,7 @@ function searchPlayers(currentUserId, keyword) {
         displayName: displayName || "Người dùng",
         username: username,
         avatar: avatar || "https://www.gravatar.com/avatar/?d=mp",
-        relationship: userId === currentUserId ? "self" : "none"
+        relationship: userId === currentUserId ? "self" : (relMap[userId] || "none")
       });
 
       if (results.length >= 20) break;
@@ -402,6 +405,7 @@ function respondFriendRequestApi(requestId, currentUserId, action) {
  */
 function getFriendsApi(userId) {
   try {
+    Logger.log("getFriendsApi called for userId=" + userId);
     const ss = getOrCreateDatabase();
     const friendsSheet = ss.getSheetByName("Friends");
     const usersSheet = ss.getSheetByName("Users");
@@ -415,18 +419,21 @@ function getFriendsApi(userId) {
     
     // Lấy danh sách ID bạn bè
     const friendIds = [];
+    const userIdTrim = (userId || "").toString().trim();
     for (let i = 1; i < fData.length; i++) {
-      const status = fData[i][fCols["status"]];
+      const status = (fData[i][fCols["status"]] || "").toString().trim();
       if (status === "active") {
-        const u1 = fData[i][fCols["userId1"]];
-        const u2 = fData[i][fCols["userId2"]];
-        if (u1 === userId) friendIds.push(u2);
-        else if (u2 === userId) friendIds.push(u1);
+        const u1 = (fData[i][fCols["userId1"]] || "").toString().trim();
+        const u2 = (fData[i][fCols["userId2"]] || "").toString().trim();
+        if (u1 === userIdTrim) friendIds.push(u2);
+        else if (u2 === userIdTrim) friendIds.push(u1);
       }
     }
+
+    Logger.log("getFriendsApi: total friend rows=" + (fData.length - 1) + ", matched friendIdsCount=" + friendIds.length);
     
     if (friendIds.length === 0) {
-      return { success: true, results: [] };
+      return { success: true, results: [], _debug: { calledUserId: userIdTrim, totalFriendRows: fData.length - 1 } };
     }
     
     // Lấy thông tin user
@@ -435,33 +442,40 @@ function getFriendsApi(userId) {
     const friends = [];
     
     for (let i = 1; i < uData.length; i++) {
-      const uid = uData[i][uCols["userId"]];
+      const uid = (uData[i][uCols["userId"]] || "").toString().trim();
       if (friendIds.indexOf(uid) !== -1) {
-        const lastActive = uData[i][uCols["lastActiveDate"]] || uData[i][uCols["lastLogin"]];
-        let isOnline = false;
-        if (lastActive) {
-          const diff = new Date().getTime() - new Date(lastActive).getTime();
-          if (diff < 15 * 60 * 1000) { // 15 phút
-            isOnline = true;
+          const lastActiveRaw = uData[i][uCols["lastActiveDate"]] || uData[i][uCols["lastLogin"]];
+          let lastActiveStr = "";
+          if (lastActiveRaw) {
+            const d = new Date(lastActiveRaw);
+            if (!isNaN(d.getTime())) {
+              lastActiveStr = d.toISOString();
+            }
           }
-        }
-        
-        friends.push({
-          userId: uid,
-          playerId: uData[i][uCols["playerId"]] || "N/A",
-          displayName: uData[i][uCols["displayName"]] || "Ẩn danh",
-          username: uData[i][uCols["username"]] || "",
-          avatar: uData[i][uCols["avatarUrl"]] || getGravatarUrl(uData[i][uCols["email"]] || ""),
-          isOnline: isOnline,
-          lastActive: lastActive,
-          // mockup fields cho GĐ sau
-          unreadCount: 0,
-          lastMessage: "" 
-        });
+
+          let isOnline = false;
+          if (lastActiveStr) {
+            const diff = new Date().getTime() - new Date(lastActiveStr).getTime();
+            if (diff < 15 * 60 * 1000) {
+              isOnline = true;
+            }
+          }
+
+          friends.push({
+            userId: uid,
+            playerId: uData[i][uCols["playerId"]] || "N/A",
+            displayName: uData[i][uCols["displayName"]] || "Ẩn danh",
+            username: uCols["username"] >= 0 ? (uData[i][uCols["username"]] || "") : "",
+            avatar: uData[i][uCols["avatarUrl"]] || getGravatarUrl(uData[i][uCols["email"]] || ""),
+            isOnline: isOnline,
+            lastActive: lastActiveStr,
+            unreadCount: 0,
+            lastMessage: ""
+          });
       }
     }
     
-    return { success: true, results: friends };
+    return { success: true, results: friends, _debug: { calledUserId: userIdTrim, totalFriendRows: fData.length - 1, matchedCount: friends.length } };
   } catch (error) {
     Logger.log("Error getFriendsApi: " + error.toString());
     return { success: false, message: "Lỗi lấy danh sách bạn bè." };
@@ -777,94 +791,81 @@ function getConversationsApi(currentUserId) {
     const convSheet = ss.getSheetByName("Conversations");
     const msgSheet = ss.getSheetByName("Messages");
     const usersSheet = ss.getSheetByName("Users");
-    
+
     if (!convSheet || !msgSheet || !usersSheet) {
       return { success: false, message: "Lỗi cơ sở dữ liệu." };
     }
-    
+
     const cData = convSheet.getDataRange().getValues();
     const cCols = getSheetColumnMap(cData);
-    
+
     const userConversations = [];
-    
+
     for (let i = 1; i < cData.length; i++) {
-      const u1 = cData[i][cCols["userId1"]];
-      const u2 = cData[i][cCols["userId2"]];
-      
+      const u1 = (cData[i][cCols["userId1"]] || "").toString().trim();
+      const u2 = (cData[i][cCols["userId2"]] || "").toString().trim();
+
       if (u1 === currentUserId || u2 === currentUserId) {
         const friendId = (u1 === currentUserId) ? u2 : u1;
         userConversations.push({
-          conversationId: cData[i][cCols["conversationId"]],
+          conversationId: (cData[i][cCols["conversationId"]] || "").toString(),
           friendId: friendId,
-          lastMessage: cData[i][cCols["lastMessage"]],
-          lastMessageAt: cData[i][cCols["lastMessageAt"]],
-          unreadCount: 0 // Sẽ đếm sau
+          lastMessage: cData[i][cCols["lastMessage"]] || "",
+          lastMessageAt: cData[i][cCols["lastMessageAt"]] || "",
+          unreadCount: 0
         });
       }
     }
-    
+
     if (userConversations.length === 0) {
       return { success: true, results: [] };
     }
-    
-    // Đếm unread từ Messages (Quét 1 lần)
+
+    // Count unread messages
     const mData = msgSheet.getDataRange().getValues();
     const mCols = getSheetColumnMap(mData);
-    
     for (let i = 1; i < mData.length; i++) {
-      const receiver = mData[i][mCols["receiverId"]];
+      const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
       const isRead = mData[i][mCols["isRead"]];
-      
-      if (receiver === currentUserId && isRead === false) {
-        const cid = mData[i][mCols["conversationId"]];
+      if (receiver === currentUserId && (isRead === false || String(isRead).toLowerCase() === "false")) {
+        const cid = (mData[i][mCols["conversationId"]] || "").toString();
         const conv = userConversations.find(c => c.conversationId === cid);
-        if (conv) {
-          conv.unreadCount += 1;
-        }
+        if (conv) conv.unreadCount += 1;
       }
     }
-    
-    // Map User Info
+
+    // Map user info for friend display
     const uData = usersSheet.getDataRange().getValues();
     const uCols = getSheetColumnMap(uData);
-    
+    const userMap = {};
+    for (let i = 1; i < uData.length; i++) {
+      const uid = (uData[i][uCols["userId"]] || "").toString().trim();
+      if (!uid) continue;
+      userMap[uid] = {
+        userId: uid,
+        playerId: (uData[i][uCols["playerId"]] || "").toString(),
+        displayName: (uData[i][uCols["displayName"]] || "").toString(),
+        avatar: (uData[i][uCols["avatarUrl"]] || "https://www.gravatar.com/avatar/?d=mp").toString()
+      };
+    }
+
+    // Attach friend info
     userConversations.forEach(conv => {
-      let fName = "Ẩn danh";
-      let fAvatar = "https://www.gravatar.com/avatar/?d=mp";
-      let pId = "";
-      
-      const userIdTrim = (userId || "").toString().trim();
-      for (let i = 1; i < rData.length; i++) {
-        const row = rData[i];
-        const toId = (row[rCols["toUserId"]] || "").toString().trim();
-        const status = (row[rCols["status"]] || "").toString().trim();
-        if (toId === userIdTrim && status === "pending") {
-          const fromUserId = (row[rCols["fromUserId"]] || "").toString().trim();
-          let userInfo = userMap[fromUserId];
-          if (!userInfo) {
-            // fallback: try to build minimal info from Users sheet row if possible
-            userInfo = { userId: fromUserId, playerId: "N/A", displayName: "Ẩn danh", avatar: getGravatarUrl("") };
-          }
-
-          // Normalize createdAt to ISO string to avoid client Date issues
-          const createdAtVal = row[rCols["createdAt"]];
-          const createdAtStr = createdAtVal ? new Date(createdAtVal).toISOString() : "";
-
-          requests.push({
-            requestId: (row[rCols["requestId"]] || "").toString(),
-            sender: userInfo,
-            createdAt: createdAtStr
-          });
-        }
-      }
-      const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-      Logger.log("getFriendRequestsApi: found " + requests.length + " pending requests for " + userIdTrim);
-      return dateB - dateA;
+      const info = userMap[conv.friendId] || { displayName: "Ẩn danh", avatar: "https://www.gravatar.com/avatar/?d=mp", playerId: "" };
+      conv.friendName = info.displayName;
+      conv.friendAvatar = info.avatar;
+      conv.friendPlayerId = info.playerId;
     });
-    
+
+    // Sort by lastMessageAt desc if available
+    userConversations.sort((a, b) => {
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return tb - ta;
+    });
+
     return { success: true, results: userConversations };
-    
-  } catch(error) {
+  } catch (error) {
     Logger.log("Error getConversationsApi: " + error.toString());
     return { success: false, message: "Lỗi lấy danh sách cuộc trò chuyện." };
   }
