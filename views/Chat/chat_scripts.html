@@ -7,6 +7,70 @@
 
 let notificationInterval = null; // Polling thông báo trên thanh nav
 
+let activeChatTab = 'conversations';
+
+let chatConversationsCache = null;
+let chatConversationsLastLoaded = 0;
+let conversationsLoadingInFlight = false;
+
+let chatFriendsCache = null;
+let chatFriendsLastLoaded = 0;
+let friendsLoadingInFlight = false;
+
+let chatRequestsCache = null;
+let chatRequestsLastLoaded = 0;
+let requestsLoadingInFlight = false;
+
+const CHAT_CACHE_TTL = 30000;
+
+function chatEl(id) {
+  return document.getElementById(id);
+}
+
+function setDisplay(id, value) {
+  const el = chatEl(id);
+  if (el) el.style.display = value;
+}
+
+function isChatCacheFresh(lastLoaded) {
+  return lastLoaded && (Date.now() - lastLoaded) < CHAT_CACHE_TTL;
+}
+
+function setActiveChatTabButton(tabName) {
+  const tabIndexMap = {
+    conversations: 0,
+    friends: 1,
+    search: 2,
+    requests: 3
+  };
+
+  document.querySelectorAll('.chat-tab').forEach(function(btn) {
+    btn.classList.remove('active');
+  });
+
+  const tabs = document.querySelectorAll('.chat-tab');
+  const index = tabIndexMap[tabName];
+
+  if (typeof index === 'number' && tabs[index]) {
+    tabs[index].classList.add('active');
+  }
+}
+
+function applyChatHeaderState(tabName) {
+  const header = document.querySelector('.chat-header.unified-page-header.is-minimal');
+
+  if (header) {
+    header.classList.remove('is-hidden');
+    header.style.display = '';
+    header.setAttribute('data-chat-tab', tabName);
+  }
+
+  const tabs = document.querySelector('.chat-tabs');
+  if (tabs) tabs.style.display = 'flex';
+
+  setDisplay('searchHeaderRow', tabName === 'search' ? 'flex' : 'none');
+}
+
 // Khởi tạo trang Chat khi người dùng mở trang
 let chatPageInitialized = false;
 
@@ -20,39 +84,40 @@ function initChatPage() {
     chatPageInitialized = true;
     checkNotifications(); // Kiểm tra thông báo và bắt đầu polling
   }
-  
-  loadFriendRequests(); // Lấy số lượng lời mời hiển thị badge
+
   switchChatTab('conversations'); // Mặc định mở tab Tin nhắn
 }
 
 // Chuyển đổi giữa các Tabs
 function switchChatTab(tabName) {
-  // Update buttons
-  document.querySelectorAll('.chat-tab').forEach(btn => btn.classList.remove('active'));
-  
-  // Hide all areas
-  document.getElementById('tabSearchArea').style.display = 'none';
-  document.getElementById('tabRequestsArea').style.display = 'none';
-  document.getElementById('tabFriendsArea').style.display = 'none';
-  document.getElementById('tabConversationsArea').style.display = 'none';
-  document.getElementById('searchHeaderRow').style.display = 'none';
-  
+  activeChatTab = tabName;
+
+  setDisplay('chatRoomArea', 'none');
+
+  applyChatHeaderState(tabName);
+  setActiveChatTabButton(tabName);
+
+  setDisplay('tabSearchArea', 'none');
+  setDisplay('tabRequestsArea', 'none');
+  setDisplay('tabFriendsArea', 'none');
+  setDisplay('tabConversationsArea', 'none');
+
   if (tabName === 'conversations') {
-    document.querySelectorAll('.chat-tab')[0].classList.add('active');
-    document.getElementById('tabConversationsArea').style.display = 'block';
-    loadConversations();
+    setDisplay('tabConversationsArea', 'block');
+    loadConversations(false);
   } else if (tabName === 'friends') {
-    document.querySelectorAll('.chat-tab')[1].classList.add('active');
-    document.getElementById('tabFriendsArea').style.display = 'block';
-    loadFriends();
+    setDisplay('tabFriendsArea', 'block');
+    loadFriends(false);
   } else if (tabName === 'search') {
-    document.querySelectorAll('.chat-tab')[2].classList.add('active');
-    document.getElementById('tabSearchArea').style.display = 'block';
-    document.getElementById('searchHeaderRow').style.display = 'block';
+    setDisplay('tabSearchArea', 'block');
+
+    const input = chatEl('searchPlayersInput');
+    if (input) {
+      setTimeout(function() { input.focus(); }, 50);
+    }
   } else if (tabName === 'requests') {
-    document.querySelectorAll('.chat-tab')[3].classList.add('active');
-    document.getElementById('tabRequestsArea').style.display = 'block';
-    loadFriendRequests();
+    setDisplay('tabRequestsArea', 'block');
+    loadFriendRequests(false);
   }
 }
 
@@ -172,8 +237,6 @@ function escapeAttr(str) {
     .replace(/'/g, '&#39;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
-
-    setChatHeaderVisible(true);
     .replace(/>/g, '&gt;');
 }
 
@@ -330,32 +393,83 @@ function acceptFriendRequestFromSearch(targetUserId) {
 }
 
 // Tải danh sách Lời mời kết bạn
-function loadFriendRequests() {
-  document.getElementById('requestsEmpty').style.display = 'none';
-  document.getElementById('requestsList').style.display = 'none';
-  document.getElementById('requestsLoading').style.display = 'flex';
+function loadFriendRequests(force = false) {
+  const hasCache = Array.isArray(chatRequestsCache);
+  const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatRequestsLastLoaded);
+
+  if (hasCache) {
+    renderFriendRequests(chatRequestsCache);
+  } else {
+    setDisplay('requestsEmpty', 'none');
+    setDisplay('requestsList', 'none');
+    setDisplay('requestsLoading', 'flex');
+  }
+
+  if (!shouldRefresh || requestsLoadingInFlight) return;
+
+  requestsLoadingInFlight = true;
+
+  let finished = false;
+  const timeoutId = setTimeout(function () {
+    if (finished) return;
+
+    finished = true;
+    requestsLoadingInFlight = false;
+
+    if (!hasCache && activeChatTab === 'requests') {
+      setDisplay('requestsLoading', 'none');
+      setDisplay('requestsEmpty', 'flex');
+      showToast('Tải lời mời quá lâu. Hãy kiểm tra backend apiGetFriendRequests.', 'warning');
+    }
+  }, 12000);
 
   google.script.run
     .withSuccessHandler(function(response) {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      requestsLoadingInFlight = false;
+
       if (!response) {
         showToast('Backend không trả dữ liệu.', 'error');
-        document.getElementById('requestsLoading').style.display = 'none';
-        document.getElementById('requestsEmpty').style.display = 'flex';
+
+        if (!hasCache) {
+          setDisplay('requestsLoading', 'none');
+          setDisplay('requestsEmpty', 'flex');
+        }
         return;
       }
 
       if (response.success) {
-        renderFriendRequests(response.results || []);
+        chatRequestsCache = response.results || [];
+        chatRequestsLastLoaded = Date.now();
+
+        if (activeChatTab === 'requests') {
+          renderFriendRequests(chatRequestsCache);
+        }
       } else {
         showToast('Lỗi tải lời mời: ' + response.message, 'error');
-        document.getElementById('requestsLoading').style.display = 'none';
-        document.getElementById('requestsEmpty').style.display = 'flex';
+
+        if (!hasCache) {
+          setDisplay('requestsLoading', 'none');
+          setDisplay('requestsEmpty', 'flex');
+        }
       }
     })
     .withFailureHandler(function(error) {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      requestsLoadingInFlight = false;
+
       showToast('Lỗi kết nối: ' + error.message, 'error');
-      document.getElementById('requestsLoading').style.display = 'none';
-      document.getElementById('requestsEmpty').style.display = 'flex';
+
+      if (!hasCache) {
+        setDisplay('requestsLoading', 'none');
+        setDisplay('requestsEmpty', 'flex');
+      }
     })
     .apiGetFriendRequests(window.currentUser.userId);
 }
@@ -508,34 +622,84 @@ document.addEventListener('click', function() {
   closeAllFriendCardMenus();
 });
 
-function loadFriends() {
-  document.getElementById('friendsEmpty').style.display = 'none';
-  document.getElementById('friendsList').style.display = 'none';
-  document.getElementById('friendsLoading').style.display = 'flex';
+function loadFriends(force = false) {
+  const hasCache = Array.isArray(chatFriendsCache);
+  const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatFriendsLastLoaded);
+
+  if (hasCache) {
+    renderFriends(chatFriendsCache);
+  } else {
+    setDisplay('friendsEmpty', 'none');
+    setDisplay('friendsList', 'none');
+    setDisplay('friendsLoading', 'flex');
+  }
+
+  if (!shouldRefresh || friendsLoadingInFlight) return;
+
+  friendsLoadingInFlight = true;
+
+  let finished = false;
+  const timeoutId = setTimeout(function () {
+    if (finished) return;
+
+    finished = true;
+    friendsLoadingInFlight = false;
+
+    if (!hasCache && activeChatTab === 'friends') {
+      setDisplay('friendsLoading', 'none');
+      setDisplay('friendsEmpty', 'flex');
+      showToast('Tải danh sách bạn bè quá lâu. Hãy kiểm tra backend apiGetFriends.', 'warning');
+    }
+  }, 12000);
 
   google.script.run
     .withSuccessHandler(function(response) {
-      console.log('apiGetFriends response:', response);
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      friendsLoadingInFlight = false;
+
       if (!response) {
         showToast('Backend không trả dữ liệu.', 'error');
-        document.getElementById('friendsLoading').style.display = 'none';
-        document.getElementById('friendsEmpty').style.display = 'flex';
+
+        if (!hasCache) {
+          setDisplay('friendsLoading', 'none');
+          setDisplay('friendsEmpty', 'flex');
+        }
         return;
       }
 
       if (response.success) {
         allFriendsData = response.results || [];
-        renderFriends(allFriendsData);
+        chatFriendsCache = allFriendsData;
+        chatFriendsLastLoaded = Date.now();
+
+        if (activeChatTab === 'friends') {
+          renderFriends(allFriendsData);
+        }
       } else {
         showToast('Lỗi tải bạn bè: ' + response.message, 'error');
-        document.getElementById('friendsLoading').style.display = 'none';
-        document.getElementById('friendsEmpty').style.display = 'flex';
+
+        if (!hasCache) {
+          setDisplay('friendsLoading', 'none');
+          setDisplay('friendsEmpty', 'flex');
+        }
       }
     })
     .withFailureHandler(function(error) {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      friendsLoadingInFlight = false;
+
       showToast('Lỗi kết nối: ' + error.message, 'error');
-      document.getElementById('friendsLoading').style.display = 'none';
-      document.getElementById('friendsEmpty').style.display = 'flex';
+
+      if (!hasCache) {
+        setDisplay('friendsLoading', 'none');
+        setDisplay('friendsEmpty', 'flex');
+      }
     })
     .apiGetFriends({
       userId: window.currentUser.userId
@@ -660,8 +824,15 @@ async function unfriend(friendId, friendName) {
 
 function setChatHeaderVisible(isVisible) {
   const header = document.querySelector('.chat-header.unified-page-header.is-minimal');
-  if (header) {
-    header.style.display = isVisible ? '' : 'none';
+  if (!header) return;
+
+  if (isVisible) {
+    header.classList.remove('is-hidden');
+    header.style.display = '';
+    applyChatHeaderState(activeChatTab || 'conversations');
+  } else {
+    header.classList.add('is-hidden');
+    header.style.display = 'none';
   }
 }
 
@@ -946,25 +1117,84 @@ function markAsRead(conversationId) {
 // CONVERSATIONS LIST (GĐ15)
 // ==========================================
 
-function loadConversations() {
-  document.getElementById('conversationsEmpty').style.display = 'none';
-  document.getElementById('conversationsList').style.display = 'none';
-  document.getElementById('conversationsLoading').style.display = 'flex';
-  
+function loadConversations(force = false) {
+  const hasCache = Array.isArray(chatConversationsCache);
+  const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatConversationsLastLoaded);
+
+  if (hasCache) {
+    renderConversations(chatConversationsCache);
+  } else {
+    setDisplay('conversationsEmpty', 'none');
+    setDisplay('conversationsList', 'none');
+    setDisplay('conversationsLoading', 'flex');
+  }
+
+  if (!shouldRefresh || conversationsLoadingInFlight) return;
+
+  conversationsLoadingInFlight = true;
+
+  let finished = false;
+
+  const timeoutId = setTimeout(function () {
+    if (finished) return;
+
+    finished = true;
+    conversationsLoadingInFlight = false;
+
+    if (!hasCache && activeChatTab === 'conversations') {
+      setDisplay('conversationsLoading', 'none');
+      setDisplay('conversationsEmpty', 'flex');
+      showToast('Tải cuộc trò chuyện quá lâu. Hãy kiểm tra backend getConversationsApi.', 'warning');
+    }
+  }, 12000);
+
   google.script.run
     .withSuccessHandler(function(response) {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      conversationsLoadingInFlight = false;
+
+      if (!response) {
+        showToast('Backend không trả dữ liệu.', 'error');
+
+        if (!hasCache) {
+          setDisplay('conversationsLoading', 'none');
+          setDisplay('conversationsEmpty', 'flex');
+        }
+        return;
+      }
+
       if (response.success) {
-        renderConversations(response.results);
+        chatConversationsCache = response.results || [];
+        chatConversationsLastLoaded = Date.now();
+
+        if (activeChatTab === 'conversations') {
+          renderConversations(chatConversationsCache);
+        }
       } else {
-        showToast('Lỗi tải tin nhắn: ' + response.message, 'error');
-        document.getElementById('conversationsLoading').style.display = 'none';
-        document.getElementById('conversationsEmpty').style.display = 'flex';
+        showToast('Lỗi tải tin nhắn: ' + (response.message || 'Không rõ lỗi'), 'error');
+
+        if (!hasCache) {
+          setDisplay('conversationsLoading', 'none');
+          setDisplay('conversationsEmpty', 'flex');
+        }
       }
     })
     .withFailureHandler(function(error) {
-      showToast('Lỗi kết nối: ' + error.message, 'error');
-      document.getElementById('conversationsLoading').style.display = 'none';
-      document.getElementById('conversationsEmpty').style.display = 'flex';
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeoutId);
+      conversationsLoadingInFlight = false;
+
+      showToast('Lỗi kết nối: ' + (error && error.message ? error.message : error), 'error');
+
+      if (!hasCache) {
+        setDisplay('conversationsLoading', 'none');
+        setDisplay('conversationsEmpty', 'flex');
+      }
     })
     .apiGetConversations(window.currentUser.userId);
 }

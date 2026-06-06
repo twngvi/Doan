@@ -833,16 +833,26 @@ function getConversationsApi(currentUserId) {
       return { success: true, results: [] };
     }
 
-    // Count unread messages
-    const mData = msgSheet.getDataRange().getValues();
-    const mCols = getSheetColumnMap(mData);
-    for (let i = 1; i < mData.length; i++) {
-      const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
-      const isRead = mData[i][mCols["isRead"]];
-      if (receiver === currentUserId && (isRead === false || String(isRead).toLowerCase() === "false")) {
-        const cid = (mData[i][mCols["conversationId"]] || "").toString();
-        const conv = userConversations.find(c => c.conversationId === cid);
-        if (conv) conv.unreadCount += 1;
+    // Count unread messages from a recent window only
+    const mLastRow = msgSheet.getLastRow();
+    const mLastCol = msgSheet.getLastColumn();
+
+    if (mLastRow >= 2 && mLastCol > 0) {
+      const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
+      const mCols = getSheetColumnMap(mHeader);
+
+      const maxRowsToScan = 1500;
+      const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
+      const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
+
+      for (let i = 0; i < mData.length; i++) {
+        const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
+        const isRead = mData[i][mCols["isRead"]];
+        if (receiver === currentUserId && (isRead === false || String(isRead).toLowerCase() === "false")) {
+          const cid = (mData[i][mCols["conversationId"]] || "").toString();
+          const conv = userConversations.find(c => c.conversationId === cid);
+          if (conv) conv.unreadCount += 1;
+        }
       }
     }
 
@@ -896,12 +906,21 @@ function getNotificationCountsApi(currentUserId) {
     // Đếm tin nhắn chưa đọc
     const msgSheet = ss.getSheetByName("Messages");
     if (msgSheet) {
-      const mData = msgSheet.getDataRange().getValues();
-      const mCols = getSheetColumnMap(mData);
-      
-      for (let i = 1; i < mData.length; i++) {
-        if (mData[i][mCols["receiverId"]] === currentUserId && mData[i][mCols["isRead"]] === false) {
-          totalUnread++;
+      const mLastRow = msgSheet.getLastRow();
+      const mLastCol = msgSheet.getLastColumn();
+
+      if (mLastRow >= 2 && mLastCol > 0) {
+        const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
+        const mCols = getSheetColumnMap(mHeader);
+
+        const maxRowsToScan = 1500;
+        const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
+        const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
+
+        for (let i = 0; i < mData.length; i++) {
+          if (mData[i][mCols["receiverId"]] === currentUserId && mData[i][mCols["isRead"]] === false) {
+            totalUnread++;
+          }
         }
       }
     }
