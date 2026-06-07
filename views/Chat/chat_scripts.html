@@ -7,7 +7,7 @@
 
 let notificationInterval = null; // Polling thông báo trên thanh nav
 
-let activeChatTab = 'conversations';
+let activeChatTab = 'friends';
 
 let chatConversationsCache = null;
 let chatConversationsLastLoaded = 0;
@@ -38,10 +38,9 @@ function isChatCacheFresh(lastLoaded) {
 
 function setActiveChatTabButton(tabName) {
   const tabIndexMap = {
-    conversations: 0,
-    friends: 1,
-    search: 2,
-    requests: 3
+    friends: 0,
+    search: 1,
+    requests: 2
   };
 
   document.querySelectorAll('.chat-tab').forEach(function(btn) {
@@ -85,7 +84,7 @@ function initChatPage() {
     checkNotifications(); // Kiểm tra thông báo và bắt đầu polling
   }
 
-  switchChatTab('conversations'); // Mặc định mở tab Tin nhắn
+  switchChatTab('friends'); // Mặc định mở tab Bạn bè
 }
 
 // Chuyển đổi giữa các Tabs
@@ -627,7 +626,8 @@ function loadFriends(force = false) {
   const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatFriendsLastLoaded);
 
   if (hasCache) {
-    renderFriends(chatFriendsCache);
+    allFriendsData = chatFriendsCache || [];
+    renderFriends(allFriendsData);
   } else {
     setDisplay('friendsEmpty', 'none');
     setDisplay('friendsList', 'none');
@@ -735,21 +735,26 @@ function renderFriends(friends) {
             <div class="player-id">#${escapeHtml(friend.playerId)}</div>
           </div>
         </div>
-        <div class="card-menu-wrap">
-          <button class="menu-dot-btn" type="button" aria-label="Tùy chọn" onclick='toggleFriendCardMenu(${escapeJsString(friend.userId)}, event)'>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="1.8"></circle>
-              <circle cx="12" cy="12" r="1.8"></circle>
-              <circle cx="12" cy="19" r="1.8"></circle>
-            </svg>
+
+        <div class="player-card-actions">
+          <button class="btn-relationship btn-chat" type="button" onclick='openChat(${escapeJsString(friend.userId)}, ${escapeJsString(friend.displayName)}, ${escapeJsString(friend.avatar)}, ${escapeJsString(friend.playerId)})'>
+            Nhắn tin
           </button>
-          <div class="card-menu-panel" data-user-id="${friend.userId}" onclick="event.stopPropagation();">
-            <button class="card-menu-item is-danger" type="button" onclick='toggleFriendCardMenu(${escapeJsString(friend.userId)}, event); unfriend(${escapeJsString(friend.userId)}, ${escapeJsString(friend.displayName)})'>Hủy kết bạn</button>
+
+          <div class="card-menu-wrap">
+            <button class="menu-dot-btn" type="button" aria-label="Tùy chọn" onclick='toggleFriendCardMenu(${escapeJsString(friend.userId)}, event)'>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="12" cy="5" r="1.8"></circle>
+                <circle cx="12" cy="12" r="1.8"></circle>
+                <circle cx="12" cy="19" r="1.8"></circle>
+              </svg>
+            </button>
+
+            <div class="card-menu-panel" data-user-id="${friend.userId}" onclick="event.stopPropagation();">
+              <button class="card-menu-item is-danger" type="button" onclick='toggleFriendCardMenu(${escapeJsString(friend.userId)}, event); unfriend(${escapeJsString(friend.userId)}, ${escapeJsString(friend.displayName)})'>Hủy kết bạn</button>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="player-action">
-        <button class="btn-relationship btn-chat" type="button" onclick="openChat('${friend.userId}')">Nhắn tin</button>
       </div>
     `;
     
@@ -760,28 +765,32 @@ function renderFriends(friends) {
 }
 
 function filterFriends(keyword) {
-  if (!keyword || keyword.trim() === '') {
+  const kw = String(keyword || '').trim().toLowerCase();
+
+  if (!kw) {
     renderFriends(allFriendsData);
     return;
   }
-  
-  const lowerKw = keyword.toLowerCase();
-  const filtered = allFriendsData.filter(f => 
-    (f.displayName && f.displayName.toLowerCase().includes(lowerKw)) || 
-    (f.playerId && f.playerId.toLowerCase().includes(lowerKw)) ||
-    (f.username && f.username.toLowerCase().includes(lowerKw))
-  );
-  
+
+  const filtered = (allFriendsData || []).filter(function(f) {
+    const displayName = String(f.displayName || '').toLowerCase();
+    const playerId = String(f.playerId || '').toLowerCase();
+    const username = String(f.username || '').toLowerCase();
+    const userId = String(f.userId || '').toLowerCase();
+
+    return displayName.includes(kw)
+      || playerId.includes(kw)
+      || username.includes(kw)
+      || userId.includes(kw);
+  });
+
   renderFriends(filtered);
-  
-  // Nếu lọc không ra ai mà mảng gốc có người
-  if (filtered.length === 0 && allFriendsData.length > 0) {
+
+  if (filtered.length === 0) {
+    document.getElementById('friendsList').style.display = 'none';
     document.getElementById('friendsEmpty').style.display = 'flex';
     document.getElementById('friendsEmpty').querySelector('h3').textContent = 'Không tìm thấy';
     document.getElementById('friendsEmpty').querySelector('p').textContent = 'Không có người bạn nào khớp với từ khóa.';
-  } else if (allFriendsData.length > 0) {
-    document.getElementById('friendsEmpty').querySelector('h3').textContent = 'Chưa có bạn bè';
-    document.getElementById('friendsEmpty').querySelector('p').textContent = 'Bạn chưa có bạn bè nào. Hãy sang tab Tìm kiếm để kết bạn nhé!';
   }
 }
 
@@ -829,7 +838,7 @@ function setChatHeaderVisible(isVisible) {
   if (isVisible) {
     header.classList.remove('is-hidden');
     header.style.display = '';
-    applyChatHeaderState(activeChatTab || 'conversations');
+    applyChatHeaderState(activeChatTab || 'friends');
   } else {
     header.classList.add('is-hidden');
     header.style.display = 'none';
@@ -838,7 +847,7 @@ function setChatHeaderVisible(isVisible) {
 
 let currentConversationId = null;
 
-function openChat(friendId) {
+function openChat(friendId, friendName, friendAvatar, friendPlayerId) {
   // Bug #9 fix: Ẩn TẤT CẢ tab areas, không chỉ tabFriendsArea
   setChatHeaderVisible(false);
   document.querySelector('.chat-tabs').style.display = 'none';
@@ -851,10 +860,10 @@ function openChat(friendId) {
   const roomArea = document.getElementById('chatRoomArea');
   roomArea.style.display = 'flex';
   
-  // Reset room UI
-  document.getElementById('chatRoomName').textContent = 'Đang tải...';
-  document.getElementById('chatRoomStatus').textContent = 'Đang kết nối...';
-  document.getElementById('chatRoomAvatar').src = 'https://www.gravatar.com/avatar/?d=mp';
+  // Hiện thông tin ngay nếu có, không phải chờ API
+  document.getElementById('chatRoomName').textContent = friendName || 'Đang tải...';
+  document.getElementById('chatRoomAvatar').src = friendAvatar || 'https://www.gravatar.com/avatar/?d=mp';
+  document.getElementById('chatRoomStatus').textContent = friendPlayerId ? '#' + friendPlayerId : 'Đang kết nối...';
   document.getElementById('chatRoomMessages').innerHTML = '<div class="chat-room-loading"><div class="chat-loading-spinner"></div></div>';
   document.getElementById('chatMessageInput').disabled = true;
   document.getElementById('chatSendBtn').disabled = true;
@@ -873,7 +882,7 @@ function openChat(friendId) {
         // Bug #6+7 fix: Set currentChatTargetId ngay ở đây, không đợi render tin nhắn
         currentChatTargetId = friend.userId;
         
-        // Cập nhật Header
+        // Cập nhật Header từ response (chính xác hơn)
         document.getElementById('chatRoomName').textContent = friend.displayName;
         document.getElementById('chatRoomAvatar').src = friend.avatar;
         document.getElementById('chatRoomStatus').textContent = '#' + friend.playerId;
@@ -913,8 +922,8 @@ function closeChatRoom() {
   document.getElementById('chatRoomArea').style.display = 'none';
   document.querySelector('.chat-tabs').style.display = 'flex';
   
-  // Về lại tab Tin nhắn và load lại để update text / unread
-  switchChatTab('conversations'); 
+  // Về lại tab Bạn bè và load lại để update
+  switchChatTab('friends'); 
 }
 
 // ==========================================
@@ -994,14 +1003,57 @@ function renderMessages(messages, isInitial = false, isPrepend = false) {
   const buildMessageHTML = (msg) => {
     // Bug #6 fix: Không còn set currentChatTargetId ở đây nữa (đã set trong openChat)
     
+    const messageKey = String(msg.messageId || '');
+    const textKey = String(msg.text || '').trim();
+    const isMe = msg.senderId === currentUserId;
+
+    // 1. Nếu messageId đã tồn tại thì không vẽ lại
+    if (messageKey && document.querySelector(`[data-message-id="${messageKey}"]`)) {
+      return '';
+    }
+
+    // 2. Nếu là tin của mình, kiểm tra có tin tạm cùng nội dung đang "Đang gửi" không
+    // Nếu có thì đổi tin tạm thành tin thật, không append thêm dòng mới
+    if (isMe && textKey) {
+      const pendingRows = document.querySelectorAll('.chat-message-row.is-me[data-pending="true"]');
+
+      for (const pendingRow of pendingRows) {
+        const pendingText = pendingRow.getAttribute('data-text-key') || '';
+        const pendingBubble = pendingRow.querySelector('.chat-bubble');
+        const pendingTime = pendingRow.querySelector('.chat-time');
+
+        if (pendingText === textKey) {
+          pendingRow.removeAttribute('data-pending');
+          pendingRow.setAttribute('data-message-id', messageKey);
+
+          if (messageKey) {
+            pendingRow.id = 'msg-' + messageKey;
+          }
+
+          if (pendingBubble) {
+            pendingBubble.classList.remove('is-optimistic');
+          }
+
+          if (pendingTime) {
+            const msgDate = new Date(msg.createdAt);
+            pendingTime.textContent = msgDate.toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          }
+
+          return '';
+        }
+      }
+    }
+    
     const msgDate = new Date(msg.createdAt);
     const timeStr = msgDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const isMe = msg.senderId === currentUserId;
     
     let html = '';
-    html += `<div class="chat-message-row ${isMe ? 'is-me' : 'is-friend'}">
+    html += `<div class="chat-message-row ${isMe ? 'is-me' : 'is-friend'}" data-message-id="${escapeAttr(msg.messageId || '')}">
       <div class="chat-message-wrap">
-        <div class="chat-bubble ${isMe ? 'is-optimistic-remove' : ''}">
+        <div class="chat-bubble">
           ${escapeHtml(msg.text)}
         </div>
         <div class="chat-time">${timeStr}</div>
@@ -1282,6 +1334,9 @@ function sendChatMessage() {
   const row = document.createElement('div');
   row.className = 'chat-message-row is-me';
   row.id = tempId;
+  row.setAttribute('data-message-id', tempId);
+  row.setAttribute('data-pending', 'true');
+  row.setAttribute('data-text-key', text);
   row.innerHTML = `
     <div class="chat-message-wrap">
       <div class="chat-bubble is-optimistic">
@@ -1313,21 +1368,29 @@ function sendChatMessage() {
       
       const tempEl = document.getElementById(tempId);
       if (response.success) {
-        if (tempEl) tempEl.remove();
-        // Bug #2 fix: Cập nhật newestMessageDate từ response.data (đã đổi tên từ response.message)
-        if (response.data && response.data.createdAt) {
-          newestMessageDate = response.data.createdAt;
-        }
-        renderMessages([
-          {
-            messageId: response.data && response.data.messageId ? response.data.messageId : tempId,
-            senderId: response.data && response.data.senderId ? response.data.senderId : window.currentUser.userId,
-            receiverId: currentChatTargetId,
-            text: response.data && response.data.text ? response.data.text : text,
-            isRead: false,
-            createdAt: response.data && response.data.createdAt ? response.data.createdAt : new Date().toISOString()
+        const data = response.data || {};
+        const realMessageId = data.messageId || tempId;
+        const createdAt = data.createdAt || new Date().toISOString();
+
+        if (tempEl) {
+          tempEl.id = 'msg-' + realMessageId;
+          tempEl.setAttribute('data-message-id', realMessageId);
+          tempEl.removeAttribute('data-pending');
+          tempEl.removeAttribute('data-text-key');
+
+          const bubble = tempEl.querySelector('.chat-bubble');
+          if (bubble) bubble.classList.remove('is-optimistic');
+
+          const timeEl = tempEl.querySelector('.chat-time');
+          if (timeEl) {
+            timeEl.textContent = new Date(createdAt).toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            });
           }
-        ], false, false);
+        }
+
+        newestMessageDate = createdAt;
       } else {
         showToast('Lỗi gửi tin nhắn: ' + response.message, 'error');
         if (tempEl) tempEl.remove();
@@ -1415,31 +1478,24 @@ function updateGlobalChatBadge(totalUnread) {
 }
 
 function updateTabBadges(totalUnread, pendingRequests) {
-  // Tab "Tin nhắn" badge
-  const msgTab = document.querySelectorAll('.chat-tab')[0];
-  if (msgTab) {
-    let msgBadge = msgTab.querySelector('.tab-unread-badge');
+  const friendsUnreadBadge = document.getElementById('friendsUnreadBadge');
+
+  if (friendsUnreadBadge) {
     if (totalUnread > 0) {
-      if (!msgBadge) {
-        msgBadge = document.createElement('span');
-        msgBadge.className = 'badge tab-unread-badge';
-        msgTab.appendChild(msgBadge);
-      }
-      msgBadge.textContent = totalUnread > 99 ? '99+' : totalUnread;
-      msgBadge.style.display = 'inline-block';
+      friendsUnreadBadge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+      friendsUnreadBadge.style.display = 'inline-block';
     } else {
-      if (msgBadge) msgBadge.style.display = 'none';
+      friendsUnreadBadge.style.display = 'none';
     }
   }
-  
-  // Tab "Lời mời" badge
-  const reqBadge = document.getElementById('friendRequestBadge');
-  if (reqBadge) {
+
+  const requestBadge = document.getElementById('friendRequestBadge');
+  if (requestBadge) {
     if (pendingRequests > 0) {
-      reqBadge.textContent = pendingRequests;
-      reqBadge.style.display = 'inline-block';
+      requestBadge.textContent = pendingRequests > 99 ? '99+' : pendingRequests;
+      requestBadge.style.display = 'inline-block';
     } else {
-      reqBadge.style.display = 'none';
+      requestBadge.style.display = 'none';
     }
   }
 }
