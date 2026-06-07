@@ -106,7 +106,10 @@ function switchChatTab(tabName) {
     loadConversations(false);
   } else if (tabName === 'friends') {
     setDisplay('tabFriendsArea', 'block');
-    loadFriends(false);
+    // Preload conversations cache (for unread dots & sorting) then load friends
+    loadConversationsSilent(function() {
+      loadFriends(false);
+    });
   } else if (tabName === 'search') {
     setDisplay('tabSearchArea', 'block');
 
@@ -717,19 +720,56 @@ function renderFriends(friends) {
   }
   
   document.getElementById('friendsEmpty').style.display = 'none';
+
+  // Build a map of unread counts and lastMessageAt from conversations cache
+  const convMap = {};
+  if (Array.isArray(chatConversationsCache)) {
+    chatConversationsCache.forEach(function(conv) {
+      if (conv.friendId) {
+        convMap[conv.friendId] = {
+          unreadCount: conv.unreadCount || 0,
+          lastMessageAt: conv.lastMessageAt || null
+        };
+      }
+    });
+  }
+
+  // Sort friends: those with recent messages first, then by lastMessageAt descending
+  const sortedFriends = friends.slice().sort(function(a, b) {
+    const convA = convMap[a.userId];
+    const convB = convMap[b.userId];
+    const timeA = convA && convA.lastMessageAt ? new Date(convA.lastMessageAt).getTime() : 0;
+    const timeB = convB && convB.lastMessageAt ? new Date(convB.lastMessageAt).getTime() : 0;
+    return timeB - timeA; // Descending: newest first
+  });
   
-  friends.forEach(function(friend) {
+  sortedFriends.forEach(function(friend) {
     const card = document.createElement('div');
     card.className = 'player-card';
     card.setAttribute('data-user-id', friend.userId);
     
     // Bug #1 fix: Dùng escapeAttr và escapeHtml cho dữ liệu user
     const safeName = escapeAttr(friend.displayName);
+
+    // Check unread count from conversations
+    const convInfo = convMap[friend.userId];
+    const unreadCount = convInfo ? convInfo.unreadCount : 0;
+    let unreadDotHtml = '';
+    if (unreadCount > 0) {
+      if (unreadCount > 9) {
+        unreadDotHtml = '<span class="friend-unread-dot has-count">' + (unreadCount > 99 ? '99+' : unreadCount) + '</span>';
+      } else {
+        unreadDotHtml = '<span class="friend-unread-dot has-count">' + unreadCount + '</span>';
+      }
+    }
     
     card.innerHTML = `
       <div class="player-meta-row">
         <div class="player-body">
-          <img src="${friend.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+          <div style="position:relative; flex-shrink:0;">
+            <img src="${friend.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+            ${unreadDotHtml}
+          </div>
           <div class="player-compact-info">
             <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}</div>
             <div class="player-id">#${escapeHtml(friend.playerId)}</div>
@@ -761,7 +801,7 @@ function renderFriends(friends) {
     container.appendChild(card);
   });
   
-  container.style.display = 'grid';
+  container.style.display = 'flex';
 }
 
 function filterFriends(keyword) {
@@ -1053,9 +1093,7 @@ function renderMessages(messages, isInitial = false, isPrepend = false) {
     let html = '';
     html += `<div class="chat-message-row ${isMe ? 'is-me' : 'is-friend'}" data-message-id="${escapeAttr(msg.messageId || '')}">
       <div class="chat-message-wrap">
-        <div class="chat-bubble">
-          ${escapeHtml(msg.text)}
-        </div>
+        <div class="chat-bubble">${escapeHtml(msg.text)}</div>
         <div class="chat-time">${timeStr}</div>
       </div>
     </div>`;
@@ -1168,6 +1206,36 @@ function markAsRead(conversationId) {
 // ==========================================
 // CONVERSATIONS LIST (GĐ15)
 // ==========================================
+
+// Silent loader: only updates cache, no UI changes. Calls callback when done.
+function loadConversationsSilent(callback) {
+  const hasCache = Array.isArray(chatConversationsCache);
+  const isFresh = hasCache && isChatCacheFresh(chatConversationsLastLoaded);
+
+  if (isFresh) {
+    if (callback) callback();
+    return;
+  }
+
+  if (conversationsLoadingInFlight) {
+    // Already loading, just call back with existing cache
+    if (callback) callback();
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        chatConversationsCache = response.results || [];
+        chatConversationsLastLoaded = Date.now();
+      }
+      if (callback) callback();
+    })
+    .withFailureHandler(function() {
+      if (callback) callback();
+    })
+    .apiGetConversations(window.currentUser.userId);
+}
 
 function loadConversations(force = false) {
   const hasCache = Array.isArray(chatConversationsCache);
@@ -1339,9 +1407,7 @@ function sendChatMessage() {
   row.setAttribute('data-text-key', text);
   row.innerHTML = `
     <div class="chat-message-wrap">
-      <div class="chat-bubble is-optimistic">
-        ${escapeHtml(text)}
-      </div>
+      <div class="chat-bubble is-optimistic">${escapeHtml(text)}</div>
       <div class="chat-time">Đang gửi...</div>
     </div>
   `;
@@ -1434,16 +1500,43 @@ function escapeHtml(unsafe) {
 // NOTIFICATIONS (GĐ16)
 // ==========================================
 
+let previousTotalUnread = -1;
+let previousPendingRequests = -1;
+
 function checkNotifications() {
   if (!window.currentUser || !window.currentUser.userId) return;
   
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        updateGlobalChatBadge(response.totalUnread);
-        updateTabBadges(response.totalUnread, response.pendingRequests);
+  function handlePollResponse(response) {
+    if (response && response.success) {
+      updateGlobalChatBadge(response.totalUnread);
+      updateTabBadges(response.totalUnread, response.pendingRequests);
+
+      // If counts changed, invalidate caches so next click fetches fresh data
+      if (previousTotalUnread !== -1 && (response.totalUnread !== previousTotalUnread || response.pendingRequests !== previousPendingRequests)) {
+        chatConversationsLastLoaded = 0;
+        chatRequestsLastLoaded = 0;
+        
+        // Auto refresh active tab
+        if (activeChatTab === 'friends') {
+          loadConversationsSilent(function() {
+            if (chatFriendsCache) {
+               renderFriends(chatFriendsCache);
+            }
+          });
+        } else if (activeChatTab === 'conversations') {
+          loadConversations(true);
+        } else if (activeChatTab === 'requests') {
+          loadFriendRequests(true);
+        }
       }
-    })
+      
+      previousTotalUnread = response.totalUnread;
+      previousPendingRequests = response.pendingRequests;
+    }
+  }
+
+  google.script.run
+    .withSuccessHandler(handlePollResponse)
     .withFailureHandler(function(error) {
       console.error('Notification check error:', error);
     })
@@ -1454,12 +1547,7 @@ function checkNotifications() {
     notificationInterval = setInterval(function() {
       if (!window.currentUser || !window.currentUser.userId) return;
       google.script.run
-        .withSuccessHandler(function(response) {
-          if (response && response.success) {
-            updateGlobalChatBadge(response.totalUnread);
-            updateTabBadges(response.totalUnread, response.pendingRequests);
-          }
-        })
+        .withSuccessHandler(handlePollResponse)
         .apiGetNotificationCounts(window.currentUser.userId);
     }, 30000);
   }

@@ -799,6 +799,7 @@ function markMessagesAsReadApi(conversationId, currentUserId) {
  */
 function getConversationsApi(currentUserId) {
   try {
+    const userIdTrim = (currentUserId || "").toString().trim();
     const ss = getOrCreateDatabase();
     const convSheet = ss.getSheetByName("Conversations");
     const msgSheet = ss.getSheetByName("Messages");
@@ -817,8 +818,8 @@ function getConversationsApi(currentUserId) {
       const u1 = (cData[i][cCols["userId1"]] || "").toString().trim();
       const u2 = (cData[i][cCols["userId2"]] || "").toString().trim();
 
-      if (u1 === currentUserId || u2 === currentUserId) {
-        const friendId = (u1 === currentUserId) ? u2 : u1;
+      if (u1 === userIdTrim || u2 === userIdTrim) {
+        const friendId = (u1 === userIdTrim) ? u2 : u1;
         userConversations.push({
           conversationId: (cData[i][cCols["conversationId"]] || "").toString(),
           friendId: friendId,
@@ -848,7 +849,7 @@ function getConversationsApi(currentUserId) {
       for (let i = 0; i < mData.length; i++) {
         const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
         const isRead = mData[i][mCols["isRead"]];
-        if (receiver === currentUserId && (isRead === false || String(isRead).toLowerCase() === "false")) {
+        if (receiver === userIdTrim && (isRead === false || String(isRead).toLowerCase() === "false")) {
           const cid = (mData[i][mCols["conversationId"]] || "").toString();
           const conv = userConversations.find(c => c.conversationId === cid);
           if (conv) conv.unreadCount += 1;
@@ -899,6 +900,7 @@ function getConversationsApi(currentUserId) {
  */
 function getNotificationCountsApi(currentUserId) {
   try {
+    const userIdTrim = (currentUserId || "").toString().trim();
     const ss = getOrCreateDatabase();
     let totalUnread = 0;
     let pendingRequests = 0;
@@ -918,7 +920,8 @@ function getNotificationCountsApi(currentUserId) {
         const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
 
         for (let i = 0; i < mData.length; i++) {
-          if (mData[i][mCols["receiverId"]] === currentUserId && mData[i][mCols["isRead"]] === false) {
+          const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
+          if (receiver === userIdTrim && mData[i][mCols["isRead"]] === false) {
             totalUnread++;
           }
         }
@@ -932,7 +935,9 @@ function getNotificationCountsApi(currentUserId) {
       const rCols = getSheetColumnMap(rData);
       
       for (let i = 1; i < rData.length; i++) {
-        if (rData[i][rCols["toUserId"]] === currentUserId && rData[i][rCols["status"]] === "pending") {
+        const toId = (rData[i][rCols["toUserId"]] || "").toString().trim();
+        const status = (rData[i][rCols["status"]] || "").toString().trim();
+        if (toId === userIdTrim && status === "pending") {
           pendingRequests++;
         }
       }
