@@ -276,6 +276,10 @@ function apiGetConversations(userId) {
   return getConversationsApi(userId);
 }
 
+function apiDeleteConversation(payload) {
+  return deleteConversationApi(payload.conversationId, payload.userId);
+}
+
 function apiGetNotificationCounts(payload) {
   const userId = typeof payload === "object" ? payload.userId : payload;
   const activeConversationId = typeof payload === "object" ? payload.activeConversationId : null;

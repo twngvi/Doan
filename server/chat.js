@@ -429,30 +429,22 @@ function respondFriendRequestApi(requestId, currentUserId, action) {
           friendsSheet.appendRow([friendshipId, u1, u2, "active", now, now]);
         }
         
-        // If there is an existing conversation that was previously marked removedFor this user, unmark it so it becomes visible again
+        // Xóa conversation cũ để làm trống lịch sử khi kết bạn lại
         try {
           const convSheet = ss.getSheetByName("Conversations");
           if (convSheet) {
             const cData = convSheet.getDataRange().getValues();
             const cCols = getSheetColumnMap(cData);
-            if (cCols["removedFor"]) {
-              for (let i = 1; i < cData.length; i++) {
-                const cu1 = (cData[i][cCols["userId1"]] || "").toString();
-                const cu2 = (cData[i][cCols["userId2"]] || "").toString();
-                if ((cu1 === currentUserId && cu2 === fromUserId) || (cu1 === fromUserId && cu2 === currentUserId)) {
-                  const removedRaw = (cData[i][cCols["removedFor"]] || "").toString();
-                  const list = removedRaw ? removedRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-                  const idx = list.indexOf(currentUserId);
-                  if (idx !== -1) {
-                    list.splice(idx, 1);
-                    convSheet.getRange(i + 1, cCols["removedFor"] + 1).setValue(list.join(','));
-                  }
-                }
+            for (let i = cData.length - 1; i >= 1; i--) {
+              const cu1 = (cData[i][cCols["userId1"]] || "").toString();
+              const cu2 = (cData[i][cCols["userId2"]] || "").toString();
+              if ((cu1 === currentUserId && cu2 === fromUserId) || (cu1 === fromUserId && cu2 === currentUserId)) {
+                convSheet.deleteRow(i + 1);
               }
             }
           }
         } catch (e) {
-          Logger.log('Warning: cannot clear removedFor on accept: ' + e.toString());
+          Logger.log('Warning: cannot reset conversation on accept: ' + e.toString());
         }
       }
       return { success: true, message: "Đã chấp nhận lời mời kết bạn." };
@@ -1043,6 +1035,50 @@ function getConversationsApi(currentUserId) {
   } catch (error) {
     Logger.log("Error getConversationsApi: " + error.toString());
     return { success: false, message: "Lỗi lấy danh sách cuộc trò chuyện." };
+  }
+}
+
+/**
+ * Xóa (ẩn) cuộc trò chuyện cho một người dùng
+ */
+function deleteConversationApi(conversationId, userId) {
+  try {
+    const ss = getOrCreateDatabase();
+    const convSheet = ss.getSheetByName("Conversations");
+    
+    if (!convSheet) return { success: false, message: "Lỗi cơ sở dữ liệu." };
+    
+    const cData = convSheet.getDataRange().getValues();
+    const cCols = getSheetColumnMap(cData);
+    
+    let removedForCol = cCols["removedFor"];
+    if (typeof removedForCol === 'undefined') {
+      const lastCol = cData[0].length;
+      convSheet.getRange(1, lastCol + 1).setValue('removedFor');
+      const newCData = convSheet.getDataRange().getValues();
+      removedForCol = getSheetColumnMap(newCData)["removedFor"];
+    }
+    
+    for (let i = 1; i < cData.length; i++) {
+      if (cData[i][cCols["conversationId"]] === conversationId) {
+        const u1 = cData[i][cCols["userId1"]];
+        const u2 = cData[i][cCols["userId2"]];
+        if (u1 === userId || u2 === userId) {
+          const existing = (cData[i][removedForCol] || "").toString();
+          const list = existing ? existing.split(',').map(s => s.trim()).filter(Boolean) : [];
+          if (list.indexOf(userId) === -1) {
+            list.push(userId);
+            convSheet.getRange(i + 1, removedForCol + 1).setValue(list.join(','));
+          }
+          return { success: true, message: "Đã xóa cuộc trò chuyện." };
+        }
+      }
+    }
+    
+    return { success: false, message: "Không tìm thấy cuộc trò chuyện." };
+  } catch (error) {
+    Logger.log("Error deleteConversationApi: " + error.toString());
+    return { success: false, message: "Lỗi hệ thống: " + error.toString() };
   }
 }
 
