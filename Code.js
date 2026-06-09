@@ -276,8 +276,10 @@ function apiGetConversations(userId) {
   return getConversationsApi(userId);
 }
 
-function apiGetNotificationCounts(userId) {
-  return getNotificationCountsApi(userId);
+function apiGetNotificationCounts(payload) {
+  const userId = typeof payload === "object" ? payload.userId : payload;
+  const activeConversationId = typeof payload === "object" ? payload.activeConversationId : null;
+  return getNotificationCountsApi(userId, activeConversationId);
 }
 
 // ========================================

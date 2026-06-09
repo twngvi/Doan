@@ -446,20 +446,6 @@ const DB_CONFIG = {
       ],
     },
 
-    MESSAGES: {
-      name: "Messages",
-      idPrefix: "MSG",
-      columns: [
-        "messageId",
-        "conversationId",
-        "senderId",
-        "receiverId",
-        "messageText",
-        "isRead",
-        "createdAt",
-      ],
-    },
-
     // ========== AI LEARNING SYSTEM TABLES ==========
 
     AI_CONTENT_CACHE: {
@@ -674,6 +660,19 @@ const USER_DB_CONFIG = {
       name: "Session_Logs",
       idPrefix: "SES",
       columns: ["sessionId", "loginAt", "logoutAt", "device", "ipAddress"],
+    },
+    MESSAGES: {
+      name: "Messages",
+      idPrefix: "MSG",
+      columns: [
+        "messageId",
+        "conversationId",
+        "senderId",
+        "receiverId",
+        "messageText",
+        "isRead",
+        "createdAt",
+      ],
     },
 
     // ========== AI LEARNING SYSTEM SHEETS ==========

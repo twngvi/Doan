@@ -327,7 +327,8 @@ function sendFriendRequest(targetUserId) {
   const buttons = document.querySelectorAll(`[data-friend-action="${targetUserId}"]`);
   buttons.forEach(btn => {
     btn.disabled = true;
-    btn.textContent = 'Đang gửi...';
+    btn.className = 'btn-relationship is-sent';
+    btn.textContent = 'Đã gửi lời mời';
   });
   
   const payload = {
@@ -338,24 +339,25 @@ function sendFriendRequest(targetUserId) {
   google.script.run
     .withSuccessHandler(function(response) {
       if (response.success) {
-        showToast('Đã gửi lời mời kết bạn.', 'success');
+        // Optimistic UI: Đã cập nhật giao diện trước, giờ chỉ cần xóa sự kiện click
         buttons.forEach(btn => {
-          btn.className = 'btn-relationship is-sent';
-          btn.textContent = 'Đã gửi lời mời';
-          // Xóa sự kiện click
           btn.replaceWith(btn.cloneNode(true));
         });
       } else {
         showToast(response.message, 'error');
+        // Hoàn tác nếu lỗi
         buttons.forEach(btn => {
+          btn.className = 'btn-primary';
           btn.disabled = false;
           btn.textContent = 'Kết bạn';
         });
       }
     })
     .withFailureHandler(function(error) {
-      showToast('Lỗi kết nối: ' + error.message, 'error');
+      showToast('Lỗi kết nối: Không thể gửi lời mời.', 'error');
+      // Hoàn tác nếu lỗi
       buttons.forEach(btn => {
+        btn.className = 'btn-primary';
         btn.disabled = false;
         btn.textContent = 'Kết bạn';
       });
@@ -506,6 +508,9 @@ function renderFriendRequests(requests) {
     return;
   }
   
+  // Bug fix: Ẩn thông báo "Chưa có lời mời" nếu có danh sách
+  document.getElementById('requestsEmpty').style.display = 'none';
+  
   requests.forEach(function(req) {
     const card = document.createElement('div');
     card.className = 'player-card';
@@ -539,11 +544,34 @@ function renderFriendRequests(requests) {
 
 // Xử lý Accept/Reject
 function respondToRequest(requestId, action, btnElement) {
-  // Disable buttons
+  // Optimistic UI: Ẩn ngay card đi
   const card = document.getElementById(`request-${requestId}`);
   if (card) {
-    const buttons = card.querySelectorAll('button');
-    buttons.forEach(b => b.disabled = true);
+    card.style.display = 'none';
+  }
+  
+  // Optimistic UI: Hiện thông báo ngay lập tức
+  if (action === 'accept') {
+    showToast('Đã chấp nhận lời mời.', 'success');
+  } else {
+    showToast('Đã từ chối lời mời.', 'info');
+  }
+  
+  // Optimistic UI: Cập nhật badge luôn
+  const badge = document.getElementById('friendRequestBadge');
+  if (badge) {
+    let count = Number(badge.textContent) || 0;
+    count = count - 1;
+    if (count > 0) {
+      badge.textContent = count;
+    } else {
+      badge.style.display = 'none';
+      const remainingCards = document.querySelectorAll('#requestsList .player-card:not([style*="display: none"])');
+      if (remainingCards.length === 0) {
+        document.getElementById('requestsList').style.display = 'none';
+        document.getElementById('requestsEmpty').style.display = 'flex';
+      }
+    }
   }
   
   const payload = {
@@ -555,39 +583,25 @@ function respondToRequest(requestId, action, btnElement) {
   google.script.run
     .withSuccessHandler(function(response) {
       if (response.success) {
-        showToast(response.message, 'success');
-        // Xóa card khỏi giao diện
+        // Đã cập nhật giao diện trước, chỉ cần xóa hẳn card
         if (card) card.remove();
         
-        // Bug #10 fix: Dùng Number() và kiểm tra NaN
-        const badge = document.getElementById('friendRequestBadge');
-        let count = Number(badge.textContent) || 0;
-        count = count - 1;
-        if (count > 0) {
-          badge.textContent = count;
-        } else {
-          badge.style.display = 'none';
-          // Kiểm tra còn card nào trong list không
-          const remainingCards = document.querySelectorAll('#requestsList .player-card');
-          if (remainingCards.length === 0) {
-            document.getElementById('requestsList').style.display = 'none';
-            document.getElementById('requestsEmpty').style.display = 'flex';
-          }
+        // Nếu accept, load lại danh sách bạn bè ngầm
+        if (action === 'accept') {
+          loadFriends(true);
         }
       } else {
         showToast('Lỗi: ' + response.message, 'error');
-        if (card) {
-          const buttons = card.querySelectorAll('button');
-          buttons.forEach(b => b.disabled = false);
-        }
+        // Phục hồi lại card nếu lỗi
+        if (card) card.style.display = '';
+        loadFriendRequests(true);
       }
     })
     .withFailureHandler(function(error) {
       showToast('Lỗi kết nối: ' + error.message, 'error');
-      if (card) {
-        const buttons = card.querySelectorAll('button');
-        buttons.forEach(b => b.disabled = false);
-      }
+      // Phục hồi lại card nếu lỗi
+      if (card) card.style.display = '';
+      loadFriendRequests(true);
     })
     .apiRespondFriendRequest(payload);
 }
@@ -768,10 +782,9 @@ function renderFriends(friends) {
         <div class="player-body">
           <div style="position:relative; flex-shrink:0;">
             <img src="${friend.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
-            ${unreadDotHtml}
           </div>
           <div class="player-compact-info">
-            <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}</div>
+            <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}${unreadDotHtml}</div>
             <div class="player-id">#${escapeHtml(friend.playerId)}</div>
           </div>
         </div>
@@ -838,7 +851,6 @@ function filterFriends(keyword) {
 // UNFRIEND & OPEN CHAT (GĐ8, GĐ9)
 // ==========================================
 
-// Bug #11 fix: Dùng showAppConfirm thay vì confirm() native (bị block trong iframe)
 async function unfriend(friendId, friendName) {
   const confirmed = await showAppConfirm(
     `Bạn có chắc muốn hủy kết bạn với ${friendName}? Lịch sử trò chuyện cũng sẽ bị xóa.`,
@@ -851,6 +863,10 @@ async function unfriend(friendId, friendName) {
   
   if (!confirmed) return;
   
+  // Optimistic UI: Ẩn card đi ngay lập tức
+  const friendCard = document.querySelector(`.player-card[data-user-id="${friendId}"]`);
+  if (friendCard) friendCard.style.display = 'none';
+  
   const payload = {
     userId: window.currentUser.userId,
     friendId: friendId
@@ -859,14 +875,26 @@ async function unfriend(friendId, friendName) {
   google.script.run
     .withSuccessHandler(function(response) {
       if(response.success) {
-        showToast('Đã hủy kết bạn.', 'success');
-        loadFriends(); // Load lại danh sách
+        if (friendCard) friendCard.remove();
+        
+        // Kiểm tra xem còn bạn bè nào không
+        const remainingCards = document.querySelectorAll('#friendsList .player-card:not([style*="display: none"])');
+        if (remainingCards.length === 0) {
+          document.getElementById('friendsList').style.display = 'none';
+          document.getElementById('friendsEmpty').style.display = 'flex';
+        }
+        
+        loadFriends(true); // Load ngầm lại cache
       } else {
         showToast('Lỗi: ' + response.message, 'error');
+        // Phục hồi lại nếu có lỗi
+        if (friendCard) friendCard.style.display = '';
       }
     })
     .withFailureHandler(function(error) {
       showToast('Lỗi kết nối: ' + error.message, 'error');
+      // Phục hồi lại nếu có lỗi
+      if (friendCard) friendCard.style.display = '';
     })
     .apiUnfriend(payload);
 }
@@ -977,7 +1005,8 @@ let chatPollingInterval = null;
 
 function loadMessages(conversationId) {
   const payload = {
-    conversationId: conversationId
+    conversationId: conversationId,
+    userId: window.currentUser.userId
   };
   
   google.script.run
@@ -996,7 +1025,7 @@ function loadMessages(conversationId) {
         
         // Start polling sau khi load xong (chỉ start 1 lần)
         if (!chatPollingInterval) {
-          chatPollingInterval = setInterval(pollNewMessages, 8000);
+          chatPollingInterval = setInterval(pollNewMessages, 3000); // Tăng tốc độ polling lên 3 giây
         }
       } else {
         document.getElementById('chatRoomMessages').innerHTML = '<p style="text-align:center; color: var(--error-main);">Lỗi tải tin nhắn.</p>';
@@ -1153,7 +1182,8 @@ function loadMoreMessages() {
   
   const payload = {
     conversationId: currentConversationId,
-    beforeTimestamp: oldestMessageDate
+    beforeTimestamp: oldestMessageDate,
+    userId: window.currentUser.userId
   };
   
   google.script.run
@@ -1407,17 +1437,16 @@ function sendChatMessage() {
   row.setAttribute('data-text-key', text);
   row.innerHTML = `
     <div class="chat-message-wrap">
-      <div class="chat-bubble is-optimistic">${escapeHtml(text)}</div>
-      <div class="chat-time">Đang gửi...</div>
+      <div class="chat-bubble">${escapeHtml(text)}</div>
+      <div class="chat-time">${timeStr}</div>
     </div>
   `;
   container.appendChild(row);
   scrollToBottom();
   
-  // Disable input & button while sending
+  // Clear input to allow typing next message immediately
   input.value = '';
-  input.disabled = true;
-  document.getElementById('chatSendBtn').disabled = true;
+  input.focus();
   
   const payload = {
     conversationId: currentConversationId,
@@ -1428,10 +1457,7 @@ function sendChatMessage() {
   
   google.script.run
     .withSuccessHandler(function(response) {
-      input.disabled = false;
-      document.getElementById('chatSendBtn').disabled = false;
-      input.focus();
-      
+      // Cập nhật ID sau khi gửi thành công
       const tempEl = document.getElementById(tempId);
       if (response.success) {
         const data = response.data || {};
@@ -1443,17 +1469,6 @@ function sendChatMessage() {
           tempEl.setAttribute('data-message-id', realMessageId);
           tempEl.removeAttribute('data-pending');
           tempEl.removeAttribute('data-text-key');
-
-          const bubble = tempEl.querySelector('.chat-bubble');
-          if (bubble) bubble.classList.remove('is-optimistic');
-
-          const timeEl = tempEl.querySelector('.chat-time');
-          if (timeEl) {
-            timeEl.textContent = new Date(createdAt).toLocaleTimeString('vi-VN', {
-              hour: '2-digit',
-              minute: '2-digit'
-            });
-          }
         }
 
         newestMessageDate = createdAt;
@@ -1464,12 +1479,9 @@ function sendChatMessage() {
       }
     })
     .withFailureHandler(function(error) {
-      input.disabled = false;
-      document.getElementById('chatSendBtn').disabled = false;
       const tempEl = document.getElementById(tempId);
       if (tempEl) tempEl.remove();
-      showToast('Lỗi kết nối: ' + error.message, 'error');
-      input.value = text;
+      showToast('Lỗi kết nối: Không thể gửi tin nhắn.', 'error');
     })
     .apiSendMessage(payload);
 }
@@ -1540,7 +1552,10 @@ function checkNotifications() {
     .withFailureHandler(function(error) {
       console.error('Notification check error:', error);
     })
-    .apiGetNotificationCounts(window.currentUser.userId);
+    .apiGetNotificationCounts({
+      userId: window.currentUser.userId,
+      activeConversationId: typeof currentConversationId !== 'undefined' ? currentConversationId : null
+    });
   
   // Start polling notifications every 30s (if not already running)
   if (!notificationInterval) {
@@ -1548,7 +1563,10 @@ function checkNotifications() {
       if (!window.currentUser || !window.currentUser.userId) return;
       google.script.run
         .withSuccessHandler(handlePollResponse)
-        .apiGetNotificationCounts(window.currentUser.userId);
+        .apiGetNotificationCounts({
+          userId: window.currentUser.userId,
+          activeConversationId: typeof currentConversationId !== 'undefined' ? currentConversationId : null
+        });
     }, 30000);
   }
 }

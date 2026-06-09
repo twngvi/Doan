@@ -640,11 +640,17 @@ function getMessagesApi(payload) {
     const conversationId = String(request.conversationId || "").trim();
     const beforeTimestamp = request.beforeTimestamp;
     const afterTimestamp = request.afterTimestamp;
+    const userId = request.userId; // Trích xuất userId
     
-    const ss = getOrCreateDatabase();
-    const msgSheet = ss.getSheetByName("Messages");
-    if (!msgSheet) return { success: false, message: "Lỗi database" };
     if (!conversationId) return { success: false, message: "Thiếu conversationId." };
+    if (!userId) return { success: false, message: "Thiếu userId." };
+    
+    const userSs = getUserSpreadsheet(userId);
+    if (!userSs) return { success: false, message: "Không tìm thấy dữ liệu người dùng." };
+    
+    const msgSheet = userSs.getSheetByName("Messages");
+    // Nếu sheet không tồn tại, có nghĩa là chưa có tin nhắn nào
+    if (!msgSheet) return { success: true, results: [] };
 
     const lastRow = msgSheet.getLastRow();
     if (lastRow < 2) return { success: true, results: [] };
@@ -724,25 +730,44 @@ function sendMessageApi(conversationId, senderId, receiverId, text) {
       return { success: false, message: "Bạn chỉ có thể nhắn tin với bạn bè." };
     }
     
-    const msgSheet = ss.getSheetByName("Messages");
     const convSheet = ss.getSheetByName("Conversations");
+    if (!convSheet) return { success: false, message: "Lỗi database" };
     
-    if (!msgSheet || !convSheet) return { success: false, message: "Lỗi database" };
+    const senderSs = getUserSpreadsheet(senderId);
+    const receiverSs = getUserSpreadsheet(receiverId);
+    
+    if (!senderSs || !receiverSs) {
+      return { success: false, message: "Lỗi kết nối tới dữ liệu người dùng." };
+    }
+    
+    let senderMsgSheet = senderSs.getSheetByName("Messages");
+    if (!senderMsgSheet) {
+      senderMsgSheet = createUserSheet(senderSs, USER_DB_CONFIG.SHEETS.MESSAGES);
+    }
+    
+    let receiverMsgSheet = receiverSs.getSheetByName("Messages");
+    if (!receiverMsgSheet) {
+      receiverMsgSheet = createUserSheet(receiverSs, USER_DB_CONFIG.SHEETS.MESSAGES);
+    }
     
     const now = new Date();
-    const messageId = generateNextId(msgSheet, "MSG");
+    // Generate unique message ID
+    const messageId = "MSG" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
     
     // Lưu Message: messageId, conversationId, senderId, receiverId, messageText, isRead, createdAt
-    msgSheet.appendRow([messageId, conversationId, senderId, receiverId, text, false, now]);
+    const msgRow = [messageId, conversationId, senderId, receiverId, text, false, now];
+    
+    // Append to BOTH personal sheets
+    senderMsgSheet.appendRow(msgRow);
+    receiverMsgSheet.appendRow(msgRow);
     
     // Cập nhật Conversation
     const cData = convSheet.getDataRange().getValues();
     const cCols = getSheetColumnMap(cData);
     for (let i = 1; i < cData.length; i++) {
       if (cData[i][cCols["conversationId"]] === conversationId) {
-        convSheet.getRange(i + 1, cCols["lastMessage"] + 1).setValue(text);
-        convSheet.getRange(i + 1, cCols["lastMessageAt"] + 1).setValue(now);
-        convSheet.getRange(i + 1, cCols["updatedAt"] + 1).setValue(now);
+        // Use setValues for faster execution
+        convSheet.getRange(i + 1, cCols["lastMessage"] + 1, 1, 3).setValues([[text, now, now]]);
         break;
       }
     }
@@ -751,7 +776,7 @@ function sendMessageApi(conversationId, senderId, receiverId, text) {
       messageId: messageId,
       senderId: senderId,
       text: text,
-      createdAt: now
+      createdAt: now.toISOString() // Fix serialization issue
     }};
     
   } catch(error) {
@@ -765,8 +790,10 @@ function sendMessageApi(conversationId, senderId, receiverId, text) {
  */
 function markMessagesAsReadApi(conversationId, currentUserId) {
   try {
-    const ss = getOrCreateDatabase();
-    const msgSheet = ss.getSheetByName("Messages");
+    const userSs = getUserSpreadsheet(currentUserId);
+    if (!userSs) return { success: false };
+    
+    const msgSheet = userSs.getSheetByName("Messages");
     if (!msgSheet) return { success: false };
     
     const mData = msgSheet.getDataRange().getValues();
@@ -802,10 +829,15 @@ function getConversationsApi(currentUserId) {
     const userIdTrim = (currentUserId || "").toString().trim();
     const ss = getOrCreateDatabase();
     const convSheet = ss.getSheetByName("Conversations");
-    const msgSheet = ss.getSheetByName("Messages");
     const usersSheet = ss.getSheetByName("Users");
+    
+    const userSs = getUserSpreadsheet(userIdTrim);
+    let msgSheet = null;
+    if (userSs) {
+      msgSheet = userSs.getSheetByName("Messages");
+    }
 
-    if (!convSheet || !msgSheet || !usersSheet) {
+    if (!convSheet || !usersSheet) {
       return { success: false, message: "Lỗi cơ sở dữ liệu." };
     }
 
@@ -834,25 +866,27 @@ function getConversationsApi(currentUserId) {
       return { success: true, results: [] };
     }
 
-    // Count unread messages from a recent window only
-    const mLastRow = msgSheet.getLastRow();
-    const mLastCol = msgSheet.getLastColumn();
+    // Count unread messages from personal sheet
+    if (msgSheet) {
+      const mLastRow = msgSheet.getLastRow();
+      const mLastCol = msgSheet.getLastColumn();
 
-    if (mLastRow >= 2 && mLastCol > 0) {
-      const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
-      const mCols = getSheetColumnMap(mHeader);
+      if (mLastRow >= 2 && mLastCol > 0) {
+        const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
+        const mCols = getSheetColumnMap(mHeader);
 
-      const maxRowsToScan = 1500;
-      const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
-      const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
+        const maxRowsToScan = 1500;
+        const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
+        const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
 
-      for (let i = 0; i < mData.length; i++) {
-        const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
-        const isRead = mData[i][mCols["isRead"]];
-        if (receiver === userIdTrim && (isRead === false || String(isRead).toLowerCase() === "false")) {
-          const cid = (mData[i][mCols["conversationId"]] || "").toString();
-          const conv = userConversations.find(c => c.conversationId === cid);
-          if (conv) conv.unreadCount += 1;
+        for (let i = 0; i < mData.length; i++) {
+          const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
+          const isRead = mData[i][mCols["isRead"]];
+          if (receiver === userIdTrim && (isRead === false || String(isRead).toLowerCase() === "false")) {
+            const cid = (mData[i][mCols["conversationId"]] || "").toString();
+            const conv = userConversations.find(c => c.conversationId === cid);
+            if (conv) conv.unreadCount += 1;
+          }
         }
       }
     }
@@ -898,31 +932,38 @@ function getConversationsApi(currentUserId) {
  * Lấy số lượng thông báo (tin nhắn chưa đọc + lời mời pending)
  * API nhẹ dùng cho global badge trên thanh nav
  */
-function getNotificationCountsApi(currentUserId) {
+function getNotificationCountsApi(currentUserId, activeConversationId = null) {
   try {
     const userIdTrim = (currentUserId || "").toString().trim();
     const ss = getOrCreateDatabase();
     let totalUnread = 0;
     let pendingRequests = 0;
     
-    // Đếm tin nhắn chưa đọc
-    const msgSheet = ss.getSheetByName("Messages");
-    if (msgSheet) {
-      const mLastRow = msgSheet.getLastRow();
-      const mLastCol = msgSheet.getLastColumn();
+    // Đếm tin nhắn chưa đọc từ personal sheet
+    const userSs = getUserSpreadsheet(userIdTrim);
+    if (userSs) {
+      const msgSheet = userSs.getSheetByName("Messages");
+      if (msgSheet) {
+        const mLastRow = msgSheet.getLastRow();
+        const mLastCol = msgSheet.getLastColumn();
 
-      if (mLastRow >= 2 && mLastCol > 0) {
-        const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
-        const mCols = getSheetColumnMap(mHeader);
+        if (mLastRow >= 2 && mLastCol > 0) {
+          const mHeader = msgSheet.getRange(1, 1, 1, mLastCol).getValues();
+          const mCols = getSheetColumnMap(mHeader);
 
-        const maxRowsToScan = 1500;
-        const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
-        const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
+          const maxRowsToScan = 1500;
+          const startRow = Math.max(2, mLastRow - maxRowsToScan + 1);
+          const mData = msgSheet.getRange(startRow, 1, mLastRow - startRow + 1, mLastCol).getValues();
 
-        for (let i = 0; i < mData.length; i++) {
-          const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
-          if (receiver === userIdTrim && mData[i][mCols["isRead"]] === false) {
-            totalUnread++;
+          for (let i = 0; i < mData.length; i++) {
+            const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
+            const convId = (mData[i][mCols["conversationId"]] || "").toString().trim();
+            if (receiver === userIdTrim && mData[i][mCols["isRead"]] === false) {
+              // Ignore messages from the currently active conversation
+              if (!activeConversationId || convId !== activeConversationId) {
+                totalUnread++;
+              }
+            }
           }
         }
       }
