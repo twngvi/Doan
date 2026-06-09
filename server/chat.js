@@ -72,6 +72,55 @@ function getRelationshipsMap(currentUserId) {
   return relMap;
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/\s+/g, " ");
+}
+
+function isGoodPlayerMatch(keyword, playerId, displayName, username) {
+  const kw = normalizeSearchText(keyword);
+  if (!kw) return false;
+
+  const cleanKw = kw.replace(/^#/, "");
+  const pid = normalizeSearchText(playerId).replace(/^#/, "");
+  const name = normalizeSearchText(displayName);
+  const uname = normalizeSearchText(username);
+
+  // Exact / prefix match for player ID is always allowed.
+  if (pid === cleanKw) return true;
+  if (cleanKw.length >= 2 && pid.startsWith(cleanKw)) return true;
+
+  const nameTokens = name ? name.split(" ").filter(Boolean) : [];
+  const unameTokens = uname ? uname.split(" ").filter(Boolean) : [];
+
+  const matchesTokenPrefix = function(textTokens) {
+    return textTokens.some(function(token) {
+      return token.startsWith(cleanKw);
+    });
+  };
+
+  // Short keywords are treated strictly to avoid noisy matches.
+  if (cleanKw.length < 3) {
+    if (matchesTokenPrefix(nameTokens)) return true;
+    if (uname.startsWith(cleanKw)) return true;
+    return false;
+  }
+
+  if (name.includes(cleanKw)) return true;
+  if (matchesTokenPrefix(nameTokens)) return true;
+
+  // Username is still searchable, but only with tighter matching than a raw substring.
+  if (uname.startsWith(cleanKw)) return true;
+  if (matchesTokenPrefix(unameTokens)) return true;
+
+  return false;
+}
+
 /**
  * Tìm kiếm người chơi theo từ khóa
  * @param {string} currentUserId - ID người dùng hiện tại
@@ -82,8 +131,6 @@ function searchPlayers(currentUserId, keyword) {
     if (!keyword || String(keyword).trim() === "") {
       return { success: true, results: [] };
     }
-
-    const kw = String(keyword).trim().toLowerCase();
 
     // Build relationships map so we can report relationship status per result
     const relMap = getRelationshipsMap(currentUserId);
@@ -131,8 +178,7 @@ function searchPlayers(currentUserId, keyword) {
         if (activeValue === false || String(activeValue).toLowerCase() === "false") continue;
       }
 
-      const haystack = [playerId, displayName, username, email].join(" ").toLowerCase();
-      if (!haystack.includes(kw)) continue;
+      if (!isGoodPlayerMatch(keyword, playerId, displayName, username)) continue;
 
       results.push({
         userId: userId,
@@ -382,6 +428,32 @@ function respondFriendRequestApi(requestId, currentUserId, action) {
           
           friendsSheet.appendRow([friendshipId, u1, u2, "active", now, now]);
         }
+        
+        // If there is an existing conversation that was previously marked removedFor this user, unmark it so it becomes visible again
+        try {
+          const convSheet = ss.getSheetByName("Conversations");
+          if (convSheet) {
+            const cData = convSheet.getDataRange().getValues();
+            const cCols = getSheetColumnMap(cData);
+            if (cCols["removedFor"]) {
+              for (let i = 1; i < cData.length; i++) {
+                const cu1 = (cData[i][cCols["userId1"]] || "").toString();
+                const cu2 = (cData[i][cCols["userId2"]] || "").toString();
+                if ((cu1 === currentUserId && cu2 === fromUserId) || (cu1 === fromUserId && cu2 === currentUserId)) {
+                  const removedRaw = (cData[i][cCols["removedFor"]] || "").toString();
+                  const list = removedRaw ? removedRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+                  const idx = list.indexOf(currentUserId);
+                  if (idx !== -1) {
+                    list.splice(idx, 1);
+                    convSheet.getRange(i + 1, cCols["removedFor"] + 1).setValue(list.join(','));
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          Logger.log('Warning: cannot clear removedFor on accept: ' + e.toString());
+        }
       }
       return { success: true, message: "Đã chấp nhận lời mời kết bạn." };
       
@@ -518,17 +590,38 @@ function unfriendApi(currentUserId, targetUserId) {
         if (convSheet) {
           const cData = convSheet.getDataRange().getValues();
           const cCols = getSheetColumnMap(cData);
-          // Duyệt từ dưới lên để xóa an toàn
+
+          // Ensure removedFor column exists in header, add if missing
+          let removedForCol = cCols["removedFor"];
+          if (typeof removedForCol === 'undefined') {
+            const lastCol = cData[0].length;
+            convSheet.getRange(1, lastCol + 1).setValue('removedFor');
+            // refresh cData and cCols
+            const newCData = convSheet.getDataRange().getValues();
+            const newCCols = getSheetColumnMap(newCData);
+            removedForCol = newCCols["removedFor"];
+          }
+
+          // Duyệt từ dưới lên và mark removedFor for this user
           for (let i = cData.length - 1; i >= 1; i--) {
             const cu1 = cData[i][cCols["userId1"]];
             const cu2 = cData[i][cCols["userId2"]];
             if ((cu1 === currentUserId && cu2 === targetUserId) || (cu1 === targetUserId && cu2 === currentUserId)) {
-              convSheet.deleteRow(i + 1);
+              try {
+                const existing = (cData[i][removedForCol] || "").toString();
+                const list = existing ? existing.split(',').map(s => s.trim()).filter(Boolean) : [];
+                if (list.indexOf(currentUserId) === -1) {
+                  list.push(currentUserId);
+                  convSheet.getRange(i + 1, removedForCol + 1).setValue(list.join(','));
+                }
+              } catch (e) {
+                Logger.log('Warning: cannot mark removedFor on conv row: ' + e.toString());
+              }
             }
           }
         }
       } catch (convError) {
-        Logger.log("Warning: Không thể xóa conversation khi unfriend: " + convError.toString());
+        Logger.log("Warning: Không thể cập nhật conversation khi unfriend: " + convError.toString());
       }
       
       return { success: true, message: "Đã hủy kết bạn." };
@@ -599,6 +692,22 @@ function openConversationApi(currentUserId, targetUserId) {
       const u1 = cData[i][cCols["userId1"]];
       const u2 = cData[i][cCols["userId2"]];
       if ((u1 === currentUserId && u2 === targetUserId) || (u1 === targetUserId && u2 === currentUserId)) {
+        // If conversation exists but is marked removed for current user, treat as non-existing
+        if (cCols["removedFor"]) {
+            const removedRaw = (cData[i][cCols["removedFor"]] || "").toString();
+            const removedList = removedRaw ? removedRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+            const idx = removedList.indexOf(currentUserId);
+            if (idx !== -1) {
+              // Restore conversation visibility for this user when they open it
+              removedList.splice(idx, 1);
+              try {
+                convSheet.getRange(i + 1, cCols["removedFor"] + 1).setValue(removedList.join(','));
+              } catch (e) {
+                Logger.log('Warning: cannot clear removedFor on openConversationApi: ' + e.toString());
+              }
+              // continue to set conversationId below
+            }
+        }
         conversationId = cData[i][cCols["conversationId"]];
         break;
       }
@@ -850,6 +959,15 @@ function getConversationsApi(currentUserId) {
       const u1 = (cData[i][cCols["userId1"]] || "").toString().trim();
       const u2 = (cData[i][cCols["userId2"]] || "").toString().trim();
 
+      // Respect per-user removal flag: skip conversations removed for this user
+      if (cCols["removedFor"]) {
+        const removedRaw = (cData[i][cCols["removedFor"]] || "").toString();
+        const removedList = removedRaw ? removedRaw.split(',').map(s => s.trim()) : [];
+        if (removedList.indexOf(userIdTrim) !== -1) {
+          continue;
+        }
+      }
+
       if (u1 === userIdTrim || u2 === userIdTrim) {
         const friendId = (u1 === userIdTrim) ? u2 : u1;
         userConversations.push({
@@ -936,8 +1054,67 @@ function getNotificationCountsApi(currentUserId, activeConversationId = null) {
   try {
     const userIdTrim = (currentUserId || "").toString().trim();
     const ss = getOrCreateDatabase();
+    const convSheet = ss.getSheetByName("Conversations");
+    const friendsSheet = ss.getSheetByName("Friends");
     let totalUnread = 0;
     let pendingRequests = 0;
+    const unreadByFriendId = {};
+    const unreadByConversation = {};
+    let friendListVersion = 0;
+
+    const conversationFriendMap = {};
+    if (convSheet) {
+      const cData = convSheet.getDataRange().getValues();
+      const cCols = getSheetColumnMap(cData);
+
+      for (let i = 1; i < cData.length; i++) {
+        const u1 = (cData[i][cCols["userId1"]] || "").toString().trim();
+        const u2 = (cData[i][cCols["userId2"]] || "").toString().trim();
+        const conversationId = (cData[i][cCols["conversationId"]] || "").toString().trim();
+
+        if (!conversationId) continue;
+        // Respect per-user removal flag by storing removedFor list for this conversation
+        let removedForList = [];
+        if (cCols["removedFor"]) {
+          const removedRaw = (cData[i][cCols["removedFor"]] || "").toString();
+          removedForList = removedRaw ? removedRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        }
+
+        if (u1 === userIdTrim) {
+          conversationFriendMap[conversationId] = { friendId: u2, removedFor: removedForList };
+        } else if (u2 === userIdTrim) {
+          conversationFriendMap[conversationId] = { friendId: u1, removedFor: removedForList };
+        }
+      }
+    }
+
+    if (friendsSheet) {
+      const fData = friendsSheet.getDataRange().getValues();
+      const fCols = getSheetColumnMap(fData);
+
+      // Build a quick lookup of active friends for current user
+      const activeFriends = {};
+
+      for (let i = 1; i < fData.length; i++) {
+        const u1 = (fData[i][fCols["userId1"]] || "").toString().trim();
+        const u2 = (fData[i][fCols["userId2"]] || "").toString().trim();
+        const updatedAtRaw = fData[i][fCols["updatedAt"]];
+        const st = (fData[i][fCols["status"]] || "").toString().trim();
+
+        if (u1 !== userIdTrim && u2 !== userIdTrim) continue;
+
+        if (st === "active") {
+          const other = (u1 === userIdTrim) ? u2 : u1;
+          activeFriends[other] = true;
+        }
+
+        const updatedAt = new Date(updatedAtRaw);
+        const updatedAtTime = updatedAt.getTime();
+        if (!isNaN(updatedAtTime) && updatedAtTime > friendListVersion) {
+          friendListVersion = updatedAtTime;
+        }
+      }
+    }
     
     // Đếm tin nhắn chưa đọc từ personal sheet
     const userSs = getUserSpreadsheet(userIdTrim);
@@ -958,10 +1135,34 @@ function getNotificationCountsApi(currentUserId, activeConversationId = null) {
           for (let i = 0; i < mData.length; i++) {
             const receiver = (mData[i][mCols["receiverId"]] || "").toString().trim();
             const convId = (mData[i][mCols["conversationId"]] || "").toString().trim();
-            if (receiver === userIdTrim && mData[i][mCols["isRead"]] === false) {
+            const isRead = mData[i][mCols["isRead"]];
+
+            if (receiver === userIdTrim && (isRead === false || String(isRead).toLowerCase() === "false")) {
               // Ignore messages from the currently active conversation
               if (!activeConversationId || convId !== activeConversationId) {
-                totalUnread++;
+                // Only count if the conversation maps to a friend and the friend relationship is active,
+                // and the conversation is not marked removed for this user.
+                const convMeta = conversationFriendMap[convId];
+                if (convMeta && convMeta.friendId) {
+                  const friendId = convMeta.friendId;
+                  const removedList = convMeta.removedFor || [];
+                  if (removedList.indexOf(userIdTrim) !== -1) {
+                    // conversation is hidden for this user -> ignore unread here
+                    continue;
+                  }
+
+                  if (activeFriends && activeFriends[friendId]) {
+                    totalUnread++;
+                    unreadByConversation[convId] = (unreadByConversation[convId] || 0) + 1;
+                    unreadByFriendId[friendId] = (unreadByFriendId[friendId] || 0) + 1;
+                  } else {
+                    // Not friends currently: ignore message in global unread counts
+                    continue;
+                  }
+                } else {
+                  // No mapping to a conversation friend (maybe conv missing) -> ignore
+                  continue;
+                }
               }
             }
           }
@@ -987,10 +1188,13 @@ function getNotificationCountsApi(currentUserId, activeConversationId = null) {
     return {
       success: true,
       totalUnread: totalUnread,
-      pendingRequests: pendingRequests
+      pendingRequests: pendingRequests,
+      unreadByFriendId: unreadByFriendId,
+      unreadByConversation: unreadByConversation,
+      friendListVersion: friendListVersion
     };
   } catch(error) {
     Logger.log("Error getNotificationCountsApi: " + error.toString());
-    return { success: false, totalUnread: 0, pendingRequests: 0 };
+    return { success: false, totalUnread: 0, pendingRequests: 0, unreadByFriendId: {}, unreadByConversation: {}, friendListVersion: 0 };
   }
 }

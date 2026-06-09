@@ -13,6 +13,8 @@ let chatConversationsCache = null;
 let chatConversationsLastLoaded = 0;
 let conversationsLoadingInFlight = false;
 
+let chatUnreadByFriend = {};
+
 let chatFriendsCache = null;
 let chatFriendsLastLoaded = 0;
 let friendsLoadingInFlight = false;
@@ -22,6 +24,7 @@ let chatRequestsLastLoaded = 0;
 let requestsLoadingInFlight = false;
 
 const CHAT_CACHE_TTL = 30000;
+let lastSearchKeyword = '';
 
 function chatEl(id) {
   return document.getElementById(id);
@@ -139,6 +142,7 @@ function executePlayerSearch() {
 
   const input = document.getElementById('searchPlayersInput');
   const keyword = input.value.trim();
+  lastSearchKeyword = keyword;
 
   if (!keyword) {
     showChatState('empty');
@@ -399,9 +403,10 @@ function acceptFriendRequestFromSearch(targetUserId) {
 // Tải danh sách Lời mời kết bạn
 function loadFriendRequests(force = false) {
   const hasCache = Array.isArray(chatRequestsCache);
+  const canRenderCache = hasCache && !force && isChatCacheFresh(chatRequestsLastLoaded);
   const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatRequestsLastLoaded);
 
-  if (hasCache) {
+  if (canRenderCache) {
     renderFriendRequests(chatRequestsCache);
   } else {
     setDisplay('requestsEmpty', 'none');
@@ -542,37 +547,98 @@ function renderFriendRequests(requests) {
   container.style.display = 'grid';
 }
 
+const CHAT_CARD_REMOVE_MS = 160;
+
+function removeCardSmooth(card, afterRemove) {
+  if (!card) {
+    if (typeof afterRemove === 'function') afterRemove();
+    return;
+  }
+
+  card.classList.add('is-removing');
+  card.setAttribute('aria-hidden', 'true');
+
+  card.querySelectorAll('button, input').forEach(function(el) {
+    el.disabled = true;
+  });
+
+  setTimeout(function() {
+    if (card && card.parentNode) {
+      card.remove();
+    }
+
+    if (typeof afterRemove === 'function') {
+      afterRemove();
+    }
+  }, CHAT_CARD_REMOVE_MS);
+}
+
+function updateRequestBadgeFromCache() {
+  const badge = document.getElementById('friendRequestBadge');
+  if (!badge) return;
+
+  const count = Array.isArray(chatRequestsCache) ? chatRequestsCache.length : 0;
+
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : count;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.textContent = '0';
+    badge.style.display = 'none';
+  }
+}
+
+function updateRequestsEmptyState() {
+  const list = document.getElementById('requestsList');
+  const empty = document.getElementById('requestsEmpty');
+  if (!list || !empty) return;
+
+  const hasData = Array.isArray(chatRequestsCache) && chatRequestsCache.length > 0;
+
+  if (hasData) {
+    list.style.display = 'grid';
+    empty.style.display = 'none';
+  } else {
+    list.style.display = 'none';
+    empty.style.display = 'flex';
+  }
+}
+
+function updateFriendsEmptyState() {
+  const list = document.getElementById('friendsList');
+  const empty = document.getElementById('friendsEmpty');
+  if (!list || !empty) return;
+
+  const hasData = Array.isArray(allFriendsData) && allFriendsData.length > 0;
+
+  if (hasData) {
+    list.style.display = 'flex';
+    empty.style.display = 'none';
+  } else {
+    list.style.display = 'none';
+    empty.style.display = 'flex';
+  }
+}
+
 // Xử lý Accept/Reject
 function respondToRequest(requestId, action, btnElement) {
-  // Optimistic UI: Ẩn ngay card đi
   const card = document.getElementById(`request-${requestId}`);
-  if (card) {
-    card.style.display = 'none';
+  const oldRequestsCache = Array.isArray(chatRequestsCache)
+    ? chatRequestsCache.slice()
+    : null;
+
+  if (Array.isArray(chatRequestsCache)) {
+    chatRequestsCache = chatRequestsCache.filter(function(req) {
+      return String(req.requestId) !== String(requestId);
+    });
+    chatRequestsLastLoaded = Date.now();
   }
-  
-  // Optimistic UI: Hiện thông báo ngay lập tức
-  if (action === 'accept') {
-    showToast('Đã chấp nhận lời mời.', 'success');
-  } else {
-    showToast('Đã từ chối lời mời.', 'info');
-  }
-  
-  // Optimistic UI: Cập nhật badge luôn
-  const badge = document.getElementById('friendRequestBadge');
-  if (badge) {
-    let count = Number(badge.textContent) || 0;
-    count = count - 1;
-    if (count > 0) {
-      badge.textContent = count;
-    } else {
-      badge.style.display = 'none';
-      const remainingCards = document.querySelectorAll('#requestsList .player-card:not([style*="display: none"])');
-      if (remainingCards.length === 0) {
-        document.getElementById('requestsList').style.display = 'none';
-        document.getElementById('requestsEmpty').style.display = 'flex';
-      }
-    }
-  }
+
+  updateRequestBadgeFromCache();
+
+  removeCardSmooth(card, function() {
+    updateRequestsEmptyState();
+  });
   
   const payload = {
     userId: window.currentUser.userId,
@@ -583,25 +649,34 @@ function respondToRequest(requestId, action, btnElement) {
   google.script.run
     .withSuccessHandler(function(response) {
       if (response.success) {
-        // Đã cập nhật giao diện trước, chỉ cần xóa hẳn card
-        if (card) card.remove();
-        
-        // Nếu accept, load lại danh sách bạn bè ngầm
         if (action === 'accept') {
           loadFriends(true);
         }
+        loadFriendRequests(true);
+        showToast(action === 'accept' ? 'Đã chấp nhận lời mời.' : 'Đã từ chối lời mời.', action === 'accept' ? 'success' : 'info');
+        checkNotifications();
       } else {
         showToast('Lỗi: ' + response.message, 'error');
-        // Phục hồi lại card nếu lỗi
-        if (card) card.style.display = '';
-        loadFriendRequests(true);
+
+        if (oldRequestsCache) {
+          chatRequestsCache = oldRequestsCache;
+          chatRequestsLastLoaded = 0;
+          renderFriendRequests(chatRequestsCache);
+        } else {
+          loadFriendRequests(true);
+        }
       }
     })
     .withFailureHandler(function(error) {
       showToast('Lỗi kết nối: ' + error.message, 'error');
-      // Phục hồi lại card nếu lỗi
-      if (card) card.style.display = '';
-      loadFriendRequests(true);
+
+      if (oldRequestsCache) {
+        chatRequestsCache = oldRequestsCache;
+        chatRequestsLastLoaded = 0;
+        renderFriendRequests(chatRequestsCache);
+      } else {
+        loadFriendRequests(true);
+      }
     })
     .apiRespondFriendRequest(payload);
 }
@@ -640,9 +715,10 @@ document.addEventListener('click', function() {
 
 function loadFriends(force = false) {
   const hasCache = Array.isArray(chatFriendsCache);
+  const canRenderCache = hasCache && !force && isChatCacheFresh(chatFriendsLastLoaded);
   const shouldRefresh = force || !hasCache || !isChatCacheFresh(chatFriendsLastLoaded);
 
-  if (hasCache) {
+  if (canRenderCache) {
     allFriendsData = chatFriendsCache || [];
     renderFriends(allFriendsData);
   } else {
@@ -741,7 +817,6 @@ function renderFriends(friends) {
     chatConversationsCache.forEach(function(conv) {
       if (conv.friendId) {
         convMap[conv.friendId] = {
-          unreadCount: conv.unreadCount || 0,
           lastMessageAt: conv.lastMessageAt || null
         };
       }
@@ -759,32 +834,26 @@ function renderFriends(friends) {
   
   sortedFriends.forEach(function(friend) {
     const card = document.createElement('div');
-    card.className = 'player-card';
+    const unreadCount = Number((chatUnreadByFriend && chatUnreadByFriend[friend.userId]) || 0);
+    card.className = 'player-card' + (unreadCount > 0 ? ' has-unread-message' : '');
     card.setAttribute('data-user-id', friend.userId);
     
     // Bug #1 fix: Dùng escapeAttr và escapeHtml cho dữ liệu user
     const safeName = escapeAttr(friend.displayName);
 
-    // Check unread count from conversations
-    const convInfo = convMap[friend.userId];
-    const unreadCount = convInfo ? convInfo.unreadCount : 0;
-    let unreadDotHtml = '';
-    if (unreadCount > 0) {
-      if (unreadCount > 9) {
-        unreadDotHtml = '<span class="friend-unread-dot has-count">' + (unreadCount > 99 ? '99+' : unreadCount) + '</span>';
-      } else {
-        unreadDotHtml = '<span class="friend-unread-dot has-count">' + unreadCount + '</span>';
-      }
-    }
+    const unreadDotHtml = unreadCount > 0
+      ? '<span class="friend-unread-badge">' + (unreadCount > 99 ? '99+' : unreadCount) + '</span>'
+      : '';
     
     card.innerHTML = `
       <div class="player-meta-row">
         <div class="player-body">
-          <div style="position:relative; flex-shrink:0;">
+          <div class="friend-avatar-wrap">
             <img src="${friend.avatar}" class="player-avatar" alt="Avatar" onerror="this.src='https://www.gravatar.com/avatar/?d=mp'"/>
+            ${unreadDotHtml}
           </div>
           <div class="player-compact-info">
-            <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}${unreadDotHtml}</div>
+            <div class="player-name" title="${safeName}">${escapeHtml(friend.displayName)}</div>
             <div class="player-id">#${escapeHtml(friend.playerId)}</div>
           </div>
         </div>
@@ -862,10 +931,41 @@ async function unfriend(friendId, friendName) {
   );
   
   if (!confirmed) return;
-  
-  // Optimistic UI: Ẩn card đi ngay lập tức
+
+  closeAllFriendCardMenus();
+
   const friendCard = document.querySelector(`.player-card[data-user-id="${friendId}"]`);
-  if (friendCard) friendCard.style.display = 'none';
+
+  const oldFriendsCache = Array.isArray(chatFriendsCache)
+    ? chatFriendsCache.slice()
+    : null;
+  const oldAllFriendsData = Array.isArray(allFriendsData)
+    ? allFriendsData.slice()
+    : null;
+
+  if (Array.isArray(chatFriendsCache)) {
+    chatFriendsCache = chatFriendsCache.filter(function(friend) {
+      return String(friend.userId) !== String(friendId);
+    });
+  }
+
+  if (Array.isArray(allFriendsData)) {
+    allFriendsData = allFriendsData.filter(function(friend) {
+      return String(friend.userId) !== String(friendId);
+    });
+  }
+
+  if (Array.isArray(chatConversationsCache)) {
+    chatConversationsCache = chatConversationsCache.filter(function(conv) {
+      return String(conv.friendId) !== String(friendId);
+    });
+  }
+
+  chatFriendsLastLoaded = Date.now();
+
+  removeCardSmooth(friendCard, function() {
+    updateFriendsEmptyState();
+  });
   
   const payload = {
     userId: window.currentUser.userId,
@@ -875,26 +975,29 @@ async function unfriend(friendId, friendName) {
   google.script.run
     .withSuccessHandler(function(response) {
       if(response.success) {
-        if (friendCard) friendCard.remove();
-        
-        // Kiểm tra xem còn bạn bè nào không
-        const remainingCards = document.querySelectorAll('#friendsList .player-card:not([style*="display: none"])');
-        if (remainingCards.length === 0) {
-          document.getElementById('friendsList').style.display = 'none';
-          document.getElementById('friendsEmpty').style.display = 'flex';
-        }
-        
-        loadFriends(true); // Load ngầm lại cache
+        showToast('Đã hủy kết bạn.', 'success');
+        loadFriends(true);
+        checkNotifications();
       } else {
         showToast('Lỗi: ' + response.message, 'error');
-        // Phục hồi lại nếu có lỗi
-        if (friendCard) friendCard.style.display = '';
+
+        if (oldFriendsCache) chatFriendsCache = oldFriendsCache;
+        if (oldAllFriendsData) allFriendsData = oldAllFriendsData;
+
+        if (activeChatTab === 'friends') {
+          renderFriends(allFriendsData || []);
+        }
       }
     })
     .withFailureHandler(function(error) {
       showToast('Lỗi kết nối: ' + error.message, 'error');
-      // Phục hồi lại nếu có lỗi
-      if (friendCard) friendCard.style.display = '';
+
+      if (oldFriendsCache) chatFriendsCache = oldFriendsCache;
+      if (oldAllFriendsData) allFriendsData = oldAllFriendsData;
+
+      if (activeChatTab === 'friends') {
+        renderFriends(allFriendsData || []);
+      }
     })
     .apiUnfriend(payload);
 }
@@ -949,6 +1052,14 @@ function openChat(friendId, friendName, friendAvatar, friendPlayerId) {
         
         // Bug #6+7 fix: Set currentChatTargetId ngay ở đây, không đợi render tin nhắn
         currentChatTargetId = friend.userId;
+
+        chatUnreadByFriend[friend.userId] = 0;
+        if (chatFriendsCache) {
+          renderFriends(chatFriendsCache);
+        }
+
+        chatConversationsLastLoaded = 0;
+        checkNotifications();
         
         // Cập nhật Header từ response (chính xác hơn)
         document.getElementById('chatRoomName').textContent = friend.displayName;
@@ -1209,7 +1320,8 @@ function pollNewMessages() {
   
   const payload = {
     conversationId: currentConversationId,
-    afterTimestamp: newestMessageDate
+    afterTimestamp: newestMessageDate,
+    userId: window.currentUser.userId
   };
   
   google.script.run
@@ -1514,36 +1626,50 @@ function escapeHtml(unsafe) {
 
 let previousTotalUnread = -1;
 let previousPendingRequests = -1;
+let previousFriendListVersion = -1;
 
 function checkNotifications() {
   if (!window.currentUser || !window.currentUser.userId) return;
   
   function handlePollResponse(response) {
     if (response && response.success) {
+      chatUnreadByFriend = response.unreadByFriendId || {};
       updateGlobalChatBadge(response.totalUnread);
       updateTabBadges(response.totalUnread, response.pendingRequests);
 
+      const friendListVersion = Number(response.friendListVersion || 0);
+      const friendListChanged = previousFriendListVersion !== -1 && friendListVersion !== previousFriendListVersion;
+
       // If counts changed, invalidate caches so next click fetches fresh data
-      if (previousTotalUnread !== -1 && (response.totalUnread !== previousTotalUnread || response.pendingRequests !== previousPendingRequests)) {
+      if (previousTotalUnread !== -1 && (response.totalUnread !== previousTotalUnread || response.pendingRequests !== previousPendingRequests || friendListChanged)) {
         chatConversationsLastLoaded = 0;
         chatRequestsLastLoaded = 0;
+        chatFriendsLastLoaded = 0;
         
         // Auto refresh active tab
         if (activeChatTab === 'friends') {
-          loadConversationsSilent(function() {
-            if (chatFriendsCache) {
-               renderFriends(chatFriendsCache);
-            }
-          });
+          loadFriends(true);
         } else if (activeChatTab === 'conversations') {
           loadConversations(true);
         } else if (activeChatTab === 'requests') {
           loadFriendRequests(true);
         }
+      } else if (friendListChanged) {
+        chatFriendsLastLoaded = 0;
+        loadFriends(true);
+      }
+
+      if (friendListChanged && activeChatTab === 'search' && lastSearchKeyword) {
+        executePlayerSearch();
+      }
+
+      if (activeChatTab === 'friends' && Array.isArray(chatFriendsCache)) {
+        renderFriends(chatFriendsCache);
       }
       
       previousTotalUnread = response.totalUnread;
       previousPendingRequests = response.pendingRequests;
+      previousFriendListVersion = friendListVersion;
     }
   }
 
@@ -1557,7 +1683,7 @@ function checkNotifications() {
       activeConversationId: typeof currentConversationId !== 'undefined' ? currentConversationId : null
     });
   
-  // Start polling notifications every 30s (if not already running)
+  // Start polling notifications frequently enough to propagate friend removals quickly.
   if (!notificationInterval) {
     notificationInterval = setInterval(function() {
       if (!window.currentUser || !window.currentUser.userId) return;
@@ -1567,7 +1693,7 @@ function checkNotifications() {
           userId: window.currentUser.userId,
           activeConversationId: typeof currentConversationId !== 'undefined' ? currentConversationId : null
         });
-    }, 30000);
+    }, 5000);
   }
 }
 
