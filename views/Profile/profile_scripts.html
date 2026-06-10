@@ -767,10 +767,32 @@
 
     const fullname = document.getElementById("profile-fullname");
     const email = document.getElementById("profile-email");
+    const userId = document.getElementById("profile-user-id");
+
+    function resolveProfileIdentifier(profile) {
+      if (!profile) return "--";
+
+      const candidate =
+        profile.userId ||
+        profile.id ||
+        profile._id ||
+        profile.uid ||
+        profile.userID;
+
+      if (candidate !== undefined && candidate !== null && String(candidate).trim() !== "") {
+        return String(candidate);
+      }
+
+      return "--";
+    }
 
     if (fullname) {
       fullname.textContent =
         user.displayName || user.fullName || user.username || "User";
+    }
+
+    if (userId) {
+      userId.textContent = "ID: " + resolveProfileIdentifier(user);
     }
 
     if (email) {
@@ -794,9 +816,13 @@
         avatar.src = user.avatarUrl;
         console.log("Avatar loaded:", user.avatarUrl);
       } else {
-        // Ẩn avatar nếu không có
-        avatar.style.display = "none";
-        console.log("No avatar, element hidden");
+        const avatarSeed =
+          encodeURIComponent(
+            user.displayName || user.fullName || user.username || user.email || "User"
+          ) || "User";
+        avatar.src = "https://api.dicebear.com/9.x/bottts/svg?seed=" + avatarSeed;
+        avatar.style.display = "block";
+        console.log("No avatar, using fallback seed:", avatarSeed);
       }
     }
 
