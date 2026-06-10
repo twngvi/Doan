@@ -429,6 +429,12 @@
           document.getElementById("mindmap-content").style.display = "block";
           aiContentLoaded.mindmap = true;
 
+          // ⭐ Show print button when mindmap is loaded
+          const printBtn = document.getElementById("mindmap-print-btn");
+          if (printBtn) {
+            printBtn.style.display = "flex";
+          }
+
           // Show mindmap completion checkbox
           const mindmapActions = document.getElementById("mindmap-tab-actions");
           if (mindmapActions) mindmapActions.style.display = "flex";
@@ -827,6 +833,124 @@
     path.setAttribute("class", `tree-line ${className}`);
 
     return path;
+  }
+
+  /**
+   * Print/Export Mindmap as Image
+   * Captures the entire mindmap visualization and exports as PNG
+   */
+  async function printMindmapImage() {
+    try {
+      const printBtn = document.getElementById("mindmap-print-btn");
+      const mindmapContent = document.getElementById("mindmap-content");
+      
+      if (!mindmapContent) {
+        showToast("Không tìm thấy Mindmap", "error");
+        return;
+      }
+
+      // Disable button during process
+      if (printBtn) {
+        printBtn.disabled = true;
+        printBtn.textContent = "⏳ Đang xử lý...";
+      }
+
+      // Get the topic title for the filename
+      const topicTitle = document.querySelector(".mindmap-card-title")?.textContent || "mindmap";
+      const sanitizedTitle = topicTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+      // Get the dimensions of the mindmap content
+      const rect = mindmapContent.getBoundingClientRect();
+      const width = Math.ceil(rect.width);
+      const height = Math.ceil(rect.height);
+
+      console.log("📐 Mindmap dimensions:", {width, height});
+
+      // Create a temporary wrapper with proper styling
+      const tempWrapper = document.createElement("div");
+      tempWrapper.style.position = "fixed";
+      tempWrapper.style.left = "-9999px";
+      tempWrapper.style.top = "-9999px";
+      tempWrapper.style.width = width + "px";
+      tempWrapper.style.height = height + "px";
+      tempWrapper.style.backgroundColor = "white";
+      tempWrapper.style.zIndex = "-9999";
+      
+      // Clone the mindmap content with full styling
+      const clonedContent = mindmapContent.cloneNode(true);
+      clonedContent.style.position = "static";
+      clonedContent.style.width = "100%";
+      clonedContent.style.height = "100%";
+      clonedContent.style.margin = "0";
+      clonedContent.style.padding = "20px";
+      clonedContent.style.boxSizing = "border-box";
+      
+      tempWrapper.appendChild(clonedContent);
+      document.body.appendChild(tempWrapper);
+
+      // Wait for rendering
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Use html2canvas to capture the content
+      try {
+        if (typeof html2canvas !== "undefined") {
+          console.log("🎨 Using html2canvas to render...");
+          const canvas = await html2canvas(tempWrapper, {
+            backgroundColor: "white",
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            windowWidth: width,
+            windowHeight: height,
+          });
+
+          console.log("✅ Canvas created:", {width: canvas.width, height: canvas.height});
+
+          // Remove temp wrapper
+          document.body.removeChild(tempWrapper);
+
+          // Convert to blob and download
+          canvas.toBlob((blob) => {
+            console.log("📦 Blob created, size:", blob.size, "bytes");
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${sanitizedTitle}_mindmap_${new Date().toISOString().split('T')[0]}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            // Re-enable button
+            if (printBtn) {
+              printBtn.disabled = false;
+              printBtn.textContent = "🖨️ In";
+            }
+
+            showToast("✅ Đã tải xuống Mindmap", "success");
+            console.log("✅ Mindmap exported as:", link.download);
+          }, "image/png", 0.95);
+        } else {
+          throw new Error("html2canvas not loaded");
+        }
+      } catch (canvasError) {
+        console.warn("⚠️ html2canvas failed:", canvasError);
+        document.body.removeChild(tempWrapper);
+        throw canvasError;
+      }
+
+    } catch (error) {
+      console.error("❌ Error exporting mindmap:", error);
+      showToast("Lỗi khi xuất Mindmap: " + (error?.message || "Unknown error"), "error");
+      
+      // Re-enable button
+      const printBtn = document.getElementById("mindmap-print-btn");
+      if (printBtn) {
+        printBtn.disabled = false;
+        printBtn.textContent = "🖨️ In";
+      }
+    }
   }
 
   /**
@@ -5148,5 +5272,6 @@ sys.stderr = sys.__stderr__
   window.toggleTopicSwitcher = toggleTopicSwitcher;
   window.closeTopicSwitcher = closeTopicSwitcher;
   window.switchToTopic = switchToTopic;
+  window.printMindmapImage = printMindmapImage;
   // window.goToQuizFromLesson removed
 </script>
