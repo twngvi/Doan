@@ -128,6 +128,18 @@ function loginWithEmail(credentials) {
           Logger.log("Using stored avatar: " + avatarUrl);
         }
 
+        let finalPlayerId = playerIdIndex >= 0 ? data[i][playerIdIndex] : "";
+        if (!finalPlayerId || finalPlayerId === "") {
+          try {
+            finalPlayerId = typeof generatePlayerId === 'function' ? generatePlayerId(usersSheet) : "ID" + Math.floor(Math.random() * 9000 + 1000);
+            if (playerIdIndex >= 0) {
+              usersSheet.getRange(i + 1, playerIdIndex + 1).setValue(finalPlayerId);
+            }
+          } catch (e) {
+            Logger.log("Could not generate missing playerId: " + e.toString());
+          }
+        }
+
         return {
           success: true,
           message: "Đăng nhập thành công!",
@@ -142,7 +154,7 @@ function loginWithEmail(credentials) {
             totalXP: data[i][totalXPIndex],
             totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             progressSheetId: data[i][progressSheetIdIndex],
-            playerId: playerIdIndex >= 0 ? data[i][playerIdIndex] : "",
+            playerId: finalPlayerId,
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
@@ -187,6 +199,18 @@ function getUserSession(userId) {
         // Get avatar URL - use stored avatar or generate Gravatar
         const avatarUrl = data[i][6] || getGravatarUrl(data[i][2]);
 
+        let finalPlayerId = playerIdIndex >= 0 ? data[i][playerIdIndex] : "";
+        if (!finalPlayerId || finalPlayerId === "") {
+          try {
+            finalPlayerId = typeof generatePlayerId === 'function' ? generatePlayerId(usersSheet) : "ID" + Math.floor(Math.random() * 9000 + 1000);
+            if (playerIdIndex >= 0) {
+              usersSheet.getRange(i + 1, playerIdIndex + 1).setValue(finalPlayerId);
+            }
+          } catch (e) {
+            Logger.log("Could not generate missing playerId: " + e.toString());
+          }
+        }
+
         return {
           status: "success",
           user: {
@@ -201,7 +225,7 @@ function getUserSession(userId) {
             totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
             lastLogin: data[i][15],
             isActive: data[i][17],
-            playerId: playerIdIndex >= 0 ? data[i][playerIdIndex] : "",
+            playerId: finalPlayerId,
             theme:
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])

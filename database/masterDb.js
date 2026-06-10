@@ -408,6 +408,19 @@ function processGoogleUserLogin(googleProfile) {
 
     const totalXQPCol = headers.indexOf("totalXQP");
     const totalXPCol = headers.indexOf("totalXP");
+    const playerIdCol = headers.indexOf("playerId");
+    
+    let finalPlayerId = playerIdCol >= 0 ? existingUser[playerIdCol] : "";
+    if (!finalPlayerId || finalPlayerId === "") {
+      try {
+        finalPlayerId = typeof generatePlayerId === 'function' ? generatePlayerId(userSheet) : "ID" + Math.floor(Math.random() * 9000 + 1000);
+        if (playerIdCol >= 0) {
+          userSheet.getRange(userRowIndex, playerIdCol + 1).setValue(finalPlayerId);
+        }
+      } catch (e) {
+        Logger.log("Could not generate missing playerId: " + e.toString());
+      }
+    }
 
     return {
       userId: existingUser[0],
@@ -419,6 +432,7 @@ function processGoogleUserLogin(googleProfile) {
       totalXP: totalXPCol >= 0 ? (parseInt(existingUser[totalXPCol]) || 0) : 0,
       totalXQP: totalXQPCol >= 0 ? (parseInt(existingUser[totalXQPCol]) || 0) : 0,
       progressSheetId: progressSheetId, // Trả về ID sheet
+      playerId: finalPlayerId,
       theme:
         themeColIndex >= 0 && existingUser[themeColIndex]
           ? String(existingUser[themeColIndex])
@@ -495,6 +509,7 @@ function processGoogleUserLogin(googleProfile) {
       totalXP: 0,
       totalXQP: 0,
       progressSheetId: progressSheetId,
+      playerId: newRow[29],
       theme: "forest",
       status: "success",
       isNewUser: true,
