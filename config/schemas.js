@@ -198,6 +198,32 @@ const DB_CONFIG = {
       ],
     },
 
+    MATCHING_TERM_CARDS: {
+      name: "Matching_Term_Cards",
+      idPrefix: "MTC",
+      columns: [
+        "cardId",
+        "topicId",
+        "topicTitle",
+        "term",
+        "definition",
+        "shortDefinition",
+        "example",
+        "hint",
+        "difficulty",
+        "tags",
+        "status",
+        "isActive",
+        "order",
+        "source",
+        "createdBy",
+        "createdAt",
+        "updatedAt",
+        "approvedBy",
+        "approvedAt",
+      ],
+    },
+
     CODE_PUZZLES: {
       name: "Code_Puzzles",
       idPrefix: "PUZ",

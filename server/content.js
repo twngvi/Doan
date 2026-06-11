@@ -659,7 +659,62 @@ function getMatchingPairs(topicId, pairLimit, userContext) {
       );
     }
 
-    // 2. Check cache first
+    // 2. Check manual Matching_Term_Cards sheet FIRST
+    Logger.log("🔍 Checking manual Matching_Term_Cards sheet...");
+    var cachedPairs = null;
+    var manualPairs = [];
+    try {
+      var masterDbId = DB_CONFIG.SPREADSHEET_ID || "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+      var masterDb = SpreadsheetApp.openById(masterDbId);
+      var mtcSheet = masterDb.getSheetByName("Matching_Term_Cards");
+      if (!mtcSheet) {
+        // To avoid failing if admin never visited matching cards
+        Logger.log("Missing Matching_Term_Cards sheet. Skipping manual check.");
+        mtcSheet = null;
+      }
+      if (mtcSheet) {
+        var data = mtcSheet.getDataRange().getValues();
+        if (data.length > 1) {
+          var headers = data[0];
+          var topicIdIdx = headers.indexOf("topicId");
+          var termIdx = headers.indexOf("term");
+          var defIdx = headers.indexOf("definition");
+          var statusIdx = headers.indexOf("status");
+          var isActiveIdx = headers.indexOf("isActive");
+          var hintIdx = headers.indexOf("hint");
+          var difficultyIdx = headers.indexOf("difficulty");
+          
+          if (topicIdIdx !== -1 && termIdx !== -1 && defIdx !== -1) {
+            for (var i = 1; i < data.length; i++) {
+              var row = data[i];
+              var rTopicId = row[topicIdIdx];
+              var rStatus = statusIdx !== -1 ? row[statusIdx] : "approved";
+              var rIsActive = isActiveIdx !== -1 ? row[isActiveIdx] : true;
+              var rTerm = String(row[termIdx] || "").trim();
+              var rDef = String(row[defIdx] || "").trim();
+              
+              if (rTopicId === topicId && rStatus === "approved" && rIsActive === true && rTerm !== "" && rDef !== "") {
+                manualPairs.push({
+                  question: rTerm,
+                  answer: rDef,
+                  hint: hintIdx !== -1 ? String(row[hintIdx] || "").trim() : "",
+                  difficulty: difficultyIdx !== -1 ? (row[difficultyIdx] || "medium") : "medium"
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (manualErr) {
+      Logger.log("⚠️ Error reading Matching_Term_Cards: " + manualErr.toString());
+    }
+
+    if (manualPairs.length > 0) {
+      Logger.log("📦 Found " + manualPairs.length + " manual pairs in Matching_Term_Cards");
+      cachedPairs = manualPairs;
+    } else {
+      // 2.5 Check cache if no manual pairs
+
     Logger.log("🔍 Checking matching cache...");
     var cachedPairs = null;
     try {
@@ -744,6 +799,7 @@ function getMatchingPairs(topicId, pairLimit, userContext) {
         Logger.log("⚠️ Cache save failed: " + saveErr.toString());
       }
     }
+    } // End else block for manualPairs
 
     // 3. Validate từng pair
     Logger.log("🔍 Validating " + cachedPairs.length + " pairs...");
@@ -2321,6 +2377,9 @@ function getOrCreateMatchingResultsSheet(spreadsheet) {
     "totalPairs",
     "correctPairs",
     "wrongAttempts",
+    "correctCount",
+    "wrongCount",
+    "moves",
     "score",
     "elapsedTime",
     "accuracy",
@@ -2414,6 +2473,12 @@ function saveMatchingResult(resultData) {
           item && item.userMatchedRight ? String(item.userMatchedRight) : "",
         correctRight: item && item.correctRight ? String(item.correctRight) : "",
         isCorrect: !!(item && item.isCorrect),
+        cardId: item && item.cardId ? String(item.cardId) : "",
+        term: item && item.term ? String(item.term) : "",
+        definition: item && item.definition ? String(item.definition) : "",
+        attemptCount: item && Number.isFinite(parseInt(item.attemptCount, 10))
+          ? parseInt(item.attemptCount, 10)
+          : 1
       };
     });
 
@@ -2427,6 +2492,9 @@ function saveMatchingResult(resultData) {
       totalPairs: resultData.totalPairs || 0,
       correctPairs: resultData.correctPairs || 0,
       wrongAttempts: resultData.wrongAttempts || 0,
+      correctCount: resultData.correctCount || resultData.correctPairs || 0,
+      wrongCount: resultData.wrongCount || resultData.wrongAttempts || 0,
+      moves: resultData.moves || 0,
       score: resultData.score || 0,
       elapsedTime: resultData.elapsedTime || 0,
       accuracy: resultData.accuracy || 0,

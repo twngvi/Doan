@@ -65,6 +65,16 @@
       keywords: 'quan ly pet pet management thu cung',
       action: { type: 'page', pageId: 'page-pet-management' },
     },
+    {
+      id: 'admin-page-matching-cards',
+      group: 'pages',
+      title: 'Thuật ngữ Matching',
+      subtitle: 'Quản lý thuật ngữ và định nghĩa cho trò chơi Matching',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'thuat ngu matching terms cards quan ly matching definition flashcards',
+      action: { type: 'page', pageId: 'page-matching-cards' },
+    },
   ];
 
   const adminSearchGroupLabels = {
@@ -1062,6 +1072,44 @@
         container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý câu hỏi: ' + error.message + '</div>';
       })
       .getQuestionManagerHtml();
+  }
+
+  let matchingCardsLoaded = false;
+
+  function initmatchingcards() {
+    if (matchingCardsLoaded) {
+      if (typeof initMatchingCardsManager === 'function') {
+        initMatchingCardsManager();
+      }
+      return;
+    }
+    loadMatchingCardsContent();
+  }
+
+  function loadMatchingCardsContent() {
+    const container = document.getElementById('matching-cards-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        matchingCardsLoaded = true;
+        executeScriptsInContainer(container);
+        setTimeout(function() {
+          if (typeof initMatchingCardsManager === 'function') {
+            initMatchingCardsManager();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý thẻ Matching: ' + error.message + '</div>';
+      })
+      .getMatchingCardsManagerHtml();
   }
 
   let quizManagementLoaded = false;

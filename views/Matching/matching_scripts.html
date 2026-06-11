@@ -23,6 +23,15 @@
     };
   }
 
+  // Matching valid counts cache
+  if (!window.matchingValidCountsCache) {
+    window.matchingValidCountsCache = {
+      counts: {},
+      lastLoadTime: 0,
+      cacheDuration: 5 * 60 * 1000,
+    };
+  }
+
   // Local cache fallback
   let matchingTopicsCache = null;
   let matchingLastLoadTime = 0;
@@ -466,6 +475,7 @@
     console.log("📋 currentPageParams:", window.currentPageParams);
 
     loadMatchingGameSettings();
+    loadMatchingValidCountsIfNeeded(false);
 
     if (!window.__matchingConnectionResizeHandlerBound) {
       window.__matchingConnectionResizeHandlerBound = true;
@@ -931,6 +941,46 @@
       .getMatchingStatsPerTopic();
   }
 
+  function loadMatchingValidCountsIfNeeded(forceRefresh) {
+    if (!isGoogleScriptRunReady()) {
+      return;
+    }
+
+    var now = Date.now();
+    var countsCache = window.matchingValidCountsCache;
+
+    if (
+      !forceRefresh &&
+      countsCache &&
+      Object.keys(countsCache.counts).length > 0 &&
+      now - countsCache.lastLoadTime < countsCache.cacheDuration
+    ) {
+      return;
+    }
+
+    console.log("📊 Matching: loading valid counts per topic from server...");
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response && response.success && response.counts) {
+          window.matchingValidCountsCache.counts = response.counts;
+          window.matchingValidCountsCache.lastLoadTime = Date.now();
+          
+          console.log(
+            "✅ Matching valid counts loaded for",
+            Object.keys(response.counts).length,
+            "topics",
+          );
+
+          // Re-render current list when counts arrive.
+          rerenderCurrentMatchingTopics();
+        }
+      })
+      .withFailureHandler(function (error) {
+        console.warn("⚠️ Failed to load matching valid counts:", error);
+      })
+      .getMatchingAllTopicsValidCounts();
+  }
+
   function getMatchingStatsForTopic(topicId) {
     var statsCache = window.matchingStatsCache;
     if (!statsCache || !statsCache.stats) return null;
@@ -1129,6 +1179,7 @@
       matchingLastLoadTime = Date.now();
 
       renderMatchingTopics(normalizedTopics);
+      loadMatchingValidCountsIfNeeded(false);
       refreshMatchingProgressFromServer();
     } catch (renderError) {
       console.error("❌ Matching render topics failed:", renderError);
@@ -1287,16 +1338,32 @@
         (topicStats && topicStats.hasPlayed === true) ||
         topicProgress.matchingDone === true;
 
+      const validCount = (window.matchingValidCountsCache && window.matchingValidCountsCache.counts) 
+        ? (window.matchingValidCountsCache.counts[topic.topicId] || 0) 
+        : 0;
+      const isReadyForGame = validCount >= 10;
+
       const isUnlocked = window.checkMatchingTopicUnlocked
         ? window.checkMatchingTopicUnlocked(topic.topicId)
         : true;
 
       const card = document.createElement("div");
-      card.className = `matching-topic-card${hasDoc ? "" : " no-content"}${matchingPlayed ? " played" : ""}${!isUnlocked ? " locked" : ""}`;
+      
+      let cardClass = "matching-topic-card";
+      if (!hasDoc) cardClass += " no-content";
+      if (!isUnlocked) cardClass += " locked";
+      else if (!isReadyForGame) cardClass += " not-enough-data";
+      else if (matchingPlayed) cardClass += " played";
+      
+      card.className = cardClass;
 
       if (!isUnlocked) {
         card.onclick = () => {
           showMatchingLockedTopicModal(topic.title);
+        };
+      } else if (!isReadyForGame) {
+        card.onclick = () => {
+          showMatchingNotReadyModal(topic.title);
         };
       } else {
         card.onclick = () => selectMatchingTopic(topic);
@@ -1305,7 +1372,7 @@
       const icon = getTopicIcon(topicTitle);
 
       let bestScoreBadge = "";
-      if (topicStats && topicStats.hasPlayed) {
+      if (topicStats && topicStats.hasPlayed && isReadyForGame) {
         var bestScore = getMatchingBestPercent(topicStats);
         var playCount = topicStats.playCount || 1;
         var scoreColor = "#6B7280";
@@ -1326,15 +1393,24 @@
       let statusHtml = "";
       if (!isUnlocked || !hasDoc) {
         statusHtml = `
-          <div class="matching-topic-status locked">
+          <div class="matching-topic-data-status locked">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="11" width="18" height="11" rx="2"/>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
             </svg>
           </div>`;
+      } else if (!isReadyForGame) {
+        statusHtml = `
+          <div class="matching-topic-data-status not-ready" style="color: #ff9800; background: rgba(255, 152, 0, 0.1);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>`;
       } else if (matchingPlayed) {
         statusHtml = `
-          <div class="matching-topic-status played">
+          <div class="matching-topic-data-status played">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
@@ -1342,7 +1418,7 @@
           </div>`;
       } else {
         statusHtml = `
-          <div class="matching-topic-status ready">
+          <div class="matching-topic-data-status ready">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/>
               <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
@@ -1433,12 +1509,34 @@
     var titleEl = document.getElementById("matchingTopicDetailTitle");
     var descEl = document.getElementById("matchingTopicDetailDescription");
     var categoryEl = document.getElementById("matchingTopicDetailCategory");
+    var countEl = document.getElementById("matchingTopicValidCount");
+    var btnStart = document.getElementById("btnStartMatching");
 
     if (titleEl) titleEl.textContent = topic.title || "Chủ đề";
     if (descEl)
       descEl.textContent = topic.description || "Chưa có mô tả cho chủ đề này.";
     if (categoryEl)
       categoryEl.textContent = "Danh mục: " + (topic.category || "Chung");
+
+    const validCount = (window.matchingValidCountsCache && window.matchingValidCountsCache.counts) 
+      ? (window.matchingValidCountsCache.counts[topic.topicId] || 0) 
+      : 0;
+
+    if (countEl) {
+      countEl.textContent = "Số cặp khả dụng: " + validCount;
+    }
+
+    if (btnStart) {
+      if (validCount < 10) {
+        btnStart.textContent = "Chưa đủ dữ liệu";
+        btnStart.classList.add("disabled");
+        btnStart.disabled = true;
+      } else {
+        btnStart.textContent = "▶ Bắt đầu chơi Matching";
+        btnStart.classList.remove("disabled");
+        btnStart.disabled = false;
+      }
+    }
 
     renderMatchingTopicSettings();
     showMatchingTopicDetail();
@@ -1782,6 +1880,44 @@
     if (modal) modal.classList.remove("active");
   };
 
+  // ===== NOT READY TOPIC MODAL =====
+  function showMatchingNotReadyModal(topicTitle) {
+    let modal = document.getElementById("matching-not-ready-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "matching-not-ready-modal";
+      modal.className = "matching-no-content-modal";
+      document.getElementById("page-matching").appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="matching-no-content-dialog">
+        <div class="matching-no-content-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </div>
+        <h3 class="matching-no-content-title">Chưa đủ dữ liệu</h3>
+        <p class="matching-no-content-text">Chủ đề "<strong>${String(topicTitle || "Chủ đề")}</strong>" chưa đủ dữ liệu để chơi Matching.</p>
+        <p class="matching-no-content-sub">Cần tối thiểu <strong>10</strong> cặp thuật ngữ/định nghĩa đã được duyệt.</p>
+        <button class="matching-btn matching-btn-primary" onclick="closeMatchingNotReadyModal()">Đã hiểu</button>
+      </div>
+    `;
+
+    modal.onclick = (e) => {
+      if (e.target === modal) closeMatchingNotReadyModal();
+    };
+
+    modal.classList.add("active");
+  }
+
+  window.closeMatchingNotReadyModal = function () {
+    const modal = document.getElementById("matching-not-ready-modal");
+    if (modal) modal.classList.remove("active");
+  };
+
   // ===== START GAME FROM TOPIC =====
   function startMatchingGameFromTopic(topic) {
     // Hide topic selection, show game
@@ -1835,7 +1971,7 @@
       "#matchingGameWrapper .matching-game-subtitle",
     );
     if (gameSubtitleEl) {
-      gameSubtitleEl.textContent = "Ghép nhanh 10 cặp";
+      gameSubtitleEl.textContent = "Ghép thuật ngữ với định nghĩa";
     }
 
     renderMatchingInteractionHint();
@@ -1845,7 +1981,7 @@
     // Load pairs from server with pairLimit
     const board = document.getElementById("matchingBoard");
     board.innerHTML =
-      '<div class="matching-loading"><div class="matching-loading-spinner"></div><p>Đang tạo câu hỏi matching...</p></div>';
+      '<div class="matching-loading"><div class="matching-loading-spinner"></div><p>Đang tải dữ liệu Matching...</p></div>';
 
     const pairLimit = matchingState.pairLimit || MATCHING_DEFAULT_PAIR_COUNT;
     console.log(
@@ -1958,7 +2094,7 @@
           '</p><button class="matching-btn matching-btn-primary" onclick="matchingRestartGame()" style="margin-top:1rem;">🔄 Thử lại</button></div>';
         console.error("Error loading matching pairs:", err);
       })
-      .getMatchingPairs(topic.topicId, pairLimit, {
+      .getMatchingPairsFromCards(topic.topicId, pairLimit, {
         userId: currentUser?.userId || window.currentUser?.userId || "",
       });
   }
@@ -2751,10 +2887,14 @@
 
     matchingState.pairAttemptDetails.push({
       order: matchingState.attemptCount,
+      attemptCount: matchingState.attemptCount,
       leftText: leftPair && leftPair.question ? leftPair.question : "",
       userMatchedRight: rightPair && rightPair.answer ? rightPair.answer : "",
       correctRight: leftPair && leftPair.answer ? leftPair.answer : "",
       isCorrect: isCorrectPair,
+      cardId: leftPair && leftPair.cardId ? leftPair.cardId : "",
+      term: leftPair && leftPair.question ? leftPair.question : "",
+      definition: leftPair && leftPair.answer ? leftPair.answer : ""
     });
 
     if (leftId === rightId) {
@@ -2789,10 +2929,14 @@
 
     matchingState.pairAttemptDetails.push({
       order: matchingState.attemptCount,
+      attemptCount: matchingState.attemptCount,
       leftText: leftPair && leftPair.question ? leftPair.question : "",
       userMatchedRight: rightPair && rightPair.answer ? rightPair.answer : "",
       correctRight: leftPair && leftPair.answer ? leftPair.answer : "",
       isCorrect: isCorrectPair,
+      cardId: leftPair && leftPair.cardId ? leftPair.cardId : "",
+      term: leftPair && leftPair.question ? leftPair.question : "",
+      definition: leftPair && leftPair.answer ? leftPair.answer : ""
     });
 
     var slot = getDragSlotByPairId(slotPairId);
@@ -2917,6 +3061,9 @@
       totalPairs: matchingState.totalPairs,
       correctPairs: matchingState.correctCount,
       wrongAttempts: matchingState.wrongCount,
+      correctCount: matchingState.correctCount,
+      wrongCount: matchingState.wrongCount,
+      moves: matchingState.moves,
       score: matchingState.score,
       elapsedTime: matchingState.elapsedTime,
       accuracy: accuracy,

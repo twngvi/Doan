@@ -1,0 +1,814 @@
+<script>
+let mcTopics = [];
+let mcCurrentCards = [];
+let mcFilterStatus = 'all';
+let mcSearchTerm = '';
+let mcSelectedTopicIdStr = "";
+
+// Khởi tạo
+function initMatchingCardsManager() {
+  if (mcTopics.length === 0) {
+    mcLoadTopics();
+  }
+  
+  // Set up observer in case user navigates away and comes back
+  const pageElement = document.getElementById("page-matching-cards");
+  if (pageElement && !pageElement.dataset.observerSetup) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.target.id === "page-matching-cards" && mutation.target.classList.contains("active")) {
+          if (mcTopics.length === 0) {
+            mcLoadTopics();
+          }
+        }
+      });
+    });
+    observer.observe(pageElement, { attributes: true, attributeFilter: ["class"] });
+    pageElement.dataset.observerSetup = "true";
+  }
+}
+
+function mcShowLoading(text) {
+  document.getElementById("mcLoadingText").textContent = text;
+  document.getElementById("mcLoadingState").style.display = "flex";
+  document.getElementById("mcCardsArea").style.display = "none";
+  document.getElementById("mcEmptyState").style.display = "none";
+}
+
+function mcHideLoading() {
+  document.getElementById("mcLoadingState").style.display = "none";
+}
+
+function mcLoadTopics() {
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (response.success) {
+        mcTopics = response.topics;
+        mcRenderTopicDropdown(mcTopics);
+      }
+    })
+    .withFailureHandler((err) => {
+      console.error(err);
+      if (typeof showToast === 'function') showToast("Lỗi tải danh sách Topic", "error");
+    })
+    .adminGetMatchingTopicsWithStats();
+}
+
+function mcRenderTopicDropdown(topicsList) {
+  const dropdown = document.getElementById("mcTopicCustomDropdown");
+  if (!dropdown) return;
+  
+  dropdown.innerHTML = '';
+  if (topicsList.length === 0) {
+    dropdown.innerHTML = '<div class="mc-custom-dropdown-empty">Không tìm thấy chủ đề</div>';
+    return;
+  }
+  
+  topicsList.forEach(t => {
+    const stats = t.matchingStats ? ` (${t.matchingStats.total} thẻ)` : '';
+    const text = `${t.title}${stats}`;
+    const item = document.createElement("div");
+    item.className = "mc-custom-dropdown-item";
+    item.textContent = text;
+    item.onmousedown = function(e) {
+      e.preventDefault(); 
+      document.getElementById("mcTopicSelectInput").value = text;
+      mcSelectedTopicIdStr = t.topicId;
+      dropdown.style.display = "none";
+      
+      const clearBtn = document.getElementById("mcClearSearchBtn");
+      if (clearBtn) clearBtn.style.display = "block";
+      
+      mcLoadTopicCards(t.topicId);
+    };
+    dropdown.appendChild(item);
+  });
+}
+
+function mcGetSelectedTopicId() {
+  return mcSelectedTopicIdStr;
+}
+
+function mcOnTopicSearch() {
+  const input = document.getElementById("mcTopicSelectInput");
+  const val = input.value.toLowerCase();
+  
+  const clearBtn = document.getElementById("mcClearSearchBtn");
+  if (clearBtn) {
+    clearBtn.style.display = val.length > 0 ? "block" : "none";
+  }
+  
+  if (val.length === 0 && mcSelectedTopicIdStr !== "") {
+    mcSelectedTopicIdStr = "";
+    mcLoadTopicCards(''); // Trigger empty state
+  } else {
+    mcSelectedTopicIdStr = "";
+  }
+  
+  const filtered = mcTopics.filter(t => t.title.toLowerCase().includes(val));
+  mcRenderTopicDropdown(filtered);
+  mcShowTopicDropdown();
+}
+
+function mcClearSearch() {
+  const input = document.getElementById("mcTopicSelectInput");
+  if (input) {
+    input.value = "";
+    mcOnTopicSearch();
+    input.focus();
+  }
+}
+
+function mcShowTopicDropdown() {
+  const dropdown = document.getElementById("mcTopicCustomDropdown");
+  if (dropdown) dropdown.style.display = "block";
+}
+
+function mcHideTopicDropdown() {
+  const dropdown = document.getElementById("mcTopicCustomDropdown");
+  if (dropdown) dropdown.style.display = "none";
+}
+
+function mcLoadTopicCards(topicIdParam, isSilent = false) {
+  const topicId = topicIdParam !== undefined ? topicIdParam : mcGetSelectedTopicId();
+  if (!topicId) {
+    document.getElementById("mcTopicStats").style.display = "none";
+    document.getElementById("mcSearchTermWrapper").style.display = "none";
+    document.getElementById("mcCardsArea").style.display = "none";
+    document.getElementById("mcEmptyState").style.display = "flex";
+    return;
+  }
+  
+  const topic = mcTopics.find(t => t.topicId === topicId);
+  if (topic) {
+    document.getElementById("mcTopicStats").style.display = "flex";
+    document.getElementById("mcSearchTermWrapper").style.display = "block";
+  }
+
+  if (!isSilent) mcShowLoading("Đang tải danh sách thẻ thuật ngữ...");
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (!isSilent) mcHideLoading();
+      if (response.success) {
+        mcCurrentCards = response.cards || [];
+        mcUpdateStats();
+        mcSetFilter(isSilent ? mcFilterStatus : 'all');
+      } else {
+        if (typeof showToast === 'function') showToast("Lỗi: " + response.message, "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      if (!isSilent) mcHideLoading();
+      if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+    })
+    .getMatchingTermCardsByTopic(topicId);
+}
+
+function mcUpdateStats() {
+  let approved = 0;
+  let draft = 0;
+  let hidden = 0;
+  let validForGame = 0;
+  
+  mcCurrentCards.forEach(c => {
+    const s = (c.status || "").trim().toLowerCase();
+    if (s === 'approved') approved++;
+    else if (s === 'draft') draft++;
+    else if (s === 'hidden') hidden++;
+    
+    if (s === 'approved' && c.isActive === true && 
+        c.term && String(c.term).trim() !== "" && 
+        c.definition && String(c.definition).trim() !== "") {
+      validForGame++;
+    }
+  });
+  
+  const approvedEl = document.getElementById("mcApprovedCount");
+  const draftEl = document.getElementById("mcDraftCount");
+  const hiddenEl = document.getElementById("mcHiddenCount");
+  const totalEl = document.getElementById("mcTotalCount");
+  
+  if (approvedEl) approvedEl.textContent = approved;
+  if (draftEl) draftEl.textContent = draft;
+  if (hiddenEl) hiddenEl.textContent = hidden;
+  if (totalEl) totalEl.textContent = mcCurrentCards.length;
+  
+  // Readiness check
+  const readinessContainer = document.getElementById("mcTopicReadiness");
+  const readinessText = document.getElementById("mcTopicReadinessText");
+  const readinessIcon = document.getElementById("mcTopicReadinessIcon");
+  
+  if (readinessContainer && readinessText && readinessIcon) {
+    readinessContainer.style.display = "flex";
+    if (validForGame >= 10) {
+      readinessText.textContent = "Trạng thái: Đủ dữ liệu chơi Matching";
+      readinessText.style.color = "#16a34a"; // green-600
+      readinessIcon.style.color = "#16a34a";
+      readinessIcon.textContent = "check_circle";
+    } else {
+      readinessText.textContent = "Chủ đề này chưa đủ dữ liệu. Cần tối thiểu 10 cặp đã duyệt.";
+      readinessText.style.color = "#ea580c"; // orange-600
+      readinessIcon.style.color = "#ea580c";
+      readinessIcon.textContent = "warning";
+    }
+  }
+}
+
+function mcSetFilter(status) {
+  mcFilterStatus = status;
+  mcFilterCardsList();
+  
+  // Cập nhật UI filter
+  document.querySelectorAll('.mc-stat-item').forEach(el => el.classList.remove('active-filter'));
+  if (status === 'approved') {
+    const el = document.getElementById("mcStatApproved");
+    if (el) el.classList.add('active-filter');
+  } else if (status === 'draft') {
+    const el = document.getElementById("mcStatDraft");
+    if (el) el.classList.add('active-filter');
+  } else if (status === 'hidden') {
+    const el = document.getElementById("mcStatHidden");
+    if (el) el.classList.add('active-filter');
+  } else {
+    const el = document.getElementById("mcStatAll");
+    if (el) el.classList.add('active-filter');
+  }
+}
+
+function mcFilterCardsList() {
+  const searchInput = document.getElementById("mcSearchTermInput");
+  mcSearchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  mcRenderCards();
+}
+
+function mcRenderCards() {
+  const listEl = document.getElementById("mcCardsList");
+  
+  if (mcCurrentCards.length === 0) {
+    document.getElementById("mcCardsArea").style.display = "none";
+    document.getElementById("mcEmptyState").style.display = "flex";
+    return;
+  }
+  
+  document.getElementById("mcCardsArea").style.display = "block";
+  document.getElementById("mcEmptyState").style.display = "none";
+  
+  let html = '';
+  
+  const filteredCards = mcCurrentCards.filter(c => {
+    if (mcFilterStatus !== 'all') {
+      const s = (c.status || "").trim().toLowerCase();
+      if (mcFilterStatus === 'approved' && s !== 'approved') return false;
+      if (mcFilterStatus === 'draft' && s === 'approved') return false;
+    }
+    
+    if (mcSearchTerm !== '') {
+      const term = (c.term || "").toLowerCase();
+      const def = (c.definition || "").toLowerCase();
+      if (!term.includes(mcSearchTerm) && !def.includes(mcSearchTerm)) return false;
+    }
+    
+    return true;
+  });
+  
+  if (filteredCards.length === 0) {
+    html = '<div style="text-align:center; padding: 20px; color: #64748b;">Không có thẻ nào phù hợp với bộ lọc.</div>';
+  }
+  
+  filteredCards.forEach((c) => {
+    const index = mcCurrentCards.indexOf(c);
+    const s = (c.status || "").trim().toLowerCase();
+    const isChecked = false;
+    
+    let statusBg = '#fef08a';
+    let statusColor = '#854d0e';
+    let statusText = 'Draft';
+    if (s === 'approved') {
+      statusBg = '#dcfce7'; statusColor = '#166534'; statusText = 'Approved';
+    } else if (s === 'hidden') {
+      statusBg = '#f1f5f9'; statusColor = '#64748b'; statusText = 'Hidden';
+    }
+    
+    html += `
+      <div class="mc-term-card ${isChecked ? 'selected' : ''}" id="mcCard_${index}">
+        <div class="mc-card-header">
+          <div class="mc-card-header-left">
+            <input type="checkbox" class="mc-checkbox mc-c-select" data-index="${index}" ${isChecked ? 'checked' : ''} onchange="mcToggleSelect(${index}, this)">
+            <strong>Thẻ ${index + 1}</strong>
+            <div class="mc-meta-tags">
+              <span class="mc-tag mc-tag-source">${c.source || 'manual'}</span>
+              <span class="mc-tag mc-tag-${c.difficulty || 'medium'}">${c.difficulty || 'Medium'}</span>
+              <span class="mc-tag" style="background:${statusBg}; color:${statusColor}">${statusText}</span>
+              ${c.isActive ? '<span class="mc-tag" style="background:#dbeafe; color:#1e40af">Active</span>' : '<span class="mc-tag" style="background:#f1f5f9; color:#64748b">Inactive</span>'}
+            </div>
+          </div>
+          <div>
+            <button class="mc-btn mc-btn-outline" onclick="mcToggleEdit(${index})" style="padding: 4px 10px; font-size: 13px;">
+              <span class="material-symbols-sharp" style="font-size: 16px;">edit</span> Sửa
+            </button>
+            <button class="mc-btn mc-btn-primary" onclick="mcSaveSingleCard(${index})" style="padding: 4px 10px; font-size: 13px; margin-left: 4px;">
+              <span class="material-symbols-sharp" style="font-size: 16px;">save</span> Lưu
+            </button>
+            ${s !== 'hidden' ? `
+            <button class="mc-btn mc-btn-outline" onclick="mcHideCard(${index})" style="padding: 4px 10px; font-size: 13px; color: #f59e0b; border-color: #fcd34d; margin-left: 4px;" title="Ẩn">
+              <span class="material-symbols-sharp" style="font-size: 16px;">visibility_off</span>
+            </button>` : ''}
+            <button class="mc-btn mc-btn-outline" onclick="mcDeleteCard(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5; margin-left: 4px;" title="Xóa">
+              <span class="material-symbols-sharp" style="font-size: 16px;">delete</span>
+            </button>
+          </div>
+        </div>
+        
+        <!-- View Mode -->
+        <div class="mc-card-body-content">
+          <h4 class="mc-term-title">${escapeHtml(c.term || '(Trống)')}</h4>
+          <p class="mc-term-definition">${escapeHtml(c.definition || '(Chưa có định nghĩa)')}</p>
+          
+          <div class="mc-term-extras">
+            <div class="mc-extra-field">
+              <div class="mc-extra-label">Định nghĩa ngắn:</div>
+              <div class="mc-extra-value">${escapeHtml(c.shortDefinition || '-')}</div>
+            </div>
+            <div class="mc-extra-field">
+              <div class="mc-extra-label">Ví dụ:</div>
+              <div class="mc-extra-value">${escapeHtml(c.example || '-')}</div>
+            </div>
+            <div class="mc-extra-field">
+              <div class="mc-extra-label">Gợi ý:</div>
+              <div class="mc-extra-value">${escapeHtml(c.hint || '-')}</div>
+            </div>
+            <div class="mc-extra-field">
+              <div class="mc-extra-label">Tags:</div>
+              <div class="mc-extra-value">${escapeHtml(c.tags || '-')}</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Edit Mode -->
+        <div class="mc-edit-form" id="mcEditForm_${index}">
+          <div class="mc-form-row">
+            <div class="mc-form-group">
+              <label>Thuật ngữ <span style="color:red">*</span></label>
+              <input type="text" class="mc-input" id="mcEditTerm_${index}" value="${escapeHtml(c.term || '')}">
+            </div>
+          </div>
+          <div class="mc-form-row" style="margin-top: 12px;">
+            <div class="mc-form-group">
+              <label>Định nghĩa <span style="color:red">*</span></label>
+              <textarea class="mc-input" id="mcEditDef_${index}">${c.definition || ''}</textarea>
+            </div>
+          </div>
+          <div class="mc-form-row" style="margin-top: 12px;">
+            <div class="mc-form-group">
+              <label>Định nghĩa ngắn</label>
+              <input type="text" class="mc-input" id="mcEditShortDef_${index}" value="${escapeHtml(c.shortDefinition || '')}">
+            </div>
+            <div class="mc-form-group">
+              <label>Ví dụ</label>
+              <input type="text" class="mc-input" id="mcEditEx_${index}" value="${escapeHtml(c.example || '')}">
+            </div>
+          </div>
+          <div class="mc-form-row" style="margin-top: 12px;">
+            <div class="mc-form-group">
+              <label>Gợi ý</label>
+              <input type="text" class="mc-input" id="mcEditHint_${index}" value="${escapeHtml(c.hint || '')}">
+            </div>
+            <div class="mc-form-group">
+              <label>Tags (phân cách bằng dấu phẩy)</label>
+              <input type="text" class="mc-input" id="mcEditTags_${index}" value="${escapeHtml(c.tags || '')}">
+            </div>
+          </div>
+          <div class="mc-form-row" style="margin-top: 12px;">
+            <div class="mc-form-group">
+              <label>Độ khó</label>
+              <select class="mc-input" id="mcEditDiff_${index}">
+                <option value="easy" ${c.difficulty === 'easy' ? 'selected' : ''}>Dễ</option>
+                <option value="medium" ${(c.difficulty === 'medium' || !c.difficulty) ? 'selected' : ''}>Trung bình</option>
+                <option value="hard" ${c.difficulty === 'hard' ? 'selected' : ''}>Khó</option>
+              </select>
+            </div>
+            <div class="mc-form-group">
+              <label>Trạng thái</label>
+              <select class="mc-input" id="mcEditStatus_${index}">
+                <option value="draft" ${c.status === 'draft' ? 'selected' : ''}>Bản nháp (Draft)</option>
+                <option value="approved" ${c.status === 'approved' ? 'selected' : ''}>Đã duyệt (Approved)</option>
+                <option value="hidden" ${c.status === 'hidden' ? 'selected' : ''}>Đã ẩn (Hidden)</option>
+              </select>
+            </div>
+            <div class="mc-form-group" style="justify-content: center; align-items: flex-start; padding-top: 24px;">
+              <label class="mc-checkbox-label">
+                <input type="checkbox" id="mcEditActive_${index}" ${c.isActive ? 'checked' : ''} class="mc-checkbox"> 
+                Hoạt động (Active)
+              </label>
+            </div>
+          </div>
+          <div style="margin-top: 16px; text-align: right;">
+            <button class="mc-btn mc-btn-outline" onclick="mcToggleEdit(${index})">Hủy</button>
+            <button class="mc-btn mc-btn-primary" onclick="mcApplyEdit(${index})">Xong</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  listEl.innerHTML = html;
+  
+  // Update "Select All" checkbox state
+  mcUpdateSelectAllCheckbox();
+}
+
+function escapeHtml(unsafe) {
+  if (unsafe === undefined || unsafe === null) return '';
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function mcToggleSelect(index, checkbox) {
+  const card = document.getElementById(`mcCard_${index}`);
+  if (checkbox.checked) {
+    card.classList.add("selected");
+  } else {
+    card.classList.remove("selected");
+  }
+  mcUpdateSelectAllCheckbox();
+}
+
+function mcToggleSelectAll(checkbox) {
+  const targetChecked = checkbox.checked;
+  const checkboxes = document.querySelectorAll('.mc-c-select');
+  checkboxes.forEach(cb => {
+    cb.checked = targetChecked;
+    const card = document.getElementById(`mcCard_${cb.dataset.index}`);
+    if (targetChecked) {
+      card.classList.add("selected");
+    } else {
+      card.classList.remove("selected");
+    }
+  });
+
+  mcUpdateSelectAllCheckbox();
+}
+
+function mcUpdateSelectAllCheckbox() {
+  const checkboxes = document.querySelectorAll('.mc-c-select');
+  const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+  const someChecked = Array.from(checkboxes).some(cb => cb.checked);
+  
+  const selectAllCb = document.getElementById("mcSelectAll");
+  if (selectAllCb) {
+    selectAllCb.checked = allChecked;
+    selectAllCb.indeterminate = someChecked && !allChecked;
+  }
+  
+  const bulkDeleteBtn = document.getElementById("mcBulkDeleteBtn");
+  const bulkSaveBtn = document.getElementById("mcBulkSaveBtn");
+  const bulkApproveBtn = document.getElementById("mcBulkApproveBtn");
+  const bulkHideBtn = document.getElementById("mcBulkHideBtn");
+  
+  if (bulkDeleteBtn) bulkDeleteBtn.style.display = someChecked ? 'inline-flex' : 'none';
+  if (bulkSaveBtn) bulkSaveBtn.style.display = someChecked ? 'inline-flex' : 'none';
+  if (bulkApproveBtn) bulkApproveBtn.style.display = someChecked ? 'inline-flex' : 'none';
+  if (bulkHideBtn) bulkHideBtn.style.display = someChecked ? 'inline-flex' : 'none';
+}
+
+function mcToggleEdit(index) {
+  const card = document.getElementById(`mcCard_${index}`);
+  card.classList.toggle("editing");
+}
+
+function mcApplyEdit(index) {
+  const c = mcCurrentCards[index];
+  
+  c.term = document.getElementById(`mcEditTerm_${index}`).value;
+  c.definition = document.getElementById(`mcEditDef_${index}`).value;
+  c.shortDefinition = document.getElementById(`mcEditShortDef_${index}`).value;
+  c.example = document.getElementById(`mcEditEx_${index}`).value;
+  c.hint = document.getElementById(`mcEditHint_${index}`).value;
+  c.tags = document.getElementById(`mcEditTags_${index}`).value;
+  c.difficulty = document.getElementById(`mcEditDiff_${index}`).value;
+  c.status = document.getElementById(`mcEditStatus_${index}`).value;
+  c.isActive = document.getElementById(`mcEditActive_${index}`).checked;
+  
+  mcRenderCards();
+}
+
+function mcSaveSingleCard(index) {
+  const c = mcCurrentCards[index];
+  const topicId = mcGetSelectedTopicId();
+  if (!topicId) return;
+  
+  if (!c.term || !c.definition) {
+    if (typeof showToast === 'function') showToast("Vui lòng nhập Thuật ngữ và Định nghĩa", "warning");
+    return;
+  }
+  
+  // Auto approve when saving manually
+  if (c.status === "draft") {
+    c.status = "approved";
+    c.isActive = true;
+  }
+  
+  const isNew = !c.cardId || String(c.cardId).startsWith("TEMP_");
+  
+  if (isNew) {
+    google.script.run
+      .withSuccessHandler((response) => {
+        if (response.success) {
+          if (typeof showToast === 'function') showToast("Thêm thẻ mới thành công!", "success");
+          mcLoadTopicCards(topicId, true);
+        } else {
+          if (typeof showToast === 'function') showToast("Lỗi thêm: " + response.message, "error");
+        }
+      })
+      .withFailureHandler((err) => {
+        if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+      })
+      .createMatchingTermCard(c);
+  } else {
+    google.script.run
+      .withSuccessHandler((response) => {
+        if (response.success) {
+          if (typeof showToast === 'function') showToast("Cập nhật thẻ thành công!", "success");
+          mcLoadTopicCards(topicId, true);
+        } else {
+          if (typeof showToast === 'function') showToast("Lỗi cập nhật: " + response.message, "error");
+        }
+      })
+      .withFailureHandler((err) => {
+        if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+      })
+      .updateMatchingTermCard(c.cardId, c);
+  }
+}
+
+function mcAddNewManualCard() {
+  const topicId = mcGetSelectedTopicId();
+  if (!topicId) {
+    if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước", "warning");
+    return;
+  }
+  
+  mcCurrentCards.unshift({
+    cardId: "TEMP_" + Date.now(),
+    topicId: topicId,
+    term: "",
+    definition: "",
+    shortDefinition: "",
+    example: "",
+    hint: "",
+    difficulty: "medium",
+    tags: "",
+    status: "draft",
+    isActive: true,
+    source: "manual"
+  });
+  
+  mcFilterStatus = 'all'; // Đảm bảo thẻ mới hiện ra
+  mcSearchTerm = '';
+  const searchInput = document.getElementById("mcSearchTermInput");
+  if (searchInput) searchInput.value = '';
+  
+  mcRenderCards();
+  mcUpdateStats();
+  
+  mcToggleEdit(0); // Mở form sửa của thẻ mới nhất
+  
+  setTimeout(() => {
+    const newCard = document.getElementById(`mcCard_0`);
+    if (newCard) {
+      newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
+}
+
+function mcGenerateAICards() {
+  const topicId = mcGetSelectedTopicId();
+  if (!topicId) {
+    if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước khi tạo bằng AI", "warning");
+    return;
+  }
+  
+  mcShowLoading("AI đang phân tích tài liệu bài học và tạo thẻ... Vui lòng đợi (có thể mất 10-20 giây).");
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      mcHideLoading();
+      if (response.success) {
+        if (typeof showToast === 'function') showToast(response.message || "Tạo thẻ bằng AI thành công!", "success");
+        // Reload cards
+        mcLoadTopicCards(topicId, true);
+        mcLoadTopics();
+      } else {
+        if (typeof showToast === 'function') showToast("Lỗi AI: " + response.message, "error");
+        mcLoadTopicCards(topicId, true); // reload to remove loading state and show old cards
+      }
+    })
+    .withFailureHandler((err) => {
+      mcHideLoading();
+      if (typeof showToast === 'function') showToast("Lỗi kết nối: " + err, "error");
+      mcLoadTopicCards(topicId, true);
+    })
+    .adminGenerateMatchingCardsByAI(topicId);
+}
+
+
+// Giữ lại hàm mcSaveCards nếu Admin muốn cập nhật nhiều thẻ một lúc, nhưng sẽ gọi adminSaveMatchingCards (hàm cũ, hoặc có thể map sang từng update, nhưng thôi ta cứ dùng update vòng lặp hoặc thông báo). Ở quy trình 3 yêu cầu dùng hàm CRUD, ta sẽ gọi update liên tiếp.
+function mcSaveCards() {
+  const topicId = mcGetSelectedTopicId();
+  if (!topicId) return;
+  
+  const checkboxes = document.querySelectorAll('.mc-c-select');
+  const cardsToSave = [];
+  
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const idx = cb.dataset.index;
+      // Auto approve when bulk saving
+      if (mcCurrentCards[idx].status === "draft") {
+        mcCurrentCards[idx].status = "approved";
+        mcCurrentCards[idx].isActive = true;
+      }
+      cardsToSave.push(mcCurrentCards[idx]);
+    }
+  });
+  
+  if (cardsToSave.length === 0) {
+    if (typeof showToast === 'function') showToast("Không có thẻ nào được chọn để lưu.", "warning");
+    return;
+  }
+  
+  mcShowLoading("Đang lưu hàng loạt...");
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      mcHideLoading();
+      if (response.success) {
+        if (typeof showToast === 'function') showToast(response.message, "success");
+        mcLoadTopicCards(topicId, true);
+        mcUpdateSelectAllCheckbox();
+      } else {
+        if (typeof showToast === 'function') showToast("Lỗi lưu hàng loạt: " + response.message, "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      mcHideLoading();
+      if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+    })
+    .bulkSaveMatchingTermCards(cardsToSave);
+}
+
+function mcDeleteCard(index) {
+  mcShowConfirmDeleteModal("Bạn có chắc chắn muốn xóa thẻ này?", function() {
+    const c = mcCurrentCards[index];
+    const cardId = c && c.cardId ? String(c.cardId) : "";
+    
+    if (!cardId) return;
+    
+    // Xóa khỏi giao diện ngay
+    mcCurrentCards.splice(index, 1);
+    mcRenderCards();
+    mcUpdateStats();
+
+    if (!cardId.startsWith("TEMP_")) {
+      google.script.run
+        .withFailureHandler((err) => {
+          if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
+        })
+        .deleteMatchingTermCard([cardId]);
+    } else {
+      if (typeof showToast === 'function') showToast("Đã xóa thẻ nháp", "success");
+    }
+  });
+}
+
+function mcDeleteSelectedCards() {
+  const checkboxes = document.querySelectorAll('.mc-c-select');
+  const idsToDelete = [];
+  const idxToRemove = [];
+  
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const idx = parseInt(cb.dataset.index);
+      idxToRemove.push(idx);
+      const c = mcCurrentCards[idx];
+      if (c && c.cardId) {
+        const cId = String(c.cardId);
+        if (!cId.startsWith("TEMP_")) {
+          idsToDelete.push(cId);
+        }
+      }
+    }
+  });
+  
+  if (idxToRemove.length === 0) {
+    if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ để xóa", "warning");
+    return;
+  }
+  
+  mcShowConfirmDeleteModal(`Bạn có chắc muốn xóa ${idxToRemove.length} thẻ đã chọn?`, function() {
+    idxToRemove.sort((a, b) => b - a).forEach(idx => {
+      mcCurrentCards.splice(idx, 1);
+    });
+    mcRenderCards();
+    mcUpdateStats();
+
+    if (idsToDelete.length > 0) {
+      google.script.run
+        .withFailureHandler((err) => {
+          if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
+        })
+        .deleteMatchingTermCard(idsToDelete);
+    } else {
+      if (typeof showToast === 'function') showToast(`Đã xóa ${idxToRemove.length} thẻ nháp`, "success");
+    }
+  });
+}
+
+function mcHideCard(index) {
+  const c = mcCurrentCards[index];
+  const cardId = c && c.cardId ? String(c.cardId) : "";
+  if (!cardId) return;
+  
+  if (cardId.startsWith("TEMP_")) {
+    if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước khi ẩn", "warning");
+    return;
+  }
+  
+  const topicId = mcGetSelectedTopicId();
+  google.script.run
+    .withSuccessHandler((res) => {
+      if(res.success) {
+        if (typeof showToast === 'function') showToast("Đã ẩn thẻ", "success");
+        mcLoadTopicCards(topicId, true);
+      }
+    })
+    .withFailureHandler((err) => {
+      if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
+    })
+    .hideMatchingTermCard([cardId]);
+}
+
+function mcHideSelectedCards() {
+  const checkboxes = document.querySelectorAll('.mc-c-select');
+  const idsToHide = [];
+  
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const idx = parseInt(cb.dataset.index);
+      const c = mcCurrentCards[idx];
+      if (c && c.cardId && !String(c.cardId).startsWith("TEMP_")) {
+        idsToHide.push(String(c.cardId));
+      }
+    }
+  });
+  
+  if (idsToHide.length === 0) {
+    if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ (đã được lưu) để ẩn", "warning");
+    return;
+  }
+  
+  const topicId = mcGetSelectedTopicId();
+  google.script.run
+    .withSuccessHandler((res) => {
+      if(res.success) {
+        if (typeof showToast === 'function') showToast(`Đã ẩn ${res.updatedCount} thẻ`, "success");
+        mcLoadTopicCards(topicId, true);
+      }
+    })
+    .withFailureHandler((err) => {
+      if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
+    })
+    .hideMatchingTermCard(idsToHide);
+}
+
+// Modal helpers
+function mcShowConfirmDeleteModal(msg, onConfirm) {
+  const modal = document.getElementById("mcConfirmDeleteModal");
+  const msgEl = document.getElementById("mcConfirmDeleteMsg");
+  const btn = document.getElementById("mcConfirmDeleteBtn");
+  
+  if (modal && msgEl && btn) {
+    msgEl.textContent = msg;
+    btn.onclick = function() {
+      mcCloseConfirmDeleteModal();
+      if (typeof onConfirm === 'function') onConfirm();
+    };
+    modal.style.display = "flex";
+  } else {
+    // Fallback if modal is missing
+    if (confirm(msg)) {
+      if (typeof onConfirm === 'function') onConfirm();
+    }
+  }
+}
+
+function mcCloseConfirmDeleteModal() {
+  const modal = document.getElementById("mcConfirmDeleteModal");
+  if (modal) modal.style.display = "none";
+}
+</script>
