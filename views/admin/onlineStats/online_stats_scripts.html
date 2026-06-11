@@ -21,6 +21,12 @@
   let aiUsageStats = null;
   let onlineStatsInitialized = false;
 
+  // Chart instances
+  let levelDistributionChart = null;
+  let topTrendingChart = null;
+  let hardestTopicsChart = null;
+  let dailyActivityChart = null;
+
   function getOnlineStatsCurrentUser() {
     try {
       return window.currentUser || JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -31,13 +37,23 @@
 
   function isOnlineStatsPageActive() {
     const adminPage = document.getElementById('page-admin');
+    const statsPage = document.getElementById('page-online-stats');
+
     const adminVisible = !!(
       adminPage &&
       window.getComputedStyle(adminPage).display !== 'none'
     );
+
+    const statsVisible = !!(
+      statsPage &&
+      statsPage.classList.contains('active') &&
+      window.getComputedStyle(statsPage).display !== 'none'
+    );
+
     const user = getOnlineStatsCurrentUser();
     const role = String(user?.role || '').trim().toUpperCase();
-    return adminVisible && role === 'ADMIN';
+
+    return adminVisible && statsVisible && role === 'ADMIN';
   }
 
   // Initialize page
@@ -54,6 +70,7 @@
 
     loadOnlineUsers();
     loadAIUsageStats();
+    loadDashboardCharts();
     startAutoRefresh();
     initMeteorEffect();
   }
@@ -141,6 +158,211 @@
       showError('Không thể tải danh sách người dùng');
     } finally {
       showLoading(false);
+    }
+  }
+
+  async function loadDashboardCharts() {
+    if (!isOnlineStatsPageActive()) return;
+    try {
+      if (typeof Chart === 'undefined') {
+        console.warn('Chart.js is not loaded yet');
+        return;
+      }
+
+      const result = await callAppsScript('getAdminDashboardChartsData');
+      if (!result || !result.success) {
+        throw new Error((result && result.message) || 'Không thể tải dữ liệu dashboard charts');
+      }
+
+      const data = result.data;
+      renderDashboardCharts(data);
+    } catch (error) {
+      console.error('Error loading dashboard charts:', error);
+    }
+  }
+
+  function renderDashboardCharts(data) {
+    if (!data) return;
+
+    // --- CẬP NHẬT STATS CARDS ---
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+
+    // Nhóm 1
+    if (data.overview) {
+      setText('valTotalLearners', data.overview.totalLearners || 0);
+      setText('valActiveToday', data.overview.activeToday || 0);
+      setText('valActive7Days', data.overview.active7Days || 0);
+      setText('valDisabled', data.overview.disabledLearners || 0);
+    }
+    
+    // Nhóm 2
+    if (data.progress) {
+      setText('valTopicsCompleted', data.progress.topicsCompleted || 0);
+      setText('valCompletionRate', `${data.progress.completionRate || 0}%`);
+    }
+
+    // Nhóm 3
+    if (data.results) {
+      setText('valAvgAccuracy', `${data.results.avgAccuracy || 0}%`);
+      setText('valPassRate', `${data.results.passRate || 0}%`);
+    }
+
+    // Nhóm 4
+    if (data.recentActivity) {
+      setText('valNewLearners', data.recentActivity.newLearners || 0);
+      setText('valReturningLearners', data.recentActivity.returningLearners || 0);
+      setText('valChurnLearners', data.recentActivity.churnLearners || 0);
+    }
+
+    // --- VẼ BIỂU ĐỒ ---
+    const primaryColor = window.getComputedStyle(document.body).getPropertyValue('--theme-primary') || '#3b82f6';
+    const secondaryColor = window.getComputedStyle(document.body).getPropertyValue('--theme-secondary') || '#8b5cf6';
+    const accentColor = window.getComputedStyle(document.body).getPropertyValue('--theme-accent') || '#10b981';
+    const textColor = window.getComputedStyle(document.body).getPropertyValue('--theme-text') || '#f3f4f6';
+    const gridColor = window.getComputedStyle(document.body).getPropertyValue('--theme-border-light') || 'rgba(255,255,255,0.1)';
+
+    Chart.defaults.color = textColor;
+    Chart.defaults.font.family = "'Inter', sans-serif";
+
+    const chartPalette = [
+      accentColor,
+      'rgba(156, 163, 175, 0.55)',
+      'rgba(239, 68, 68, 0.75)',
+      primaryColor,
+      secondaryColor
+    ];
+
+    // 1. Phân bố Level (Bar)
+    const ctxLevel = document.getElementById('levelDistributionChart');
+    if (ctxLevel && data.progress && data.progress.levelDistribution) {
+      if (levelDistributionChart) levelDistributionChart.destroy();
+      
+      const gradient = ctxLevel.getContext('2d').createLinearGradient(0, 0, 0, 400);
+      gradient.addColorStop(0, primaryColor);
+      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.2)');
+
+      levelDistributionChart = new Chart(ctxLevel, {
+        type: 'bar',
+        data: {
+          labels: data.progress.levelDistribution.labels,
+          datasets: [{
+            label: 'Số học viên',
+            data: data.progress.levelDistribution.data,
+            backgroundColor: gradient,
+            borderRadius: 6,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    // 2. Top 5 Topic nhiều người học (Horizontal Bar)
+    const ctxTrending = document.getElementById('topTrendingChart');
+    if (ctxTrending && data.progress && data.progress.topTrending) {
+      if (topTrendingChart) topTrendingChart.destroy();
+      
+      topTrendingChart = new Chart(ctxTrending, {
+        type: 'bar',
+        data: {
+          labels: data.progress.topTrending.labels,
+          datasets: [{
+            label: 'Lượt tham gia',
+            data: data.progress.topTrending.data,
+            backgroundColor: chartPalette[0],
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
+            y: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    // 3. Top Topic điểm thấp nhất (Horizontal Bar)
+    const ctxHardest = document.getElementById('hardestTopicsChart');
+    if (ctxHardest && data.results && data.results.hardestTopics) {
+      if (hardestTopicsChart) hardestTopicsChart.destroy();
+      
+      hardestTopicsChart = new Chart(ctxHardest, {
+        type: 'bar',
+        data: {
+          labels: data.results.hardestTopics.labels,
+          datasets: [{
+            label: 'Tỉ lệ đúng (%)',
+            data: data.results.hardestTopics.data,
+            backgroundColor: 'rgba(239, 68, 68, 0.8)', // Red
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, max: 100, grid: { color: gridColor } },
+            y: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    // 4. Lượt làm Quiz/Matching theo ngày (Line)
+    const ctxActivity = document.getElementById('dailyActivityChart');
+    if (ctxActivity && data.recentActivity && data.recentActivity.dailyTimeline) {
+      if (dailyActivityChart) dailyActivityChart.destroy();
+      
+      const gradient = ctxActivity.getContext('2d').createLinearGradient(0, 0, 0, 400);
+      gradient.addColorStop(0, 'rgba(16, 185, 129, 0.5)'); // Accent green transparent
+      gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+      dailyActivityChart = new Chart(ctxActivity, {
+        type: 'line',
+        data: {
+          labels: data.recentActivity.dailyTimeline.labels,
+          datasets: [{
+            label: 'Lượt làm bài',
+            data: data.recentActivity.dailyTimeline.data,
+            borderColor: accentColor,
+            backgroundColor: gradient,
+            borderWidth: 3,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: accentColor,
+            pointBorderColor: '#fff',
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
     }
   }
 
@@ -505,11 +727,14 @@
     }
     
     loadOnlineUsers();
+    loadDashboardCharts();
   }
 
   function refreshAIUsageStats() {
     loadAIUsageStats();
   }
+
+  let dashboardChartRefreshTick = 0;
 
   // Start auto refresh
   function startAutoRefresh() {
@@ -519,6 +744,12 @@
       if (!isOnlineStatsPageActive()) return;
       loadOnlineUsers();
       loadAIUsageStats();
+
+      dashboardChartRefreshTick++;
+      if (dashboardChartRefreshTick >= 4) {
+        dashboardChartRefreshTick = 0;
+        loadDashboardCharts();
+      }
     }, 30000);
   }
 
