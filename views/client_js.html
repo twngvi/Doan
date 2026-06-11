@@ -174,6 +174,75 @@
     }, 5000);
   }
 
+  // ==================== Session Monitor ====================
+  let sessionMonitorId = null;
+  const SESSION_CHECK_INTERVAL_MS = 15000;
+
+  function runSessionCheckOnce() {
+    if (!isSessionLoggedIn()) return;
+
+    const user = getHeartbeatUser();
+
+    if (!user || !user.userId || !user.sessionId) {
+      handleForceLogout("Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler((response) => {
+        if (response && response.status === "FORCE_LOGOUT") {
+          console.warn("Session invalid, forcing logout...");
+          handleForceLogout(response.message || "Tài khoản đang được đăng nhập ở thiết bị khác.");
+        }
+      })
+      .withFailureHandler((err) => {
+        console.warn("Session check failed", err);
+      })
+      .checkUserSession(user.userId, user.sessionId);
+  }
+
+  function initSessionMonitor() {
+    if (sessionMonitorId) return;
+
+    runSessionCheckOnce();
+
+    sessionMonitorId = setInterval(() => {
+      runSessionCheckOnce();
+    }, SESSION_CHECK_INTERVAL_MS);
+  }
+
+  function handleForceLogout(message) {
+    if (sessionMonitorId) {
+      clearInterval(sessionMonitorId);
+      sessionMonitorId = null;
+    }
+    stopUserHeartbeat();
+
+    // Show toast
+    if (typeof window.showToast === "function") {
+      window.showToast(message, "error");
+    } else {
+      alert(message);
+    }
+
+    // Call logout if available, or just clear storage and redirect
+    if (typeof handleLogout === "function") {
+      handleLogout(false); // pass false if we don't need a server call, but handleLogout might do it anyway.
+    } else {
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("isLoggedIn");
+      localStorage.removeItem("userId");
+      sessionStorage.clear();
+      window.currentUser = null;
+      currentUser = null;
+      if (typeof showPage === "function") {
+        showPage("page-landing", {}, false);
+      } else {
+        window.location.reload();
+      }
+    }
+  }
+
   function applyThemeFromAuthenticatedUser(user) {
     try {
       if (!user) return;
@@ -538,6 +607,7 @@
       startUserHeartbeat();
     }
     initHeartbeatMonitor();
+    initSessionMonitor(); // ⭐ Start checking session periodically
 
     // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
     try {
@@ -1550,7 +1620,7 @@
     if (response.status === "success") {
       // Save user to localStorage (auto logout when closing tab)
       currentUser = response.user;
-      window.currentUser = response.user; // â­ Äá»“ng bá»™ vÃ o window
+      window.currentUser = response.user; // â­  Ä á»“ng bá»™ vÃ o window
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       dispatchCurrentUserState(response.user);
       console.log("âœ… Current user synced to window:", currentUser);
@@ -1571,10 +1641,33 @@
   /**
    * Handle logout
    */
-  function handleLogout() {
+  function handleLogout(clearServerSession = true) {
     console.log("Logging out...");
 
+    const userBeforeLogout = window.currentUser || currentUser || getStoredCurrentUser();
+
     stopUserHeartbeat();
+
+    // Chỉ xóa session server khi user bấm đăng xuất thật
+    // Không xóa khi bị FORCE_LOGOUT từ thiết bị khác
+    if (
+      clearServerSession &&
+      userBeforeLogout &&
+      userBeforeLogout.userId &&
+      userBeforeLogout.sessionId &&
+      typeof google !== "undefined" &&
+      google.script &&
+      google.script.run
+    ) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          console.log("Server session cleared:", res);
+        })
+        .withFailureHandler(function (err) {
+          console.warn("Clear server session failed:", err);
+        })
+        .clearUserSession(userBeforeLogout.userId, userBeforeLogout.sessionId);
+    }
 
     // Clear user data from all storage
     currentUser = null;
@@ -1603,6 +1696,9 @@
     // Clear auth panel state
     sessionStorage.removeItem("authPanelOpen");
     sessionStorage.removeItem("authFormType");
+    sessionStorage.removeItem("currentUser");
+    sessionStorage.removeItem("isLoggedIn");
+    sessionStorage.removeItem("userId");
 
     // Clear Google auth state if needed
     if (

@@ -209,7 +209,31 @@
             setLoading(false);
             isSubmitting = false;
 
+            if (response && response.requireConfirmation) {
+              if (confirm(response.message)) {
+                // Retry login with force=true
+                isSubmitting = true;
+                setLoading(true);
+                payload.force = true;
+                google.script.run
+                  .withSuccessHandler(arguments.callee)
+                  .withFailureHandler(function (error) {
+                    console.error("Force Login error:", error);
+                    setLoading(false);
+                    isSubmitting = false;
+                    showError("Lỗi kết nối. Vui lòng thử lại.");
+                  })
+                  .loginUser(payload);
+              }
+              return;
+            }
+
             if (response && (response.status === "success" || response.success === true)) {
+              if (!response.user || !response.user.sessionId) {
+                showError("Lỗi phiên đăng nhập: thiếu sessionId");
+                return;
+              }
+
               // ⭐ Lưu user vào localStorage VÀ đồng bộ vào window
               const user = response.user;
               localStorage.setItem("currentUser", JSON.stringify(user));

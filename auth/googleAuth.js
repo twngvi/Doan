@@ -113,6 +113,100 @@ function handleGoogleCallback(authCode) {
     const redirectUrl = ScriptApp.getService().getUrl() + "?page=" + targetPage;
     const buttonText = isAdmin ? 'Vào Admin Panel' : 'Vào Dashboard';
 
+    if (appUser.requireConfirmation) {
+      const confirmHtmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Xác nhận đăng nhập - TERRACODE</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          body { 
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #1a3328 0%, #2d5a3d 30%, #1e4a2e 60%, #162e23 100%);
+            margin: 0;
+          }
+          .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            text-align: center;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+          }
+          h2 { color: #f59e0b; margin-bottom: 1rem; }
+          p { color: #4b5563; margin-bottom: 2rem; line-height: 1.6; }
+          .btn-group { display: flex; gap: 1rem; justify-content: center; }
+          button {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+          }
+          .btn-confirm { background: #22c55e; color: white; }
+          .btn-confirm:hover { background: #16a34a; transform: translateY(-2px); }
+          .btn-cancel { background: #e5e7eb; color: #4b5563; }
+          .btn-cancel:hover { background: #d1d5db; }
+          #loading { display: none; margin-top: 1rem; color: #16a34a; font-weight: 600; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>Xác nhận đăng nhập</h2>
+          <p>${appUser.message}</p>
+          <div class="btn-group" id="btnGroup">
+            <button class="btn-cancel" onclick="cancel()">Huỷ bỏ</button>
+            <button class="btn-confirm" onclick="confirmLogin()">Đồng ý</button>
+          </div>
+          <div id="loading">Đang đăng nhập...</div>
+        </div>
+        <script>
+          function cancel() {
+            window.top.location.href = "${ScriptApp.getService().getUrl()}?page=login";
+          }
+          function confirmLogin() {
+            document.getElementById('btnGroup').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            google.script.run
+              .withSuccessHandler(function(response) {
+                if (response.success && response.user) {
+                  const user = response.user;
+                  try {
+                    localStorage.setItem("currentUser", JSON.stringify(user));
+                    localStorage.setItem("isLoggedIn", "true");
+                    localStorage.setItem("userId", user.userId);
+                    localStorage.setItem("lastActivePage", "${targetPage}");
+                  } catch(e) {}
+                  window.top.location.href = "${redirectUrl}";
+                } else {
+                  alert(response.message || "Lỗi đăng nhập");
+                  cancel();
+                }
+              })
+              .withFailureHandler(function(err) {
+                alert("Lỗi kết nối.");
+                cancel();
+              })
+              .confirmGoogleLogin("${appUser.confirmToken}");
+          }
+        </script>
+      </body>
+      </html>
+      `;
+      return HtmlService.createHtmlOutput(confirmHtmlContent)
+        .setTitle("Xác nhận đăng nhập - TERRACODE")
+        .addMetaTag("viewport", "width=device-width, initial-scale=1");
+    }
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -451,6 +545,11 @@ function handleGoogleCallback(authCode) {
           
           // Lưu session vào localStorage và sessionStorage
           const user = ${JSON.stringify(appUser)};
+
+          if (!user || !user.sessionId) {
+            alert("Lỗi phiên đăng nhập: thiếu sessionId. Vui lòng đăng nhập lại.");
+            window.location.href = "${ScriptApp.getService().getUrl()}?page=login";
+          }
           
           try {
             localStorage.setItem("currentUser", JSON.stringify(user));
@@ -485,5 +584,32 @@ function handleGoogleCallback(authCode) {
   } catch (e) {
     Logger.log("OAuth Error: " + e.toString());
     return HtmlService.createHtmlOutput("Login Failed: " + e.toString());
+  }
+}
+
+/**
+ * Xác nhận đăng nhập Google sau khi người dùng đồng ý (force login)
+ */
+function confirmGoogleLoginInternal(token) {
+  try {
+    const cachedData = CacheService.getScriptCache().get(token);
+    if (!cachedData) {
+      return { success: false, message: "Phiên xác nhận đã hết hạn. Vui lòng đăng nhập lại." };
+    }
+    
+    const googleProfile = JSON.parse(cachedData);
+    // Xoá token khỏi cache
+    CacheService.getScriptCache().remove(token);
+    
+    // Gọi processGoogleUserLogin với cờ force = true
+    const appUser = processGoogleUserLogin(googleProfile, true);
+    if (!appUser || appUser.requireConfirmation) {
+      return { success: false, message: "Lỗi xác thực." };
+    }
+    
+    return { success: true, user: appUser };
+  } catch(e) {
+    Logger.log("Error in confirmGoogleLogin: " + e.toString());
+    return { success: false, message: "Lỗi hệ thống." };
   }
 }

@@ -82,9 +82,54 @@ function loginWithEmail(credentials) {
           };
         }
 
-        // Update lastLogin
-        const now = new Date();
-        usersSheet.getRange(i + 1, lastLoginIndex + 1).setValue(now);
+        const activeSessionIdIndex = headers.indexOf("activeSessionId");
+        const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
+
+        if (activeSessionIdIndex >= 0) {
+          const currentActiveSession = data[i][activeSessionIdIndex];
+          
+          // Kiểm tra xem session có bị cũ (stale) không
+          let isSessionFresh = true;
+          if (activeSessionUpdatedAtIndex >= 0) {
+            const lastSeenValue = data[i][activeSessionUpdatedAtIndex];
+            const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
+            const SESSION_STALE_MS = 2 * 60 * 1000; // 2 phút
+            isSessionFresh = lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
+          }
+
+          // Nếu có session cũ đang hoạt động, còn fresh và Client chưa gửi cờ force
+          if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && credentials.force !== true) {
+            return {
+              success: false,
+              requireConfirmation: true,
+              message: "Tài khoản của bạn đang được đăng nhập ở thiết bị khác. Nếu bạn tiếp tục đăng nhập, thiết bị kia sẽ bị đăng xuất. Bạn có muốn tiếp tục?",
+            };
+          }
+        }
+
+        // Update lastLogin and session with Lock
+        const lock = LockService.getScriptLock();
+        let sessionId = "";
+        let now = new Date();
+        try {
+          lock.waitLock(10000); // 10s wait
+          sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
+          
+          now = new Date();
+          usersSheet.getRange(i + 1, lastLoginIndex + 1).setValue(now);
+          
+          if (activeSessionIdIndex >= 0) {
+            usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue(sessionId);
+          }
+          if (activeSessionUpdatedAtIndex >= 0) {
+            usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(now);
+          }
+        } catch (e) {
+          Logger.log("Could not obtain lock for session update: " + e.toString());
+          // continue anyway or fail
+        } finally {
+          lock.releaseLock();
+        }
 
         // ⭐ Also save login to user's personal sheet
         const progressSheetId = data[i][progressSheetIdIndex];
@@ -159,6 +204,7 @@ function loginWithEmail(credentials) {
               themeIndex >= 0 && data[i][themeIndex]
                 ? String(data[i][themeIndex])
                 : "forest",
+            sessionId: sessionId,
           },
         };
       }
@@ -289,5 +335,131 @@ function saveLoginToPersonalSheet(progressSheetId, email, loginTime) {
   } catch (error) {
     Logger.log("⚠️ Error saving login to personal sheet: " + error.toString());
     // Don't throw - this is optional functionality
+  }
+}
+
+/**
+ * Check if the provided session ID is the active one
+ * @param {string} userId - User ID to check
+ * @param {string} sessionId - The current session ID of the client
+ * @returns {object} Status object
+ */
+function checkSession(userId, sessionId) {
+  try {
+    if (!userId || !sessionId) {
+      return { status: "FORCE_LOGOUT", message: "Missing credentials" };
+    }
+
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0] || [];
+    
+    const userIdIndex = headers.indexOf("userId");
+    const activeSessionIdIndex = headers.indexOf("activeSessionId");
+
+    if (userIdIndex === -1 || activeSessionIdIndex === -1) {
+      return { 
+        status: "FORCE_LOGOUT", 
+        message: "Thiếu cột activeSessionId trong Users." 
+      };
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][userIdIndex] === userId) {
+        const activeSessionId = data[i][activeSessionIdIndex];
+        
+        // If no active session is set yet (legacy data), consider it valid and update it
+        if (!activeSessionId) {
+           usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue(sessionId);
+           return { status: "valid" };
+        }
+
+        if (activeSessionId === sessionId) {
+          return { status: "valid" };
+        } else {
+          return { status: "FORCE_LOGOUT", message: "Tài khoản đang được đăng nhập ở thiết bị khác." };
+        }
+      }
+    }
+
+    return { status: "FORCE_LOGOUT", message: "User not found" };
+  } catch (error) {
+    Logger.log("Error in checkSession: " + error.toString());
+    // In case of error, assume valid to prevent accidental logouts
+    return { status: "valid" };
+  }
+}
+
+/**
+ * Clear the active session for a user (called upon explicit logout)
+ * @param {string} userId - User ID to clear
+ * @param {string} sessionId - Current Session ID of the user logging out
+ */
+function clearSessionDb(userId, sessionId) {
+  try {
+    if (!userId) {
+      return {
+        success: false,
+        message: "Missing userId",
+      };
+    }
+
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0] || [];
+
+    const userIdIndex = headers.indexOf("userId");
+    const activeSessionIdIndex = headers.indexOf("activeSessionId");
+
+    if (userIdIndex === -1 || activeSessionIdIndex === -1) {
+      return {
+        success: false,
+        message: "Missing activeSessionId column",
+      };
+    }
+
+    const lock = LockService.getScriptLock();
+
+    try {
+      lock.waitLock(10000);
+
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][userIdIndex]) === String(userId)) {
+          const currentActiveSession = String(data[i][activeSessionIdIndex] || "");
+
+          // Chỉ xóa nếu session đang logout đúng là session hiện tại
+          // Tránh tab cũ xóa nhầm session mới của thiết bị khác
+          if (sessionId && currentActiveSession && currentActiveSession !== String(sessionId)) {
+            return {
+              success: true,
+              skipped: true,
+              message: "Session đã thay đổi, không xóa phiên mới.",
+            };
+          }
+
+          usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
+
+          return {
+            success: true,
+            message: "Session cleared",
+          };
+        }
+      }
+
+      return {
+        success: false,
+        message: "User not found",
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (error) {
+    Logger.log("Error in clearSessionDb: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+    };
   }
 }

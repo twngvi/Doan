@@ -114,10 +114,21 @@ function loginUser(payload) {
     // Support both legacy username field and current email field.
     email: payload && (payload.email || payload.username),
     password: payload && payload.password,
+    force: payload && payload.force === true,
   });
 
+  // Giữ lại requireConfirmation để client xử lý confirm
+  if (result && result.requireConfirmation) {
+    return {
+      success: false,
+      status: "confirm",
+      requireConfirmation: true,
+      message: result.message,
+    };
+  }
+
   // Return both modern and legacy response fields.
-  if (result.success) {
+  if (result && result.success) {
     return {
       success: true,
       status: "success",
@@ -128,13 +139,25 @@ function loginUser(payload) {
     return {
       success: false,
       status: "error",
-      message: result.message,
+      message: result ? result.message : "Đăng nhập thất bại",
     };
   }
 }
 
+function checkUserSession(userId, sessionId) {
+  return checkSession(userId, sessionId);
+}
+
+function clearUserSession(userId, sessionId) {
+  return clearSessionDb(userId, sessionId);
+}
+
 function requestResetPassword(email) {
   return requestPasswordReset(email);
+}
+
+function confirmGoogleLogin(token) {
+  return confirmGoogleLoginInternal(token);
 }
 
 function resetPasswordWithToken(data) {

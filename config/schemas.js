@@ -139,6 +139,8 @@ const DB_CONFIG = {
         "verificationToken",
         "verificationExpires",
         "playerId", // ID người chơi dùng để tìm kiếm (được thêm vào sau cùng)
+        "activeSessionId", // Session đăng nhập hiện tại
+        "activeSessionUpdatedAt", // Cập nhật lần cuối session
       ],
     },
 

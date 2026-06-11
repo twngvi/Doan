@@ -320,7 +320,7 @@ function createUserPersonalSheet(email, displayName) {
  * - Tạo/Cập nhật User trong DB Users
  * - Tự động tạo Sheet cá nhân nếu chưa có
  */
-function processGoogleUserLogin(googleProfile) {
+function processGoogleUserLogin(googleProfile, force = false) {
   const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
   const userSheet = ss.getSheetByName(DB_CONFIG.SHEETS.USERS.name);
   // Lấy toàn bộ dữ liệu (cân nhắc tối ưu nếu data lớn, hiện tại dùng cách này cho đơn giản)
@@ -366,9 +366,58 @@ function processGoogleUserLogin(googleProfile) {
   }
 
   if (existingUser) {
+    // === KIỂM TRA SESSION ĐANG HOẠT ĐỘNG ===
+    const activeSessionIdIndex = headers.indexOf("activeSessionId");
+    const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
+    
+    if (activeSessionIdIndex >= 0 && !force) {
+      const currentActiveSession = existingUser[activeSessionIdIndex];
+      
+      let isSessionFresh = true;
+      if (activeSessionUpdatedAtIndex >= 0) {
+        const lastSeenValue = existingUser[activeSessionUpdatedAtIndex];
+        const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
+        const SESSION_STALE_MS = 2 * 60 * 1000; // 2 phút
+        isSessionFresh = lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
+      }
+
+      if (currentActiveSession && currentActiveSession !== "" && isSessionFresh) {
+        // Lưu googleProfile vào Cache để gọi lại sau khi confirm
+        const token = "G_CONFIRM_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+        CacheService.getScriptCache().put(token, JSON.stringify(googleProfile), 300); // Lưu 5 phút
+        
+        return {
+          requireConfirmation: true,
+          confirmToken: token,
+          message: "Tài khoản của bạn đang được đăng nhập ở thiết bị khác. Nếu bạn tiếp tục đăng nhập, thiết bị kia sẽ bị đăng xuất. Bạn có muốn tiếp tục?",
+        };
+      }
+    }
+
     // === CẬP NHẬT USER CŨ ===
     userSheet.getRange(userRowIndex, 2).setValue(googleId); // Update Google ID
-    userSheet.getRange(userRowIndex, 16).setValue(new Date()); // Last Login
+
+    // ⭐ Save session ID with Lock
+    const lock = LockService.getScriptLock();
+    let sessionId = "";
+    let now = new Date();
+    try {
+      lock.waitLock(10000);
+      sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
+      now = new Date();
+      userSheet.getRange(userRowIndex, 16).setValue(now); // Last Login
+      
+      if (activeSessionIdIndex >= 0) {
+        userSheet.getRange(userRowIndex, activeSessionIdIndex + 1).setValue(sessionId);
+      }
+      if (activeSessionUpdatedAtIndex >= 0) {
+        userSheet.getRange(userRowIndex, activeSessionUpdatedAtIndex + 1).setValue(now);
+      }
+    } catch (e) {
+      Logger.log("Lock error for session: " + e.toString());
+    } finally {
+      lock.releaseLock();
+    }
 
     // ⭐ Save login to personal sheet & update streak
     if (progressSheetId) {
@@ -438,6 +487,7 @@ function processGoogleUserLogin(googleProfile) {
           ? String(existingUser[themeColIndex])
           : "default",
       status: "success",
+      sessionId: sessionId,
     };
   } else {
     // === USER MỚI: Tạo dòng mới ===
@@ -478,7 +528,29 @@ function processGoogleUserLogin(googleProfile) {
       generatePlayerId(), // 29: playerId
     ];
 
-    userSheet.appendRow(newRow);
+    let sessionId = "";
+    const activeSessionIdIndex = headers.indexOf("activeSessionId");
+
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(10000);
+      sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
+      
+      // Pad newRow if needed to ensure we can set activeSessionId
+      if (activeSessionIdIndex >= 0) {
+         while (newRow.length <= activeSessionIdIndex) {
+           newRow.push("");
+         }
+         newRow[activeSessionIdIndex] = sessionId;
+      }
+      
+      userSheet.appendRow(newRow);
+    } catch (e) {
+      Logger.log("Lock error for new user session: " + e.toString());
+      userSheet.appendRow(newRow); // Fallback
+    } finally {
+      lock.releaseLock();
+    }
 
     // Ensure forest theme for newly created Google users if theme column exists.
     if (themeColIndex >= 0) {
@@ -513,6 +585,7 @@ function processGoogleUserLogin(googleProfile) {
       theme: "forest",
       status: "success",
       isNewUser: true,
+      sessionId: sessionId,
     };
   }
 }
