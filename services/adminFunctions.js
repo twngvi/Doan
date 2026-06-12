@@ -2792,14 +2792,15 @@ function createAndPublishTopic(topicData) {
       return docResult;
     }
 
-    // Step 2: Save topic to MasterDB
-    Logger.log("Step 5: Saving to MasterDB...");
     const saveResult = saveTopicToMasterDB({
       topicId: topicData.topicId,
       title: topicData.title,
       description: topicData.description || "",
       category: topicData.category,
       order: topicData.order || 999,
+      prerequisiteTopics: topicData.prerequisiteTopics || "",
+      unlockCondition: topicData.unlockCondition || "",
+      isLocked: topicData.isLocked || false,
       contentDocId: docResult.docId,
       contentDocUrl: docResult.docUrl,
       createdBy: adminContext.userId || adminContext.email || "ADMIN",
@@ -4032,9 +4033,23 @@ function getTopicForEdit(topicId) {
       order: topicRow[headers.indexOf("order")] || 999,
       iconUrl: topicRow[headers.indexOf("iconUrl")] || "",
       estimatedTime: topicRow[headers.indexOf("estimatedTime")] || "",
+      
+      prerequisiteTopics:
+        headers.indexOf("prerequisiteTopics") >= 0
+          ? String(topicRow[headers.indexOf("prerequisiteTopics")] || "")
+          : "",
+
+      unlockCondition:
+        headers.indexOf("unlockCondition") >= 0
+          ? String(topicRow[headers.indexOf("unlockCondition")] || "")
+          : "",
+
       contentDocId: topicRow[headers.indexOf("contentDocId")] || "",
       contentDocUrl: topicRow[headers.indexOf("contentDocUrl")] || "",
-      isLocked: topicRow[headers.indexOf("isLocked")] === true || topicRow[headers.indexOf("isLocked")] === "TRUE"
+      
+      isLocked:
+        topicRow[headers.indexOf("isLocked")] === true ||
+        String(topicRow[headers.indexOf("isLocked")]).toLowerCase() === "true"
     };
 
     // Lấy nội dung doc HTML
@@ -4232,6 +4247,21 @@ function updateTopicWithContent(topicId, topicData) {
     if (orderCol >= 0 && topicData.order !== undefined) {
       sheet.getRange(rowNum, orderCol + 1).setValue(parseInt(topicData.order) || 999);
     }
+    
+    var prereqCol = headers.indexOf("prerequisiteTopics");
+    var unlockCol = headers.indexOf("unlockCondition");
+    var isLockedCol = headers.indexOf("isLocked");
+    
+    if (prereqCol >= 0 && topicData.prerequisiteTopics !== undefined) {
+      sheet.getRange(rowNum, prereqCol + 1).setValue(topicData.prerequisiteTopics);
+    }
+    if (unlockCol >= 0 && topicData.unlockCondition !== undefined) {
+      sheet.getRange(rowNum, unlockCol + 1).setValue(topicData.unlockCondition);
+    }
+    if (isLockedCol >= 0 && topicData.isLocked !== undefined) {
+      sheet.getRange(rowNum, isLockedCol + 1).setValue(topicData.isLocked);
+    }
+    
     if (updatedAtCol >= 0) {
       sheet.getRange(rowNum, updatedAtCol + 1).setValue(now);
     }
