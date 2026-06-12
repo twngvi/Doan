@@ -88,16 +88,18 @@ function loginWithEmail(credentials) {
         if (activeSessionIdIndex >= 0) {
           const currentActiveSession = data[i][activeSessionIdIndex];
           
-          // Kiểm tra xem session có bị cũ (stale) không
           let isSessionFresh = true;
           if (activeSessionUpdatedAtIndex >= 0) {
             const lastSeenValue = data[i][activeSessionUpdatedAtIndex];
             const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-            const SESSION_STALE_MS = 2 * 60 * 1000; // 2 phút
-            isSessionFresh = lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
+            const SESSION_STALE_MS = 90 * 1000; // 90 giây
+            isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
           }
 
-          // Nếu có session cũ đang hoạt động, còn fresh và Client chưa gửi cờ force
+          if (currentActiveSession && currentActiveSession !== "" && !isSessionFresh) {
+            usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
+          }
+
           if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && credentials.force !== true) {
             return {
               success: false,
@@ -369,13 +371,21 @@ function checkSession(userId, sessionId) {
       if (data[i][userIdIndex] === userId) {
         const activeSessionId = data[i][activeSessionIdIndex];
         
+        const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
+
         // If no active session is set yet (legacy data), consider it valid and update it
         if (!activeSessionId) {
            usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue(sessionId);
+           if (activeSessionUpdatedAtIndex >= 0) {
+             usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(new Date());
+           }
            return { status: "valid" };
         }
 
         if (activeSessionId === sessionId) {
+          if (activeSessionUpdatedAtIndex >= 0) {
+            usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(new Date());
+          }
           return { status: "valid" };
         } else {
           return { status: "FORCE_LOGOUT", message: "Tài khoản đang được đăng nhập ở thiết bị khác." };

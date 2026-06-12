@@ -1159,19 +1159,21 @@ function deriveQuizPercent_(score, totalQuestions) {
  */
 function updateUserHeartbeat(payload) {
   try {
-    const sheet = getSheet("Users");
-    if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+    const safePayload = payload || {};
+    const userId = String(safePayload.userId || "").trim();
+    const sessionId = String(safePayload.sessionId || "").trim();
+
+    if (!userId || !sessionId) {
+      return {
+        success: false,
+        message: "Missing userId or sessionId",
+      };
     }
 
-    const safePayload = payload || {};
-    const targetUserId = safePayload.userId ? String(safePayload.userId).trim() : "";
-    const targetEmail = safePayload.email
-      ? String(safePayload.email).trim().toLowerCase()
-      : "";
-
-    if (!targetUserId && !targetEmail) {
-      return { success: false, message: "Thiếu userId/email" };
+    const ss = getOrCreateDatabase();
+    const sheet = ss.getSheetByName("Users");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
     }
 
     const lastSeenIndex = ensureUsersColumn(sheet, "lastSeenAt");
@@ -1182,49 +1184,63 @@ function updateUserHeartbeat(payload) {
 
     const headers = data[0];
     const userIdIndex = headers.indexOf("userId");
-    const emailIndex = headers.indexOf("email");
+    const activeSessionIdIndex = headers.indexOf("activeSessionId");
+    const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
     const isActiveIndex = headers.indexOf("isActive");
 
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const rowUserId = userIdIndex >= 0 ? String(row[userIdIndex] || "").trim() : "";
-      const rowEmail =
-        emailIndex >= 0 ? String(row[emailIndex] || "").trim().toLowerCase() : "";
-
-      const matched =
-        (targetUserId && rowUserId && targetUserId === rowUserId) ||
-        (targetEmail && rowEmail && targetEmail === rowEmail);
-
-      if (!matched) continue;
-
-      if (isActiveIndex >= 0) {
-        const isActiveFlag = row[isActiveIndex];
-        if (
-          isActiveFlag === false ||
-          isActiveFlag === "false" ||
-          isActiveFlag === "FALSE"
-        ) {
-          return { success: false, message: "Tài khoản đang bị khóa" };
-        }
-      }
-
-      const now = new Date();
-      sheet.getRange(i + 1, lastSeenIndex + 1).setValue(now);
-
+    if (userIdIndex === -1 || activeSessionIdIndex === -1 || activeSessionUpdatedAtIndex === -1) {
       return {
-        success: true,
-        data: {
-          userId: rowUserId,
-          email: rowEmail,
-          lastSeenAt: now.toISOString(),
-        },
+        success: false,
+        message: "Missing session columns",
       };
     }
 
-    return { success: false, message: "Không tìm thấy người dùng" };
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][userIdIndex]) === userId) {
+        if (isActiveIndex >= 0) {
+          const isActiveFlag = data[i][isActiveIndex];
+          if (
+            isActiveFlag === false ||
+            isActiveFlag === "false" ||
+            isActiveFlag === "FALSE"
+          ) {
+            return { success: false, message: "Tài khoản đang bị khóa" };
+          }
+        }
+
+        const activeSessionId = String(data[i][activeSessionIdIndex] || "");
+
+        // Chỉ cập nhật heartbeat nếu đúng phiên hiện tại
+        // Tránh tab cũ ghi đè trạng thái của tab mới
+        if (activeSessionId !== sessionId) {
+          return {
+            success: false,
+            status: "STALE_SESSION",
+            message: "Session không còn hợp lệ",
+          };
+        }
+
+        const now = new Date();
+        sheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(now);
+        sheet.getRange(i + 1, lastSeenIndex + 1).setValue(now);
+
+        return {
+          success: true,
+          message: "Heartbeat updated",
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: "User not found",
+    };
   } catch (error) {
-    Logger.log("Error updating heartbeat: " + error.toString());
-    return { success: false, message: error.toString() };
+    Logger.log("Error in updateUserHeartbeat: " + error.toString());
+    return {
+      success: false,
+      message: error.toString(),
+    };
   }
 }
 
