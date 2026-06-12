@@ -844,17 +844,33 @@ const TopicContentOrchestrator = {
         }
       }
 
-      // Generate Flashcards
+      // Generate Flashcards (Bypass AI, use Matching Terms)
       if (contentTypes.includes("flashcards")) {
-        Logger.log("🃏 Generating Flashcards...");
+        Logger.log("🃏 Getting Flashcards from Matching Terms...");
         try {
-          results.flashcards = ContentGenerator.generateFlashcards(
-            docContent,
-            analysis,
-            15,
-            userContext,
-            { topicId: topicId },
-          );
+          // getMatchingTermCardsByTopic is defined in adminMatching.js
+          const cardsResult = getMatchingTermCardsByTopic(topicId);
+          if (cardsResult && cardsResult.success && cardsResult.cards) {
+            const validCards = cardsResult.cards.filter(c => c.term && c.definition && c.status === "approved" && c.isActive);
+            if (validCards.length > 0) {
+              results.flashcards = {
+                deckTitle: "Thuật ngữ chủ đề",
+                totalCards: validCards.length,
+                cards: validCards.map(c => ({
+                  id: c.cardId,
+                  term: c.term,
+                  definition: c.definition,
+                  difficulty: c.difficulty || "medium"
+                }))
+              };
+            } else {
+              results.flashcards = { error: "Chưa có thuật ngữ nào được duyệt cho chủ đề này." };
+            }
+          } else {
+            results.flashcards = { error: "Không thể lấy thuật ngữ cho chủ đề này." };
+          }
+          
+          // Optionally cache the non-AI flashcards
           AIContentCache.save({
             topicId: topicId,
             contentDocId: contentDocId,
@@ -863,7 +879,7 @@ const TopicContentOrchestrator = {
             docLastModified: docLastModified,
           });
         } catch (e) {
-          Logger.log("Error generating flashcards: " + e.toString());
+          Logger.log("Error getting flashcards from matching terms: " + e.toString());
           results.flashcards = { error: e.toString() };
         }
       }

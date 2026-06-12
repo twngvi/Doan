@@ -215,8 +215,6 @@ function getMatchingPairsFromCards(topicId, pairLimit, userContext) {
   Logger.log("🎮 getMatchingPairsFromCards CALLED");
   Logger.log("Args: topicId=" + topicId + ", pairLimit=" + pairLimit);
   
-  pairLimit = parseInt(pairLimit) || 10; // Default là 10, nếu chế độ khác truyền vào sẽ lấy pairLimit
-  
   try {
     if (!topicId) throw new Error("Thiếu topicId");
 
@@ -226,7 +224,7 @@ function getMatchingPairsFromCards(topicId, pairLimit, userContext) {
     
     const data = mcSheet.getDataRange().getValues();
     if (data.length <= 1) {
-      throw new Error("Chủ đề này chưa đủ dữ liệu. Cần tối thiểu 10 cặp đã duyệt.");
+      throw new Error("Chủ đề này chưa đủ dữ liệu. Cần tối thiểu 15 cặp đã duyệt.");
     }
     
     const headers = data[0];
@@ -240,7 +238,9 @@ function getMatchingPairsFromCards(topicId, pairLimit, userContext) {
     const idxDiff = headers.indexOf("difficulty");
     const idxCardId = headers.indexOf("cardId");
     
-    let validPairs = [];
+    let easyPairs = [];
+    let mediumPairs = [];
+    let hardPairs = [];
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
@@ -250,40 +250,56 @@ function getMatchingPairsFromCards(topicId, pairLimit, userContext) {
         const shortDef = String(row[idxShortDef] || "").trim();
         
         if (term !== "" && def !== "") {
-          validPairs.push({
+          let diff = "medium";
+          if (idxDiff !== -1 && row[idxDiff]) {
+            const dStr = String(row[idxDiff]).toLowerCase().trim();
+            if (dStr === "easy" || dStr === "dễ" || dStr === "de") diff = "easy";
+            else if (dStr === "hard" || dStr === "khó" || dStr === "kho") diff = "hard";
+          }
+
+          const pairObj = {
             question: term,
             answer: shortDef !== "" ? shortDef : def, // Ưu tiên shortDefinition
             hint: idxHint !== -1 ? String(row[idxHint] || "").trim() : "",
-            difficulty: idxDiff !== -1 ? (row[idxDiff] || "medium") : "medium",
+            difficulty: diff,
             itemType: "term-definition",
             cardId: idxCardId !== -1 ? row[idxCardId] : ""
-          });
+          };
+          
+          if (diff === "easy") easyPairs.push(pairObj);
+          else if (diff === "hard") hardPairs.push(pairObj);
+          else mediumPairs.push(pairObj);
         }
       }
     }
     
-    if (validPairs.length < 10) {
-      throw new Error("Chủ đề này chưa đủ dữ liệu. Cần tối thiểu 10 cặp đã duyệt.");
+    // Check requirements: 10 easy, 3 medium, 2 hard
+    if (easyPairs.length < 10) {
+      throw new Error("Không đủ thẻ mức độ Dễ. Cần 10 thẻ, hiện có " + easyPairs.length + ".");
+    }
+    if (mediumPairs.length < 3) {
+      throw new Error("Không đủ thẻ mức độ Trung bình. Cần 3 thẻ, hiện có " + mediumPairs.length + ".");
+    }
+    if (hardPairs.length < 2) {
+      throw new Error("Không đủ thẻ mức độ Khó. Cần 2 thẻ, hiện có " + hardPairs.length + ".");
     }
     
-    // Nếu có nhiều hơn 10 card (hoặc pairLimit), shuffle và lấy đủ số lượng
-    if (validPairs.length > pairLimit) {
-      for (let j = validPairs.length - 1; j > 0; j--) {
+    function shuffle(array) {
+      for (let j = array.length - 1; j > 0; j--) {
         const k = Math.floor(Math.random() * (j + 1));
-        const temp = validPairs[j];
-        validPairs[j] = validPairs[k];
-        validPairs[k] = temp;
+        const temp = array[j];
+        array[j] = array[k];
+        array[k] = temp;
       }
-      validPairs = validPairs.slice(0, pairLimit);
-    } else {
-      // Dù nhỏ hơn pairLimit (nhưng vẫn >= 10) hoặc bằng, vẫn nên shuffle để câu hỏi ngẫu nhiên mỗi lần chơi
-      for (let j = validPairs.length - 1; j > 0; j--) {
-        const k = Math.floor(Math.random() * (j + 1));
-        const temp = validPairs[j];
-        validPairs[j] = validPairs[k];
-        validPairs[k] = temp;
-      }
+      return array;
     }
+    
+    const selectedEasy = shuffle(easyPairs).slice(0, 10);
+    const selectedMedium = shuffle(mediumPairs).slice(0, 3);
+    const selectedHard = shuffle(hardPairs).slice(0, 2);
+    
+    let validPairs = selectedEasy.concat(selectedMedium, selectedHard);
+    validPairs = shuffle(validPairs);
     
     return validPairs;
   } catch (error) {
@@ -803,7 +819,7 @@ function adminGenerateMatchingCardsByAI(topicId) {
     }
     
     // 4. Call Gemini AI directly with a custom prompt
-    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất 15 thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
+    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất 30 thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
 
 === NỘI DUNG BÀI HỌC ===
 ${docResult.content}
@@ -827,8 +843,9 @@ Trả về CHÍNH XÁC định dạng JSON sau:
   ]
 }
 
-YÊU CẦU:
-- Tạo tối đa 15 thẻ chất lượng nhất.
+YÊU CẦU QUAN TRỌNG:
+- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 30 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 30 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP.
+- PHẢI phân bổ độ khó một cách đồng đều: ít nhất 10 thẻ "easy", 10 thẻ "medium", và 10 thẻ "hard". KHÔNG ĐƯỢC THIẾU.
 - term: Là cụm từ cốt lõi, không diễn giải dài dòng.
 - CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.`;
 
@@ -844,6 +861,19 @@ YÊU CẦU:
       return { success: false, message: "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại." };
     }
 
+    const existingTermsSet = new Set();
+    if (existingCardsResult.success && existingCardsResult.cards) {
+      existingCardsResult.cards.forEach(c => {
+        if (c.term) existingTermsSet.add(c.term.toLowerCase().trim());
+      });
+    }
+
+    const newCards = aiResult.cards.filter(c => c.term && !existingTermsSet.has(c.term.toLowerCase().trim()));
+
+    if (newCards.length === 0) {
+      return { success: false, message: "Không thể tạo thêm thẻ mới từ tài liệu này (đã cạn kiệt thuật ngữ bài học hoặc toàn bộ bị trùng lặp)." };
+    }
+
     // 5. Save to database
     const ss = getOrCreateDatabase();
     let mcSheet = ensureMatchingCardsSheet(ss);
@@ -853,7 +883,7 @@ YÊU CẦU:
     const now = new Date();
     const rowsToAppend = [];
     
-    aiResult.cards.forEach(c => {
+    newCards.forEach(c => {
       const cardId = generateId("MTC");
       
       const rowData = headers.map(h => {

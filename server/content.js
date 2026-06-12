@@ -492,13 +492,32 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         );
         break;
       case "flashcards":
-        generatedContent = ContentGenerator.generateFlashcards(
-          docResult.content,
-          analysis,
-          15,
-          resolvedUser,
-          { topicId: topicId },
-        );
+        Logger.log("🃏 Getting Flashcards from Matching Terms...");
+        try {
+          const cardsResult = getMatchingTermCardsByTopic(topicId);
+          if (cardsResult && cardsResult.success && cardsResult.cards) {
+            const validCards = cardsResult.cards.filter(c => c.term && c.definition && c.status === "approved" && c.isActive);
+            if (validCards.length > 0) {
+              generatedContent = {
+                deckTitle: "Thuật ngữ chủ đề",
+                totalCards: validCards.length,
+                cards: validCards.map(c => ({
+                  id: c.cardId,
+                  term: c.term,
+                  definition: c.definition,
+                  difficulty: c.difficulty || "medium"
+                }))
+              };
+            } else {
+              generatedContent = { error: "Chưa có thuật ngữ nào được duyệt cho chủ đề này." };
+            }
+          } else {
+            generatedContent = { error: "Không thể lấy thuật ngữ cho chủ đề này." };
+          }
+        } catch (e) {
+          Logger.log("Error getting flashcards from matching terms: " + e.toString());
+          generatedContent = { error: e.toString() };
+        }
         break;
       case "lesson_summary":
         generatedContent = ContentGenerator.generateLessonSummary(
