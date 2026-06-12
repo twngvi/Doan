@@ -118,6 +118,7 @@
       .updateUserHeartbeat({
         userId: user.userId || "",
         email: user.email || "",
+        sessionId: user.sessionId || "",
         page: page,
       });
   }
@@ -3308,4 +3309,17 @@
   })();
 
   window.loadDashboardData = loadDashboardData;
+  function tryClearSessionOnClose() {
+    const user = getHeartbeatUser && getHeartbeatUser();
+
+    if (!user || !user.userId || !user.sessionId) return;
+
+    try {
+      google.script.run.clearUserSession(user.userId, user.sessionId);
+    } catch (e) {
+      console.warn("Clear session on close failed:", e);
+    }
+  }
+
+  window.addEventListener("pagehide", tryClearSessionOnClose);
 </script>

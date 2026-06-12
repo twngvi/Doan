@@ -12,6 +12,7 @@ let savedSelection = null;
 let tableInsertSelection = null;
 let isEditMode = false;
 let editingTopicId = null;
+let allTopicsForPrereq = []; // Array of all topics for prerequisite selection
 const TABLE_MAX_COLS = 10;
 const TABLE_MAX_ROWS = 20;
 
@@ -103,11 +104,30 @@ function ensureTableSizePicker() {
 // INITIALIZATION
 // ========================================
 
-document.addEventListener('DOMContentLoaded', function() {
-  initializeTopicEditor();
-  setupDragAndDrop();
-  setupKeyboardShortcuts();
-});
+let topicEditorInitialized = false;
+
+function initTopicEditorPage() {
+  const editor = document.getElementById('contentEditor');
+  if (!editor) {
+    console.warn('[TopicEditor] Không tìm thấy contentEditor, bỏ qua init.');
+    return;
+  }
+
+  if (!topicEditorInitialized) {
+    initializeTopicEditor();
+    setupDragAndDrop();
+    setupKeyboardShortcuts();
+    topicEditorInitialized = true;
+  }
+
+  loadAllTopicsForPrereq();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initTopicEditorPage);
+} else {
+  setTimeout(initTopicEditorPage, 0);
+}
 
 function initializeTopicEditor() {
   const editor = document.getElementById('contentEditor');
@@ -1389,12 +1409,36 @@ async function publishTopic() {
 
   showTopicEditorLoading('Đang tạo và publish topic...');
 
+  const useUnlockCondition = document.getElementById('useUnlockCondition').checked;
+  const prereqTopicId = document.getElementById('prerequisiteTopics').value;
+  const conditionTypeElement = document.querySelector('input[name="unlockConditionType"]:checked');
+  const conditionType = conditionTypeElement ? conditionTypeElement.value : 'complete_topic';
+  
+  let prerequisiteTopics = [];
+  let unlockCondition = "";
+  let isLocked = false;
+  
+  if (useUnlockCondition && prereqTopicId) {
+    prerequisiteTopics = [prereqTopicId];
+    isLocked = true;
+    unlockCondition = JSON.stringify({
+      type: conditionType,
+      mode: "all",
+      requiredProgress: 100,
+      requiredQuizAccuracy: conditionType === 'complete_topic_and_quiz' ? 70 : 0,
+      prerequisiteTopicIds: [prereqTopicId]
+    });
+  }
+
   const topicData = {
     topicId: topicId,
     title: title,
     description: description,
     category: category,
     order: parseInt(order),
+    prerequisiteTopics: prerequisiteTopics.join(','),
+    unlockCondition: unlockCondition,
+    isLocked: isLocked,
     content: content
   };
 
@@ -1563,6 +1607,7 @@ function initEditMode() {
       hideTopicEditorLoading();
       if (result && result.success && result.data) {
         populateEditForm(result.data);
+        localStorage.removeItem('editTopicId');
       } else {
         showToast('L\u1ed7i: ' + (result ? result.message : 'Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u'), 'error');
       }
@@ -1572,9 +1617,6 @@ function initEditMode() {
       showToast('L\u1ed7i: ' + (error ? error.message : error), 'error');
     })
     .getTopicForEdit(editTopicId);
-
-  // Clean up localStorage (so refresh doesn't re-enter edit mode)
-  localStorage.removeItem('editTopicId');
 }
 
 /**
@@ -1593,6 +1635,11 @@ function populateEditForm(data) {
   document.getElementById('topicDescription').value = topic.description || '';
   var orderField = document.getElementById('topicOrder');
   if (orderField) orderField.value = topic.order || '';
+
+  // Setup prerequisite topics & unlock conditions
+  var unlockConditionObj = parseSavedUnlockCondition(topic);
+  pendingEditUnlockCondition = unlockConditionObj;
+  applyUnlockConditionToEditForm(unlockConditionObj);
 
   // Set content in editor
   var editor = document.getElementById('contentEditor');
@@ -2360,11 +2407,35 @@ async function updateTopic() {
 
   showTopicEditorLoading('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
 
+  const useUnlockCondition = document.getElementById('useUnlockCondition').checked;
+  const prereqTopicId = document.getElementById('prerequisiteTopics').value;
+  const conditionTypeElement = document.querySelector('input[name="unlockConditionType"]:checked');
+  const conditionType = conditionTypeElement ? conditionTypeElement.value : 'complete_topic';
+  
+  let prerequisiteTopics = [];
+  let unlockCondition = "";
+  let isLocked = false;
+  
+  if (useUnlockCondition && prereqTopicId) {
+    prerequisiteTopics = [prereqTopicId];
+    isLocked = true;
+    unlockCondition = JSON.stringify({
+      type: conditionType,
+      mode: "all",
+      requiredProgress: 100,
+      requiredQuizAccuracy: conditionType === 'complete_topic_and_quiz' ? 70 : 0,
+      prerequisiteTopicIds: [prereqTopicId]
+    });
+  }
+
   var topicData = {
     title: title,
     description: description,
     category: category,
     order: parseInt(order),
+    prerequisiteTopics: prerequisiteTopics.join(','),
+    unlockCondition: unlockCondition,
+    isLocked: isLocked,
     content: content
   };
 
@@ -2649,6 +2720,291 @@ async function goBackToAdmin() {
 }
 
 // ========================================
+// PREREQUISITE TOPICS LOGIC
+// ========================================
+
+let pendingEditUnlockCondition = null;
+let dbCategoriesForPrereq = [];
+let topicsForPrereqLoaded = false;
+let dbCategoriesLoaded = false;
+
+function parseSavedUnlockCondition(topic) {
+  var unlockConditionObj = null;
+
+  if (topic.unlockCondition) {
+    try {
+      unlockConditionObj = JSON.parse(topic.unlockCondition);
+    } catch (e) {
+      console.error('[TopicEditor] Failed to parse unlockCondition:', e);
+    }
+  }
+
+  // Dữ liệu cũ: chỉ có prerequisiteTopics, chưa có unlockCondition JSON
+  if (!unlockConditionObj && topic.prerequisiteTopics) {
+    var prereqIds = String(topic.prerequisiteTopics)
+      .split(',')
+      .map(function(id) {
+        return id.trim();
+      })
+      .filter(Boolean);
+
+    if (prereqIds.length > 0) {
+      unlockConditionObj = {
+        type: 'complete_topic',
+        mode: 'all',
+        requiredProgress: 100,
+        requiredQuizAccuracy: 0,
+        prerequisiteTopicIds: prereqIds
+      };
+    }
+  }
+
+  return unlockConditionObj;
+}
+
+function applyUnlockConditionToEditForm(unlockConditionObj) {
+  var useUnlockCondition = document.getElementById('useUnlockCondition');
+  var prereqCategorySelect = document.getElementById('prereqCategory');
+  var prereqTopicsSelect = document.getElementById('prerequisiteTopics');
+
+  if (!useUnlockCondition || !prereqCategorySelect || !prereqTopicsSelect) return;
+
+  if (
+    !unlockConditionObj ||
+    !Array.isArray(unlockConditionObj.prerequisiteTopicIds) ||
+    unlockConditionObj.prerequisiteTopicIds.length === 0
+  ) {
+    useUnlockCondition.checked = false;
+    toggleUnlockConditionUI();
+    return;
+  }
+
+  var prereqId = unlockConditionObj.prerequisiteTopicIds[0];
+
+  var prereqTopic = (allTopicsForPrereq || []).find(function(t) {
+    return String(t.topicId) === String(prereqId);
+  });
+
+  // Nếu topic list chưa load xong thì lưu lại để apply sau
+  if (!prereqTopic) {
+    console.warn('[TopicEditor] Chưa tìm thấy bài điều kiện, chờ topics load:', prereqId);
+    pendingEditUnlockCondition = unlockConditionObj;
+    return;
+  }
+
+  useUnlockCondition.checked = true;
+  toggleUnlockConditionUI();
+
+  prereqCategorySelect.value = prereqTopic.category || '';
+  handlePrereqCategoryChange();
+
+  setTimeout(function() {
+    prereqTopicsSelect.value = prereqId;
+
+    var type = unlockConditionObj.type || 'complete_topic';
+    var radio = document.querySelector(
+      'input[name="unlockConditionType"][value="' + type + '"]'
+    );
+    if (radio) radio.checked = true;
+
+    updateUnlockPreview();
+  }, 0);
+}
+
+function normalizeArrayResponse(result, key) {
+  if (Array.isArray(result)) return result;
+  if (result && Array.isArray(result.data)) return result.data;
+  if (result && Array.isArray(result[key])) return result[key];
+  return [];
+}
+
+function loadAllTopicsForPrereq() {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    console.warn('[TopicEditor] google.script.run chưa sẵn sàng');
+    return;
+  }
+
+  topicsForPrereqLoaded = false;
+  dbCategoriesLoaded = false;
+  dbCategoriesForPrereq = [];
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      allTopicsForPrereq = normalizeArrayResponse(result, 'topics');
+
+      console.log('[TopicEditor] Topics loaded:', allTopicsForPrereq);
+
+      topicsForPrereqLoaded = true;
+      checkAndPopulatePrereqCategories();
+      handlePrereqCategoryChange();
+    })
+    .withFailureHandler(function(error) {
+      console.error('[TopicEditor] Failed to load topics:', error);
+      allTopicsForPrereq = [];
+      topicsForPrereqLoaded = true;
+      checkAndPopulatePrereqCategories();
+    })
+    .getAllTopicsForAdmin();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      dbCategoriesForPrereq = normalizeArrayResponse(result, 'categories');
+
+      console.log('[TopicEditor] Categories loaded:', dbCategoriesForPrereq);
+
+      dbCategoriesLoaded = true;
+      checkAndPopulatePrereqCategories();
+    })
+    .withFailureHandler(function(error) {
+      console.error('[TopicEditor] Failed to load categories:', error);
+      dbCategoriesForPrereq = [];
+      dbCategoriesLoaded = true;
+      checkAndPopulatePrereqCategories();
+    })
+    .getTopicCategories();
+}
+
+function checkAndPopulatePrereqCategories() {
+  if (!topicsForPrereqLoaded || !dbCategoriesLoaded) return;
+
+  const topicCategories = (allTopicsForPrereq || [])
+    .map(function(t) {
+      return String(t.category || '').trim();
+    })
+    .filter(Boolean);
+
+  const dbCategories = (dbCategoriesForPrereq || [])
+    .map(function(cat) {
+      return String(cat || '').trim();
+    })
+    .filter(Boolean);
+
+  const combined = Array.from(new Set(dbCategories.concat(topicCategories))).sort();
+
+  console.log('[TopicEditor] Combined categories:', combined);
+
+  populatePrereqCategories(combined);
+
+  if (pendingEditUnlockCondition) {
+    applyUnlockConditionToEditForm(pendingEditUnlockCondition);
+    pendingEditUnlockCondition = null;
+  }
+}
+
+function populatePrereqCategories(uniqueCategories) {
+  const select = document.getElementById('prereqCategory');
+  
+  // 1. Cập nhật datalist cho input Category chính của Topic
+  const datalist = document.getElementById('categoryList');
+  if (datalist && uniqueCategories && uniqueCategories.length > 0) {
+    datalist.innerHTML = '';
+    uniqueCategories.forEach(cat => {
+      const option = document.createElement('option');
+      option.value = cat;
+      datalist.appendChild(option);
+    });
+  }
+
+  // 2. Cập nhật select cho Danh mục điều kiện
+  if (!select) return;
+  
+  const currentValue = select.value;
+  
+  // Clean recreate the default option to avoid DOM reference duplication issues
+  select.innerHTML = '<option value="">-- Không có --</option>';
+  
+  if (uniqueCategories && uniqueCategories.length > 0) {
+    uniqueCategories.forEach(cat => {
+      const option = document.createElement('option');
+      option.value = cat;
+      option.textContent = cat;
+      select.appendChild(option);
+    });
+  }
+  
+  if (currentValue && uniqueCategories && uniqueCategories.includes(currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function handlePrereqCategoryChange() {
+  const category = document.getElementById('prereqCategory').value;
+  const topicSelect = document.getElementById('prerequisiteTopics');
+  
+  if (!topicSelect) return;
+  
+  // Reset topic select
+  topicSelect.innerHTML = '<option value="">-- Không có --</option>';
+  
+  if (!category) {
+    topicSelect.disabled = true;
+    topicSelect.innerHTML = '<option value="">-- Chọn danh mục trước --</option>';
+    return;
+  }
+  
+  topicSelect.disabled = false;
+  
+  const topicsInCategory = allTopicsForPrereq.filter(t => t.category === category && t.topicId !== document.getElementById('topicId').value);
+  
+  topicsInCategory.forEach(topic => {
+    const option = document.createElement('option');
+    option.value = topic.topicId;
+    option.textContent = topic.title;
+    topicSelect.appendChild(option);
+  });
+  updateUnlockPreview();
+}
+
+function toggleUnlockConditionUI() {
+  const isChecked = document.getElementById('useUnlockCondition').checked;
+  const section = document.getElementById('unlockConditionSection');
+  const prereqCategory = document.getElementById('prereqCategory');
+  const prereqTopics = document.getElementById('prerequisiteTopics');
+
+  section.style.display = isChecked ? 'block' : 'none';
+
+  if (isChecked) {
+    if (!prereqCategory || prereqCategory.options.length <= 1) {
+      loadAllTopicsForPrereq();
+    }
+  } else {
+    prereqCategory.value = '';
+    prereqTopics.value = '';
+    prereqTopics.disabled = true;
+  }
+
+  updateUnlockPreview();
+}
+
+function updateUnlockPreview() {
+  const isChecked = document.getElementById('useUnlockCondition').checked;
+  const prereqTopicId = document.getElementById('prerequisiteTopics').value;
+  const conditionTypeElement = document.querySelector('input[name="unlockConditionType"]:checked');
+  const conditionType = conditionTypeElement ? conditionTypeElement.value : 'complete_topic';
+  const previewEl = document.getElementById('unlockPreview');
+  
+  if (!isChecked) {
+    return;
+  }
+  
+  if (!prereqTopicId) {
+    previewEl.innerHTML = 'Vui lòng chọn bài học điều kiện.';
+    return;
+  }
+  
+  const prereqTopic = allTopicsForPrereq.find(t => t.topicId === prereqTopicId);
+  const title = prereqTopic ? prereqTopic.title : prereqTopicId;
+  const category = prereqTopic ? prereqTopic.category : '';
+  
+  let conditionText = 'hoàn thành bài học';
+  if (conditionType === 'complete_topic_and_quiz') {
+    conditionText = 'hoàn thành bài học và đạt điểm Quiz >= 70%';
+  }
+  
+  previewEl.innerHTML = `Bài học này sẽ mở khóa khi học viên <strong>${conditionText}</strong>: <br><span style="color:#333; margin-top:5px; display:inline-block">"<b>${title}</b>"</span> trong danh mục <span style="color:#333">"<b>${category}</b>"</span>.`;
+}
+
+// ========================================
 // EXPOSE FUNCTIONS TO GLOBAL SCOPE
 // (Required when script is loaded dynamically)
 // ========================================
@@ -2694,5 +3050,11 @@ window.updateTopic = updateTopic;
 window.initEditMode = initEditMode;
 window.parseMarkersToVisualBlocks = parseMarkersToVisualBlocks;
 window.initializeTopicEditor = initializeTopicEditor;
+window.handlePrereqCategoryChange = handlePrereqCategoryChange;
+window.toggleUnlockConditionUI = toggleUnlockConditionUI;
+window.updateUnlockPreview = updateUnlockPreview;
+window.initTopicEditorPage = initTopicEditorPage;
+window.loadAllTopicsForPrereq = loadAllTopicsForPrereq;
+window.populatePrereqCategories = populatePrereqCategories;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
 </script>

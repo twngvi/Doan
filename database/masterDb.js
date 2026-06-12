@@ -370,18 +370,22 @@ function processGoogleUserLogin(googleProfile, force = false) {
     const activeSessionIdIndex = headers.indexOf("activeSessionId");
     const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
     
-    if (activeSessionIdIndex >= 0 && !force) {
+    if (activeSessionIdIndex >= 0) {
       const currentActiveSession = existingUser[activeSessionIdIndex];
       
       let isSessionFresh = true;
       if (activeSessionUpdatedAtIndex >= 0) {
         const lastSeenValue = existingUser[activeSessionUpdatedAtIndex];
         const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-        const SESSION_STALE_MS = 2 * 60 * 1000; // 2 phút
-        isSessionFresh = lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
+        const SESSION_STALE_MS = 90 * 1000; // 90 giây
+        isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
       }
 
-      if (currentActiveSession && currentActiveSession !== "" && isSessionFresh) {
+      if (currentActiveSession && currentActiveSession !== "" && !isSessionFresh) {
+        userSheet.getRange(userRowIndex, activeSessionIdIndex + 1).setValue("");
+      }
+
+      if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && !force) {
         // Lưu googleProfile vào Cache để gọi lại sau khi confirm
         const token = "G_CONFIRM_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
         CacheService.getScriptCache().put(token, JSON.stringify(googleProfile), 300); // Lưu 5 phút

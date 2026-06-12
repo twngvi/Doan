@@ -136,7 +136,7 @@ function getAllTopics() {
             : "",
         isLocked:
           col.isLocked >= 0 && row[col.isLocked] !== undefined
-            ? Boolean(row[col.isLocked])
+            ? (row[col.isLocked] === true || String(row[col.isLocked]).toLowerCase() === "true")
             : false,
         unlockCondition:
           col.unlockCondition >= 0 &&
@@ -590,6 +590,62 @@ function checkTopicAccess(topicId) {
     }
 
     const topic = topicResult.topic;
+
+    // Check unlock conditions
+    if (topic.unlockCondition) {
+      try {
+        const condition = JSON.parse(topic.unlockCondition);
+        if (condition.type === 'complete_topic' || condition.type === 'complete_topic_and_quiz') {
+          const prereqIds = condition.prerequisiteTopicIds || [];
+          if (prereqIds.length > 0) {
+            const progressResult = getUserTopicProgress();
+            if (progressResult.success) {
+              const userProgress = progressResult.progress;
+              const allCompleted = prereqIds.every(function(prereqId) {
+                 return userProgress[prereqId] && userProgress[prereqId].completed === true;
+              });
+              
+              if (!allCompleted) {
+                const prereqNames = prereqIds.map(id => {
+                  const pt = getTopicById(id);
+                  return pt.success ? pt.topic.title : id;
+                }).join(", ");
+                
+                return {
+                  success: true,
+                  unlocked: false,
+                  reason: "Bạn cần hoàn thành bài học điều kiện trước: " + prereqNames
+                };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log("Error parsing unlockCondition: " + e.toString());
+      }
+    } else if (topic.prerequisiteTopics) {
+      // Fallback for old data without JSON unlockCondition
+      const prereqIds = typeof topic.prerequisiteTopics === 'string' 
+          ? topic.prerequisiteTopics.split(',').map(s => s.trim()).filter(Boolean) 
+          : topic.prerequisiteTopics;
+          
+      if (Array.isArray(prereqIds) && prereqIds.length > 0) {
+         const progressResult = getUserTopicProgress();
+         if (progressResult.success) {
+            const userProgress = progressResult.progress;
+            const allCompleted = prereqIds.every(function(prereqId) {
+               return userProgress[prereqId] && userProgress[prereqId].completed === true;
+            });
+            if (!allCompleted) {
+              return {
+                success: true,
+                unlocked: false,
+                reason: "Bạn cần hoàn thành bài học điều kiện trước."
+              };
+            }
+         }
+      }
+    }
 
     // Check AI level requirement
     const userAILevel = 1; // TODO: get from user data if needed
