@@ -1342,81 +1342,63 @@
   // ===== TYPING EFFECT FOR CODE SLOGAN =====
   function initCodeSloganTyping() {
     const container = document.getElementById("code-slogan");
-    const line1 = document.getElementById("slogan-line-1");
-    const line2 = document.getElementById("slogan-line-2");
-    const line3 = document.getElementById("slogan-line-3");
+    if (!container) return;
 
-    if (!container || !line1 || !line2 || !line3) return;
-
-    // Lines to type for code simulation
-    const lines = [
-      {
-        el: line1,
-        html: 'print("&lt;Hello World, Master TERRACODE /&gt;")\n\nknowledge = 0\nstreak = 0',
-        speed: 26,
-      },
-      {
-        el: line2,
-        html: 'while knowledge &lt; 100:\n    practice = 12 + streak * 3\n    knowledge += practice\n    streak += 1',
-        speed: 22,
-      },
-      {
-        el: line3,
-        html:
-          '    print(\n        f"[session {streak:02d}] "\n        f"practice=+{practice} "\n        f"knowledge={min(knowledge, 100)}%"\n    )\n\nprint("return \'Ready to Code\';")',
-        speed: 20,
-      },
+    // Plain text snippets (no HTML formatting, old single color style)
+    const snippets = [
+      "import tensorflow as tf\n\nmodel = tf.keras.Sequential([\n    tf.keras.layers.Dense(128, activation='relu'),\n    tf.keras.layers.Dropout(0.2),\n    tf.keras.layers.Dense(10, activation='softmax')\n])\n\nmodel.compile(optimizer='adam', loss='sparse_categorical_crossentropy')\nmodel.fit(x_train, y_train, epochs=5)",
+      "import { useState, useEffect } from 'react';\n\nconst QuantumState = () => {\n  const [entangled, setEntangled] = useState<boolean>(false);\n  useEffect(() => {\n    const observer = new MutationObserver(() => setEntangled(p => !p));\n    return () => observer.disconnect();\n  }, []);\n  return <div className={entangled ? 'spin-up' : 'spin-down'} />;\n};",
+      "use tokio::net::TcpListener;\nuse tokio::io::{AsyncReadExt, AsyncWriteExt};\n\n#[tokio::main]\nasync fn main() -> Result<(), Box<dyn std::error::Error>> {\n    let listener = TcpListener::bind(\"127.0.0.1:8080\").await?;\n    loop {\n        let (mut socket, _) = listener.accept().await?;\n        tokio::spawn(async move {\n            socket.write_all(b\"HTTP/1.1 200 OK\\r\\n\\r\\n\").await.unwrap();\n        });\n    }\n}",
+      "def master_terracode():\n    knowledge = 0\n    streak = 0\n    while knowledge < 100:\n        practice = 12 + streak * 3\n        knowledge += practice\n        streak += 1\n        print(f\"[Session] Progress: {min(knowledge, 100)}%\")\n    return 'Ready to Code'"
     ];
 
-    // Extract plain text from HTML for typing
-    function stripHtml(html) {
-      const tmp = document.createElement("div");
-      tmp.innerHTML = html;
-      return tmp.textContent || tmp.innerText || "";
+    // Reset container styles for typing effect
+    container.style.whiteSpace = "pre-wrap";
+    container.style.opacity = "1";
+    container.style.transition = "none";
+    container.innerHTML = "";
+
+    function escapeHtml(unsafe) {
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
     }
 
-    // Type one line character by character
-    async function typeLine(lineObj) {
-      const plainText = stripHtml(lineObj.html);
-      lineObj.el.innerHTML = '<span class="blink-cursor">█</span>';
+    let currentIndex = 0;
 
-      for (let i = 0; i <= plainText.length; i++) {
-        lineObj.el.innerHTML =
-          plainText.substring(0, i) + '<span class="blink-cursor">█</span>';
-        await new Promise((r) => setTimeout(r, lineObj.speed));
+    async function typeAndEraseSnippet(index) {
+      const text = snippets[index];
+      
+      // Type in character by character (appears like word-by-word if fast)
+      for (let i = 1; i <= text.length; i++) {
+        container.innerHTML = escapeHtml(text.substring(0, i)) + '<span class="blink-cursor">█</span>';
+        await new Promise(r => setTimeout(r, 12)); // Fast typing
       }
-
-      // Replace with full styled HTML
-      lineObj.el.innerHTML = lineObj.html;
+      
+      // Stay for 5 seconds
+      await new Promise(r => setTimeout(r, 5000));
+      
+      // Erase out character by character (backspace effect)
+      for (let i = text.length; i >= 0; i--) {
+        container.innerHTML = escapeHtml(text.substring(0, i)) + '<span class="blink-cursor">█</span>';
+        await new Promise(r => setTimeout(r, 6)); // Very fast erasing
+      }
+      
+      // Short pause before next snippet
+      await new Promise(r => setTimeout(r, 500));
+      
+      currentIndex = (currentIndex + 1) % snippets.length;
+      typeAndEraseSnippet(currentIndex);
     }
 
-    // Clear all lines
-    function clearLines() {
-      line1.innerHTML = "";
-      line2.innerHTML = "";
-      line3.innerHTML = "";
-    }
-
-    // Run full typing sequence
-    async function runTypingSequence() {
+    // Start cycle
+    setTimeout(() => {
       container.classList.add("visible");
-      await new Promise((r) => setTimeout(r, 300));
-
-      for (let i = 0; i < lines.length; i++) {
-        await typeLine(lines[i]);
-        if (i < lines.length - 1) {
-          await new Promise((r) => setTimeout(r, 300));
-        }
-      }
-    }
-
-    // Start immediately, then loop every 19 seconds
-    runTypingSequence();
-
-    setInterval(async () => {
-      clearLines();
-      await runTypingSequence();
-    }, 19000);
+      typeAndEraseSnippet(currentIndex);
+    }, 800);
   }
 
   // ===== INITIALIZATION =====
