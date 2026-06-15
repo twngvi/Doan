@@ -1705,10 +1705,23 @@
       .apiGetStudySettings({ email: profileData.email });
   }
 
-  function handleStudySettingsSubmit(e) {
+  window.handleStudySettingsSave = function(e) {
     e.preventDefault();
     if (!profileData || !profileData.email) {
       showToast("Vui lòng đăng nhập", "error");
+      return;
+    }
+
+    const dailyGoalVal = parseInt(document.getElementById("dailyGoal")?.value) || 5;
+    const dailyTimeGoalVal = parseInt(document.getElementById("dailyTimeGoal")?.value) || 15;
+
+    if (dailyGoalVal < 1 || dailyGoalVal > 20) {
+      showToast("Mục tiêu bài học phải từ 1 đến 20", "error");
+      return;
+    }
+
+    if (dailyTimeGoalVal < 1 || dailyTimeGoalVal > 300) {
+      showToast("Thời gian học phải từ 1 đến 300 phút", "error");
       return;
     }
 
@@ -1720,8 +1733,8 @@
     }
 
     const settings = {
-      dailyGoal: parseInt(document.getElementById("dailyGoal")?.value) || 5,
-      dailyTimeGoal: parseInt(document.getElementById("dailyTimeGoal")?.value) || 15,
+      dailyGoal: dailyGoalVal,
+      dailyTimeGoal: dailyTimeGoalVal,
       emailReminderEnabled: document.getElementById("emailReminderEnabled")?.checked || false,
       reminderTimes: document.getElementById("reminderTimes")?.value || "20:00",
       reminderMode: document.getElementById("reminderMode")?.value || "1"
@@ -1734,6 +1747,16 @@
           btn.innerHTML = originalHtml;
         }
         if (response.success) {
+          // Cập nhật lại dữ liệu local để study widget nếu có được cập nhật đồng bộ
+          if (profileData && profileData.settings) {
+            profileData.settings.dailyGoal = dailyGoalVal;
+            profileData.settings.dailyTimeGoal = dailyTimeGoalVal;
+          }
+          if (typeof loadStudyWidgetData === "function") {
+            loadStudyWidgetData();
+          }
+          // Dispatch event to notify other components (e.g. Study Widget)
+          document.dispatchEvent(new CustomEvent('study-settings-updated', { detail: settings }));
           showToast("Đã lưu cài đặt học tập!", "success");
         } else {
           showToast(response.message || "Lỗi khi lưu cài đặt", "error");
@@ -1746,11 +1769,11 @@
         }
         showToast("Lỗi kết nối: " + (err.message || "Unknown"), "error");
       })
-      .apiUpdateStudySettings({
-         email: profileData.email,
-         settings: settings
-      });
-  }
+      .apiUpdateStudySettings(
+         { email: profileData.email },
+         settings
+      );
+  };
 
   console.log("✅ Profile scripts loaded and exported.");
 </script>

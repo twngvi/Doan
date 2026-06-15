@@ -101,22 +101,27 @@ function updateStudySettings(userContext, settings) {
     const headers = data[0];
 
     const emailCol = headers.indexOf("email");
-    const dailyGoalCol = headers.indexOf("dailyGoal");
-    const emailReminderEnabledCol = headers.indexOf("emailReminderEnabled");
-    const reminderTimesCol = headers.indexOf("reminderTimes");
-    const reminderFrequencyCol = headers.indexOf("reminderFrequency");
-    const reminderModeCol = headers.indexOf("reminderMode");
-    const weeklyGoalCol = headers.indexOf("weeklyGoal");
-    
-    let dailyTimeGoalCol = headers.indexOf("dailyTimeGoal");
-    if (dailyTimeGoalCol === -1) {
-      dailyTimeGoalCol = headers.length;
-      usersSheet.getRange(1, dailyTimeGoalCol + 1).setValue("dailyTimeGoal");
+    if (emailCol === -1) return { success: false, message: "Sheet Users không có cột email" };
+
+    let currentCols = headers.length;
+    function getOrAddCol(colName) {
+      let idx = headers.indexOf(colName);
+      if (idx === -1) {
+        idx = currentCols;
+        usersSheet.getRange(1, idx + 1).setValue(colName);
+        headers.push(colName); // Keep headers array in sync
+        currentCols++;
+      }
+      return idx;
     }
 
-    if (dailyGoalCol === -1) {
-       return { success: false, message: "System updating... please try again later." };
-    }
+    const dailyGoalCol = getOrAddCol("dailyGoal");
+    const dailyTimeGoalCol = getOrAddCol("dailyTimeGoal");
+    const emailReminderEnabledCol = getOrAddCol("emailReminderEnabled");
+    const reminderTimesCol = getOrAddCol("reminderTimes");
+    const reminderFrequencyCol = getOrAddCol("reminderFrequency");
+    const reminderModeCol = getOrAddCol("reminderMode");
+    const weeklyGoalCol = getOrAddCol("weeklyGoal");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailCol] === userEmail) {
@@ -236,12 +241,33 @@ function generateTimeline(userContext) {
  * Get daily quests (generates random ones if not exist for today)
  */
 function getDailyQuests(userContext) {
-   // To be implemented: Check DAILY_QUESTS sheet in user's DB.
-   // If empty for today, generate 3 random tasks.
+   const settingsRes = getStudySettings(userContext);
+   const target = settingsRes.success && settingsRes.settings.dailyTimeGoal ? settingsRes.settings.dailyTimeGoal : 15;
+
+   let current = 0;
+   try {
+     const userEmail = resolveAuthenticatedEmailFromContext(userContext);
+     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
+     if (progressSheetId) {
+        const spreadsheet = SpreadsheetApp.openById(progressSheetId);
+        let sheet = spreadsheet.getSheetByName("Daily_Learning");
+        if (sheet) {
+           const today = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+           const dataRange = sheet.getDataRange().getValues();
+           for (let i = 1; i < dataRange.length; i++) {
+             if (dataRange[i][0] === today) {
+                current = parseInt(dataRange[i][1]) || 0;
+                break;
+             }
+           }
+        }
+     }
+   } catch (e) {}
+
    return {
      success: true,
      quests: [
-       { id: 3, title: "Học liên tục 15 phút", current: 5, target: 15, rewardXP: 30, rewardCoin: 5, isCompleted: false }
+       { id: 3, title: `Học liên tục ${target} phút`, current: current, target: target, rewardXP: 30, rewardCoin: 5, isCompleted: current >= target }
      ]
    };
 }

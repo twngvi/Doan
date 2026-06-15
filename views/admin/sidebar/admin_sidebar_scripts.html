@@ -75,6 +75,16 @@
       keywords: 'thuat ngu matching terms cards quan ly matching definition flashcards',
       action: { type: 'page', pageId: 'page-matching-cards' },
     },
+    {
+      id: 'admin-page-email-management',
+      group: 'pages',
+      title: 'Quản lý Email',
+      subtitle: 'Tạo và chỉnh sửa nội dung email nhắc nhở',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'email quan ly mail template reminder nhac nho thong bao nhac hoc',
+      action: { type: 'page', pageId: 'page-email-management' },
+    },
   ];
 
   const adminSearchGroupLabels = {
@@ -1271,5 +1281,50 @@
         container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý PET: ' + error.message + '</div>';
       })
       .getPetManagementFullHtml();
+  }
+
+  // ========================================
+  // EMAIL MANAGEMENT DYNAMIC LOADER
+  // ========================================
+
+  let emailManagementLoaded = false;
+
+  function initemailmanagement() {
+    if (emailManagementLoaded) {
+      if (typeof initEmailManagement === 'function') {
+        initEmailManagement();
+      }
+      return;
+    }
+
+    loadEmailManagementContent();
+  }
+
+  function loadEmailManagementContent() {
+    const container = document.getElementById('email-management-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        emailManagementLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initEmailManagement === 'function') {
+            initEmailManagement();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý Email: ' + error.message + '</div>';
+      })
+      .getAdminEmailManagementFullHtml();
   }
 </script>

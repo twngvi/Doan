@@ -923,6 +923,10 @@
       hideLoading();
     }
 
+    if (window.LearningTracker) {
+      window.LearningTracker.stop();
+    }
+
     // ⭐ ROLE-BASED ACCESS CONTROL
     const adminOnlyPageIds = ["page-admin"];
     const userOnlyPageIds = [
@@ -1048,6 +1052,24 @@
       // Scroll lên đầu trang khi chuyển trang (trừ khi đang restore)
       if (!window._isRestoringPage) {
         window.scrollTo({ top: 0, behavior: "instant" });
+      }
+
+      // Hide or show study widget based on page and role
+      const widget = document.getElementById("study-widget");
+      if (widget) {
+        if (pageId === "page-landing" || authPageIds.includes(pageId) || pageId === "page-admin") {
+          widget.style.display = "none";
+        } else {
+          const user = window.currentUser || (typeof getHeartbeatUser === "function" ? getHeartbeatUser() : null);
+          if (user && user.role !== "ADMIN") {
+            widget.style.display = "block";
+            if (typeof loadStudyWidgetData === "function") {
+               loadStudyWidgetData();
+            }
+          } else {
+            widget.style.display = "none";
+          }
+        }
       }
 
       if (typeof syncAppBackToTopScrollSource === "function") {
@@ -1701,6 +1723,17 @@
     sessionStorage.removeItem("currentUser");
     sessionStorage.removeItem("isLoggedIn");
     sessionStorage.removeItem("userId");
+
+    // Hide Study Widget and Timeline Popup
+    const studyWidget = document.getElementById("study-widget");
+    if (studyWidget) studyWidget.style.display = "none";
+    if (typeof closeTimelinePopup === "function") closeTimelinePopup();
+    if (typeof toggleStudyWidget === "function") {
+        const panel = document.getElementById("study-widget-panel");
+        if (panel && panel.classList.contains("active")) {
+           toggleStudyWidget();
+        }
+    }
 
     // Clear Google auth state if needed
     if (
@@ -3095,7 +3128,13 @@
     let tickInterval = null;
 
     const SAVE_INTERVAL_MS = 60000; // Save every 1 minute
-    const GOAL_MINUTES = 15; // Daily goal for streak
+
+    function getGoalMinutes() {
+      if (window.currentUser && window.currentUser.settings && window.currentUser.settings.dailyTimeGoal) {
+        return parseInt(window.currentUser.settings.dailyTimeGoal, 10);
+      }
+      return 15; // Default fallback
+    }
 
     /**
      * Start tracking for a specific activity
@@ -3116,7 +3155,7 @@
       console.log(`⏱️ Started tracking: ${activityType}`);
 
       tickInterval = setInterval(function () {
-        if (!document.hidden) {
+        if (!document.hidden && document.hasFocus()) {
           accumulatedSeconds++;
           updateLocalStorage();
         }
@@ -3127,6 +3166,7 @@
       }, SAVE_INTERVAL_MS);
 
       document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("beforeunload", handleBeforeUnload);
     }
 
     function stop() {
@@ -3143,6 +3183,7 @@
       if (tickInterval) clearInterval(tickInterval);
       if (saveInterval) clearInterval(saveInterval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
 
       isTracking = false;
       currentActivity = null;
@@ -3154,6 +3195,12 @@
         console.log("⏸️ Tab hidden - pausing");
       } else {
         console.log("▶️ Tab visible - resuming");
+      }
+    }
+
+    function handleBeforeUnload() {
+      if (isTracking && accumulatedSeconds > 0) {
+        saveToServer(true);
       }
     }
 
@@ -3191,13 +3238,17 @@
       updateDashboardTimeUI(data);
     }
 
-    function saveToServer() {
+    function saveToServer(force = false) {
       var minutesToSave = Math.floor(accumulatedSeconds / 60);
       if (minutesToSave < 1) {
-        console.log(
-          "⏳ Not enough time yet: " + accumulatedSeconds + " seconds",
-        );
-        return;
+        if (force && accumulatedSeconds > 10) {
+          minutesToSave = 1; // force save at least 1 min to not lose data
+        } else {
+          console.log(
+            "⏳ Not enough time yet: " + accumulatedSeconds + " seconds",
+          );
+          return;
+        }
       }
 
       console.log(
@@ -3230,7 +3281,7 @@
               localStorage.setItem(storageKey, JSON.stringify(data));
               if (typeof window.showNotification === "function") {
                 window.showNotification(
-                  "🎉 Tuyệt vời! Bạn đã học đủ 15 phút hôm nay!",
+                  "🎉 Tuyệt vời! Bạn đã học đủ " + getGoalMinutes() + " phút hôm nay!",
                   "success",
                 );
               }
@@ -3254,16 +3305,17 @@
       var timeStatusEl = document.getElementById("time-status");
 
       var totalMinutes = data.serverTotal || data.totalMinutes || 0;
+      var goalMinutes = getGoalMinutes();
 
       if (todayTimeEl) todayTimeEl.textContent = totalMinutes;
       if (todayMinutesEl) todayMinutesEl.textContent = totalMinutes;
 
       if (timeStatusEl) {
-        if (totalMinutes >= GOAL_MINUTES) {
+        if (totalMinutes >= goalMinutes) {
           timeStatusEl.textContent = "Đã đạt";
           timeStatusEl.classList.add("achieved");
         } else {
-          timeStatusEl.textContent = GOAL_MINUTES - totalMinutes + " phút nữa";
+          timeStatusEl.textContent = goalMinutes - totalMinutes + " phút nữa";
           timeStatusEl.classList.remove("achieved");
         }
       }
@@ -3337,8 +3389,20 @@
   }
 
   function initStudyWidget() {
-     const user = getHeartbeatUser();
-     if (!user || user.role === "ADMIN") return;
+     const user = getHeartbeatUser ? getHeartbeatUser() : window.currentUser;
+     if (!user || user.role === "ADMIN") {
+         const widget = document.getElementById("study-widget");
+         if (widget) widget.style.display = "none";
+         return;
+     }
+     
+     const currentPage = localStorage.getItem("lastActivePage") || "";
+     if (isAuthPageName(currentPage) || currentPage === "admin") {
+         const widget = document.getElementById("study-widget");
+         if (widget) widget.style.display = "none";
+         return;
+     }
+
      const widget = document.getElementById("study-widget");
      if (widget) widget.style.display = "block";
      loadStudyWidgetData();

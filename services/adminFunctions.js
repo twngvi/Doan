@@ -2659,6 +2659,27 @@ function savePetItemsForAdmin(payloadJson) {
 }
 
 /**
+ * Lấy toàn bộ HTML (Styles + Content + Scripts) cho trang Quản lý Email
+ */
+function getAdminEmailManagementFullHtml() {
+  try {
+    const isAdmin = checkAdminRole();
+    if (!isAdmin) {
+      return '<div style="padding:40px;text-align:center;color:#d93025;">Bạn không có quyền truy cập trang này.</div>';
+    }
+
+    const styles = HtmlService.createHtmlOutputFromFile('views/admin/emailManagement/email_management_styles').getContent();
+    const content = HtmlService.createHtmlOutputFromFile('views/admin/emailManagement/email_management_content').getContent();
+    const scripts = HtmlService.createHtmlOutputFromFile('views/admin/emailManagement/email_management_scripts').getContent();
+
+    return styles + '\n' + content + '\n' + scripts;
+  } catch (error) {
+    Logger.log('Lỗi trong getAdminEmailManagementFullHtml: ' + error.toString());
+    return '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi render Quản lý Email: ' + error.toString() + '</div>';
+  }
+}
+
+/**
  * Lấy HTML đầy đủ của Pet Management (styles + content + scripts)
  */
 function getPetManagementFullHtml() {

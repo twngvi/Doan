@@ -1,0 +1,66 @@
+<script>
+function initEmailManagement() {
+    loadEmailTemplate();
+
+    const form = document.getElementById('emailTemplateForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveEmailTemplate();
+        });
+    }
+}
+
+function loadEmailTemplate() {
+    const btn = document.getElementById('btnSaveEmailTemplate');
+    if (btn) btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (btn) btn.disabled = false;
+            if (res && res.success) {
+                document.getElementById('emailSubject').value = res.subject || '';
+                document.getElementById('emailBody').value = res.body || '';
+            } else {
+                showToast(res.message || 'Lỗi tải template email', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            if (btn) btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .getStudyReminderEmailTemplate();
+}
+
+function saveEmailTemplate() {
+    const subject = document.getElementById('emailSubject').value;
+    const body = document.getElementById('emailBody').value;
+    const btn = document.getElementById('btnSaveEmailTemplate');
+    
+    if (!subject || !body) {
+        showToast('Vui lòng nhập đầy đủ tiêu đề và nội dung', 'error');
+        return;
+    }
+
+    const originalText = btn.textContent;
+    btn.textContent = 'Đang lưu...';
+    btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            if (res && res.success) {
+                showToast('Lưu template email thành công!', 'success');
+            } else {
+                showToast(res.message || 'Lỗi khi lưu template', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .saveStudyReminderEmailTemplate({ subject: subject, body: body });
+}
+</script>
