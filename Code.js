@@ -322,6 +322,30 @@ function getDocumentMetadata(docId) {
 }
 
 // ========================================
+// TIMELINE & SMART REMINDERS WRAPPERS
+// ========================================
+
+function apiGetStudySettings(payload) {
+  return getStudySettings(payload);
+}
+
+function apiUpdateStudySettings(payload, settings) {
+  return updateStudySettings(payload, settings);
+}
+
+function apiGenerateTimeline(payload) {
+  return generateTimeline(payload);
+}
+
+function apiGetDailyQuests(payload) {
+  return getDailyQuests(payload);
+}
+
+function apiRecoverStreak(payload) {
+  return recoverStreak(payload);
+}
+
+// ========================================
 // TEST FUNCTIONS
 // ========================================
 

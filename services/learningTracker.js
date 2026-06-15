@@ -144,6 +144,16 @@ function saveLearningTime(data) {
         sheet.getRange(todayRowIndex, 7).setValue(true);
         updateUserStreak(userEmail, today);
       }
+      
+      // ⭐ Update Timeline Daily Quest for learning time
+      try {
+         if (typeof updateDailyQuestProgress === 'function') {
+            // we can pass the increment amount or just the whole total, let's pass increment
+            updateDailyQuestProgress(userEmail, 'time', minutes);
+         }
+      } catch(err) {
+         Logger.log("Error updating timeline quest for time: " + err);
+      }
 
       return {
         success: true,

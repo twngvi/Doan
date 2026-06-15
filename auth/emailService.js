@@ -104,3 +104,68 @@ Trân trọng,
     return false;
   }
 }
+
+/**
+ * Send study reminder email
+ * @param {string} email
+ * @param {Object} info - { fullName, mode, remainingLessons, completedLessons, totalLessons, streak, nextTopics }
+ */
+function sendStudyReminder(email, info) {
+  try {
+    const emailQuotaRemaining = MailApp.getRemainingDailyQuota();
+    if (emailQuotaRemaining <= 0) return false;
+
+    let subject = "";
+    let body = "";
+
+    if (info.mode === "escalating_final") {
+       subject = `⚠️ Cảnh báo: Sắp đứt chuỗi Streak ${info.streak} ngày!`;
+       body = `
+Chào ${info.fullName},
+
+Chỉ còn vài giờ nữa là kết thúc ngày học hôm nay. Bạn hiện tại đã học được ${info.completedLessons}/${info.totalLessons} bài học.
+Hãy hoàn thành ${info.remainingLessons} bài nữa để duy trì streak ${info.streak} ngày liên tiếp của bạn nhé!
+
+Các bài tiếp theo:
+${info.nextTopics.map(t => "- " + t).join("\\n")}
+
+Vào học ngay để không bỏ lỡ phần thưởng!
+`;
+    } else {
+       subject = `Hôm nay bạn còn ${info.remainingLessons} bài chưa hoàn thành`;
+       body = `
+Xin chào ${info.fullName},
+
+Bạn đã hoàn thành ${info.completedLessons}/${info.totalLessons} bài học hôm nay.
+Các bài còn lại trong mục tiêu ngày của bạn:
+${info.nextTopics.map(t => "- " + t).join("\\n")}
+
+Hoàn thành mục tiêu để duy trì streak học tập nhé.
+
+Trân trọng,
+Đội ngũ Doanv3
+`;
+    }
+
+    MailApp.sendEmail({
+      to: email,
+      subject: subject,
+      body: body,
+      name: "Doanv3 Study Reminder"
+    });
+    return true;
+  } catch (error) {
+    Logger.log("Error sending study reminder email: " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Cron Job function for sending hourly reminders.
+ * Should be triggered every hour using Apps Script Time-Driven Triggers.
+ */
+function cronJobReminders() {
+   Logger.log("Running hourly cron job for study reminders...");
+   // Implementation would scan Users sheet, check current time vs reminderTimes,
+   // then calculate remaining lessons and call sendStudyReminder() if goals are not met.
+}

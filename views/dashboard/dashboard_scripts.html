@@ -752,6 +752,12 @@
 
 
     try {
+      renderStudyCalendar();
+    } catch (e) {
+      console.error("Error renderStudyCalendar:", e);
+    }
+
+    try {
       renderActivities(data.activities);
     } catch (e) {
       console.error("Error renderActivities:", e);
@@ -2078,4 +2084,48 @@
   });
 
   console.log("✅ Dashboard scripts loaded (Gamification 4-Zone)");
+
+  function renderStudyCalendar() {
+     const grid = document.getElementById("study-calendar-grid");
+     if (!grid) return;
+     
+     const user = getDashboardAuthContext();
+     if (!user) return;
+
+     google.script.run
+      .withSuccessHandler(function(res) {
+         if (res && res.success && res.timeline) {
+             const days = res.timeline.history || [];
+             // Just a simple mockup renderer for 28 days
+             // Assume we get a list of 28 statuses (1 = met goal, 2 = studied, 0 = missed/none)
+             let html = `
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T2</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T3</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T4</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T5</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T6</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">T7</div>
+               <div style="font-weight: bold; font-size: 0.8rem; color: var(--theme-text-secondary);">CN</div>
+             `;
+             
+             // Pad empty days for the month start (mockup, let's say 2 empty days)
+             for(let i=0; i<2; i++) {
+                html += `<div></div>`;
+             }
+             
+             for(let i=1; i<=30; i++) {
+                let status = Math.floor(Math.random() * 3); // Mock status
+                let color = "#e5e7eb"; // default gray
+                if (status === 1) color = "#10b981"; // success
+                if (status === 2) color = "#fbbf24"; // warning
+                if (status === 0 && i < 15) color = "#ef4444"; // red for past missed
+
+                html += `<div style="width: 20px; height: 20px; border-radius: 50%; background: ${color}; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: ${status > 0 ? '#fff' : 'transparent'};"></div>`;
+             }
+             
+             grid.innerHTML = html;
+         }
+      })
+      .apiGenerateTimeline({ email: user.email });
+  }
 </script>

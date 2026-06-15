@@ -606,6 +606,7 @@
 
     if (isSessionLoggedIn()) {
       startUserHeartbeat();
+      setTimeout(initStudyWidget, 2000); // Init study widget after login
     }
     initHeartbeatMonitor();
     initSessionMonitor(); // ⭐ Start checking session periodically
@@ -3322,4 +3323,116 @@
   }
 
   window.addEventListener("pagehide", tryClearSessionOnClose);
+
+  // ==================== Study Widget Logic ====================
+  function toggleStudyWidget() {
+     const panel = document.getElementById("study-widget-panel");
+     if (!panel) return;
+     if (panel.style.display === "none") {
+         panel.style.display = "block";
+         loadStudyWidgetData();
+     } else {
+         panel.style.display = "none";
+     }
+  }
+
+  function initStudyWidget() {
+     const user = getHeartbeatUser();
+     if (!user || user.role === "ADMIN") return;
+     const widget = document.getElementById("study-widget");
+     if (widget) widget.style.display = "block";
+     loadStudyWidgetData();
+     
+     // Check if we should show the timeline popup (only once per session/day)
+     if (!sessionStorage.getItem("timelinePopupShown")) {
+        setTimeout(checkAndShowTimelinePopup, 1000);
+     }
+  }
+
+  function checkAndShowTimelinePopup() {
+     const user = getHeartbeatUser();
+     if (!user) return;
+
+     google.script.run
+      .withSuccessHandler(function(res) {
+         if (res && res.success && res.timeline) {
+            const today = res.timeline.today;
+            
+            // Only show if there are lessons to learn
+            if (today.goal - today.completed > 0 && today.lessons && today.lessons.length > 0) {
+                const popup = document.getElementById("timeline-popup-overlay");
+                const content = document.getElementById("timeline-popup-content");
+                const streak = document.getElementById("timeline-popup-streak");
+                
+                if (content) {
+                    content.innerHTML = today.lessons.map((l, index) => `
+                       <div style="display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+                          <div style="width: 30px; height: 30px; border-radius: 50%; background: #fef3c7; color: #d97706; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold;">
+                             ${index + 1}
+                          </div>
+                          <div style="flex: 1; font-weight: 500;">${l.title || 'Bài học'}</div>
+                       </div>
+                    `).join("");
+                }
+                
+                if (streak) streak.textContent = "🔥 Đang giữ chuỗi " + (user.currentStreak || 0) + " ngày liên tiếp";
+                if (popup) popup.classList.add("active");
+                
+                sessionStorage.setItem("timelinePopupShown", "true");
+            }
+         }
+      })
+      .apiGenerateTimeline({ email: user.email });
+  }
+
+  function closeTimelinePopup() {
+      const popup = document.getElementById("timeline-popup-overlay");
+      if (popup) popup.classList.remove("active");
+  }
+
+  function loadStudyWidgetData() {
+     const user = getHeartbeatUser();
+     if (!user) return;
+     
+     // Set streak from user
+     const streakBadge = document.getElementById("study-widget-streak");
+     if (streakBadge) streakBadge.textContent = "🔥 " + (user.currentStreak || 0) + " ngày";
+
+     google.script.run
+      .withSuccessHandler(function(res) {
+         if (res && res.success && res.timeline) {
+            const today = res.timeline.today;
+            const text = document.getElementById("study-widget-text");
+            const fill = document.getElementById("study-widget-fill");
+            const badge = document.getElementById("study-widget-badge");
+
+            if (text) text.textContent = today.completed + "/" + today.goal + " bài học";
+            if (fill) fill.style.width = Math.min(100, (today.completed / today.goal) * 100) + "%";
+            
+            const remaining = Math.max(0, today.goal - today.completed);
+            if (badge) {
+               badge.textContent = remaining;
+               badge.style.display = remaining > 0 ? "flex" : "none";
+            }
+         }
+      })
+      .apiGenerateTimeline({ email: user.email });
+
+     google.script.run
+      .withSuccessHandler(function(res) {
+         if (res && res.success && res.quests) {
+             const questContainer = document.getElementById("study-widget-quests");
+             if (questContainer) {
+                 questContainer.innerHTML = res.quests.map(q => `
+                    <div class="quest-item ${q.isCompleted ? 'completed' : ''}">
+                       <input type="checkbox" ${q.isCompleted ? 'checked disabled' : 'disabled'}>
+                       <span>${q.title} (${q.current}/${q.target})</span>
+                    </div>
+                 `).join("");
+             }
+         }
+      })
+      .apiGetDailyQuests({ email: user.email });
+  }
+
 </script>

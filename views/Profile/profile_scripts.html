@@ -755,6 +755,7 @@
       updateProfileHeader(user);
       updateProfileForm(user);
       loadGeminiKeyStatus();
+      loadStudySettings();
       console.log("✅ Profile: Initialized for", user.email);
     } catch (e) {
       console.error("❌ Profile: Load error:", e);
@@ -858,13 +859,30 @@
       avatarEditBtn.removeAttribute("onclick");
       avatarEditBtn.addEventListener("click", openAvatarModal);
     }
+    // Study Settings Form Submit
+    const studySettingsForm = document.getElementById("studySettingsForm");
+    if (studySettingsForm) {
+      studySettingsForm.addEventListener("submit", handleStudySettingsSubmit);
+    }
 
-    const avatarModal = document.getElementById("avatarSelectionModal");
-    if (avatarModal) {
-      avatarModal.removeAttribute("onclick");
-      avatarModal.addEventListener("click", closeAvatarModal);
+    // Toggle study settings email options
+    const emailReminderEnabled = document.getElementById("emailReminderEnabled");
+    if (emailReminderEnabled) {
+      emailReminderEnabled.addEventListener("change", (e) => {
+        const panel = document.getElementById("emailReminderSettings");
+        if (panel) {
+          panel.style.display = e.target.checked ? "block" : "none";
+        }
+      });
+    }
 
-      const avatarCloseBtn = avatarModal.querySelector(".modal-close-pro");
+    // Modal Events
+    const avatarSelectionModal = document.getElementById("avatarSelectionModal");
+    if (avatarSelectionModal) {
+      avatarSelectionModal.removeAttribute("onclick");
+      avatarSelectionModal.addEventListener("click", closeAvatarModal);
+
+      const avatarCloseBtn = avatarSelectionModal.querySelector(".modal-close-pro");
       if (avatarCloseBtn) {
         avatarCloseBtn.removeAttribute("onclick");
         avatarCloseBtn.addEventListener("click", function () {
@@ -1143,7 +1161,7 @@
       const form = e.target;
       if (!form || !form.id) return;
 
-      if (form.id === "profileForm" || form.id === "passwordForm") {
+      if (form.id === "profileForm" || form.id === "passwordForm" || form.id === "studySettingsForm") {
         e.preventDefault();
       }
     });
@@ -1652,6 +1670,86 @@
     applyTheme(theme);
     updateThemeCardUI(theme);
     return theme;
+  }
+
+  // ===== STUDY SETTINGS FUNCTIONS =====
+  function loadStudySettings() {
+    if (!profileData || !profileData.email) return;
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success && response.settings) {
+          const settings = response.settings;
+          const dailyGoal = document.getElementById("dailyGoal");
+          const dailyTimeGoal = document.getElementById("dailyTimeGoal");
+          const emailEnabled = document.getElementById("emailReminderEnabled");
+          const reminderSettings = document.getElementById("emailReminderSettings");
+          const reminderTimes = document.getElementById("reminderTimes");
+          const reminderMode = document.getElementById("reminderMode");
+
+          if (dailyGoal) dailyGoal.value = settings.dailyGoal || 5;
+          if (dailyTimeGoal) dailyTimeGoal.value = settings.dailyTimeGoal || 15;
+          if (emailEnabled) {
+            emailEnabled.checked = settings.emailReminderEnabled || false;
+            if (reminderSettings) {
+              reminderSettings.style.display = settings.emailReminderEnabled ? "block" : "none";
+            }
+          }
+          if (reminderTimes) reminderTimes.value = settings.reminderTimes || "20:00";
+          if (reminderMode) reminderMode.value = settings.reminderMode || "1";
+        }
+      })
+      .withFailureHandler(function (err) {
+        console.error("❌ Failed to load study settings:", err);
+      })
+      .apiGetStudySettings({ email: profileData.email });
+  }
+
+  function handleStudySettingsSubmit(e) {
+    e.preventDefault();
+    if (!profileData || !profileData.email) {
+      showToast("Vui lòng đăng nhập", "error");
+      return;
+    }
+
+    const btn = document.getElementById("btnSaveStudySettings");
+    const originalHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = "<span>⏳ Đang lưu...</span>";
+    }
+
+    const settings = {
+      dailyGoal: parseInt(document.getElementById("dailyGoal")?.value) || 5,
+      dailyTimeGoal: parseInt(document.getElementById("dailyTimeGoal")?.value) || 15,
+      emailReminderEnabled: document.getElementById("emailReminderEnabled")?.checked || false,
+      reminderTimes: document.getElementById("reminderTimes")?.value || "20:00",
+      reminderMode: document.getElementById("reminderMode")?.value || "1"
+    };
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+        if (response.success) {
+          showToast("Đã lưu cài đặt học tập!", "success");
+        } else {
+          showToast(response.message || "Lỗi khi lưu cài đặt", "error");
+        }
+      })
+      .withFailureHandler(function (err) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+        showToast("Lỗi kết nối: " + (err.message || "Unknown"), "error");
+      })
+      .apiUpdateStudySettings({
+         email: profileData.email,
+         settings: settings
+      });
   }
 
   console.log("✅ Profile scripts loaded and exported.");
