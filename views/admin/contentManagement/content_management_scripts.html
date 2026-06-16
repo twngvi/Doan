@@ -246,8 +246,8 @@ function renderTopicsTable() {
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
         </td>
         <td>
-          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-            ${statusText} <span class="material-symbols-sharp" style="font-size: 14px;">swap_horiz</span>
+          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái">
+            ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
           </span>
         </td>
         <td>${updatedAt}</td>
@@ -339,8 +339,8 @@ function renderTopicsCards() {
 
         <div class="cm-card-meta">
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
-          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-            ${statusText} <span class="material-symbols-sharp" style="font-size: 14px;">swap_horiz</span>
+          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái">
+            ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
           </span>
         </div>
 
@@ -489,82 +489,184 @@ function applyFilters(searchTerm) {
   renderContent();
 }
 
-// ===== Toggle Topic Status Inline =====
+// ===== Toggle Topic Status Modal =====
 let statusToggleTopicId = null;
 let statusToggleNewStatus = null;
+let statusToggleCurrentStatus = null;
+
+function isTopicLockedValue(value) {
+  return value === true || value === 'TRUE' || value === 'true';
+}
+
+function getStatusInfo(isLocked) {
+  if (isLocked) {
+    return {
+      key: 'locked',
+      text: 'Đang ẩn',
+      icon: 'visibility_off',
+      note: 'Bài học sẽ bị ẩn khỏi học viên. Admin vẫn có thể quản lý và chỉnh sửa.'
+    };
+  }
+
+  return {
+    key: 'active',
+    text: 'Đang hiển thị',
+    icon: 'visibility',
+    note: 'Bài học sẽ được hiển thị cho học viên nếu thỏa điều kiện mở khóa.'
+  };
+}
+
+function renderStatusPreviewBadge(isLocked) {
+  const info = getStatusInfo(isLocked);
+
+  return `
+    <span class="status-badge ${info.key} cm-status-preview-badge">
+      <span class="material-symbols-sharp">${info.icon}</span>
+      ${info.text}
+    </span>
+  `;
+}
 
 function toggleTopicStatus(topicId, currentIsLocked, event) {
   if (event) {
-    event.stopPropagation(); // Prevent opening mobile action modal
+    event.stopPropagation();
   }
-  
+
+  const topic = allTopics.find(function(t) {
+    return t.topicId === topicId;
+  });
+
+  const currentLocked = isTopicLockedValue(currentIsLocked);
+  const newLocked = !currentLocked;
+  const newInfo = getStatusInfo(newLocked);
+
   statusToggleTopicId = topicId;
-  statusToggleNewStatus = !currentIsLocked;
-  const statusText = statusToggleNewStatus ? 'Đang ẩn' : 'Đang hiển thị';
-  const icon = statusToggleNewStatus ? 'visibility_off' : 'visibility';
-  
-  document.getElementById('status-target-name').innerHTML = `
-    <div style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 30px; font-weight: 600; font-size: 15px; 
-                background: ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)'}; 
-                color: ${statusToggleNewStatus ? '#ef4444' : '#22c55e'}; 
-                border: 1px solid ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'};
-                box-shadow: 0 4px 6px ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.05)' : 'rgba(34, 197, 94, 0.05)'};">
-      <span class="material-symbols-sharp" style="font-size: 20px;">${icon}</span>
-      ${statusText}
-    </div>
-  `;
-  document.getElementById('cm-status-modal').style.display = 'flex';
+  statusToggleCurrentStatus = currentLocked;
+  statusToggleNewStatus = newLocked;
+
+  const modal = document.getElementById('cm-status-modal');
+  const titleEl = document.getElementById('status-topic-title');
+  const currentBadgeEl = document.getElementById('status-current-badge');
+  const newBadgeEl = document.getElementById('status-new-badge');
+  const iconEl = document.getElementById('status-modal-icon');
+  const iconWrapEl = document.getElementById('status-modal-icon-wrap');
+  const noteEl = document.getElementById('status-modal-note');
+
+  if (titleEl) {
+    titleEl.textContent = topic && topic.title ? topic.title : 'Bài học chưa xác định';
+  }
+
+  if (currentBadgeEl) {
+    currentBadgeEl.innerHTML = renderStatusPreviewBadge(currentLocked);
+  }
+
+  if (newBadgeEl) {
+    newBadgeEl.innerHTML = renderStatusPreviewBadge(newLocked);
+  }
+
+  if (iconEl) {
+    iconEl.textContent = newInfo.icon;
+  }
+
+  if (iconWrapEl) {
+    iconWrapEl.classList.toggle('is-locking', newLocked);
+    iconWrapEl.classList.toggle('is-unlocking', !newLocked);
+  }
+
+  if (noteEl) {
+    noteEl.textContent = newInfo.note;
+    noteEl.classList.toggle('danger', newLocked);
+    noteEl.classList.toggle('success', !newLocked);
+  }
+
+  setStatusConfirmLoading(false);
+
+  if (modal) {
+    modal.style.display = 'flex';
+  }
 }
 
 function closeStatusModal() {
-  document.getElementById('cm-status-modal').style.display = 'none';
+  const modal = document.getElementById('cm-status-modal');
+
+  if (modal) {
+    modal.style.display = 'none';
+  }
+
   statusToggleTopicId = null;
   statusToggleNewStatus = null;
+  statusToggleCurrentStatus = null;
+
+  setStatusConfirmLoading(false);
+}
+
+function setStatusConfirmLoading(isLoading) {
+  const btn = document.getElementById('status-confirm-btn');
+  if (!btn) return;
+
+  btn.disabled = isLoading;
+  btn.classList.toggle('is-loading', isLoading);
+
+  btn.innerHTML = isLoading
+    ? `<span class="material-symbols-sharp cm-spin">progress_activity</span> Đang cập nhật...`
+    : `<span class="material-symbols-sharp">check_circle</span> Xác nhận`;
 }
 
 function confirmToggleStatus() {
   if (!statusToggleTopicId) return;
-  
+
   const topicId = statusToggleTopicId;
   const newStatus = statusToggleNewStatus;
-  
-  closeStatusModal();
-  showLoading(true);
-  
+
+  setStatusConfirmLoading(true);
+
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
-        if (typeof showNotification === 'function') {
-          showNotification('Đã cập nhật trạng thái thành công', 'success');
-        } else {
-          // Thêm toast/thông báo thay vì alert nếu cần
-        }
-        
-        // Update local data and re-render
-        const topic = allTopics.find(t => t.topicId === topicId);
+        const topic = allTopics.find(function(t) {
+          return t.topicId === topicId;
+        });
+
         if (topic) {
           topic.isLocked = newStatus;
         }
-        
-        // Re-apply filters and render
+
         handleFilterChange();
         updateStats();
-        showLoading(false);
-      } else {
-        showLoading(false);
+        closeStatusModal();
+
         if (typeof showNotification === 'function') {
-          showNotification('Lỗi: ' + (response ? response.message : 'Không xác định'), 'error');
+          const message = newStatus
+            ? 'Đã ẩn bài học khỏi học viên'
+            : 'Đã hiển thị bài học cho học viên';
+
+          showNotification(message, 'success');
+        }
+      } else {
+        setStatusConfirmLoading(false);
+
+        const message = response && response.message
+          ? response.message
+          : 'Không thể cập nhật trạng thái';
+
+        if (typeof showNotification === 'function') {
+          showNotification('Lỗi: ' + message, 'error');
         } else {
-          alert('Lỗi: ' + (response ? response.message : 'Không xác định'));
+          alert('Lỗi: ' + message);
         }
       }
     })
     .withFailureHandler(function(error) {
-      showLoading(false);
+      setStatusConfirmLoading(false);
+
+      const message = error && error.message
+        ? error.message
+        : 'Không thể kết nối server';
+
       if (typeof showNotification === 'function') {
-        showNotification('Lỗi kết nối: ' + error.message, 'error');
+        showNotification('Lỗi kết nối: ' + message, 'error');
       } else {
-        alert('Lỗi kết nối: ' + error.message);
+        alert('Lỗi kết nối: ' + message);
       }
     })
     .updateTopicLockStatus(topicId, newStatus);
