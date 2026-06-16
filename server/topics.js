@@ -105,6 +105,7 @@ function getAllTopics() {
 
       topics.push({
         topicId: topicId,
+        rowIndex: i + 2,
         title:
           col.title >= 0 && row[col.title] !== undefined
             ? String(row[col.title])
@@ -188,7 +189,18 @@ function getAllTopics() {
       });
     }
 
-    topics.sort((a, b) => (a.order || 0) - (b.order || 0));
+    topics.sort(function(a, b) {
+      var catA = normalizeCategoryName(a.category);
+      var catB = normalizeCategoryName(b.category);
+
+      if (catA !== catB) {
+        return catA.localeCompare(catB, 'vi');
+      }
+
+      // Không sort theo order nữa.
+      // Giữ thứ tự dòng DB bằng rowIndex.
+      return (a.rowIndex || 0) - (b.rowIndex || 0);
+    });
 
     Logger.log("✅ Successfully processed " + topics.length + " topics");
 
@@ -232,6 +244,14 @@ function clearTopicsCache() {
   } catch(e) {
     Logger.log("⚠️ Failed to clear cache: " + e.toString());
   }
+}
+
+/**
+ * Helper function: Normalize category name for sorting
+ */
+function normalizeCategoryName(category) {
+  var value = String(category || '').trim();
+  return value || 'Chưa phân loại';
 }
 
 /**
@@ -452,7 +472,9 @@ function getUserTopicProgress() {
             miniQuizCompleted: miniQuizDone,
             matchingDone: matchingDone,
             status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
-            completedAt: completedAtIdx >= 0 ? row[completedAtIdx] : null,
+            completedAt: completedAtIdx >= 0 
+              ? (row[completedAtIdx] instanceof Date ? row[completedAtIdx].toISOString() : row[completedAtIdx]) 
+              : null,
           };
         } else {
           // Old schema fallback
@@ -462,8 +484,8 @@ function getUserTopicProgress() {
             progress: parseFloat(row[2]) || 0,
             stagesCompleted: parseInt(row[3]) || 0,
             totalStages: parseInt(row[4]) || 0,
-            lastAccessed: row[5],
-            completedAt: row[6],
+            lastAccessed: row[5] instanceof Date ? row[5].toISOString() : row[5],
+            completedAt: row[6] instanceof Date ? row[6].toISOString() : row[6],
           };
         }
       }
@@ -571,112 +593,259 @@ function updateUserTopicProgress(topicId, progressData) {
 /**
  * Check if user can access a topic (unlock logic)
  */
+function parsePrerequisiteTopicIds(topic) {
+  var ids = [];
+
+  if (topic.unlockCondition) {
+    try {
+      var condition = JSON.parse(topic.unlockCondition);
+      if (condition && Array.isArray(condition.prerequisiteTopicIds)) {
+        ids = condition.prerequisiteTopicIds;
+      }
+    } catch (e) {
+      Logger.log('Cannot parse unlockCondition for ' + topic.topicId + ': ' + e);
+    }
+  }
+
+  if (ids.length === 0 && topic.prerequisiteTopics) {
+    ids = String(topic.prerequisiteTopics)
+      .split(',')
+      .map(function(id) {
+        return String(id || '').trim();
+      })
+      .filter(Boolean);
+  }
+
+  return ids;
+}
+
+function getUnlockConditionObject(topic) {
+  if (topic.unlockCondition) {
+    try {
+      return JSON.parse(topic.unlockCondition);
+    } catch (e) {
+      Logger.log('Invalid unlockCondition JSON: ' + e);
+    }
+  }
+
+  var fallbackIds = parsePrerequisiteTopicIds(topic);
+  if (fallbackIds.length > 0) {
+    return {
+      type: 'complete_topic',
+      mode: 'all',
+      requiredProgress: 100,
+      requiredQuizAccuracy: 0,
+      prerequisiteTopicIds: fallbackIds
+    };
+  }
+
+  return null;
+}
+
+function evaluateTopicUnlock(topic, progressMap, topicMap) {
+  var hasContent =
+    topic.contentDocId &&
+    String(topic.contentDocId).trim() !== '' &&
+    String(topic.contentDocId).trim() !== 'undefined' &&
+    String(topic.contentDocId).trim() !== 'null';
+
+  if (!hasContent) {
+    return {
+      unlocked: false,
+      reason: 'Bài học này chưa có nội dung.',
+      missingPrerequisites: []
+    };
+  }
+
+  var condition = getUnlockConditionObject(topic);
+
+  if (!topic.isLocked && !condition) {
+    return {
+      unlocked: true,
+      reason: '',
+      missingPrerequisites: []
+    };
+  }
+
+  var prereqIds = condition && Array.isArray(condition.prerequisiteTopicIds)
+    ? condition.prerequisiteTopicIds
+    : [];
+
+  if (prereqIds.length === 0) {
+    return {
+      unlocked: true,
+      reason: '',
+      missingPrerequisites: []
+    };
+  }
+
+  var mode = condition.mode || 'all';
+  var requiredQuizAccuracy = Number(condition.requiredQuizAccuracy || 0);
+
+  var checks = prereqIds.map(function(prereqId) {
+    var progress = progressMap[prereqId] || {};
+    var prereqTopic = topicMap[prereqId] || {};
+    var completed = progress.completed === true;
+
+    var quizOk = true;
+    if (condition.type === 'complete_topic_and_quiz' && requiredQuizAccuracy > 0) {
+      quizOk = Number(progress.accuracy || progress.bestScore || 0) >= requiredQuizAccuracy;
+    }
+
+    return {
+      topicId: prereqId,
+      title: prereqTopic.title || prereqId,
+      completed: completed,
+      quizOk: quizOk,
+      passed: completed && quizOk
+    };
+  });
+
+  var unlocked = mode === 'any'
+    ? checks.some(function(item) { return item.passed; })
+    : checks.every(function(item) { return item.passed; });
+
+  var missing = checks.filter(function(item) {
+    return !item.passed;
+  });
+
+  return {
+    unlocked: unlocked,
+    reason: unlocked
+      ? ''
+      : 'Bạn cần hoàn thành: ' + missing.map(function(item) {
+          return item.title;
+        }).join(', '),
+    missingPrerequisites: missing
+  };
+}
+
+/**
+ * Get topics with unlock and progress status evaluated on the server.
+ */
+function getTopicsForUserPage() {
+  try {
+    var topicsResult = getAllTopics();
+    if (!topicsResult.success) return topicsResult;
+
+    var progressResult = getUserTopicProgress();
+    var progressMap = progressResult && progressResult.success
+      ? progressResult.progress || {}
+      : {};
+
+    var topics = topicsResult.topics || [];
+
+    var topicMap = {};
+    topics.forEach(function(topic) {
+      topicMap[topic.topicId] = topic;
+    });
+
+    var enhancedTopics = topics.map(function(topic) {
+      var access = evaluateTopicUnlock(topic, progressMap, topicMap);
+
+      return Object.assign({}, topic, {
+        unlocked: access.unlocked,
+        lockedReason: access.reason,
+        missingPrerequisites: access.missingPrerequisites || []
+      });
+    });
+
+    // ⭐ Sắp xếp: Ưu tiên Category -> Bài mở khoá lên trước -> Theo thứ tự dòng gốc
+    enhancedTopics.sort(function(a, b) {
+      var catA = normalizeCategoryName(a.category);
+      var catB = normalizeCategoryName(b.category);
+
+      // 1. Nhóm theo danh mục
+      if (catA !== catB) {
+        return catA.localeCompare(catB, 'vi');
+      }
+
+      // 2. Bài nào mở khoá thì xếp trước
+      if (a.unlocked !== b.unlocked) {
+        return a.unlocked ? -1 : 1;
+      }
+
+      // 3. Cuối cùng, giữ thứ tự dòng nguyên bản trong DB
+      return (a.rowIndex || 0) - (b.rowIndex || 0);
+    });
+
+    return {
+      success: true,
+      topics: enhancedTopics,
+      progress: progressMap,
+      count: enhancedTopics.length
+    };
+  } catch (error) {
+    Logger.log('Error in getTopicsForUserPage: ' + error.toString());
+    return {
+      success: false,
+      message: error.toString()
+    };
+  }
+}
+
+/**
+ * Check if user can access a topic (unlock logic)
+ */
 function checkTopicAccess(topicId) {
   try {
-    // ⭐ FIX: Use Session.getActiveUser() instead of broken getUserSession() call
-    const userEmail = Session.getActiveUser().getEmail();
+    var userEmail = Session.getActiveUser().getEmail();
     if (!userEmail) {
       return {
         success: false,
-        message: "User not authenticated",
-        unlocked: false,
+        message: 'User not authenticated',
+        unlocked: false
       };
     }
 
-    const topicResult = getTopicById(topicId);
+    var topicsResult = getAllTopics();
+    if (!topicsResult.success) return topicsResult;
 
-    if (!topicResult.success) {
-      return topicResult;
+    var topics = topicsResult.topics || [];
+    var topic = topics.find(function(t) {
+      return String(t.topicId) === String(topicId);
+    });
+
+    if (!topic) {
+      return {
+        success: false,
+        message: 'Topic not found',
+        unlocked: false
+      };
     }
 
-    const topic = topicResult.topic;
+    var topicMap = {};
+    topics.forEach(function(t) {
+      topicMap[t.topicId] = t;
+    });
 
-    // Check unlock conditions
-    if (topic.unlockCondition) {
-      try {
-        const condition = JSON.parse(topic.unlockCondition);
-        if (condition.type === 'complete_topic' || condition.type === 'complete_topic_and_quiz') {
-          const prereqIds = condition.prerequisiteTopicIds || [];
-          if (prereqIds.length > 0) {
-            const progressResult = getUserTopicProgress();
-            if (progressResult.success) {
-              const userProgress = progressResult.progress;
-              const allCompleted = prereqIds.every(function(prereqId) {
-                 return userProgress[prereqId] && userProgress[prereqId].completed === true;
-              });
-              
-              if (!allCompleted) {
-                const prereqNames = prereqIds.map(id => {
-                  const pt = getTopicById(id);
-                  return pt.success ? pt.topic.title : id;
-                }).join(", ");
-                
-                return {
-                  success: true,
-                  unlocked: false,
-                  reason: "Bạn cần hoàn thành bài học điều kiện trước: " + prereqNames
-                };
-              }
-            }
-          }
-        }
-      } catch (e) {
-        Logger.log("Error parsing unlockCondition: " + e.toString());
-      }
-    } else if (topic.prerequisiteTopics) {
-      // Fallback for old data without JSON unlockCondition
-      const prereqIds = typeof topic.prerequisiteTopics === 'string' 
-          ? topic.prerequisiteTopics.split(',').map(s => s.trim()).filter(Boolean) 
-          : topic.prerequisiteTopics;
-          
-      if (Array.isArray(prereqIds) && prereqIds.length > 0) {
-         const progressResult = getUserTopicProgress();
-         if (progressResult.success) {
-            const userProgress = progressResult.progress;
-            const allCompleted = prereqIds.every(function(prereqId) {
-               return userProgress[prereqId] && userProgress[prereqId].completed === true;
-            });
-            if (!allCompleted) {
-              return {
-                success: true,
-                unlocked: false,
-                reason: "Bạn cần hoàn thành bài học điều kiện trước."
-              };
-            }
-         }
-      }
-    }
+    var progressResult = getUserTopicProgress();
+    var progressMap = progressResult && progressResult.success
+      ? progressResult.progress || {}
+      : {};
 
-    // Check AI level requirement
-    const userAILevel = 1; // TODO: get from user data if needed
-    const minAILevel = topic.minAILevel || 1;
+    var access = evaluateTopicUnlock(topic, progressMap, topicMap);
 
-    if (userAILevel < minAILevel) {
+    if (!access.unlocked) {
       return {
         success: true,
         unlocked: false,
-        reason: `Requires AI Level ${minAILevel}. Your current level: ${userAILevel}`,
+        reason: access.reason,
+        missingPrerequisites: access.missingPrerequisites || []
       };
-    }
-
-    // Check accuracy requirement
-    const minAccuracy = topic.minAccuracy || 0;
-
-    if (minAccuracy > 0) {
-      // TODO: Calculate user's overall accuracy from progress sheet
-      // For now, allow access if AI level is met
     }
 
     return {
       success: true,
       unlocked: true,
-      topic: topic,
+      topic: topic
     };
   } catch (error) {
-    Logger.log("Error in checkTopicAccess: " + error.toString());
+    Logger.log('Error in checkTopicAccess: ' + error.toString());
     return {
       success: false,
       message: error.toString(),
+      unlocked: false
     };
   }
 }

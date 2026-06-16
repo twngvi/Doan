@@ -215,90 +215,37 @@
       // Show loading state
       showLoadingState();
 
-      // ⭐ LOAD SONG SONG: Topics và Progress cùng lúc
-      let topicsLoaded = false;
-      let progressLoaded = false;
-      let topicsResult = null;
-      let progressResult = null;
-
-      function tryRender() {
-        // Chỉ render khi cả 2 đã load xong
-        if (topicsLoaded && progressLoaded) {
-          processAndRender(topicsResult, progressResult);
-        }
-      }
-
-      // Call 1: Get Topics
+      // ⭐ Gọi API mới để lấy topics và progress
       google.script.run
-        .withSuccessHandler(function (result) {
-          topicsResult = result;
-          topicsLoaded = true;
-          tryRender();
+        .withSuccessHandler(function(result) {
+          processAndRenderUserTopics(result);
         })
-        .withFailureHandler(function (error) {
-          topicsLoaded = true;
-          topicsResult = { success: false, error: error };
-          tryRender();
+        .withFailureHandler(function(error) {
+          showErrorState(error.message || error.toString());
         })
-        .getAllTopics();
-
-      // Call 2: Get User Progress (song song)
-      google.script.run
-        .withSuccessHandler(function (result) {
-          progressResult = result;
-          progressLoaded = true;
-          tryRender();
-        })
-        .withFailureHandler(function (error) {
-          progressLoaded = true;
-          progressResult = { success: false, progress: {} };
-          tryRender();
-        })
-        .getUserTopicProgress();
+        .getTopicsForUserPage();
     }
 
     // ⭐ XỬ LÝ VÀ RENDER - Gộp logic, render 1 lần duy nhất
-    function processAndRender(topicsResult, progressResult) {
+    function processAndRenderUserTopics(result) {
       console.log("Processing topics and progress...");
 
-      // Xử lý lỗi topics
-      if (!topicsResult) {
-        console.error("❌ Topics result is null");
-        showErrorState("Lỗi: Server không trả về dữ liệu.");
+      if (!result || !result.success) {
+        showErrorState((result && result.message) || 'Không thể tải danh sách bài học.');
         return;
       }
 
-      if (!topicsResult.success) {
-        console.error("❌ Topics request failed:", topicsResult.message);
-        showErrorState(topicsResult.message || "Lỗi không xác định từ Server.");
-        return;
-      }
-
-      if (!topicsResult.topics || topicsResult.topics.length === 0) {
-        console.warn("⚠️ No topics found");
-        showEmptyState();
-        return;
-      }
-
-      // ⭐ Lưu vào biến và LOCAL cache
-      allTopics = topicsResult.topics;
-      topicsCache = topicsResult.topics;
-
+      allTopics = result.topics || [];
+      filteredTopics = [...allTopics];
+      
       // Xử lý progress
-      const hasTrustedServerProgress = !!(
-        progressResult && progressResult.success
-      );
-      if (hasTrustedServerProgress && progressResult.progress) {
-        userProgress = progressResult.progress;
-      } else {
-        userProgress = {};
-      }
-      // ⭐ Chỉ coi server là nguồn đúng khi call progress thành công
-      userProgress = mergeLocalStorageProgress(userProgress, {
-        serverAuthoritative: hasTrustedServerProgress,
+      let serverProgress = result.progress || {};
+      userProgress = mergeLocalStorageProgress(serverProgress, {
+        serverAuthoritative: true,
       });
-      progressCache = userProgress;
 
+      topicsCache = allTopics;
+      progressCache = userProgress;
       lastLoadTime = Date.now();
 
       // ⭐ Lưu vào GLOBAL cache (để chia sẻ với MCQ, Matching và các page khác)
@@ -310,14 +257,10 @@
           cacheDuration: 60000,
         };
       }
-      window.globalTopicsCache.data = topicsResult.topics;
+      window.globalTopicsCache.data = allTopics;
       window.globalTopicsCache.progress = userProgress;
       window.globalTopicsCache.lastLoadTime = Date.now();
       console.log(`✅ Saved ${allTopics.length} topics to GLOBAL cache`);
-
-      console.log(`✅ Loaded ${allTopics.length} topics with progress`);
-
-      filteredTopics = [...allTopics];
 
       // ⭐ RENDER 1 LẦN DUY NHẤT (không có setTimeout delay)
       renderTopics();
@@ -371,6 +314,45 @@
     }
 
     // ========================================
+    // CATEGORY HELPERS
+    // ========================================
+    function getCategoryName(topic) {
+      return String(topic.category || '').trim() || 'Chưa phân loại';
+    }
+
+    function groupTopicsByCategory(topics) {
+      const groups = [];
+
+      topics.forEach(function(topic) {
+        const category = getCategoryName(topic);
+        let group = groups.find(function(item) {
+          return item.category === category;
+        });
+
+        if (!group) {
+          group = {
+            category: category,
+            topics: []
+          };
+          groups.push(group);
+        }
+
+        group.topics.push(topic);
+      });
+
+      return groups;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // ========================================
     // RENDER TOPICS - OPTIMIZED
     // ========================================
     function renderTopics() {
@@ -390,27 +372,46 @@
         return;
       }
 
-      // ⭐ Hide empty state if showing topics
       if (emptyState) {
         emptyState.style.display = "none";
       }
 
-      // ⭐ SỬ DỤNG DOCUMENT FRAGMENT để tránh reflow nhiều lần
+      const groups = groupTopicsByCategory(filteredTopics);
       const fragment = document.createDocumentFragment();
 
-      filteredTopics.forEach((topic) => {
-        const card = createTopicCard(topic);
-        fragment.appendChild(card);
+      groups.forEach(function(group) {
+        const section = document.createElement('section');
+        section.className = 'topic-category-section';
+
+        const completedCount = group.topics.filter(function(topic) {
+          return userProgress[topic.topicId] && userProgress[topic.topicId].completed;
+        }).length;
+
+        section.innerHTML = `
+          <div class="topic-category-header">
+            <div>
+              <h3>${escapeHtml(group.category)}</h3>
+              <p>${completedCount}/${group.topics.length} bài đã hoàn thành</p>
+            </div>
+          </div>
+          <div class="topic-category-grid"></div>
+        `;
+
+        const categoryGrid = section.querySelector('.topic-category-grid');
+
+        group.topics.forEach(function(topic) {
+          categoryGrid.appendChild(createTopicCard(topic));
+        });
+
+        fragment.appendChild(section);
       });
 
-      // ⭐ Clear và append 1 lần duy nhất
       grid.innerHTML = "";
       grid.appendChild(fragment);
 
-      grid.style.display = "grid";
+      grid.style.display = "block";
       document.getElementById("topicsJourney").style.display = "none";
 
-      // ⭐ Setup 3D tilt effect on grid cards
       setupGridCardTilt();
     }
 
@@ -424,19 +425,34 @@
         return;
       }
 
-      // ⭐ Hide empty state if showing topics
       if (emptyState) {
         emptyState.style.display = "none";
       }
 
-      // ⭐ Giữ nguyên thứ tự như dạng lưới (không sắp xếp theo bảng chữ cái)
-      // Create list items using fragment
+      const groups = groupTopicsByCategory(filteredTopics);
       const fragment = document.createDocumentFragment();
-      filteredTopics.forEach((topic, index) => {
-        fragment.appendChild(createTopicListItem(topic, index + 1));
+
+      groups.forEach(function(group) {
+        const section = document.createElement('section');
+        section.className = 'topic-category-list-section';
+
+        section.innerHTML = `
+          <div class="topic-category-list-header">
+            <h3>${escapeHtml(group.category)}</h3>
+            <span>${group.topics.length} bài</span>
+          </div>
+          <div class="topic-category-list-items"></div>
+        `;
+
+        const itemContainer = section.querySelector('.topic-category-list-items');
+
+        group.topics.forEach(function(topic, index) {
+          itemContainer.appendChild(createTopicListItem(topic, index + 1));
+        });
+
+        fragment.appendChild(section);
       });
 
-      // Clear and append
       listContainer.innerHTML = "";
       listContainer.appendChild(fragment);
 
@@ -602,6 +618,13 @@
       const lockIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
       const checkIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
 
+    function getLockedReason(topic) {
+      if (!topicHasContent(topic)) {
+        return 'Chưa có nội dung';
+      }
+      return topic.lockedReason || 'Cần hoàn thành bài học điều kiện';
+    }
+
       card.innerHTML = `
       ${progressOverlayHTML}
       <div class="topic-card-header">
@@ -636,6 +659,11 @@
                 : `${playIcon} Bắt đầu học`
         }
       </button>
+      ${
+        status === 'locked'
+          ? `<div class="topic-lock-reason">${escapeHtml(getLockedReason(topic))}</div>`
+          : ''
+      }
     `;
 
       return card;
@@ -644,26 +672,22 @@
     // ========================================
     // FILTER & SEARCH
     // ========================================
-    function filterTopics(journey) {
-      currentFilter = journey;
+    function filterTopics(category) {
+      currentFilter = category || 'all';
 
-      // Update active tab
-      document.querySelectorAll(".filter-tab").forEach((tab) => {
-        tab.classList.remove("active");
-        if (tab.dataset.filter === journey) {
-          tab.classList.add("active");
-        }
+      document.querySelectorAll('.filter-tab').forEach(function(tab) {
+        tab.classList.toggle('active', tab.dataset.filter === currentFilter);
       });
 
-      // Filter topics
-      if (journey === "all") {
+      if (currentFilter === 'all') {
         filteredTopics = [...allTopics];
       } else {
-        filteredTopics = allTopics.filter((topic) => topic.journey === journey);
+        filteredTopics = allTopics.filter(function(topic) {
+          return getCategoryName(topic) === currentFilter;
+        });
       }
 
-      // Apply search if active
-      const searchValue = document.getElementById("searchTopics").value;
+      const searchValue = document.getElementById('searchTopics').value;
       if (searchValue) {
         searchTopics(searchValue);
       } else {
@@ -672,22 +696,29 @@
     }
 
     function searchTopics(query) {
-      if (!query.trim()) {
-        filteredTopics =
-          currentFilter === "all"
-            ? [...allTopics]
-            : allTopics.filter((t) => t.journey === currentFilter);
-      } else {
-        const searchLower = query.toLowerCase();
-        const baseTopics =
-          currentFilter === "all"
-            ? allTopics
-            : allTopics.filter((t) => t.journey === currentFilter);
+      const searchValue = String(query || '').trim().toLowerCase();
 
-        // Chỉ tìm theo tên topic
-        filteredTopics = baseTopics.filter((topic) =>
-          topic.title.toLowerCase().includes(searchLower),
-        );
+      const baseTopics =
+        currentFilter === 'all'
+          ? allTopics
+          : allTopics.filter(function(topic) {
+              return getCategoryName(topic) === currentFilter;
+            });
+
+      if (!searchValue) {
+        filteredTopics = [...baseTopics];
+      } else {
+        filteredTopics = baseTopics.filter(function(topic) {
+          const title = String(topic.title || '').toLowerCase();
+          const category = String(topic.category || '').toLowerCase();
+          const description = String(topic.description || '').toLowerCase();
+
+          return (
+            title.includes(searchValue) ||
+            category.includes(searchValue) ||
+            description.includes(searchValue)
+          );
+        });
       }
 
       renderTopics();
@@ -820,28 +851,28 @@
      * @returns {'current'|'completed'|'locked'|'available'} status string
      */
     function getTopicStatus(topic, currentParams) {
-      // 1. Đang xem (lesson page đang mở topic này)
       if (
         currentParams &&
         currentParams.topicId &&
         currentParams.topicId === topic.topicId
       ) {
-        return "current";
+        return 'current';
       }
 
-      // 2. Đã hoàn thành
       const progress = userProgress[topic.topicId] || {};
       if (progress.completed) {
-        return "completed";
+        return 'completed';
       }
 
-      // 3. Khoá — không có nội dung HOẶC bị lock bởi điều kiện
-      if (!topicHasContent(topic) || !checkTopicUnlocked(topic)) {
-        return "locked";
+      if (!topicHasContent(topic)) {
+        return 'locked';
       }
 
-      // 4. Có thể học
-      return "available";
+      if (topic.unlocked === false || !checkTopicUnlocked(topic)) {
+        return 'locked';
+      }
+
+      return 'available';
     }
 
     function getTopicCardStatusMeta(status, progress) {
@@ -891,29 +922,41 @@
 
       if (!checkTopicUnlocked(topic)) {
         showNotification(
-          "This topic is locked. Complete prerequisites first.",
-          "warning",
+          topic.lockedReason || 'Bạn cần hoàn thành bài học điều kiện trước.',
+          'warning'
         );
         return;
       }
 
-      console.log("Starting topic:", topic.topicId);
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success) {
+            showNotification((result && result.message) || 'Không thể kiểm tra quyền truy cập.', 'error');
+            return;
+          }
 
-      // ⭐ KIỂM TRA XEM CÓ CONTENT DOC KHÔNG
-      if (!topicHasContent(topic)) {
-        showNotification(
-          '⚠️ Chủ đề "' +
-            topic.title +
-            '" chưa có nội dung. Sẽ được cập nhật sớm!',
-          "warning",
-        );
-        closeTopicDetail();
-        return;
-      }
+          if (!result.unlocked) {
+            showNotification(result.reason || 'Bài học này đang bị khóa.', 'warning');
+            loadTopics(true);
+            return;
+          }
 
-      console.log("Topic has lesson content, navigating to Lesson page...");
-      navigateToLesson(topic);
-      closeTopicDetail();
+          if (!topicHasContent(topic)) {
+            showNotification(
+              '⚠️ Chủ đề "' + topic.title + '" chưa có nội dung. Sẽ được cập nhật sớm!',
+              'warning'
+            );
+            closeTopicDetail();
+            return;
+          }
+
+          navigateToLesson(topic);
+          closeTopicDetail();
+        })
+        .withFailureHandler(function(error) {
+          showNotification(error.message || error.toString(), 'error');
+        })
+        .checkTopicAccess(topic.topicId);
     }
 
     /**
@@ -1053,31 +1096,74 @@
     }
 
     function checkTopicUnlocked(topic) {
-      if (!allTopics || allTopics.length === 0) return true;
+      if (!topic) return false;
 
-      // Tìm index của topic hiện tại trong danh sách
-      const index = allTopics.findIndex((t) => t.topicId === topic.topicId);
-
-      // Topic đầu tiên (index 0) luôn được mở
-      if (index <= 0) return true;
-
-      // Kiểm tra progress của topic ngay phía trước
-      const prevTopic = allTopics[index - 1];
-      const prevProgress = userProgress[prevTopic.topicId];
-
-      // Phải hoàn thành 100% topic trước đó mới được mở topic này
-      if (!prevProgress || !prevProgress.completed) {
-        return false;
-      }
-      
-      const prevQuizPercent = getTopicQuizPercent(prevTopic.topicId);
-      const prevMatchingPercent = getTopicMatchingPercent(prevTopic.topicId);
-      
-      if (prevQuizPercent < 80 || prevMatchingPercent < 80) {
-        return false;
+      // Server đã tính sẵn
+      if (typeof topic.unlocked === 'boolean') {
+        return topic.unlocked;
       }
 
-      return true;
+      // Fallback nếu API cũ chưa trả unlocked
+      if (!topic.isLocked && !topic.unlockCondition && !topic.prerequisiteTopics) {
+        return true;
+      }
+
+      return checkTopicUnlockedClientSide(topic);
+    }
+
+    function parseTopicUnlockCondition(topic) {
+      if (topic.unlockCondition) {
+        try {
+          return JSON.parse(topic.unlockCondition);
+        } catch (e) {
+          console.warn('[Topics] Invalid unlockCondition:', e);
+        }
+      }
+
+      if (topic.prerequisiteTopics) {
+        var ids = String(topic.prerequisiteTopics)
+          .split(',')
+          .map(function(id) {
+            return id.trim();
+          })
+          .filter(Boolean);
+
+        if (ids.length > 0) {
+          return {
+            type: 'complete_topic',
+            mode: 'all',
+            prerequisiteTopicIds: ids
+          };
+        }
+      }
+
+      return null;
+    }
+
+    function checkTopicUnlockedClientSide(topic) {
+      var condition = parseTopicUnlockCondition(topic);
+
+      if (!topic.isLocked && !condition) {
+        return true;
+      }
+
+      if (!condition || !Array.isArray(condition.prerequisiteTopicIds)) {
+        return true;
+      }
+
+      var ids = condition.prerequisiteTopicIds;
+      if (ids.length === 0) return true;
+
+      var mode = condition.mode || 'all';
+
+      var checks = ids.map(function(id) {
+        var progress = userProgress[id] || {};
+        return progress.completed === true;
+      });
+
+      return mode === 'any'
+        ? checks.some(Boolean)
+        : checks.every(Boolean);
     }
 
     /**
