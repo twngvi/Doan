@@ -246,13 +246,9 @@ function renderTopicsTable() {
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
         </td>
         <td>
-          <span class="time-badge">
-            <span class="material-symbols-sharp">schedule</span>
-            ${topic.estimatedTime || '-'}
+          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            ${statusText} <span class="material-symbols-sharp" style="font-size: 14px;">swap_horiz</span>
           </span>
-        </td>
-        <td>
-          <span class="status-badge ${statusClass}">${statusText}</span>
         </td>
         <td>${updatedAt}</td>
         <td>
@@ -343,13 +339,9 @@ function renderTopicsCards() {
 
         <div class="cm-card-meta">
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
-          <span class="status-badge ${statusClass}">${statusText}</span>
-          ${topic.estimatedTime ? `
-            <span class="time-badge">
-              <span class="material-symbols-sharp">schedule</span>
-              ${topic.estimatedTime}
-            </span>
-          ` : ''}
+          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            ${statusText} <span class="material-symbols-sharp" style="font-size: 14px;">swap_horiz</span>
+          </span>
         </div>
 
         <div class="cm-card-footer">
@@ -495,6 +487,87 @@ function applyFilters(searchTerm) {
 
   currentPage = 1;
   renderContent();
+}
+
+// ===== Toggle Topic Status Inline =====
+let statusToggleTopicId = null;
+let statusToggleNewStatus = null;
+
+function toggleTopicStatus(topicId, currentIsLocked, event) {
+  if (event) {
+    event.stopPropagation(); // Prevent opening mobile action modal
+  }
+  
+  statusToggleTopicId = topicId;
+  statusToggleNewStatus = !currentIsLocked;
+  const statusText = statusToggleNewStatus ? 'Đang ẩn' : 'Đang hiển thị';
+  const icon = statusToggleNewStatus ? 'visibility_off' : 'visibility';
+  
+  document.getElementById('status-target-name').innerHTML = `
+    <div style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 30px; font-weight: 600; font-size: 15px; 
+                background: ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)'}; 
+                color: ${statusToggleNewStatus ? '#ef4444' : '#22c55e'}; 
+                border: 1px solid ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'};
+                box-shadow: 0 4px 6px ${statusToggleNewStatus ? 'rgba(239, 68, 68, 0.05)' : 'rgba(34, 197, 94, 0.05)'};">
+      <span class="material-symbols-sharp" style="font-size: 20px;">${icon}</span>
+      ${statusText}
+    </div>
+  `;
+  document.getElementById('cm-status-modal').style.display = 'flex';
+}
+
+function closeStatusModal() {
+  document.getElementById('cm-status-modal').style.display = 'none';
+  statusToggleTopicId = null;
+  statusToggleNewStatus = null;
+}
+
+function confirmToggleStatus() {
+  if (!statusToggleTopicId) return;
+  
+  const topicId = statusToggleTopicId;
+  const newStatus = statusToggleNewStatus;
+  
+  closeStatusModal();
+  showLoading(true);
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        if (typeof showNotification === 'function') {
+          showNotification('Đã cập nhật trạng thái thành công', 'success');
+        } else {
+          // Thêm toast/thông báo thay vì alert nếu cần
+        }
+        
+        // Update local data and re-render
+        const topic = allTopics.find(t => t.topicId === topicId);
+        if (topic) {
+          topic.isLocked = newStatus;
+        }
+        
+        // Re-apply filters and render
+        handleFilterChange();
+        updateStats();
+        showLoading(false);
+      } else {
+        showLoading(false);
+        if (typeof showNotification === 'function') {
+          showNotification('Lỗi: ' + (response ? response.message : 'Không xác định'), 'error');
+        } else {
+          alert('Lỗi: ' + (response ? response.message : 'Không xác định'));
+        }
+      }
+    })
+    .withFailureHandler(function(error) {
+      showLoading(false);
+      if (typeof showNotification === 'function') {
+        showNotification('Lỗi kết nối: ' + error.message, 'error');
+      } else {
+        alert('Lỗi kết nối: ' + error.message);
+      }
+    })
+    .updateTopicLockStatus(topicId, newStatus);
 }
 
 // ===== Topic Actions =====
@@ -813,7 +886,6 @@ function openMobileActionModal(topicId, event) {
   const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
   
   document.getElementById('mobile-action-category').textContent = topic.category || 'Chưa phân loại';
-  document.getElementById('mobile-action-time').textContent = topic.estimatedTime || '-';
   document.getElementById('mobile-action-status').innerHTML = `<span class="status-badge ${statusClass}" style="margin:0; padding:4px 8px; font-size:11px;">${statusText}</span>`;
   document.getElementById('mobile-action-date').textContent = formatDate(topic.updatedAt);
 

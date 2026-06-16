@@ -3871,6 +3871,59 @@ function saveTopicToMasterDB(topicData) {
 }
 
 /**
+ * Cập nhật nhanh trạng thái khóa của bài học
+ * @param {string} topicId 
+ * @param {boolean} isLocked 
+ */
+function updateTopicLockStatus(topicId, isLocked) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return { success: false, message: "Không có quyền admin" };
+    }
+
+    const sheet = getSheet("Topics");
+    if (!sheet) return { success: false, message: "Không tìm thấy cơ sở dữ liệu Topics" };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdIdx = headers.indexOf("topicId");
+    const isLockedIdx = headers.indexOf("isLocked");
+
+    if (topicIdIdx === -1 || isLockedIdx === -1) {
+      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ" };
+    }
+
+    let foundRow = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdIdx] === topicId) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    if (foundRow === -1) {
+      return { success: false, message: "Không tìm thấy bài học có ID: " + topicId };
+    }
+
+    sheet.getRange(foundRow, isLockedIdx + 1).setValue(isLocked);
+    
+    try {
+      if (typeof clearTopicsCache === 'function') {
+        clearTopicsCache();
+      }
+    } catch (e) {
+      Logger.log("Could not clear cache: " + e.toString());
+    }
+
+    return { success: true, message: "Cập nhật trạng thái thành công" };
+  } catch (error) {
+    Logger.log("Error updating topic lock status: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * Xóa topic và document Google Doc liên quan
  * @param {string} topicId - ID của topic cần xóa
  * @returns {Object} Kết quả xóa
