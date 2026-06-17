@@ -330,7 +330,37 @@ function apiGetStudySettings(payload) {
 }
 
 function apiUpdateStudySettings(payload, settings) {
-  return updateStudySettings(payload, settings);
+  try {
+    payload = payload || {};
+
+    // Hỗ trợ cả kiểu mới:
+    // apiUpdateStudySettings({ userId, email, settings })
+    if (!settings && payload.settings) {
+      settings = payload.settings;
+    }
+
+    // Hỗ trợ cả kiểu cũ:
+    // apiUpdateStudySettings({ userId, email }, settings)
+    if (!settings || typeof settings !== "object") {
+      return {
+        success: false,
+        message: "Thiếu dữ liệu settings gửi lên server"
+      };
+    }
+
+    return updateStudySettings(
+      {
+        userId: payload.userId || "",
+        email: payload.email || ""
+      },
+      settings
+    );
+  } catch (error) {
+    return {
+      success: false,
+      message: error && error.message ? error.message : String(error)
+    };
+  }
 }
 
 function apiGenerateTimeline(payload) {
@@ -382,4 +412,59 @@ function testSearchPlayersNow() {
 
   Logger.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+function testUpdateStudySettings_ID04() {
+  try {
+    const res = apiUpdateStudySettings({
+      userId: "",
+      email: "EMAIL_CUA_USER_ID04", // Thay bằng email thật để test nếu cần
+      settings: {
+        dailyGoal: 13,
+        dailyTimeGoal: 22,
+        emailReminderEnabled: false,
+        reminderTimes: ["20:00"],
+        reminderMode: 1
+      }
+    });
+    
+    // Đọc thêm chi tiết
+    const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+    const ss = SpreadsheetApp.openById(masterDbId);
+    const usersSheet = ss.getSheetByName("Users");
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    throw new Error(JSON.stringify({
+      updateResult: res,
+      headers: headers,
+      row5: usersSheet.getRange(5, 1, 1, headers.length).getValues()[0]
+    }, null, 2));
+  } catch (err) {
+    throw new Error(err.message || String(err));
+  }
+}
+
+function testInspectStudySettings() {
+  const masterDbId = DB_CONFIG.SPREADSHEET_ID;
+  const ss = SpreadsheetApp.openById(masterDbId);
+  const usersSheet = ss.getSheetByName("Users");
+  const data = usersSheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  const colsNeeded = ["dailyGoal", "dailyTimeGoal", "emailReminderEnabled", "reminderTimes", "reminderMode"];
+  let colIndexes = {};
+  colsNeeded.forEach(col => {
+    colIndexes[col] = headers.indexOf(col);
+  });
+  
+  const row5 = usersSheet.getRange(5, 1, 1, headers.length).getValues()[0];
+  
+  throw new Error(JSON.stringify({
+    headers: headers,
+    colIndexes: colIndexes,
+    row5: row5,
+    row5Length: row5.length,
+    headersLength: headers.length
+  }, null, 2));
 }

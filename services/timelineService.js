@@ -8,137 +8,399 @@
  * - Streak Recovery
  */
 
-/**
- * Get user study settings from Profile
- */
+function normalizeStudyHeader_(value) {
+  return String(value || "").trim();
+}
+
+function parseStudyNumber_(val, fallback) {
+  if (val === "" || val === null || val === undefined) {
+    return fallback;
+  }
+  if (val instanceof Date) {
+    const epoch = new Date(1899, 11, 30);
+    const diffMs = val.getTime() - epoch.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return Math.round(diffDays);
+  }
+  const parsed = parseInt(val, 10);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
+function getStudyColumnInfo_(usersSheet) {
+  let lastCol = Math.max(usersSheet.getLastColumn(), 1);
+  let headers = usersSheet
+    .getRange(1, 1, 1, lastCol)
+    .getValues()[0]
+    .map(normalizeStudyHeader_);
+
+  const requiredCols = [
+    "dailyGoal",
+    "dailyTimeGoal",
+    "emailReminderEnabled",
+    "reminderTimes",
+    "reminderMode"
+  ];
+
+  requiredCols.forEach(function (colName) {
+    const exists = headers.some(function (h) {
+      return h === colName;
+    });
+
+    if (!exists) {
+      const nextCol = headers.length + 1;
+      usersSheet.getRange(1, nextCol).setValue(colName);
+      headers.push(colName);
+    }
+  });
+
+  SpreadsheetApp.flush();
+
+  lastCol = Math.max(usersSheet.getLastColumn(), 1);
+  headers = usersSheet
+    .getRange(1, 1, 1, lastCol)
+    .getValues()[0]
+    .map(normalizeStudyHeader_);
+
+  const map = {};
+  headers.forEach(function (header, index) {
+    if (!map[header]) map[header] = [];
+    map[header].push(index);
+  });
+
+  return {
+    headers: headers,
+    lastCol: lastCol,
+    map: map
+  };
+}
+
+function readFirstStudyValue_(row, colList) {
+  if (!colList || !colList.length) return "";
+
+  for (let i = 0; i < colList.length; i++) {
+    const idx = colList[i];
+    const value = row[idx];
+
+    if (value !== "" && value !== null && value !== undefined) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function writeStudyValueToAllCols_(row, colList, value) {
+  if (!colList || !colList.length) return;
+
+  colList.forEach(function (idx) {
+    row[idx] = value;
+  });
+}
+
+function parseStudySettingsFromRow_(row, colMap) {
+  const dailyGoalRaw = readFirstStudyValue_(row, colMap.dailyGoal);
+  const dailyTimeGoalRaw = readFirstStudyValue_(row, colMap.dailyTimeGoal);
+  const emailReminderRaw = readFirstStudyValue_(row, colMap.emailReminderEnabled);
+  const reminderTimesRaw = readFirstStudyValue_(row, colMap.reminderTimes);
+  const reminderModeRaw = readFirstStudyValue_(row, colMap.reminderMode);
+
+  let reminderTimes = ["20:00"];
+
+  if (reminderTimesRaw !== "" && reminderTimesRaw !== null && reminderTimesRaw !== undefined) {
+    try {
+      const parsed = JSON.parse(String(reminderTimesRaw));
+      reminderTimes = Array.isArray(parsed) ? parsed : [String(parsed)];
+    } catch (e) {
+      reminderTimes = [String(reminderTimesRaw)];
+    }
+  }
+
+  return {
+    dailyGoal: parseStudyNumber_(dailyGoalRaw, 5),
+    dailyTimeGoal: parseStudyNumber_(dailyTimeGoalRaw, 15),
+    emailReminderEnabled:
+      emailReminderRaw === true ||
+      String(emailReminderRaw).trim().toLowerCase() === "true",
+    reminderTimes: reminderTimes,
+    reminderMode: parseStudyNumber_(reminderModeRaw, 1)
+  };
+}
+
+function findStudySettingsUserRow_(data, headers, userContext) {
+  const emailCol = headers.indexOf("email");
+  const userIdCol = headers.indexOf("userId");
+
+  if (emailCol === -1) {
+    return {
+      rowIndex: -1,
+      message: "Sheet Users không có cột email"
+    };
+  }
+
+  const userIdToSearch = userContext && userContext.userId
+    ? String(userContext.userId).trim()
+    : "";
+
+  const emailToSearch = userContext && userContext.email
+    ? String(userContext.email).trim().toLowerCase()
+    : "";
+
+  // 1. Ưu tiên đúng cặp userId + email trên cùng một dòng.
+  if (userIdToSearch && emailToSearch && userIdCol !== -1) {
+    for (let i = 1; i < data.length; i++) {
+      const rowUserId = String(data[i][userIdCol] || "").trim();
+      const rowEmail = String(data[i][emailCol] || "").trim().toLowerCase();
+
+      if (rowUserId === userIdToSearch && rowEmail === emailToSearch) {
+        return {
+          rowIndex: i,
+          message: "matched_by_userId_and_email"
+        };
+      }
+    }
+  }
+
+  // 2. Fallback theo email.
+  if (emailToSearch) {
+    for (let i = 1; i < data.length; i++) {
+      const rowEmail = String(data[i][emailCol] || "").trim().toLowerCase();
+
+      if (rowEmail === emailToSearch) {
+        return {
+          rowIndex: i,
+          message: "matched_by_email"
+        };
+      }
+    }
+  }
+
+  // 3. Chỉ fallback theo userId nếu không có email.
+  if (!emailToSearch && userIdToSearch && userIdCol !== -1) {
+    for (let i = 1; i < data.length; i++) {
+      const rowUserId = String(data[i][userIdCol] || "").trim();
+
+      if (rowUserId === userIdToSearch) {
+        return {
+          rowIndex: i,
+          message: "matched_by_userId_only"
+        };
+      }
+    }
+  }
+
+  return {
+    rowIndex: -1,
+    message: "User not found"
+  };
+}
+
 function getStudySettings(userContext) {
   try {
     const userEmail = resolveAuthenticatedEmailFromContext(userContext);
-    if (!userEmail) return { success: false, message: "Chưa đăng nhập" };
+    if (!userEmail) {
+      return {
+        success: false,
+        message: "Chưa đăng nhập"
+      };
+    }
 
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
     const usersSheet = ss.getSheetByName("Users");
-    const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
 
-    const emailCol = headers.indexOf("email");
-    const dailyGoalCol = headers.indexOf("dailyGoal");
-    const emailReminderEnabledCol = headers.indexOf("emailReminderEnabled");
-    const reminderTimesCol = headers.indexOf("reminderTimes");
-    const reminderFrequencyCol = headers.indexOf("reminderFrequency");
-    const reminderModeCol = headers.indexOf("reminderMode");
-    const weeklyGoalCol = headers.indexOf("weeklyGoal");
-
-    if (dailyGoalCol === -1) {
-      // Schema not updated yet
+    if (!usersSheet) {
       return {
-        success: true,
-        settings: {
-          dailyGoal: 5,
-          emailReminderEnabled: false,
-          reminderTimes: ["20:00"],
-          reminderFrequency: 1,
-          reminderMode: 1,
-          weeklyGoal: 30
-        }
+        success: false,
+        message: "Không tìm thấy sheet Users"
       };
     }
 
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][emailCol] === userEmail) {
-        let reminderTimes = ["20:00"];
-        try {
-          if (data[i][reminderTimesCol]) {
-            reminderTimes = JSON.parse(data[i][reminderTimesCol]);
-          }
-        } catch(e) {}
+    const colInfo = getStudyColumnInfo_(usersSheet);
+    const data = usersSheet.getRange(1, 1, usersSheet.getLastRow(), colInfo.lastCol).getValues();
 
-        let dailyTimeGoalCol = headers.indexOf("dailyTimeGoal");
-        let dailyTimeGoal = 15;
-        if (dailyTimeGoalCol !== -1 && data[i][dailyTimeGoalCol]) {
-          dailyTimeGoal = parseInt(data[i][dailyTimeGoalCol]) || 15;
-        }
+    const findResult = findStudySettingsUserRow_(data, colInfo.headers, {
+      userId: userContext && userContext.userId ? userContext.userId : "",
+      email: userEmail
+    });
 
-        return {
-          success: true,
-          settings: {
-            dailyGoal: parseInt(data[i][dailyGoalCol]) || 5,
-            dailyTimeGoal: dailyTimeGoal,
-            emailReminderEnabled: data[i][emailReminderEnabledCol] === true || data[i][emailReminderEnabledCol] === "TRUE",
-            reminderTimes: reminderTimes,
-            reminderFrequency: parseInt(data[i][reminderFrequencyCol]) || 1,
-            reminderMode: parseInt(data[i][reminderModeCol]) || 1,
-            weeklyGoal: parseInt(data[i][weeklyGoalCol]) || 30
-          }
-        };
-      }
+    if (findResult.rowIndex === -1) {
+      return {
+        success: false,
+        message: findResult.message || "User not found"
+      };
     }
-    
-    return { success: false, message: "User not found" };
-  } catch(error) {
+
+    const row = data[findResult.rowIndex];
+    const settings = parseStudySettingsFromRow_(row, colInfo.map);
+
+    return {
+      success: true,
+      settings: settings,
+      debug: {
+        row: findResult.rowIndex + 1,
+        matchMode: findResult.message
+      }
+    };
+  } catch (error) {
     Logger.log("Error getStudySettings: " + error.toString());
-    return { success: false, message: error.toString() };
+    return {
+      success: false,
+      message: error.toString()
+    };
   }
 }
 
-/**
- * Update user study settings
- */
 function updateStudySettings(userContext, settings) {
   try {
     if (settings === undefined && userContext && userContext.settings) {
       settings = userContext.settings;
     }
 
+    if (!settings || typeof settings !== "object") {
+      return {
+        success: false,
+        message: "Thiếu settings. Không thể lưu cài đặt học tập."
+      };
+    }
+
     const userEmail = resolveAuthenticatedEmailFromContext(userContext);
-    if (!userEmail) return { success: false, message: "Chưa đăng nhập" };
+    const emailToSearch = userContext && userContext.email
+      ? String(userContext.email).trim().toLowerCase()
+      : String(userEmail || "").trim().toLowerCase();
+
+    if (!emailToSearch) {
+      return {
+        success: false,
+        message: "Chưa đăng nhập hoặc thiếu email"
+      };
+    }
+
+    const normalizedSettings = {
+      dailyGoal: Number(settings.dailyGoal),
+      dailyTimeGoal: Number(settings.dailyTimeGoal),
+      emailReminderEnabled: settings.emailReminderEnabled === true,
+      reminderTimes: Array.isArray(settings.reminderTimes)
+        ? settings.reminderTimes
+        : ["20:00"],
+      reminderMode: Number(settings.reminderMode || 1)
+    };
+
+    if (
+      !Number.isInteger(normalizedSettings.dailyGoal) ||
+      normalizedSettings.dailyGoal < 1 ||
+      normalizedSettings.dailyGoal > 20
+    ) {
+      return {
+        success: false,
+        message: "Mục tiêu bài học phải từ 1 đến 20"
+      };
+    }
+
+    if (
+      !Number.isInteger(normalizedSettings.dailyTimeGoal) ||
+      normalizedSettings.dailyTimeGoal < 1 ||
+      normalizedSettings.dailyTimeGoal > 300
+    ) {
+      return {
+        success: false,
+        message: "Thời gian học phải từ 1 đến 300 phút"
+      };
+    }
 
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
     const usersSheet = ss.getSheetByName("Users");
-    const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
 
-    const emailCol = headers.indexOf("email");
-    if (emailCol === -1) return { success: false, message: "Sheet Users không có cột email" };
-
-    let currentCols = headers.length;
-    function getOrAddCol(colName) {
-      let idx = headers.indexOf(colName);
-      if (idx === -1) {
-        idx = currentCols;
-        usersSheet.getRange(1, idx + 1).setValue(colName);
-        headers.push(colName); // Keep headers array in sync
-        currentCols++;
-      }
-      return idx;
+    if (!usersSheet) {
+      return {
+        success: false,
+        message: "Không tìm thấy sheet Users"
+      };
     }
 
-    const dailyGoalCol = getOrAddCol("dailyGoal");
-    const dailyTimeGoalCol = getOrAddCol("dailyTimeGoal");
-    const emailReminderEnabledCol = getOrAddCol("emailReminderEnabled");
-    const reminderTimesCol = getOrAddCol("reminderTimes");
-    const reminderFrequencyCol = getOrAddCol("reminderFrequency");
-    const reminderModeCol = getOrAddCol("reminderMode");
-    const weeklyGoalCol = getOrAddCol("weeklyGoal");
+    const colInfo = getStudyColumnInfo_(usersSheet);
+    const lastRow = usersSheet.getLastRow();
+    const data = usersSheet.getRange(1, 1, lastRow, colInfo.lastCol).getValues();
 
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][emailCol] === userEmail) {
-        if (settings.dailyGoal !== undefined) usersSheet.getRange(i+1, dailyGoalCol+1).setValue(settings.dailyGoal);
-        if (settings.dailyTimeGoal !== undefined) usersSheet.getRange(i+1, dailyTimeGoalCol+1).setValue(settings.dailyTimeGoal);
-        if (settings.emailReminderEnabled !== undefined) usersSheet.getRange(i+1, emailReminderEnabledCol+1).setValue(settings.emailReminderEnabled);
-        if (settings.reminderTimes !== undefined) usersSheet.getRange(i+1, reminderTimesCol+1).setValue(JSON.stringify(settings.reminderTimes));
-        if (settings.reminderFrequency !== undefined) usersSheet.getRange(i+1, reminderFrequencyCol+1).setValue(settings.reminderFrequency);
-        if (settings.reminderMode !== undefined) usersSheet.getRange(i+1, reminderModeCol+1).setValue(settings.reminderMode);
-        if (settings.weeklyGoal !== undefined) usersSheet.getRange(i+1, weeklyGoalCol+1).setValue(settings.weeklyGoal);
-        
-        return { success: true, message: "Cập nhật thành công" };
-      }
+    const findResult = findStudySettingsUserRow_(data, colInfo.headers, {
+      userId: userContext && userContext.userId ? userContext.userId : "",
+      email: emailToSearch
+    });
+
+    if (findResult.rowIndex === -1) {
+      return {
+        success: false,
+        message: findResult.message || "User not found"
+      };
     }
-    return { success: false, message: "User not found" };
-  } catch(error) {
-    return { success: false, message: error.toString() };
+
+    const targetRow = findResult.rowIndex + 1;
+    const row = usersSheet.getRange(targetRow, 1, 1, colInfo.lastCol).getValues()[0];
+
+    writeStudyValueToAllCols_(row, colInfo.map.dailyGoal, normalizedSettings.dailyGoal);
+    writeStudyValueToAllCols_(row, colInfo.map.dailyTimeGoal, normalizedSettings.dailyTimeGoal);
+    writeStudyValueToAllCols_(row, colInfo.map.emailReminderEnabled, normalizedSettings.emailReminderEnabled);
+    writeStudyValueToAllCols_(row, colInfo.map.reminderTimes, JSON.stringify(normalizedSettings.reminderTimes));
+    writeStudyValueToAllCols_(row, colInfo.map.reminderMode, normalizedSettings.reminderMode);
+
+    usersSheet.getRange(targetRow, 1, 1, colInfo.lastCol).setValues([row]);
+
+    // Force format columns to number format to overwrite previous date formatting
+    colInfo.map.dailyGoal.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+    colInfo.map.dailyTimeGoal.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+    colInfo.map.reminderMode.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+
+    SpreadsheetApp.flush();
+    Utilities.sleep(500);
+
+    const verifiedRow = usersSheet.getRange(targetRow, 1, 1, colInfo.lastCol).getValues()[0];
+    const verifiedSettings = parseStudySettingsFromRow_(verifiedRow, colInfo.map);
+
+    if (
+      Number(verifiedSettings.dailyGoal) !== Number(normalizedSettings.dailyGoal) ||
+      Number(verifiedSettings.dailyTimeGoal) !== Number(normalizedSettings.dailyTimeGoal)
+    ) {
+      return {
+        success: false,
+        message:
+          "Backend ghi không khớp. targetRow=" +
+          targetRow +
+          ", matchMode=" +
+          findResult.message +
+          ", expected=" +
+          JSON.stringify(normalizedSettings) +
+          ", verified=" +
+          JSON.stringify(verifiedSettings),
+        settings: verifiedSettings,
+        debug: {
+          targetRow: targetRow,
+          matchMode: findResult.message,
+          columnMap: colInfo.map,
+          headers: colInfo.headers
+        }
+      };
+    }
+
+    return {
+      success: true,
+      message: "Cập nhật thành công",
+      settings: verifiedSettings,
+      debug: {
+        targetRow: targetRow,
+        matchMode: findResult.message
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString()
+    };
   }
 }
 
@@ -184,6 +446,7 @@ function generateTimeline(userContext) {
 
     // Get user progress
     let completedTopics = new Set();
+    let todayCompletedTopics = new Set();
     let todayCompletedCount = 0;
 
     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
@@ -206,7 +469,10 @@ function generateTimeline(userContext) {
               let compDate = pData[i][pCompletedAtCol];
               if (compDate) {
                   let dStr = compDate instanceof Date ? Utilities.formatDate(compDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : String(compDate).substring(0,10);
-                  if (dStr === today) todayCompletedCount++;
+                  if (dStr === today) {
+                      todayCompletedCount++;
+                      todayCompletedTopics.add(pData[i][pTopicIdCol]);
+                  }
               }
            }
         }
@@ -215,12 +481,24 @@ function generateTimeline(userContext) {
 
     // Filter unfinished
     let unfinished = allTopics.filter(t => !completedTopics.has(t.topicId));
+    
+    // Get topics completed today
+    let completedToday = allTopics.filter(t => todayCompletedTopics.has(t.topicId)).map(t => ({ ...t, isCompleted: true }));
+    let remainingUnfinished = unfinished.slice(0, Math.max(0, dailyGoal - completedToday.length)).map(t => ({ ...t, isCompleted: false }));
+    let todayLessons = [...completedToday, ...remainingUnfinished];
 
+    // If still less than dailyGoal (e.g. no more unfinished topics), just pad it? 
+    // Or just show whatever is available up to dailyGoal
+    todayLessons = todayLessons.slice(0, dailyGoal);
+    
+    // If we want exactly dailyGoal, and there are not enough, what do we do? 
+    // Usually we just show what's available. If the user wants exactly dailyGoal, and there are only 4 topics left in the whole DB, it will show 4.
+    
     let timeline = {
       today: {
         goal: dailyGoal,
         completed: todayCompletedCount,
-        lessons: unfinished.slice(0, Math.max(0, dailyGoal - todayCompletedCount))
+        lessons: todayLessons
       },
       tomorrow: {
         lessons: unfinished.slice(Math.max(0, dailyGoal - todayCompletedCount), Math.max(0, dailyGoal - todayCompletedCount) + dailyGoal)

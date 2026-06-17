@@ -862,7 +862,7 @@
     // Study Settings Form Submit
     const studySettingsForm = document.getElementById("studySettingsForm");
     if (studySettingsForm) {
-      studySettingsForm.addEventListener("submit", handleStudySettingsSubmit);
+      // using onsubmit in HTML
     }
 
     // Toggle study settings email options
@@ -1522,46 +1522,35 @@
       .clearAllLearningData();
   }
 
-  // ===== METEOR SHOWER FOR PROFILE PAGE =====
-  let profileMeteorInterval = null;
-  let meteorShowerTimeout = null;
+    // ===== METEOR SHOWER FOR PROFILE PAGE =====
+  var profileMeteorInterval = null;
+  var meteorShowerTimeout = null;
 
   function startProfileMeteorShower() {
     const container = document.getElementById("profileMeteorContainer");
     if (!container) return;
 
-    // Clear any existing intervals
-    if (profileMeteorInterval) {
-      clearInterval(profileMeteorInterval);
-    }
-    if (meteorShowerTimeout) {
-      clearTimeout(meteorShowerTimeout);
-    }
+    if (profileMeteorInterval) clearInterval(profileMeteorInterval);
+    if (meteorShowerTimeout) clearTimeout(meteorShowerTimeout);
 
-    // Function to create a meteor shower burst
     function createMeteorShower() {
-      if (!document.getElementById("profileMeteorContainer")) {
-        clearInterval(profileMeteorInterval);
-        clearTimeout(meteorShowerTimeout);
+      const currentContainer = document.getElementById("profileMeteorContainer");
+      if (!currentContainer) {
+        if (profileMeteorInterval) clearInterval(profileMeteorInterval);
+        if (meteorShowerTimeout) clearTimeout(meteorShowerTimeout);
+        profileMeteorInterval = null;
+        meteorShowerTimeout = null;
         return;
       }
 
-      // Create 8-12 meteors in quick succession
       const meteorCount = 8 + Math.floor(Math.random() * 5);
       for (let i = 0; i < meteorCount; i++) {
-        setTimeout(() => {
-          createProfileMeteor();
-        }, i * 150); // Stagger each meteor by 150ms
+        setTimeout(createProfileMeteor, i * 150);
       }
     }
 
-    // Initial meteor shower
     createMeteorShower();
-
-    // Repeat meteor shower every 5 seconds
-    profileMeteorInterval = setInterval(() => {
-      createMeteorShower();
-    }, 5000);
+    profileMeteorInterval = setInterval(createMeteorShower, 5000);
   }
 
   function createProfileMeteor() {
@@ -1571,65 +1560,49 @@
     const meteor = document.createElement("div");
     meteor.className = "profile-meteor";
 
-    // Random position from top-left area (spread across screen)
-    const startX = Math.random() * 80; // 0-80% from left
-    const startY = -10 + Math.random() * 30; // -10 to 20% from top
-
-    meteor.style.left = startX + "%";
-    meteor.style.top = startY + "%";
-
-    // Random size for variety
-    const height = 35 + Math.random() * 35;
-    meteor.style.height = height + "px";
+    meteor.style.left = Math.random() * 80 + "%";
+    meteor.style.top = -10 + Math.random() * 30 + "%";
+    meteor.style.height = 35 + Math.random() * 35 + "px";
     meteor.style.animationDuration = 0.8 + Math.random() * 0.4 + "s";
 
     container.appendChild(meteor);
 
-    setTimeout(() => {
-      meteor.remove();
+    setTimeout(function () {
+      if (meteor && meteor.parentNode) meteor.remove();
     }, 1500);
   }
 
-  // ===== MOUSE-RESPONSIVE STARS EFFECT =====
+  // ===== MOUSE EFFECT =====
   function setupProfileHeaderMouseEffect() {
     const header = document.querySelector(".profile-header");
     const stars = document.getElementById("profileHeaderStars");
     if (!header || !stars) return;
 
-    header.addEventListener("mousemove", (e) => {
+    header.addEventListener("mousemove", function (e) {
       const rect = header.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width - 0.5;
       const y = (e.clientY - rect.top) / rect.height - 0.5;
-
       stars.style.transform = `translate(${x * 15}px, ${y * 15}px)`;
     });
 
-    header.addEventListener("mouseleave", () => {
+    header.addEventListener("mouseleave", function () {
       stars.style.transform = "translate(0, 0)";
     });
   }
 
-  // ⭐ THEME MANAGEMENT (delegates to ThemeManager)
-  const AVAILABLE_THEMES = window.getAvailableThemes
+  // ===== THEME MANAGEMENT =====
+  var PROFILE_AVAILABLE_THEMES = window.getAvailableThemes
     ? window.getAvailableThemes()
     : ["forest"];
 
-  /**
-   * Apply theme to the UI (delegates to ThemeManager)
-   */
   function applyTheme(themeName) {
     if (window.ThemeManager) {
       window.ThemeManager.applyTheme(themeName);
     }
-    console.log("Theme applied:", themeName);
   }
 
-  /**
-   * Update theme card UI to show selected state
-   */
   function updateThemeCardUI(themeName) {
-    var cards = document.querySelectorAll(".theme-card");
-    cards.forEach(function (card) {
+    document.querySelectorAll(".theme-card").forEach(function (card) {
       if (card.getAttribute("data-theme") === themeName) {
         card.classList.add("selected");
       } else {
@@ -1638,95 +1611,120 @@
     });
   }
 
-  /**
-   * Select a theme: apply immediately, save to localStorage and server
-   */
   function selectTheme(themeName) {
-    if (!AVAILABLE_THEMES.includes(themeName)) return;
+    if (!PROFILE_AVAILABLE_THEMES.includes(themeName)) return;
 
-    console.log("Selecting theme:", themeName);
-
-    // ThemeManager handles: apply CSS vars + body class + persist + save to server
     if (window.ThemeManager) {
       window.ThemeManager.setTheme(themeName);
     }
 
-    // Update profile card UI
     updateThemeCardUI(themeName);
 
-    // Keep profile-local data in sync
     if (profileData) profileData.theme = themeName;
 
     showToast("Giao diện đã được thay đổi!", "success");
   }
 
-  /**
-   * Load theme on page init: from user data or localStorage
-   */
   function loadUserTheme() {
-    var theme = window.ThemeManager
+    const theme = window.ThemeManager
       ? window.ThemeManager.getCurrentTheme()
       : "forest";
+
     applyTheme(theme);
     updateThemeCardUI(theme);
     return theme;
   }
 
-  // ===== STUDY SETTINGS FUNCTIONS =====
+  // ===== STUDY SETTINGS =====
+  function normalizeReminderTimes(value) {
+    if (Array.isArray(value)) return value;
+
+    if (!value) return ["20:00"];
+
+    return String(value)
+      .split(",")
+      .map(function (item) {
+        return item.trim();
+      })
+      .filter(Boolean);
+  }
+
+  function setStudySettingsToForm(settings) {
+    settings = settings || {};
+
+    const dailyGoal = document.getElementById("dailyGoal");
+    const dailyTimeGoal = document.getElementById("dailyTimeGoal");
+    const emailEnabled = document.getElementById("emailReminderEnabled");
+    const reminderSettings = document.getElementById("emailReminderSettings");
+    const reminderTimes = document.getElementById("reminderTimes");
+    const reminderMode = document.getElementById("reminderMode");
+
+    if (dailyGoal) dailyGoal.value = Number(settings.dailyGoal || 5);
+    if (dailyTimeGoal) dailyTimeGoal.value = Number(settings.dailyTimeGoal || 15);
+
+    if (emailEnabled) {
+      emailEnabled.checked = settings.emailReminderEnabled === true;
+    }
+
+    if (reminderSettings) {
+      reminderSettings.style.display =
+        settings.emailReminderEnabled === true ? "block" : "none";
+    }
+
+    if (reminderTimes) {
+      reminderTimes.value = normalizeReminderTimes(settings.reminderTimes).join(", ");
+    }
+
+    if (reminderMode) {
+      reminderMode.value = String(settings.reminderMode || 1);
+    }
+  }
+
   function loadStudySettings() {
-    if (!profileData || !profileData.email) return;
+    if (!profileData || (!profileData.email && !profileData.userId)) return;
 
     google.script.run
       .withSuccessHandler(function (response) {
-        if (response.success && response.settings) {
-          const settings = response.settings;
-          const dailyGoal = document.getElementById("dailyGoal");
-          const dailyTimeGoal = document.getElementById("dailyTimeGoal");
-          const emailEnabled = document.getElementById("emailReminderEnabled");
-          const reminderSettings = document.getElementById("emailReminderSettings");
-          const reminderTimes = document.getElementById("reminderTimes");
-          const reminderMode = document.getElementById("reminderMode");
-
-          if (dailyGoal) dailyGoal.value = settings.dailyGoal || 5;
-          if (dailyTimeGoal) dailyTimeGoal.value = settings.dailyTimeGoal || 15;
-          if (emailEnabled) {
-            emailEnabled.checked = settings.emailReminderEnabled || false;
-            if (reminderSettings) {
-              reminderSettings.style.display = settings.emailReminderEnabled ? "block" : "none";
-            }
-          }
-          if (reminderTimes) reminderTimes.value = settings.reminderTimes || "20:00";
-          if (reminderMode) reminderMode.value = settings.reminderMode || "1";
+        if (response && response.success && response.settings) {
+          setStudySettingsToForm(response.settings);
         }
       })
       .withFailureHandler(function (err) {
-        console.error("❌ Failed to load study settings:", err);
+        showToast(
+          "Không tải được cài đặt học tập: " + (err.message || "Unknown"),
+          "error"
+        );
       })
-      .apiGetStudySettings({ email: profileData.email });
+      .apiGetStudySettings({
+        userId: profileData.userId || "",
+        email: profileData.email || ""
+      });
   }
 
-  window.handleStudySettingsSave = function(e) {
-    e.preventDefault();
-    if (!profileData || !profileData.email) {
+  function handleStudySettingsSave(e) {
+    if (e) e.preventDefault();
+
+    if (!profileData || (!profileData.email && !profileData.userId)) {
       showToast("Vui lòng đăng nhập", "error");
-      return;
+      return false;
     }
 
-    const dailyGoalVal = parseInt(document.getElementById("dailyGoal")?.value) || 5;
-    const dailyTimeGoalVal = parseInt(document.getElementById("dailyTimeGoal")?.value) || 15;
+    const dailyGoalVal = Number(document.getElementById("dailyGoal")?.value || 5);
+    const dailyTimeGoalVal = Number(document.getElementById("dailyTimeGoal")?.value || 15);
 
-    if (dailyGoalVal < 1 || dailyGoalVal > 20) {
+    if (!Number.isInteger(dailyGoalVal) || dailyGoalVal < 1 || dailyGoalVal > 20) {
       showToast("Mục tiêu bài học phải từ 1 đến 20", "error");
-      return;
+      return false;
     }
 
-    if (dailyTimeGoalVal < 1 || dailyTimeGoalVal > 300) {
+    if (!Number.isInteger(dailyTimeGoalVal) || dailyTimeGoalVal < 1 || dailyTimeGoalVal > 300) {
       showToast("Thời gian học phải từ 1 đến 300 phút", "error");
-      return;
+      return false;
     }
 
     const btn = document.getElementById("btnSaveStudySettings");
     const originalHtml = btn ? btn.innerHTML : "";
+
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = "<span>⏳ Đang lưu...</span>";
@@ -1735,9 +1733,12 @@
     const settings = {
       dailyGoal: dailyGoalVal,
       dailyTimeGoal: dailyTimeGoalVal,
-      emailReminderEnabled: document.getElementById("emailReminderEnabled")?.checked || false,
-      reminderTimes: document.getElementById("reminderTimes")?.value || "20:00",
-      reminderMode: document.getElementById("reminderMode")?.value || "1"
+      emailReminderEnabled:
+        document.getElementById("emailReminderEnabled")?.checked === true,
+      reminderTimes: normalizeReminderTimes(
+        document.getElementById("reminderTimes")?.value || "20:00"
+      ),
+      reminderMode: Number(document.getElementById("reminderMode")?.value || 1)
     };
 
     google.script.run
@@ -1746,20 +1747,44 @@
           btn.disabled = false;
           btn.innerHTML = originalHtml;
         }
-        if (response.success) {
-          // Cập nhật lại dữ liệu local để study widget nếu có được cập nhật đồng bộ
-          if (profileData && profileData.settings) {
-            profileData.settings.dailyGoal = dailyGoalVal;
-            profileData.settings.dailyTimeGoal = dailyTimeGoalVal;
+
+        if (response && response.success) {
+          const savedSettings = response.settings || settings;
+
+          setStudySettingsToForm(savedSettings);
+
+          if (profileData) {
+            profileData.studySettings = savedSettings;
           }
+
+          if (window.currentUser) {
+            window.currentUser.studySettings = savedSettings;
+            try {
+              localStorage.setItem("currentUser", JSON.stringify(window.currentUser));
+              sessionStorage.setItem("currentUser", JSON.stringify(window.currentUser));
+            } catch (err) {}
+          }
+
+          try {
+            sessionStorage.removeItem("timelinePopupShown");
+          } catch (err) {}
+
+          window.dispatchEvent(
+            new CustomEvent("study-settings-updated", {
+              detail: savedSettings
+            })
+          );
+
           if (typeof loadStudyWidgetData === "function") {
             loadStudyWidgetData();
           }
-          // Dispatch event to notify other components (e.g. Study Widget)
-          document.dispatchEvent(new CustomEvent('study-settings-updated', { detail: settings }));
+
           showToast("Đã lưu cài đặt học tập!", "success");
         } else {
-          showToast(response.message || "Lỗi khi lưu cài đặt", "error");
+          showToast(
+            response?.message || "Dữ liệu chưa được lưu đúng, vui lòng thử lại",
+            "error"
+          );
         }
       })
       .withFailureHandler(function (err) {
@@ -1767,13 +1792,20 @@
           btn.disabled = false;
           btn.innerHTML = originalHtml;
         }
+
         showToast("Lỗi kết nối: " + (err.message || "Unknown"), "error");
       })
-      .apiUpdateStudySettings(
-         { email: profileData.email },
-         settings
-      );
-  };
+      .apiUpdateStudySettings({
+        userId: profileData.userId || "",
+        email: profileData.email || "",
+        settings: settings
+      });
+
+    return false;
+  }
+
+  window.handleStudySettingsSave = handleStudySettingsSave;
+  window.handleStudySettingsSubmit = handleStudySettingsSave;
 
   console.log("✅ Profile scripts loaded and exported.");
 </script>

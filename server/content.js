@@ -1408,20 +1408,19 @@ function getUserProgressSheetIdByEmail(email) {
 /**
  * Resolve authenticated user email for web-app calls.
  * Priority:
- * 1) Google session email (if available)
- * 2) Client auth context validated against Users sheet (userId + email)
+ * 1) Client auth context validated against Users sheet (userId + email)
+ * 2) Google session email (fallback when context is missing)
  *
  * @param {Object=} userContext - { userId, email }
  * @returns {string} verified email or empty string
  */
 function resolveAuthenticatedEmailFromContext(userContext) {
   try {
-    const sessionEmail = Session.getActiveUser().getEmail();
-    if (sessionEmail && sessionEmail !== "anonymous") {
-      return String(sessionEmail).trim();
-    }
-
     if (!userContext) {
+      const sessionEmail = Session.getActiveUser().getEmail();
+      if (sessionEmail && sessionEmail !== "anonymous") {
+        return String(sessionEmail).trim();
+      }
       return "";
     }
 
@@ -1472,6 +1471,20 @@ function resolveAuthenticatedEmailFromContext(userContext) {
       for (let i = 1; i < allData.length; i++) {
         const rowEmail = String(allData[i][emailCol] || "").trim();
         if (rowEmail.toLowerCase() !== normalizedContextEmail) continue;
+
+        const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
+        const isDisabled = isActive === false || isActive === "FALSE";
+        if (isDisabled) return "";
+        return rowEmail;
+      }
+    }
+
+    const sessionEmail = Session.getActiveUser().getEmail();
+    if (sessionEmail && sessionEmail !== "anonymous") {
+      const normalizedSessionEmail = String(sessionEmail).trim().toLowerCase();
+      for (let i = 1; i < allData.length; i++) {
+        const rowEmail = String(allData[i][emailCol] || "").trim();
+        if (rowEmail.toLowerCase() !== normalizedSessionEmail) continue;
 
         const isActive = isActiveCol >= 0 ? allData[i][isActiveCol] : true;
         const isDisabled = isActive === false || isActive === "FALSE";
