@@ -1,0 +1,546 @@
+<script>
+  let caList = [];
+  let caTopics = [];
+  let currentSlicedBlocks = [];
+  let isCaFormDirty = false;
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const modal = document.getElementById('caModalOverlay');
+    if (modal) {
+      modal.addEventListener('input', () => {
+        isCaFormDirty = true;
+      });
+    }
+  });
+
+  function initCodeArrangementManager() {
+    loadCATopics();
+    loadCAList();
+  }
+
+  function loadCATopics() {
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response.success) {
+          caTopics = response.topics || [];
+          renderCATopics();
+        }
+      })
+      .adminGetTopicsWithQuizStatus();
+  }
+
+  function renderCATopics() {
+    const filterSelect = document.getElementById('caTopicFilter');
+    const formSelect = document.getElementById('caTopic');
+    
+    let html = '<option value="">Tất cả Topic</option>';
+    let formHtml = '';
+    
+    caTopics.forEach(t => {
+      const option = `<option value="${t.topicId}">${t.title}</option>`;
+      html += option;
+      formHtml += option;
+    });
+    
+    if (filterSelect) filterSelect.innerHTML = html;
+    if (formSelect) formSelect.innerHTML = formHtml;
+  }
+
+  function loadCAList() {
+    const tbody = document.getElementById('caTableBody');
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--theme-text-secondary);"><div class="loading-spinner" style="margin: 0 auto 16px;"></div>Đang tải danh sách...</td></tr>`;
+    
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response.success) {
+          caList = response.data || [];
+          renderCAList(caList);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #ea4335;">Lỗi: ${response.message}</td></tr>`;
+        }
+      })
+      .withFailureHandler(function(error) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #ea4335;">Lỗi kết nối: ${error.message}</td></tr>`;
+      })
+      .adminGetCodeArrangements();
+  }
+
+  function filterCAList() {
+    const search = document.getElementById('caSearchInput').value.toLowerCase();
+    const topicId = document.getElementById('caTopicFilter').value;
+    const status = document.getElementById('caStatusFilter').value;
+    
+    const filtered = caList.filter(item => {
+      const matchSearch = item.title.toLowerCase().includes(search) || item.arrangementId.toLowerCase().includes(search);
+      const matchTopic = topicId === "" || item.topicId === topicId;
+      const matchStatus = status === "" || item.status === status;
+      return matchSearch && matchTopic && matchStatus;
+    });
+    
+    renderCAList(filtered);
+  }
+
+  function renderCAList(list) {
+    const tbody = document.getElementById('caTableBody');
+    if (!list || list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--theme-text-secondary);">Không có dữ liệu</td></tr>`;
+      return;
+    }
+    
+    let html = '';
+    list.forEach(item => {
+      let topicName = item.topicId;
+      const t = caTopics.find(x => x.topicId === item.topicId);
+      if (t) topicName = t.title;
+      
+      let statusClass = "status-draft";
+      let statusText = "Bản nháp";
+      
+      if (!item.publishedData) {
+        statusClass = "status-draft";
+        statusText = "Bản nháp";
+      } else if (item.status === 'hidden') {
+        statusClass = "status-hidden";
+        statusText = "Đang ẩn";
+      } else if (item.draftData !== item.publishedData) {
+        statusClass = "status-draft";
+        statusText = "Có thay đổi chưa XB";
+      } else {
+        statusClass = "status-published";
+        statusText = "Đã xuất bản";
+      }
+      
+      html += `
+        <tr>
+          <td><span style="font-family: monospace; background: var(--theme-bg); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${item.arrangementId}</span></td>
+          <td style="font-weight: 600;">${item.title}</td>
+          <td>${topicName}</td>
+          <td style="text-transform: capitalize;">${item.programmingLanguage}</td>
+          <td style="text-transform: capitalize;">${item.difficulty}</td>
+          <td><span class="ca-status-badge ${statusClass}">${statusText}</span></td>
+          <td>
+            <div class="ca-action-btns">
+              <button class="ca-icon-btn" onclick="previewCA('${item.arrangementId}')" title="Xem trước">
+                <span class="material-symbols-sharp" style="font-size: 18px;">visibility</span>
+              </button>
+              <button class="ca-icon-btn" onclick="editCA('${item.arrangementId}')" title="Sửa">
+                <span class="material-symbols-sharp" style="font-size: 18px;">edit</span>
+              </button>
+              <button class="ca-icon-btn delete" onclick="deleteCA('${item.arrangementId}')" title="Xóa">
+                <span class="material-symbols-sharp" style="font-size: 18px;">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+  }
+
+  function openCAModal() {
+    document.getElementById('caId').value = '';
+    document.getElementById('caTitle').value = '';
+    document.getElementById('caTopic').value = '';
+    document.getElementById('caDescription').value = '';
+    document.getElementById('caLanguage').value = 'javascript';
+    document.getElementById('caDifficulty').value = 'medium';
+    document.getElementById('caStatus').value = 'published';
+    document.getElementById('caOriginalCode').value = '';
+    
+    currentSlicedBlocks = [];
+    document.getElementById('caSliceCount').value = 4;
+    renderSlicedBlocks();
+    
+    document.getElementById('caModalTitle').innerText = 'Thêm câu hỏi Code';
+    document.getElementById('caModalOverlay').classList.add('active');
+    isCaFormDirty = false;
+  }
+
+  function closeCAModal() {
+    if (isCaFormDirty) {
+      if (!confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn đóng?")) {
+        return;
+      }
+    }
+    document.getElementById('caModalOverlay').classList.remove('active');
+  }
+
+  function editCA(id) {
+    const item = caList.find(x => x.arrangementId === id);
+    if (!item) return;
+    
+    document.getElementById('caId').value = item.arrangementId;
+    document.getElementById('caTitle').value = item.title;
+    document.getElementById('caTopic').value = item.topicId;
+    document.getElementById('caDescription').value = item.description;
+    document.getElementById('caLanguage').value = item.programmingLanguage;
+    document.getElementById('caDifficulty').value = item.difficulty || 'medium';
+    
+    let currentStatus = item.status || 'published';
+    if (currentStatus === 'draft') currentStatus = 'published';
+    document.getElementById('caStatus').value = currentStatus;
+    
+    document.getElementById('caOriginalCode').value = item.originalCode || '';
+    
+    try {
+      currentSlicedBlocks = JSON.parse(item.slicedCodeBlocks || "[]");
+    } catch(e) {
+      currentSlicedBlocks = [];
+    }
+    
+    document.getElementById('caSliceCount').value = currentSlicedBlocks.length || 4;
+    renderSlicedBlocks();
+    
+    document.getElementById('caModalTitle').innerText = 'Sửa câu hỏi Code: ' + id;
+    document.getElementById('caModalOverlay').classList.add('active');
+    isCaFormDirty = false;
+  }
+
+  function saveCA(action = 'draft') {
+    syncBlocksFromUI();
+    
+    const payload = {
+      arrangementId: document.getElementById('caId').value,
+      title: document.getElementById('caTitle').value,
+      topicId: document.getElementById('caTopic').value,
+      description: document.getElementById('caDescription').value,
+      programmingLanguage: document.getElementById('caLanguage').value,
+      difficulty: document.getElementById('caDifficulty').value,
+      status: document.getElementById('caStatus').value,
+      originalCode: document.getElementById('caOriginalCode').value,
+      slicedCodeBlocks: JSON.stringify(currentSlicedBlocks),
+      action: action
+    };
+    
+    if (!payload.title || payload.title.trim() === '') {
+      caShowToast("Vui lòng điền Tiêu đề.", "warning");
+      return;
+    }
+    if (!payload.topicId) {
+      caShowToast("Vui lòng chọn Topic.", "warning");
+      return;
+    }
+    if (!payload.description || payload.description.trim() === '') {
+      caShowToast("Vui lòng điền Đề bài.", "warning");
+      return;
+    }
+    if (!payload.originalCode || payload.originalCode.trim() === '') {
+      caShowToast("Vui lòng điền Code gốc.", "warning");
+      return;
+    }
+    
+    if (currentSlicedBlocks.length < 2) {
+      caShowToast("Vui lòng cắt code thành ít nhất 2 khối trước khi lưu.", "warning");
+      return;
+    }
+
+    let hasEmptyCard = false;
+    let concatenatedCards = '';
+    currentSlicedBlocks.forEach(b => {
+      if (!b.content || b.content.trim() === '') hasEmptyCard = true;
+      concatenatedCards += (b.content || '');
+    });
+    
+    if (hasEmptyCard) {
+      caShowToast("Không được để trống nội dung card.", "warning");
+      return;
+    }
+
+    const normalizeSpace = str => (str || '').replace(/\s+/g, '').trim();
+    if (normalizeSpace(payload.originalCode) !== normalizeSpace(concatenatedCards)) {
+      if (!confirm("Cảnh báo: Nội dung các card sau khi ghép lại KHÔNG khớp với code gốc. Bạn có chắc chắn muốn lưu không?")) {
+        return;
+      }
+    }
+    
+    const btnDraft = document.getElementById('caBtnDraft');
+    const btnPublish = document.getElementById('caBtnPublish');
+    const activeBtn = action === 'publish' ? btnPublish : btnDraft;
+    const oldText = activeBtn.innerHTML;
+    
+    activeBtn.innerHTML = '<div class="loading-spinner" style="width: 16px; height: 16px; margin-right: 8px;"></div> Đang lưu...';
+    btnDraft.disabled = true;
+    btnPublish.disabled = true;
+    
+    google.script.run
+      .withSuccessHandler(function(response) {
+        activeBtn.innerHTML = oldText;
+        btnDraft.disabled = false;
+        btnPublish.disabled = false;
+        
+        if (response.success) {
+          isCaFormDirty = false;
+          if (response.arrangementId) {
+            document.getElementById('caId').value = response.arrangementId;
+            document.getElementById('caModalTitle').innerText = 'Sửa câu hỏi Code: ' + response.arrangementId;
+          }
+          caShowToast("Đã lưu thành công!", "success");
+          loadCAList();
+        } else {
+          caShowToast("Lỗi: " + response.message, "error");
+        }
+      })
+      .withFailureHandler(function(error) {
+        activeBtn.innerHTML = oldText;
+        btnDraft.disabled = false;
+        btnPublish.disabled = false;
+        caShowToast("Lỗi kết nối: " + error.message, "error");
+      })
+      .adminSaveCodeArrangement(payload);
+  }
+
+  function caShowToast(message, type = 'success') {
+    if (typeof window.showToast === 'function') {
+      window.showToast(message, type);
+    } else {
+      alert((type === 'error' ? '❌ ' : '✅ ') + message);
+    }
+  }
+
+  function deleteCA(id) {
+    if (!confirm("Bạn có chắc muốn xóa câu hỏi " + id + " không? Hành động này không thể hoàn tác.")) return;
+    
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response.success) {
+          loadCAList();
+        } else {
+          alert("Lỗi: " + response.message);
+        }
+      })
+      .withFailureHandler(function(error) {
+        alert("Lỗi kết nối: " + error.message);
+      })
+      .adminDeleteCodeArrangement(id);
+  }
+
+  function previewCA(id) {
+    const item = caList.find(x => x.arrangementId === id);
+    if (!item) return;
+
+    let draftData = {};
+    if (document.getElementById('caModalOverlay').classList.contains('active') && document.getElementById('caId').value === id) {
+      draftData = {
+        title: document.getElementById('caTitle').value,
+        description: document.getElementById('caDescription').value,
+        programmingLanguage: document.getElementById('caLanguage').value,
+        difficulty: document.getElementById('caDifficulty').value,
+        slicedCodeBlocks: JSON.stringify(getCurrentBlocks())
+      };
+    } else {
+      try {
+        draftData = item.draftData ? JSON.parse(item.draftData) : null;
+      } catch(e) {}
+      if (!draftData) draftData = {
+         title: item.title,
+         description: item.description,
+         programmingLanguage: item.programmingLanguage,
+         difficulty: item.difficulty,
+         slicedCodeBlocks: item.slicedCodeBlocks
+      };
+    }
+
+    if (typeof initCodeArrangementPreview === 'function') {
+      if (typeof showPage === 'function') showPage('page-code-arrangement', {}, false);
+      initCodeArrangementPreview(draftData);
+    } else {
+      showToast('Không tìm thấy giao diện học viên để xem trước.', 'error');
+    }
+  }
+
+  function previewCACurrentDraft() {
+    const draftData = {
+      title: document.getElementById('caTitle').value,
+      description: document.getElementById('caDescription').value,
+      programmingLanguage: document.getElementById('caLanguage').value,
+      difficulty: document.getElementById('caDifficulty').value,
+      slicedCodeBlocks: JSON.stringify(getCurrentBlocks())
+    };
+    
+    if (typeof initCodeArrangementPreview === 'function') {
+      // Close the modal just in case, but keep form data intact
+      closeCAModal();
+      if (typeof showPage === 'function') showPage('page-code-arrangement', {}, false);
+      initCodeArrangementPreview(draftData);
+    } else {
+      showToast('Không tìm thấy giao diện học viên để xem trước.', 'error');
+    }
+  }
+
+  function closeCAPreview() {
+    document.getElementById('caPreviewModalOverlay').classList.remove('active');
+  }
+
+  // Block Management Functions
+  
+  function syncBlocksFromUI() {
+    const textareas = document.querySelectorAll('.ca-block-content textarea');
+    currentSlicedBlocks = [];
+    textareas.forEach((ta, index) => {
+      currentSlicedBlocks.push({
+        id: "block_" + Date.now() + "_" + index,
+        content: ta.value
+      });
+    });
+  }
+
+  function renderSlicedBlocks() {
+    const container = document.getElementById('caSlicedBlocksContainer');
+    let html = '';
+    
+    if (currentSlicedBlocks.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--theme-text-secondary); padding: 20px; font-style: italic;">Chưa có khối code nào. Hãy bấm "Tự động cắt" hoặc thêm mới.</div>';
+      return;
+    }
+    
+    currentSlicedBlocks.forEach((block, index) => {
+      const isFirst = index === 0;
+      const isLast = index === currentSlicedBlocks.length - 1;
+      
+      html += `
+        <div class="ca-block-card">
+          <div class="ca-block-number">
+            <button onclick="moveBlock(${index}, -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''} title="Lên">
+              <span class="material-symbols-sharp" style="font-size: 20px;">keyboard_arrow_up</span>
+            </button>
+            <span style="font-size: 16px;">${index + 1}</span>
+            <button onclick="moveBlock(${index}, 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''} title="Xuống">
+              <span class="material-symbols-sharp" style="font-size: 20px;">keyboard_arrow_down</span>
+            </button>
+          </div>
+          <div class="ca-block-content">
+            <textarea placeholder="Nội dung thẻ...">${escapeHTML(block.content)}</textarea>
+          </div>
+          <div class="ca-block-actions">
+            <button onclick="splitBlock(${index})" title="Tách đôi">
+              <span class="material-symbols-sharp" style="font-size: 18px;">content_cut</span>
+            </button>
+            <button onclick="mergeBlock(${index})" ${isLast ? 'disabled style="opacity:0.3"' : ''} title="Gộp xuống thẻ dưới">
+              <span class="material-symbols-sharp" style="font-size: 18px;">link</span>
+            </button>
+            <button class="ca-btn-danger" onclick="deleteBlock(${index})" title="Xóa thẻ">
+              <span class="material-symbols-sharp" style="font-size: 18px;">delete</span>
+            </button>
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html;
+  }
+
+  function autoSliceBlocks() {
+    const code = document.getElementById('caOriginalCode').value;
+    if (!code) {
+      alert("Vui lòng nhập Code gốc trước.");
+      return;
+    }
+    
+    const count = parseInt(document.getElementById('caSliceCount').value) || 4;
+    const lines = code.split('\n');
+    
+    if (lines.length < count) {
+      alert(`Đoạn code chỉ có ${lines.length} dòng, không thể tự động cắt thành ${count} phần. Vui lòng giảm số phần.`);
+      return;
+    }
+    
+    const blocks = [];
+    const baseSize = Math.floor(lines.length / count);
+    let remainder = lines.length % count;
+    
+    let currentLine = 0;
+    for (let i = 0; i < count; i++) {
+      let linesForThisBlock = baseSize + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder--;
+      
+      const blockContent = lines.slice(currentLine, currentLine + linesForThisBlock).join('\n');
+      blocks.push({
+        id: "block_" + Date.now() + "_" + i,
+        content: blockContent
+      });
+      
+      currentLine += linesForThisBlock;
+    }
+    
+    currentSlicedBlocks = blocks;
+    renderSlicedBlocks();
+  }
+
+  function resetBlocksFromOriginal() {
+    if (!confirm("Thao tác này sẽ xóa mọi chỉnh sửa trên các thẻ và cắt lại từ đầu. Tiếp tục?")) return;
+    autoSliceBlocks();
+  }
+
+  function addNewBlock() {
+    syncBlocksFromUI();
+    currentSlicedBlocks.push({ id: "block_" + Date.now(), content: "" });
+    renderSlicedBlocks();
+  }
+
+  function deleteBlock(index) {
+    if (!confirm("Bạn có chắc muốn xóa thẻ này?")) return;
+    syncBlocksFromUI();
+    currentSlicedBlocks.splice(index, 1);
+    renderSlicedBlocks();
+  }
+
+  function moveBlock(index, direction) {
+    syncBlocksFromUI();
+    if (index + direction < 0 || index + direction >= currentSlicedBlocks.length) return;
+    
+    const temp = currentSlicedBlocks[index];
+    currentSlicedBlocks[index] = currentSlicedBlocks[index + direction];
+    currentSlicedBlocks[index + direction] = temp;
+    
+    renderSlicedBlocks();
+  }
+
+  function mergeBlock(index) {
+    syncBlocksFromUI();
+    if (index >= currentSlicedBlocks.length - 1) return;
+    
+    const blockA = currentSlicedBlocks[index];
+    const blockB = currentSlicedBlocks[index + 1];
+    
+    blockA.content = blockA.content + (blockA.content && blockB.content ? '\n' : '') + blockB.content;
+    currentSlicedBlocks.splice(index + 1, 1); // remove next block
+    
+    renderSlicedBlocks();
+  }
+
+  function splitBlock(index) {
+    syncBlocksFromUI();
+    const block = currentSlicedBlocks[index];
+    const lines = block.content.split('\n');
+    
+    if (lines.length <= 1) {
+      alert("Thẻ này chỉ có 1 dòng, không thể tự động chia đôi. Hãy thêm thẻ mới để chia sẻ nội dung.");
+      return;
+    }
+    
+    const half = Math.ceil(lines.length / 2);
+    const topLines = lines.slice(0, half).join('\n');
+    const bottomLines = lines.slice(half).join('\n');
+    
+    block.content = topLines;
+    currentSlicedBlocks.splice(index + 1, 0, {
+      id: "block_" + Date.now() + "_split",
+      content: bottomLines
+    });
+    
+    renderSlicedBlocks();
+  }
+
+  function escapeHTML(str) {
+    return str.replace(/[&<>'"]/g, 
+      tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+    );
+  }
+</script>

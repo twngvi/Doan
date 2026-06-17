@@ -1,0 +1,177 @@
+<div class="code-arrangement-page">
+  <div class="ca-header">
+    <div class="ca-header-title">
+      <h1>Quản lý Game Sắp xếp Code</h1>
+      <p>Tạo, chỉnh sửa và quản lý các câu hỏi ráp code</p>
+    </div>
+    <div class="ca-actions">
+      <button class="ca-btn ca-btn-primary" onclick="openCAModal()">
+        <span class="material-symbols-sharp">add</span>
+        Thêm câu hỏi
+      </button>
+    </div>
+  </div>
+
+  <div class="ca-filters">
+    <div class="ca-filter-group">
+      <label>Tìm kiếm</label>
+      <input type="text" id="caSearchInput" class="ca-input" placeholder="Tìm theo tiêu đề, ID..." onkeyup="filterCAList()">
+    </div>
+    <div class="ca-filter-group">
+      <label>Topic</label>
+      <select id="caTopicFilter" class="ca-input" onchange="filterCAList()">
+        <option value="">Tất cả Topic</option>
+        <!-- Options loaded dynamically -->
+      </select>
+    </div>
+    <div class="ca-filter-group">
+      <label>Trạng thái</label>
+      <select id="caStatusFilter" class="ca-input" onchange="filterCAList()">
+        <option value="">Tất cả</option>
+        <option value="published">Đã xuất bản</option>
+        <option value="draft">Bản nháp</option>
+        <option value="hidden">Đang ẩn</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="ca-list-container">
+    <div style="overflow-x: auto;">
+      <table class="ca-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tiêu đề</th>
+            <th>Topic</th>
+            <th>Ngôn ngữ</th>
+            <th>Độ khó</th>
+            <th>Trạng thái</th>
+            <th style="text-align: right;">Hành động</th>
+          </tr>
+        </thead>
+        <tbody id="caTableBody">
+          <tr>
+            <td colspan="7" style="text-align: center; padding: 40px; color: var(--theme-text-secondary);">
+              <div class="loading-spinner" style="margin: 0 auto 16px;"></div>
+              Đang tải danh sách...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="ca-modal-overlay" id="caModalOverlay">
+  <div class="ca-modal">
+    <div class="ca-modal-header">
+      <h2 id="caModalTitle">Thêm câu hỏi Code</h2>
+      <button class="ca-modal-close" onclick="closeCAModal()">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    </div>
+    <div class="ca-modal-body">
+      <input type="hidden" id="caId">
+      <div class="ca-form-row">
+        <div class="ca-filter-group">
+          <label>Tiêu đề</label>
+          <input type="text" id="caTitle" class="ca-input" placeholder="Ví dụ: Tính tổng 2 số">
+        </div>
+        <div class="ca-filter-group">
+          <label>Topic</label>
+          <select id="caTopic" class="ca-input">
+            <!-- Options loaded dynamically -->
+          </select>
+        </div>
+      </div>
+      <div class="ca-filter-group">
+        <label>Đề bài</label>
+        <textarea id="caDescription" class="ca-input ca-textarea" placeholder="Yêu cầu bài toán..." style="min-height: 80px;"></textarea>
+      </div>
+      <div class="ca-form-row">
+        <div class="ca-filter-group">
+          <label>Ngôn ngữ lập trình</label>
+          <select id="caLanguage" class="ca-input">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="cpp">C++</option>
+            <option value="java">Java</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+          </select>
+        </div>
+        <div class="ca-filter-group">
+          <label>Độ khó</label>
+          <select id="caDifficulty" class="ca-input">
+            <option value="easy">Dễ</option>
+            <option value="medium" selected>Trung bình</option>
+            <option value="hard">Khó</option>
+          </select>
+        </div>
+        <div class="ca-filter-group">
+          <label>Trạng thái hiển thị (Sau khi xuất bản)</label>
+          <select id="caStatus" class="ca-input">
+            <option value="published">Hoạt động</option>
+            <option value="hidden">Tạm ẩn</option>
+          </select>
+        </div>
+      </div>
+      <div class="ca-filter-group">
+        <label>Code gốc</label>
+        <textarea id="caOriginalCode" class="ca-input ca-textarea" placeholder="function sum(a, b) {\n  return a + b;\n}"></textarea>
+      </div>
+
+      <div class="ca-filter-group" style="margin-top: 8px;">
+        <label style="color: var(--theme-primary); font-size: 16px;">Tùy chỉnh các khối Code</label>
+        <div class="ca-blocks-toolbar">
+          <label style="font-size: 13px; margin-right: 8px;">Số phần tự động cắt:</label>
+          <input type="number" id="caSliceCount" class="ca-input" value="4" min="2" max="20" style="width: 80px; padding: 6px 12px;">
+          <button class="ca-btn ca-btn-primary" style="padding: 6px 12px;" onclick="autoSliceBlocks()">
+            <span class="material-symbols-sharp" style="font-size: 16px;">content_cut</span> Tự động cắt
+          </button>
+          <button class="ca-btn ca-btn-secondary" style="padding: 6px 12px; margin-left: auto;" onclick="resetBlocksFromOriginal()">
+            <span class="material-symbols-sharp" style="font-size: 16px;">restart_alt</span> Khôi phục gốc
+          </button>
+        </div>
+        
+        <div id="caSlicedBlocksContainer" class="ca-sliced-blocks-list">
+          <!-- Render blocks here -->
+        </div>
+        
+        <button class="ca-btn ca-btn-secondary" style="width: 100%; border-style: dashed; margin-top: 8px;" onclick="addNewBlock()">
+          <span class="material-symbols-sharp">add</span> Thêm khối mới
+        </button>
+      </div>
+    </div>
+    <div class="ca-modal-footer">
+      <button class="ca-btn ca-btn-secondary" onclick="previewCACurrentDraft()" id="caBtnPreviewForm">
+        <span class="material-symbols-sharp" style="font-size: 18px;">visibility</span> Xem trước
+      </button>
+      <button class="ca-btn ca-btn-secondary" onclick="closeCAModal()">Hủy</button>
+      <button class="ca-btn ca-btn-secondary" onclick="saveCA('draft')" id="caBtnDraft">
+        <span class="material-symbols-sharp" style="font-size: 18px;">save</span> Lưu nháp
+      </button>
+      <button class="ca-btn ca-btn-primary" onclick="saveCA('publish')" id="caBtnPublish">
+        <span class="material-symbols-sharp" style="font-size: 18px;">publish</span> Xuất bản
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="ca-modal-overlay" id="caPreviewModalOverlay">
+  <div class="ca-modal" style="max-width: 600px;">
+    <div class="ca-modal-header">
+      <h2>Xem trước Code Block</h2>
+      <button class="ca-modal-close" onclick="closeCAPreview()">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    </div>
+    <div class="ca-modal-body" style="background: var(--theme-dashboard-bg);">
+      <div id="caPreviewBlocks">
+        <!-- Render lines here -->
+      </div>
+    </div>
+  </div>
+</div>

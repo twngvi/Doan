@@ -85,6 +85,16 @@
       keywords: 'email quan ly mail template reminder nhac nho thong bao nhac hoc',
       action: { type: 'page', pageId: 'page-email-management' },
     },
+    {
+      id: 'admin-page-code-arrangement',
+      group: 'pages',
+      title: 'Quản lý Sắp xếp Code',
+      subtitle: 'Quản lý câu hỏi Sắp xếp Code (Code Arrangement)',
+      tag: 'Trang',
+      tagClass: 'tag-page',
+      keywords: 'code code blocks arrangement code game keo tha sap xep code',
+      action: { type: 'page', pageId: 'page-code-arrangement' },
+    },
   ];
 
   const adminSearchGroupLabels = {
@@ -1101,7 +1111,9 @@
       .withSuccessHandler(function(html) {
         container.innerHTML = html;
         questionManagerLoaded = true;
+
         executeScriptsInContainer(container);
+
         setTimeout(function() {
           if (typeof initQuestionManager === 'function') {
             initQuestionManager();
@@ -1109,10 +1121,55 @@
         }, 100);
       })
       .withFailureHandler(function(error) {
-        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý câu hỏi: ' + error.message + '</div>';
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý Câu hỏi: ' + error.message + '</div>';
       })
       .getQuestionManagerHtml();
   }
+
+  // ========================================
+  // CODE ARRANGEMENT DYNAMIC LOADER
+  // ========================================
+
+  let codeArrangementLoaded = false;
+
+  function initcodearrangement() {
+    if (codeArrangementLoaded) {
+      if (typeof initCodeArrangementManager === 'function') {
+        initCodeArrangementManager();
+      }
+      return;
+    }
+    loadCodeArrangementContent();
+  }
+
+  function loadCodeArrangementContent() {
+    const container = document.getElementById('code-arrangement-container');
+    if (!container) return;
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(html) {
+        container.innerHTML = html;
+        codeArrangementLoaded = true;
+
+        executeScriptsInContainer(container);
+
+        setTimeout(function() {
+          if (typeof initCodeArrangementManager === 'function') {
+            initCodeArrangementManager();
+          }
+        }, 100);
+      })
+      .withFailureHandler(function(error) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Quản lý Sắp xếp Code: ' + error.message + '</div>';
+      })
+      .getCodeArrangementHtml();
+  }
+
 
   let matchingCardsLoaded = false;
 

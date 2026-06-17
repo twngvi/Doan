@@ -245,6 +245,26 @@ const DB_CONFIG = {
       ],
     },
 
+    CODE_ARRANGEMENT: {
+      name: "Code_Arrangement",
+      idPrefix: "ARR",
+      columns: [
+        "arrangementId",
+        "title",
+        "description",
+        "topicId",
+        "programmingLanguage",
+        "difficulty",
+        "status",
+        "originalCode",
+        "slicedCodeBlocks",
+        "draftData",
+        "publishedData",
+        "createdAt",
+        "updatedAt",
+      ],
+    },
+
     CHALLENGES: {
       name: "Challenges",
       idPrefix: "CHL",

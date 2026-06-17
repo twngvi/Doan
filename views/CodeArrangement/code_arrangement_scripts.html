@@ -1,0 +1,550 @@
+<script>
+  let currentArrangementData = null;
+  let originalBlocks = [];
+  let shuffledBlocks = [];
+  let currentTopicId = null;
+  let caProgress = {
+    status: 'not_started',
+    order: [],
+    checkCount: 0,
+    dragCount: 0,
+    startTime: null,
+    endTime: null
+  };
+  let isPreviewMode = false;
+
+  function initCodeArrangementPage() {
+    isPreviewMode = false;
+    currentTopicId = null;
+    
+    // Show list view, hide game view
+    document.getElementById('caListContainer').style.display = 'block';
+    document.getElementById('caGameContainer').style.display = 'none';
+
+    // Reset list UI
+    document.getElementById('caListBody').innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; color: #858585; padding: 40px;">
+        <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #858585; border-bottom-color: transparent;"></div>
+        Đang tải danh sách bài tập...
+      </div>
+    `;
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response.success && response.data) {
+          renderCodeArrangementList(response.data);
+        } else {
+          document.getElementById('caListBody').innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+              ${response.message || "Không có bài tập nào."}
+            </div>
+          `;
+        }
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('caListBody').innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+            Lỗi kết nối: ${error.message}
+          </div>
+        `;
+      })
+      .getAllClientCodeArrangements();
+  }
+
+  // --- List View Logic ---
+  let allAvailableGames = [];
+  function renderCodeArrangementList(games) {
+    allAvailableGames = games;
+    const listBody = document.getElementById('caListBody');
+    if (!games || games.length === 0) {
+      listBody.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; color: #858585; padding: 40px;">
+          Chưa có bài tập nào được xuất bản.
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    games.forEach((game, index) => {
+      // Check progress
+      const savedProgressStr = localStorage.getItem(`ca_progress_${game.topicId}`);
+      let isCompleted = false;
+      if (savedProgressStr) {
+        try {
+          const progress = JSON.parse(savedProgressStr);
+          isCompleted = progress.status === 'completed';
+        } catch(e) {}
+      } else {
+        isCompleted = localStorage.getItem(`ca_completed_${game.topicId}`) === 'true';
+      }
+
+      html += `
+        <div class="topic-card ${isCompleted ? 'status-completed' : 'status-available'}" style="cursor: pointer;" onclick="startCodeArrangementGame('${game.topicId}')">
+          <div class="topic-card-header">
+            <div class="topic-icon-wrapper">
+              <div class="topic-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              </div>
+            </div>
+            <div class="topic-badges">
+              <span class="badge badge-category">${game.programmingLanguage || 'Code'}</span>
+              <span class="badge topic-state-badge ${isCompleted ? 'topic-state-completed' : 'topic-state-new'}">${isCompleted ? 'ĐÃ HOÀN THÀNH' : 'CÓ THỂ CHƠI'}</span>
+            </div>
+          </div>
+          <h3 class="topic-title">${game.title || "Game Sắp xếp"}</h3>
+          <p class="topic-description">${game.description ? game.description.substring(0, 80) + '...' : ''}</p>
+          <button class="topic-action status-${isCompleted ? 'completed' : 'available'}">
+            ${isCompleted ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Chơi lại' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Chơi ngay'}
+          </button>
+        </div>
+      `;
+    });
+    
+    listBody.innerHTML = html;
+  }
+
+  function startCodeArrangementGame(topicId) {
+    const gameData = allAvailableGames.find(g => g.topicId === topicId);
+    if (!gameData) return;
+
+    currentTopicId = topicId;
+    currentArrangementData = gameData;
+    
+    // Hide list, show game
+    document.getElementById('caListContainer').style.display = 'none';
+    document.getElementById('caGameContainer').style.display = 'block';
+
+    document.getElementById('caClientCelebration').style.display = 'none';
+    document.getElementById('caClientCheckBtn').style.display = 'inline-flex';
+    document.getElementById('caClientRetryBtn').style.display = 'none';
+    document.getElementById('caClientCopyBtn').style.display = 'none';
+    document.getElementById('caClientPlaygroundBtn').style.display = 'none';
+
+    renderCodeArrangementGame();
+  }
+
+  function goBackToList() {
+    document.getElementById('caGameContainer').style.display = 'none';
+    document.getElementById('caListContainer').style.display = 'block';
+    
+    // Refresh list to update progress badges
+    if (allAvailableGames.length > 0) {
+      renderCodeArrangementList(allAvailableGames);
+    }
+  }
+
+  function initCodeArrangementPreview(draftData) {
+    isPreviewMode = true;
+    currentArrangementData = draftData;
+    currentTopicId = 'PREVIEW_MODE';
+    
+    localStorage.removeItem(`ca_progress_PREVIEW_MODE`);
+    caProgress = {
+      status: 'not_started',
+      order: [],
+      checkCount: 0,
+      dragCount: 0,
+      startTime: null,
+      endTime: null
+    };
+    
+    document.getElementById('caClientCelebration').style.display = 'none';
+    document.getElementById('caClientCheckBtn').style.display = 'inline-flex';
+    document.getElementById('caClientRetryBtn').style.display = 'none';
+    document.getElementById('caClientCopyBtn').style.display = 'none';
+    document.getElementById('caClientPlaygroundBtn').style.display = 'none';
+    
+    renderCodeArrangementGame();
+  }
+
+  function renderCodeArrangementGame() {
+    const data = currentArrangementData;
+    
+    // Header
+    document.getElementById('caClientTitle').innerText = data.title || "Sắp xếp code";
+    document.getElementById('caClientDescription').innerText = data.description || "";
+    document.getElementById('caClientLanguageTag').innerText = data.programmingLanguage || "javascript";
+    
+    // Extensions based on language
+    const langExtMap = {
+      "javascript": "js", "python": "py", "java": "java", "cpp": "cpp", "c": "c", "html": "html", "css": "css"
+    };
+    const ext = langExtMap[data.programmingLanguage] || "txt";
+    document.getElementById('caClientFilename').innerText = `main.${ext}`;
+
+    // Difficulty tag
+    const diffTag = document.getElementById('caClientDifficultyTag');
+    const diffMap = {
+      "easy": { text: "Dễ", color: "#10b981", bg: "rgba(16, 185, 129, 0.1)" },
+      "medium": { text: "Trung bình", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
+      "hard": { text: "Khó", color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)" }
+    };
+    const diffInfo = diffMap[data.difficulty] || diffMap["medium"];
+    diffTag.innerText = diffInfo.text;
+    diffTag.style.color = diffInfo.color;
+    diffTag.style.background = diffInfo.bg;
+
+    // Parse blocks
+    try {
+      originalBlocks = JSON.parse(data.slicedCodeBlocks || "[]");
+    } catch(e) {
+      originalBlocks = [];
+    }
+
+    if (originalBlocks.length === 0) {
+      document.getElementById('caClientContainer').innerHTML = `<div style="text-align: center; padding: 20px;">Lỗi: Bài tập chưa có khối code nào.</div>`;
+      return;
+    }
+
+    // Load progress
+    const savedProgressStr = localStorage.getItem(`ca_progress_${currentTopicId}`);
+    if (savedProgressStr) {
+      try {
+        caProgress = JSON.parse(savedProgressStr);
+      } catch(e) {}
+    } else {
+      // Migrate old completed state if exists
+      const oldCompleted = localStorage.getItem(`ca_completed_${currentTopicId}`) === 'true';
+      caProgress = {
+        status: oldCompleted ? 'completed' : 'not_started',
+        order: [],
+        checkCount: 0,
+        dragCount: 0,
+        startTime: null,
+        endTime: oldCompleted ? new Date().getTime() : null
+      };
+    }
+
+    if (caProgress.status === 'completed') {
+      shuffledBlocks = [...originalBlocks];
+      drawDraggableBlocks();
+      showCompletedState();
+      return;
+    }
+
+    if (caProgress.status === 'in_progress' && caProgress.order && caProgress.order.length === originalBlocks.length) {
+      // Reconstruct shuffledBlocks
+      shuffledBlocks = caProgress.order.map(id => originalBlocks.find(b => b.id === id)).filter(Boolean);
+      if (shuffledBlocks.length !== originalBlocks.length) {
+        shuffledBlocks = caShuffleBlocks(originalBlocks);
+        caProgress.order = shuffledBlocks.map(b => b.id);
+        caSaveState();
+      }
+    } else {
+      shuffledBlocks = caShuffleBlocks(originalBlocks);
+      caProgress.status = 'in_progress';
+      caProgress.startTime = new Date().getTime();
+      caProgress.order = shuffledBlocks.map(b => b.id);
+      caSaveState();
+    }
+
+    drawDraggableBlocks();
+  }
+
+  function caShuffleBlocks(blocks) {
+    if (blocks.length <= 1) return [...blocks];
+    let shuffled;
+    let isIdentical = true;
+    let attempts = 0;
+    while (isIdentical && attempts < 10) {
+      shuffled = [...blocks].sort(() => Math.random() - 0.5);
+      isIdentical = false;
+      for (let i = 0; i < blocks.length; i++) {
+        if (blocks[i].id === shuffled[i].id) {
+          isIdentical = true;
+          break;
+        }
+      }
+      attempts++;
+    }
+    return shuffled;
+  }
+
+  function caSaveState() {
+    if (!currentTopicId) return;
+    caProgress.order = shuffledBlocks.map(b => b.id);
+    localStorage.setItem(`ca_progress_${currentTopicId}`, JSON.stringify(caProgress));
+  }
+
+  function drawDraggableBlocks() {
+    const container = document.getElementById('caClientContainer');
+    let html = '';
+
+    shuffledBlocks.forEach((block, index) => {
+      html += `
+        <div class="ca-card" draggable="true" data-id="${block.id}" 
+             ondragstart="caHandleDragStart(event)" 
+             ondragover="caHandleDragOver(event)" 
+             ondragenter="caHandleDragEnter(event)" 
+             ondragleave="caHandleDragLeave(event)" 
+             ondrop="caHandleDrop(event)"
+             ondragend="caHandleDragEnd(event)">
+          <div class="ca-card-drag-icon">
+            <span class="material-symbols-sharp" style="font-size: 20px;">drag_indicator</span>
+          </div>
+          <div class="ca-card-content">${caEscapeHTML(block.content)}</div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  // --- Drag and Drop Logic ---
+  let caDragSrcEl = null;
+
+  function caHandleDragStart(e) {
+    caDragSrcEl = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', caDragSrcEl.innerHTML);
+    e.dataTransfer.setData('data-id', caDragSrcEl.getAttribute('data-id'));
+    
+    setTimeout(() => {
+      caDragSrcEl.classList.add('dragging');
+    }, 0);
+  }
+
+  function caHandleDragOver(e) {
+    if (e.preventDefault) {
+      e.preventDefault(); // Necessary to allow dropping.
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+  }
+
+  function caHandleDragEnter(e) {
+    const target = e.currentTarget;
+    if (target !== caDragSrcEl) {
+      target.classList.add('drag-over');
+    }
+  }
+
+  function caHandleDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+  }
+
+  function caHandleDrop(e) {
+    if (e.stopPropagation) {
+      e.stopPropagation(); // Stops browser from redirecting.
+    }
+    const target = e.currentTarget;
+    target.classList.remove('drag-over');
+
+    if (caDragSrcEl !== target) {
+      // Reorder array
+      const srcId = caDragSrcEl.getAttribute('data-id');
+      const targetId = target.getAttribute('data-id');
+      
+      const srcIndex = shuffledBlocks.findIndex(b => b.id === srcId);
+      const targetIndex = shuffledBlocks.findIndex(b => b.id === targetId);
+      
+      // Move element in array
+      const [removed] = shuffledBlocks.splice(srcIndex, 1);
+      shuffledBlocks.splice(targetIndex, 0, removed);
+      
+      caProgress.dragCount++;
+      caSaveState();
+      
+      // Redraw
+      drawDraggableBlocks();
+      
+      // Reset card styles if they were previously checked
+      document.querySelectorAll('.ca-card').forEach(card => {
+        card.classList.remove('wrong', 'correct');
+      });
+    }
+    return false;
+  }
+
+  function caHandleDragEnd(e) {
+    e.currentTarget.classList.remove('dragging');
+    document.querySelectorAll('.ca-card').forEach(card => {
+      card.classList.remove('drag-over');
+    });
+  }
+
+  // --- Actions ---
+  function checkCodeArrangement() {
+    let isAllCorrect = true;
+    const cards = document.querySelectorAll('.ca-card');
+    
+    caProgress.checkCount++;
+    caSaveState();
+    
+    // Reset classes
+    cards.forEach(card => card.classList.remove('wrong', 'correct'));
+    
+    cards.forEach((card, index) => {
+      const blockId = card.getAttribute('data-id');
+      if (blockId === originalBlocks[index].id) {
+        card.classList.add('correct');
+      } else {
+        card.classList.add('wrong');
+        isAllCorrect = false;
+        // remove shake animation class after it plays
+        setTimeout(() => card.classList.remove('wrong'), 600);
+        setTimeout(() => card.classList.add('wrong'), 610); // re-add for persistent styling without shake
+      }
+    });
+
+    if (isAllCorrect) {
+      caProgress.status = 'completed';
+      caProgress.endTime = new Date().getTime();
+      caSaveState();
+      
+      showCompletedState();
+      caCreateConfetti();
+      
+      // Lên cấp độ tiến trình cho học viên (nếu có hệ thống hooks)
+      if (!isPreviewMode && typeof window.handleTopicCompleted === 'function' && currentTopicId) {
+        window.handleTopicCompleted(currentTopicId);
+      }
+    }
+  }
+
+  function showCompletedState() {
+    document.getElementById('caClientCelebration').style.display = 'block';
+    document.getElementById('caClientCheckBtn').style.display = 'none';
+    document.getElementById('caClientRetryBtn').style.display = 'inline-flex';
+    document.getElementById('caClientCopyBtn').style.display = 'inline-flex';
+    document.getElementById('caClientPlaygroundBtn').style.display = 'inline-flex';
+    
+    // Lock cards
+    const cards = document.querySelectorAll('.ca-card');
+    cards.forEach(card => {
+      card.setAttribute('draggable', 'false');
+      card.classList.remove('wrong', 'correct');
+      card.classList.add('correct');
+      card.style.cursor = 'default';
+      const icon = card.querySelector('.ca-card-drag-icon span');
+      if (icon) icon.innerText = 'check_circle';
+    });
+  }
+
+  function retryCodeArrangement() {
+    caProgress = {
+      status: 'in_progress',
+      order: [],
+      checkCount: 0,
+      dragCount: 0,
+      startTime: new Date().getTime(),
+      endTime: null
+    };
+    shuffledBlocks = caShuffleBlocks(originalBlocks);
+    caSaveState();
+    
+    drawDraggableBlocks();
+    
+    document.getElementById('caClientCelebration').style.display = 'none';
+    document.getElementById('caClientCheckBtn').style.display = 'inline-flex';
+    document.getElementById('caClientRetryBtn').style.display = 'none';
+    document.getElementById('caClientCopyBtn').style.display = 'none';
+    document.getElementById('caClientPlaygroundBtn').style.display = 'none';
+  }
+
+  function copyArrangedCode() {
+    const code = originalBlocks.map(b => b.content).join('\n');
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = document.getElementById('caClientCopyBtn');
+      const oldHtml = btn.innerHTML;
+      btn.innerHTML = `<span class="material-symbols-sharp" style="font-size: 18px;">check</span> Đã Copy!`;
+      btn.classList.add('success');
+      setTimeout(() => {
+        btn.innerHTML = oldHtml;
+        btn.classList.remove('success');
+      }, 2000);
+    });
+  }
+
+  function openCodeArrangementPlayground() {
+    const code = originalBlocks.map(b => b.content).join('\n');
+    const lang = currentArrangementData.programmingLanguage || 'javascript';
+    
+    // Chuyển hướng tới trang playground kèm theo code và ngôn ngữ
+    const encodedCode = encodeURIComponent(code);
+    const url = `?page=code-playground&lang=${lang}&code=${encodedCode}`;
+    
+    if (typeof showPage === 'function') {
+      showPage('page-code-playground', { lang: lang, code: code });
+    } else {
+      window.location.href = url;
+    }
+  }
+
+  function goBackToList() {
+    if (isPreviewMode) {
+      isPreviewMode = false;
+      if (typeof showPage === 'function') {
+        showPage('page-admin');
+      }
+      return;
+    }
+    
+    document.getElementById('caGameContainer').style.display = 'none';
+    document.getElementById('caListContainer').style.display = 'block';
+    
+    // Refresh list to update progress badges
+    if (allAvailableGames.length > 0) {
+      renderCodeArrangementList(allAvailableGames);
+    }
+  }
+
+  function caCreateConfetti() {
+    const colors = ["#5b6ff8", "#f59e0b", "#22c55e", "#ec4899", "#8b5cf6"];
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.top = "0";
+    container.style.left = "0";
+    container.style.width = "100%";
+    container.style.height = "100%";
+    container.style.pointerEvents = "none";
+    container.style.zIndex = "9999";
+    document.body.appendChild(container);
+
+    for (let i = 0; i < 50; i++) {
+      const confetti = document.createElement("div");
+      confetti.style.cssText = `
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        left: ${Math.random() * 100}%;
+        top: -10px;
+        border-radius: ${Math.random() > 0.5 ? "50%" : "0"};
+        animation: ca-confetti-fall ${1 + Math.random() * 2}s linear forwards;
+      `;
+      container.appendChild(confetti);
+    }
+
+    if (!document.getElementById("ca-confetti-keyframes")) {
+      const style = document.createElement("style");
+      style.id = "ca-confetti-keyframes";
+      style.textContent = `
+        @keyframes ca-confetti-fall {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    setTimeout(() => {
+      if (document.body.contains(container)) {
+        document.body.removeChild(container);
+      }
+    }, 3000);
+  }
+
+  function caEscapeHTML(str) {
+    return (str || '').replace(/[&<>'"]/g, 
+      tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[tag])
+    );
+  }
+</script>
