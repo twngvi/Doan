@@ -2659,6 +2659,20 @@ function savePetItemsForAdmin(payloadJson) {
 }
 
 /**
+ * Kiểm tra quyền admin của user hiện tại
+ * @returns {boolean} - true nếu là admin, ngược lại false
+ */
+function checkAdminRole() {
+  try {
+    const context = getCurrentAdminContext();
+    return context && context.success === true;
+  } catch (e) {
+    Logger.log("Error in checkAdminRole: " + e.toString());
+    return false;
+  }
+}
+
+/**
  * Lấy toàn bộ HTML (Styles + Content + Scripts) cho trang Quản lý Email
  */
 function getAdminEmailManagementFullHtml() {
