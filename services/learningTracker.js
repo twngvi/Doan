@@ -171,9 +171,9 @@ function saveLearningTime(data) {
  * Get today's learning stats for current user
  * @returns {Object} - { success, dailyTotal, lessonMinutes, mindmapMinutes, flashcardMinutes, quizMinutes, streakAchieved }
  */
-function getTodayLearningStats() {
+function getTodayLearningStats(userContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = resolveAuthenticatedEmailFromContext(userContext);
     if (!userEmail) {
       return { success: false, message: "Chưa đăng nhập" };
     }

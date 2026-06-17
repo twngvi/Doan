@@ -9,6 +9,13 @@ function initEmailManagement() {
             saveEmailTemplate();
         });
     }
+
+    const testBtn = document.getElementById('btnTestEmailTemplate');
+    if (testBtn) {
+        testBtn.addEventListener('click', function() {
+            sendTestEmail();
+        });
+    }
 }
 
 function loadEmailTemplate() {
@@ -62,5 +69,29 @@ function saveEmailTemplate() {
             showToast('Lỗi server: ' + err.message, 'error');
         })
         .saveStudyReminderEmailTemplate({ subject: subject, body: body });
+}
+
+function sendTestEmail() {
+    const btn = document.getElementById('btnTestEmailTemplate');
+    const originalText = btn.textContent;
+    btn.textContent = 'Đang gửi...';
+    btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            if (res && res.success) {
+                showToast(res.message || 'Đã gửi email test thành công!', 'success');
+            } else {
+                showToast(res.message || 'Lỗi khi gửi email test', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .testSendStudyReminderEmailToMe();
 }
 </script>
