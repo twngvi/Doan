@@ -198,24 +198,40 @@
       // Notify dashboard to refresh leaderboard + history
       window.dispatchEvent(new Event("dashboard-needs-refresh"));
 
-      // Load lesson content
-      if (currentLessonData.contentDocId) {
-        console.log(
-          "🚀 Calling loadLessonContent with docId:",
-          currentLessonData.contentDocId,
-        );
-        loadLessonContent(currentLessonData.contentDocId);
-      } else {
-        console.error("❌ No contentDocId found in topic data");
-        console.error("Topic data:", currentLessonData);
-        showLessonError(
-          "Lỗi: Bài học này chưa có nội dung. Vui lòng liên hệ admin để thêm Google Doc.\n\n" +
-          "Topic: " + (currentLessonData.topicTitle || "Không xác định"),
-        );
-      }
+      // Check access permission before loading content
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result || !result.success || !result.unlocked) {
+            showLessonAccessDenied(
+              (result && (result.reason || result.message)) ||
+              'Bạn không có quyền truy cập bài học này.'
+            );
+            return;
+          }
 
-      // ⭐ Load saved progress for this topic (restore sidebar/checkbox states)
-      loadSavedTopicProgress(currentLessonData.topicId);
+          // Load lesson content
+          if (currentLessonData.contentDocId) {
+            console.log(
+              "🚀 Calling loadLessonContent with docId:",
+              currentLessonData.contentDocId,
+            );
+            loadLessonContent(currentLessonData.contentDocId);
+          } else {
+            console.error("❌ No contentDocId found in topic data");
+            console.error("Topic data:", currentLessonData);
+            showLessonError(
+              "Lỗi: Bài học này chưa có nội dung. Vui lòng liên hệ admin để thêm Google Doc.\n\n" +
+              "Topic: " + (currentLessonData.topicTitle || "Không xác định"),
+            );
+          }
+
+          // ⭐ Load saved progress for this topic (restore sidebar/checkbox states)
+          loadSavedTopicProgress(currentLessonData.topicId);
+        })
+        .withFailureHandler(function(error) {
+          showLessonAccessDenied(error.message || error.toString());
+        })
+        .checkTopicAccess(currentLessonData.topicId);
     } else {
       console.error("❌ No currentPageParams found");
       showLessonError("Thiếu thông tin bài học");
@@ -223,6 +239,24 @@
 
     // Setup scroll tracking
     setupScrollTracking();
+  }
+
+  function showLessonAccessDenied(message) {
+    const contentArea = document.getElementById("lesson-content-area");
+    if (contentArea) {
+      contentArea.style.display = 'block';
+      contentArea.innerHTML = `
+        <div class="lesson-access-denied" style="padding: 40px; text-align: center; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px; color: #c53030; margin-top: 20px;">
+          <h3 style="margin-top: 0;">Không thể mở bài học</h3>
+          <p>${message}</p>
+          <button onclick="window.history.back()" style="margin-top: 16px; padding: 8px 16px; background: #c53030; color: white; border: none; border-radius: 4px; cursor: pointer;">Quay lại</button>
+        </div>
+      `;
+    }
+    
+    // Hide loading
+    document.getElementById("lesson-loading").style.display = "none";
+    document.getElementById("lesson-error").style.display = "none";
   }
 
   /**

@@ -844,12 +844,6 @@
       );
     }
 
-    /**
-     * ⭐ Get unified topic status
-     * @param {object} topic - Topic object
-     * @param {object} [currentParams] - window.currentPageParams to detect 'current' topic
-     * @returns {'current'|'completed'|'locked'|'available'} status string
-     */
     function getTopicStatus(topic, currentParams) {
       if (
         currentParams &&
@@ -859,17 +853,18 @@
         return 'current';
       }
 
-      const progress = userProgress[topic.topicId] || {};
-      if (progress.completed) {
-        return 'completed';
-      }
-
       if (!topicHasContent(topic)) {
         return 'locked';
       }
 
+      // Server lock phải được ưu tiên hơn progress.
       if (topic.unlocked === false || !checkTopicUnlocked(topic)) {
         return 'locked';
+      }
+
+      const progress = userProgress[topic.topicId] || {};
+      if (progress.completed) {
+        return 'completed';
       }
 
       return 'available';
@@ -1594,10 +1589,10 @@
             <div class="action-btn-item ${lessonClass}" onclick="event.stopPropagation(); navigateToLessonFromMenu('${topic.topicId}')">
               <span>Lý thuyết</span>
             </div>
-            <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); ${isQuizUnlocked ? `navigateToQuizFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+            <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); navigateToQuizFromMenu('${topic.topicId}')">
               <span>Quiz</span>
             </div>
-            <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); ${isMatchingUnlocked ? `navigateToMatchingFromMenu('${topic.topicId}')` : `showNotification('Cần hoàn thành Lý thuyết trước', 'warning')`}">
+            <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); navigateToMatchingFromMenu('${topic.topicId}')">
               <span>Matching</span>
             </div>
           </div>

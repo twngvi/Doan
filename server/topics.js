@@ -13,7 +13,7 @@ const TOPICS_CACHE_DURATION = 300; // Cache 5 phút (tính bằng giây trong Ca
  * Updated to read dynamic columns including contentDocId/contentDocUrl
  * ⭐ OPTIMIZED: Thêm cache phía server bằng CacheService
  */
-function getAllTopics() {
+function getAllTopicsIncludingHidden() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
 
   try {
@@ -246,6 +246,35 @@ function clearTopicsCache() {
   }
 }
 
+function isTopicHidden(topic) {
+  if (!topic) return false;
+
+  return (
+    topic.isLocked === true ||
+    topic.isLocked === 'TRUE' ||
+    topic.isLocked === 'true' ||
+    String(topic.isLocked || '').trim().toLowerCase() === 'true'
+  );
+}
+
+function getAllTopics() {
+  var result = getAllTopicsIncludingHidden();
+
+  if (result && result.success && Array.isArray(result.topics)) {
+    var visibleTopics = result.topics.filter(function(topic) {
+      return !isTopicHidden(topic);
+    });
+
+    return {
+      success: true,
+      topics: visibleTopics,
+      count: visibleTopics.length
+    };
+  }
+
+  return result;
+}
+
 /**
  * Helper function: Normalize category name for sorting
  */
@@ -412,6 +441,11 @@ function getUserTopicProgress() {
         const matchingDoneIdx = headers.indexOf("matchingDone");
         const statusIdx = headers.indexOf("status");
         const completedAtIdx = headers.indexOf("completedAt");
+        const accessGrantedIdx = headers.indexOf("accessGranted");
+        const accessGrantedAtIdx = headers.indexOf("accessGrantedAt");
+        const accessGrantReasonIdx = headers.indexOf("accessGrantReason");
+        const accessGrantPrerequisiteIdsIdx = headers.indexOf("accessGrantPrerequisiteIds");
+        const firstAccessAtIdx = headers.indexOf("firstAccessAt");
 
         if (lessonCompletedIdx >= 0) {
           // New schema - ⭐ FIX: Handle string/number/boolean values from spreadsheet
@@ -475,6 +509,26 @@ function getUserTopicProgress() {
             completedAt: completedAtIdx >= 0 
               ? (row[completedAtIdx] instanceof Date ? row[completedAtIdx].toISOString() : row[completedAtIdx]) 
               : null,
+            accessGranted:
+              accessGrantedIdx >= 0 ? isChecked(row[accessGrantedIdx]) : false,
+            accessGrantedAt:
+              accessGrantedAtIdx >= 0
+                ? (row[accessGrantedAtIdx] instanceof Date
+                    ? row[accessGrantedAtIdx].toISOString()
+                    : row[accessGrantedAtIdx])
+                : "",
+            accessGrantReason:
+              accessGrantReasonIdx >= 0 ? String(row[accessGrantReasonIdx] || "") : "",
+            accessGrantPrerequisiteIds:
+              accessGrantPrerequisiteIdsIdx >= 0
+                ? String(row[accessGrantPrerequisiteIdsIdx] || "")
+                : "",
+            firstAccessAt:
+              firstAccessAtIdx >= 0
+                ? (row[firstAccessAtIdx] instanceof Date
+                    ? row[firstAccessAtIdx].toISOString()
+                    : row[firstAccessAtIdx])
+                : ""
           };
         } else {
           // Old schema fallback
@@ -502,6 +556,137 @@ function getUserTopicProgress() {
       message: error.toString(),
     };
   }
+}
+
+function ensureTopicProgressColumns_(sheet) {
+  var requiredColumns = [
+    "topicId",
+    "lessonCompleted",
+    "mindmapViewed",
+    "flashcardsCompleted",
+    "miniQuizCompleted",
+    "quizDone",
+    "matchingDone",
+    "completed",
+    "progress",
+    "status",
+    "lastAccessed",
+    "completedAt",
+    "accessGranted",
+    "accessGrantedAt",
+    "accessGrantReason",
+    "accessGrantPrerequisiteIds",
+    "firstAccessAt"
+  ];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, requiredColumns.length).setValues([requiredColumns]);
+    sheet.setFrozenRows(1);
+    return requiredColumns;
+  }
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  requiredColumns.forEach(function(col) {
+    if (headers.indexOf(col) === -1) {
+      headers.push(col);
+      sheet.getRange(1, headers.length).setValue(col);
+    }
+  });
+
+  return headers;
+}
+
+function grantTopicAccessForUser_(topicId, reason, prerequisiteIds) {
+  var userEmail = Session.getActiveUser().getEmail();
+
+  if (!userEmail) {
+    return {
+      success: false,
+      message: "User not authenticated"
+    };
+  }
+
+  var userSheetId = getUserProgressSheetIdByEmail(userEmail);
+
+  if (!userSheetId) {
+    return {
+      success: false,
+      message: "User personal sheet not found"
+    };
+  }
+
+  var userSheet = SpreadsheetApp.openById(userSheetId);
+  var progressSheet = userSheet.getSheetByName("Topic_Progress");
+
+  if (!progressSheet) {
+    progressSheet = userSheet.insertSheet("Topic_Progress");
+  }
+
+  var headers = ensureTopicProgressColumns_(progressSheet);
+  var data = progressSheet.getDataRange().getValues();
+
+  var topicIdCol = headers.indexOf("topicId");
+  var accessGrantedCol = headers.indexOf("accessGranted");
+  var accessGrantedAtCol = headers.indexOf("accessGrantedAt");
+  var accessGrantReasonCol = headers.indexOf("accessGrantReason");
+  var accessGrantPrerequisiteIdsCol = headers.indexOf("accessGrantPrerequisiteIds");
+  var firstAccessAtCol = headers.indexOf("firstAccessAt");
+  var lastAccessedCol = headers.indexOf("lastAccessed");
+  var statusCol = headers.indexOf("status");
+
+  var now = new Date();
+  var rowIndex = -1;
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][topicIdCol]).trim() === String(topicId).trim()) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (rowIndex === -1) {
+    var newRow = headers.map(function(h) {
+      if (h === "topicId") return topicId;
+      if (h === "accessGranted") return true;
+      if (h === "accessGrantedAt") return now;
+      if (h === "accessGrantReason") return reason || "normal";
+      if (h === "accessGrantPrerequisiteIds") return (prerequisiteIds || []).join(",");
+      if (h === "firstAccessAt") return now;
+      if (h === "lastAccessed") return now;
+      if (h === "status") return "in_progress";
+      if (h === "completed") return false;
+      if (h === "progress") return 0;
+      return "";
+    });
+
+    progressSheet.appendRow(newRow);
+  } else {
+    progressSheet.getRange(rowIndex, accessGrantedCol + 1).setValue(true);
+    progressSheet.getRange(rowIndex, accessGrantedAtCol + 1).setValue(now);
+    progressSheet.getRange(rowIndex, accessGrantReasonCol + 1).setValue(reason || "normal");
+    progressSheet
+      .getRange(rowIndex, accessGrantPrerequisiteIdsCol + 1)
+      .setValue((prerequisiteIds || []).join(","));
+
+    if (firstAccessAtCol >= 0 && !data[rowIndex - 1][firstAccessAtCol]) {
+      progressSheet.getRange(rowIndex, firstAccessAtCol + 1).setValue(now);
+    }
+
+    if (lastAccessedCol >= 0) {
+      progressSheet.getRange(rowIndex, lastAccessedCol + 1).setValue(now);
+    }
+
+    if (statusCol >= 0 && !data[rowIndex - 1][statusCol]) {
+      progressSheet.getRange(rowIndex, statusCol + 1).setValue("in_progress");
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  return {
+    success: true
+  };
 }
 
 /**
@@ -620,29 +805,79 @@ function parsePrerequisiteTopicIds(topic) {
 }
 
 function getUnlockConditionObject(topic) {
+  var condition = null;
+
   if (topic.unlockCondition) {
     try {
-      return JSON.parse(topic.unlockCondition);
+      condition = JSON.parse(topic.unlockCondition);
     } catch (e) {
-      Logger.log('Invalid unlockCondition JSON: ' + e);
+      Logger.log('Invalid unlockCondition JSON for ' + topic.topicId + ': ' + e);
+      condition = null;
     }
   }
 
-  var fallbackIds = parsePrerequisiteTopicIds(topic);
-  if (fallbackIds.length > 0) {
-    return {
+  var ids = parsePrerequisiteTopicIds(topic);
+
+  ids = ids
+    .map(function(id) {
+      return String(id || '').trim();
+    })
+    .filter(Boolean);
+
+  if (!condition && ids.length === 0) {
+    return null;
+  }
+
+  if (!condition) {
+    condition = {
       type: 'complete_topic',
       mode: 'all',
       requiredProgress: 100,
-      requiredQuizAccuracy: 0,
-      prerequisiteTopicIds: fallbackIds
+      requiredQuizAccuracy: 0
     };
   }
 
-  return null;
+  // Điểm sửa quan trọng:
+  // Dù unlockCondition có tồn tại, vẫn ép prerequisiteTopicIds lấy từ nguồn chuẩn.
+  condition.prerequisiteTopicIds = ids;
+
+  if (!condition.mode) condition.mode = 'all';
+  if (!condition.type) condition.type = 'complete_topic';
+
+  return condition;
 }
 
 function evaluateTopicUnlock(topic, progressMap, topicMap) {
+  if (!topic) {
+    return {
+      unlocked: false,
+      reason: 'Không tìm thấy bài học.',
+      missingPrerequisites: []
+    };
+  }
+
+  // Topic hiện tại bị ẩn thì không bao giờ mở.
+  if (isTopicHidden(topic)) {
+    return {
+      unlocked: false,
+      hidden: true,
+      reason: 'Bài học này đang được admin ẩn.',
+      missingPrerequisites: []
+    };
+  }
+
+  var ownProgress = progressMap[topic.topicId] || {};
+
+  if (ownProgress.accessGranted === true || ownProgress.completed === true) {
+    return {
+      unlocked: true,
+      hidden: false,
+      reason: "",
+      missingPrerequisites: [],
+      alreadyGranted: true
+    };
+  }
+
   var hasContent =
     topic.contentDocId &&
     String(topic.contentDocId).trim() !== '' &&
@@ -652,6 +887,7 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
   if (!hasContent) {
     return {
       unlocked: false,
+      hidden: false,
       reason: 'Bài học này chưa có nội dung.',
       missingPrerequisites: []
     };
@@ -659,37 +895,89 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
 
   var condition = getUnlockConditionObject(topic);
 
-  if (!topic.isLocked && !condition) {
+  if (!condition) {
     return {
       unlocked: true,
+      hidden: false,
       reason: '',
       missingPrerequisites: []
     };
   }
 
-  var prereqIds = condition && Array.isArray(condition.prerequisiteTopicIds)
+  var prereqIds = Array.isArray(condition.prerequisiteTopicIds)
     ? condition.prerequisiteTopicIds
     : [];
+
+  prereqIds = prereqIds
+    .map(function(id) {
+      return String(id || '').trim();
+    })
+    .filter(Boolean);
 
   if (prereqIds.length === 0) {
     return {
       unlocked: true,
+      hidden: false,
       reason: '',
       missingPrerequisites: []
+    };
+  }
+
+  var visiblePrereqIds = [];
+  var ignoredHiddenPrerequisites = [];
+
+  prereqIds.forEach(function(prereqId) {
+    var prereqTopic = topicMap[prereqId];
+
+    // Chỉ bỏ qua đúng prerequisite đang bị ẩn.
+    // Không ảnh hưởng đến các prerequisite khác.
+    if (prereqTopic && isTopicHidden(prereqTopic)) {
+      ignoredHiddenPrerequisites.push({
+        topicId: prereqId,
+        title: prereqTopic.title || prereqId
+      });
+      return;
+    }
+
+    // Nếu prerequisite không tồn tại trong DB thì KHÔNG nên auto mở.
+    // Đưa vào missing để admin biết cấu hình sai.
+    if (!prereqTopic) {
+      visiblePrereqIds.push(prereqId);
+      return;
+    }
+
+    visiblePrereqIds.push(prereqId);
+  });
+
+  // Nếu bài này chỉ phụ thuộc vào topic đã bị ẩn,
+  // thì bài này được mở.
+  if (visiblePrereqIds.length === 0) {
+    return {
+      unlocked: true,
+      hidden: false,
+      reason: '',
+      missingPrerequisites: [],
+      ignoredHiddenPrerequisites: ignoredHiddenPrerequisites
     };
   }
 
   var mode = condition.mode || 'all';
   var requiredQuizAccuracy = Number(condition.requiredQuizAccuracy || 0);
 
-  var checks = prereqIds.map(function(prereqId) {
+  var checks = visiblePrereqIds.map(function(prereqId) {
     var progress = progressMap[prereqId] || {};
     var prereqTopic = topicMap[prereqId] || {};
     var completed = progress.completed === true;
 
     var quizOk = true;
-    if (condition.type === 'complete_topic_and_quiz' && requiredQuizAccuracy > 0) {
-      quizOk = Number(progress.accuracy || progress.bestScore || 0) >= requiredQuizAccuracy;
+
+    if (
+      condition.type === 'complete_topic_and_quiz' &&
+      requiredQuizAccuracy > 0
+    ) {
+      quizOk =
+        Number(progress.accuracy || progress.bestScore || 0) >=
+        requiredQuizAccuracy;
     }
 
     return {
@@ -701,9 +989,14 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
     };
   });
 
-  var unlocked = mode === 'any'
-    ? checks.some(function(item) { return item.passed; })
-    : checks.every(function(item) { return item.passed; });
+  var unlocked =
+    mode === 'any'
+      ? checks.some(function(item) {
+          return item.passed;
+        })
+      : checks.every(function(item) {
+          return item.passed;
+        });
 
   var missing = checks.filter(function(item) {
     return !item.passed;
@@ -711,12 +1004,17 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
 
   return {
     unlocked: unlocked,
+    hidden: false,
     reason: unlocked
       ? ''
-      : 'Bạn cần hoàn thành: ' + missing.map(function(item) {
-          return item.title;
-        }).join(', '),
-    missingPrerequisites: missing
+      : 'Bạn cần hoàn thành: ' +
+        missing
+          .map(function(item) {
+            return item.title;
+          })
+          .join(', '),
+    missingPrerequisites: missing,
+    ignoredHiddenPrerequisites: ignoredHiddenPrerequisites
   };
 }
 
@@ -725,47 +1023,45 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
  */
 function getTopicsForUserPage() {
   try {
-    var topicsResult = getAllTopics();
-    if (!topicsResult.success) return topicsResult;
+    var allResult = getAllTopicsIncludingHidden();
+    if (!allResult.success) return allResult;
 
-    var progressResult = getUserTopicProgress();
-    var progressMap = progressResult && progressResult.success
-      ? progressResult.progress || {}
-      : {};
+    var allTopics = allResult.topics || [];
 
-    var topics = topicsResult.topics || [];
-
-    var topicMap = {};
-    topics.forEach(function(topic) {
-      topicMap[topic.topicId] = topic;
+    var visibleTopics = allTopics.filter(function(topic) {
+      return !isTopicHidden(topic);
     });
 
-    var enhancedTopics = topics.map(function(topic) {
+    var progressResult = getUserTopicProgress();
+    var progressMap =
+      progressResult && progressResult.success
+        ? progressResult.progress || {}
+        : {};
+
+    var topicMap = {};
+    allTopics.forEach(function(topic) {
+      topicMap[String(topic.topicId)] = topic;
+    });
+
+    var enhancedTopics = visibleTopics.map(function(topic) {
       var access = evaluateTopicUnlock(topic, progressMap, topicMap);
 
       return Object.assign({}, topic, {
         unlocked: access.unlocked,
         lockedReason: access.reason,
-        missingPrerequisites: access.missingPrerequisites || []
+        missingPrerequisites: access.missingPrerequisites || [],
+        ignoredHiddenPrerequisites: access.ignoredHiddenPrerequisites || []
       });
     });
 
-    // ⭐ Sắp xếp: Ưu tiên Category -> Bài mở khoá lên trước -> Theo thứ tự dòng gốc
     enhancedTopics.sort(function(a, b) {
       var catA = normalizeCategoryName(a.category);
       var catB = normalizeCategoryName(b.category);
 
-      // 1. Nhóm theo danh mục
       if (catA !== catB) {
         return catA.localeCompare(catB, 'vi');
       }
 
-      // 2. Bài nào mở khoá thì xếp trước
-      if (a.unlocked !== b.unlocked) {
-        return a.unlocked ? -1 : 1;
-      }
-
-      // 3. Cuối cùng, giữ thứ tự dòng nguyên bản trong DB
       return (a.rowIndex || 0) - (b.rowIndex || 0);
     });
 
@@ -798,10 +1094,11 @@ function checkTopicAccess(topicId) {
       };
     }
 
-    var topicsResult = getAllTopics();
+    var topicsResult = getAllTopicsIncludingHidden();
     if (!topicsResult.success) return topicsResult;
 
     var topics = topicsResult.topics || [];
+
     var topic = topics.find(function(t) {
       return String(t.topicId) === String(topicId);
     });
@@ -809,22 +1106,51 @@ function checkTopicAccess(topicId) {
     if (!topic) {
       return {
         success: false,
-        message: 'Topic not found',
+        message: 'Không tìm thấy bài học.',
         unlocked: false
+      };
+    }
+
+    // Chặn trực tiếp bài bị ẩn.
+    if (isTopicHidden(topic)) {
+      return {
+        success: true,
+        unlocked: false,
+        hidden: true,
+        reason: 'Bài học này đang được admin ẩn.',
+        missingPrerequisites: []
       };
     }
 
     var topicMap = {};
     topics.forEach(function(t) {
-      topicMap[t.topicId] = t;
+      topicMap[String(t.topicId)] = t;
     });
 
     var progressResult = getUserTopicProgress();
-    var progressMap = progressResult && progressResult.success
-      ? progressResult.progress || {}
-      : {};
+    var progressMap =
+      progressResult && progressResult.success
+        ? progressResult.progress || {}
+        : {};
 
     var access = evaluateTopicUnlock(topic, progressMap, topicMap);
+
+    if (access.unlocked) {
+      var grantReason = "normal";
+      var grantPrereqIds = [];
+
+      if (
+        access.ignoredHiddenPrerequisites &&
+        access.ignoredHiddenPrerequisites.length > 0
+      ) {
+        grantReason = "hidden_prerequisite";
+        grantPrereqIds = access.ignoredHiddenPrerequisites.map(function(item) {
+          return item.topicId;
+        });
+      }
+
+      grantTopicAccessForUser_(topicId, grantReason, grantPrereqIds);
+    }
 
     if (!access.unlocked) {
       return {
