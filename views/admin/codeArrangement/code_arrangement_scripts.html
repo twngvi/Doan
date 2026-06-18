@@ -214,24 +214,24 @@
     };
     
     if (!payload.title || payload.title.trim() === '') {
-      caShowToast("Vui lòng điền Tiêu đề.", "warning");
+      caShowToast("Thiếu tiêu đề", "warning", "Vui lòng điền tiêu đề cho câu hỏi.");
       return;
     }
     if (!payload.topicId) {
-      caShowToast("Vui lòng chọn Topic.", "warning");
+      caShowToast("Chưa chọn Topic", "warning", "Vui lòng chọn Topic trước khi lưu.");
       return;
     }
     if (!payload.description || payload.description.trim() === '') {
-      caShowToast("Vui lòng điền Đề bài.", "warning");
+      caShowToast("Thiếu đề bài", "warning", "Vui lòng nhập yêu cầu bài toán.");
       return;
     }
     if (!payload.originalCode || payload.originalCode.trim() === '') {
-      caShowToast("Vui lòng điền Code gốc.", "warning");
+      caShowToast("Thiếu code gốc", "warning", "Vui lòng nhập code gốc trước khi cắt khối.");
       return;
     }
     
     if (currentSlicedBlocks.length < 2) {
-      caShowToast("Vui lòng cắt code thành ít nhất 2 khối trước khi lưu.", "warning");
+      caShowToast("Chưa đủ khối code", "warning", "Vui lòng cắt code thành ít nhất 2 khối trước khi lưu.");
       return;
     }
 
@@ -243,7 +243,7 @@
     });
     
     if (hasEmptyCard) {
-      caShowToast("Không được để trống nội dung card.", "warning");
+      caShowToast("Card đang bị trống", "warning", "Vui lòng điền nội dung cho tất cả card code.");
       return;
     }
 
@@ -275,27 +275,99 @@
             document.getElementById('caId').value = response.arrangementId;
             document.getElementById('caModalTitle').innerText = 'Sửa câu hỏi Code: ' + response.arrangementId;
           }
-          caShowToast("Đã lưu thành công!", "success");
+
+          const successMessage = action === 'publish'
+            ? {
+                title: "Xuất bản thành công",
+                message: "Bài code đã sẵn sàng hiển thị cho học viên.",
+                type: "publish"
+              }
+            : {
+                title: "Đã lưu bản nháp",
+                message: "Bạn có thể tiếp tục chỉnh sửa hoặc xuất bản sau.",
+                type: "draft"
+              };
+
           loadCAList();
+          closeCAModal();
+
+          caShowToast(successMessage.title, successMessage.type, successMessage.message);
         } else {
-          caShowToast("Lỗi: " + response.message, "error");
+          caShowToast("Không thể lưu", "error", response.message);
         }
       })
       .withFailureHandler(function(error) {
         activeBtn.innerHTML = oldText;
         btnDraft.disabled = false;
         btnPublish.disabled = false;
-        caShowToast("Lỗi kết nối: " + error.message, "error");
+        caShowToast("Lỗi kết nối", "error", error.message);
       })
       .adminSaveCodeArrangement(payload);
   }
 
-  function caShowToast(message, type = 'success') {
-    if (typeof window.showToast === 'function') {
-      window.showToast(message, type);
-    } else {
-      alert((type === 'error' ? '❌ ' : '✅ ') + message);
+  function caShowToast(title, type = 'success', message = '') {
+    let toastContainer = document.getElementById('caToastContainer');
+
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'caToastContainer';
+      toastContainer.className = 'ca-toast-container';
+      document.body.appendChild(toastContainer);
     }
+
+    const toast = document.createElement('div');
+    toast.className = `ca-toast ca-toast-${type}`;
+
+    const iconMap = {
+      publish: 'rocket_launch',
+      draft: 'draft',
+      success: 'check_circle',
+      warning: 'warning',
+      error: 'error'
+    };
+
+    const icon = iconMap[type] || 'check_circle';
+
+    toast.innerHTML = `
+      <div class="ca-toast-icon">
+        <span class="material-symbols-sharp">${icon}</span>
+      </div>
+
+      <div class="ca-toast-content">
+        <div class="ca-toast-title">${escapeHTML(title)}</div>
+        ${message ? `<div class="ca-toast-message">${escapeHTML(message)}</div>` : ''}
+      </div>
+
+      <button class="ca-toast-close" type="button" aria-label="Đóng thông báo">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    `;
+
+    toastContainer.appendChild(toast);
+
+    const closeBtn = toast.querySelector('.ca-toast-close');
+    closeBtn.addEventListener('click', () => {
+      hideCAToast(toast);
+    });
+
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+
+    setTimeout(() => {
+      hideCAToast(toast);
+    }, 3500);
+  }
+
+  function hideCAToast(toast) {
+    if (!toast) return;
+
+    toast.classList.remove('show');
+    toast.classList.add('hide');
+
+    setTimeout(() => {
+      toast.remove();
+    }, 250);
   }
 
   function deleteCA(id) {
