@@ -31,6 +31,30 @@
       </div>
     `;
 
+    // Load topics first to ensure we know which ones are unlocked
+    google.script.run
+      .withSuccessHandler(function(topicsResponse) {
+        if (topicsResponse && topicsResponse.success) {
+          if (!window.globalTopicsCache) {
+            window.globalTopicsCache = { data: null, progress: null, lastLoadTime: 0, cacheDuration: 60000 };
+          }
+          window.globalTopicsCache.data = topicsResponse.topics || [];
+          window.globalTopicsCache.progress = topicsResponse.progress || {};
+          window.globalTopicsCache.lastLoadTime = Date.now();
+        }
+        
+        // Now load the client code arrangements
+        loadCodeArrangementGamesList();
+      })
+      .withFailureHandler(function(error) {
+        console.warn("Failed to pre-load topics:", error);
+        // Fallback: load games list anyway
+        loadCodeArrangementGamesList();
+      })
+      .getTopicsForUserPage();
+  }
+
+  function loadCodeArrangementGamesList() {
     google.script.run
       .withSuccessHandler(function(response) {
         if (response.success && response.data) {
@@ -56,6 +80,29 @@
   // --- List View Logic ---
   let allAvailableGames = [];
   function renderCodeArrangementList(games) {
+    // Sort games:
+    // 1. By topic's order/index in globalTopicsCache
+    // 2. By difficulty (easy -> medium -> hard) within the same topic
+    const topicOrderMap = {};
+    if (window.globalTopicsCache && Array.isArray(window.globalTopicsCache.data)) {
+      window.globalTopicsCache.data.forEach((topic, idx) => {
+        topicOrderMap[topic.topicId] = idx;
+      });
+    }
+
+    const diffWeight = { 'easy': 1, 'medium': 2, 'hard': 3 };
+
+    games.sort((a, b) => {
+      const orderA = topicOrderMap[a.topicId] !== undefined ? topicOrderMap[a.topicId] : 9999;
+      const orderB = topicOrderMap[b.topicId] !== undefined ? topicOrderMap[b.topicId] : 9999;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      const diffA = diffWeight[a.difficulty] || 2;
+      const diffB = diffWeight[b.difficulty] || 2;
+      return diffA - diffB;
+    });
+
     allAvailableGames = games;
     const listBody = document.getElementById('caListBody');
     if (!games || games.length === 0) {
@@ -69,6 +116,18 @@
 
     let html = '';
     games.forEach((game, index) => {
+      // Check if topic is unlocked
+      let isTopicUnlocked = false;
+      if (window.globalTopicsCache && Array.isArray(window.globalTopicsCache.data)) {
+        const topic = window.globalTopicsCache.data.find(t => t.topicId === game.topicId);
+        if (topic) {
+          isTopicUnlocked = topic.unlocked !== false;
+        }
+      } else {
+        // If cache failed to load, fallback to true so we don't completely lock out the user
+        isTopicUnlocked = true;
+      }
+
       // Check progress
       const savedProgressStr = localStorage.getItem(`ca_progress_${game.arrangementId}`);
       let isCompleted = false;
@@ -81,8 +140,43 @@
         isCompleted = localStorage.getItem(`ca_completed_${game.arrangementId}`) === 'true';
       }
 
+      let cardStatusClass = 'status-available';
+      let badgeClass = 'topic-state-new';
+      let badgeText = 'CÓ THỂ CHƠI';
+      let btnHtml = '';
+      let clickHandler = `startCodeArrangementGame('${game.arrangementId}')`;
+      let cursorStyle = 'cursor: pointer;';
+
+      if (!isTopicUnlocked) {
+        cardStatusClass = 'status-locked';
+        badgeClass = 'topic-state-locked';
+        badgeText = 'ĐANG KHÓA';
+        cursorStyle = 'cursor: not-allowed; opacity: 0.6;';
+        clickHandler = '';
+        btnHtml = `
+          <button class="topic-action status-locked" style="background: #e2e8f0; color: #94a3b8; cursor: not-allowed;" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Đang khóa
+          </button>
+        `;
+      } else if (isCompleted) {
+        cardStatusClass = 'status-completed';
+        badgeClass = 'topic-state-completed';
+        badgeText = 'ĐÃ HOÀN THÀNH';
+        btnHtml = `
+          <button class="topic-action status-completed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Chơi lại
+          </button>
+        `;
+      } else {
+        btnHtml = `
+          <button class="topic-action status-available">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Chơi ngay
+          </button>
+        `;
+      }
+
       html += `
-        <div class="topic-card ${isCompleted ? 'status-completed' : 'status-available'}" style="cursor: pointer;" onclick="startCodeArrangementGame('${game.arrangementId}')">
+        <div class="topic-card ${cardStatusClass}" style="${cursorStyle}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
           <div class="topic-card-header">
             <div class="topic-icon-wrapper">
               <div class="topic-icon">
@@ -91,14 +185,12 @@
             </div>
             <div class="topic-badges">
               <span class="badge badge-category">${game.programmingLanguage || 'Code'}</span>
-              <span class="badge topic-state-badge ${isCompleted ? 'topic-state-completed' : 'topic-state-new'}">${isCompleted ? 'ĐÃ HOÀN THÀNH' : 'CÓ THỂ CHƠI'}</span>
+              <span class="badge topic-state-badge ${badgeClass}">${badgeText}</span>
             </div>
           </div>
           <h3 class="topic-title">${game.title || "Game Sắp xếp"}</h3>
           <p class="topic-description">${game.description ? game.description.substring(0, 80) + '...' : ''}</p>
-          <button class="topic-action status-${isCompleted ? 'completed' : 'available'}">
-            ${isCompleted ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Chơi lại' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Chơi ngay'}
-          </button>
+          ${btnHtml}
         </div>
       `;
     });
