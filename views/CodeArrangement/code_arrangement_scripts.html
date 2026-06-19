@@ -518,16 +518,16 @@
         google.script.run
           .withSuccessHandler(function(res) {
             console.log("Code Arrangement progress saved:", res);
+            
+            // Cập nhật lại cache chủ đề sau khi đã lưu xong trên server
+            if (typeof window.handleTopicCompleted === 'function') {
+              window.handleTopicCompleted(currentTopicId);
+            }
           })
           .withFailureHandler(function(err) {
             console.error("Failed to save progress:", err);
           })
           .saveCodeArrangementProgress(currentTopicId, currentArrangementId);
-      }
-      
-      // Lên cấp độ tiến trình cho học viên (nếu có hệ thống hooks)
-      if (!isPreviewMode && typeof window.handleTopicCompleted === 'function' && currentTopicId) {
-        window.handleTopicCompleted(currentTopicId);
       }
     }
   }
