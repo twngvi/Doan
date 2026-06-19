@@ -3,6 +3,7 @@
   let originalBlocks = [];
   let shuffledBlocks = [];
   let currentTopicId = null;
+  let currentArrangementId = null;
   let caProgress = {
     status: 'not_started',
     order: [],
@@ -16,6 +17,7 @@
   function initCodeArrangementPage() {
     isPreviewMode = false;
     currentTopicId = null;
+    currentArrangementId = null;
     
     // Show list view, hide game view
     document.getElementById('caListContainer').style.display = 'block';
@@ -68,7 +70,7 @@
     let html = '';
     games.forEach((game, index) => {
       // Check progress
-      const savedProgressStr = localStorage.getItem(`ca_progress_${game.topicId}`);
+      const savedProgressStr = localStorage.getItem(`ca_progress_${game.arrangementId}`);
       let isCompleted = false;
       if (savedProgressStr) {
         try {
@@ -76,11 +78,11 @@
           isCompleted = progress.status === 'completed';
         } catch(e) {}
       } else {
-        isCompleted = localStorage.getItem(`ca_completed_${game.topicId}`) === 'true';
+        isCompleted = localStorage.getItem(`ca_completed_${game.arrangementId}`) === 'true';
       }
 
       html += `
-        <div class="topic-card ${isCompleted ? 'status-completed' : 'status-available'}" style="cursor: pointer;" onclick="startCodeArrangementGame('${game.topicId}')">
+        <div class="topic-card ${isCompleted ? 'status-completed' : 'status-available'}" style="cursor: pointer;" onclick="startCodeArrangementGame('${game.arrangementId}')">
           <div class="topic-card-header">
             <div class="topic-icon-wrapper">
               <div class="topic-icon">
@@ -104,11 +106,12 @@
     listBody.innerHTML = html;
   }
 
-  function startCodeArrangementGame(topicId) {
-    const gameData = allAvailableGames.find(g => g.topicId === topicId);
+  function startCodeArrangementGame(arrangementId) {
+    const gameData = allAvailableGames.find(g => g.arrangementId === arrangementId);
     if (!gameData) return;
 
-    currentTopicId = topicId;
+    currentArrangementId = arrangementId;
+    currentTopicId = gameData.topicId;
     currentArrangementData = gameData;
     
     // Hide list, show game
@@ -137,6 +140,7 @@
   function initCodeArrangementPreview(draftData) {
     isPreviewMode = true;
     currentArrangementData = draftData;
+    currentArrangementId = 'PREVIEW_MODE';
     currentTopicId = 'PREVIEW_MODE';
     
     localStorage.removeItem(`ca_progress_PREVIEW_MODE`);
@@ -198,14 +202,15 @@
     }
 
     // Load progress
-    const savedProgressStr = localStorage.getItem(`ca_progress_${currentTopicId}`);
+    const activeKey = isPreviewMode ? 'PREVIEW_MODE' : currentArrangementId;
+    const savedProgressStr = localStorage.getItem(`ca_progress_${activeKey}`);
     if (savedProgressStr) {
       try {
         caProgress = JSON.parse(savedProgressStr);
       } catch(e) {}
     } else {
       // Migrate old completed state if exists
-      const oldCompleted = localStorage.getItem(`ca_completed_${currentTopicId}`) === 'true';
+      const oldCompleted = localStorage.getItem(`ca_completed_${activeKey}`) === 'true';
       caProgress = {
         status: oldCompleted ? 'completed' : 'not_started',
         order: [],
@@ -262,9 +267,10 @@
   }
 
   function caSaveState() {
-    if (!currentTopicId) return;
+    const activeKey = isPreviewMode ? 'PREVIEW_MODE' : currentArrangementId;
+    if (!activeKey) return;
     caProgress.order = shuffledBlocks.map(b => b.id);
-    localStorage.setItem(`ca_progress_${currentTopicId}`, JSON.stringify(caProgress));
+    localStorage.setItem(`ca_progress_${activeKey}`, JSON.stringify(caProgress));
   }
 
   function drawDraggableBlocks() {
