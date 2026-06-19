@@ -277,8 +277,16 @@
     const data = currentArrangementData;
     
     // Header
-    document.getElementById('caClientTitle').innerText = data.title || "Sắp xếp code";
-    document.getElementById('caClientDescription').innerText = data.description || "";
+    const titleText = String(data.title || '').trim();
+    const descText = String(data.description || '').trim();
+
+    document.getElementById('caClientTitle').innerText =
+      titleText.length <= 2 ? `Bài ${titleText || ''}` : titleText;
+
+    document.getElementById('caClientDescription').innerText =
+      descText.length <= 2
+        ? 'Sắp xếp các khối code theo đúng thứ tự để tạo thành chương trình hoàn chỉnh.'
+        : descText;
     document.getElementById('caClientLanguageTag').innerText = data.programmingLanguage || "javascript";
     
     // Extensions based on language
@@ -390,28 +398,105 @@
 
     shuffledBlocks.forEach((block, index) => {
       html += `
-        <div class="ca-card" draggable="true" data-id="${block.id}" 
-             ondragstart="caHandleDragStart(event)" 
-             ondragover="caHandleDragOver(event)" 
-             ondragenter="caHandleDragEnter(event)" 
-             ondragleave="caHandleDragLeave(event)" 
+        <div class="ca-card" draggable="true" data-id="${block.id}"
+             onclick="caHandleCardTap('${block.id}')"
+             ondragstart="caHandleDragStart(event)"
+             ondragover="caHandleDragOver(event)"
+             ondragenter="caHandleDragEnter(event)"
+             ondragleave="caHandleDragLeave(event)"
              ondrop="caHandleDrop(event)"
              ondragend="caHandleDragEnd(event)">
+
+          <div class="ca-card-index">${index + 1}</div>
+
           <div class="ca-card-drag-icon">
-            <span class="material-symbols-sharp" style="font-size: 20px;">drag_indicator</span>
+            <span class="material-symbols-sharp">drag_indicator</span>
           </div>
-          <div class="ca-card-content">${caEscapeHTML(block.content)}</div>
+
+          <pre class="ca-card-content"><code>${caEscapeHTML(block.content)}</code></pre>
+
+          <div class="ca-card-status-icon">
+            <span class="material-symbols-sharp">radio_button_unchecked</span>
+          </div>
         </div>
       `;
     });
 
     container.innerHTML = html;
+    updateCodeArrangementStats();
+  }
+
+  // --- UI Helpers ---
+  function updateCodeArrangementStats() {
+    const dragText = document.getElementById('caDragCountText');
+    const checkText = document.getElementById('caCheckCountText');
+
+    if (dragText) dragText.innerText = `${caProgress.dragCount || 0} lần`;
+    if (checkText) checkText.innerText = `${caProgress.checkCount || 0} lần`;
+  }
+
+  function setCodeArrangementFeedback(type, message) {
+    const box = document.getElementById('caFeedbackBox');
+    if (!box) return;
+
+    box.classList.remove('success', 'warning', 'error');
+    if (type) box.classList.add(type);
+    box.innerText = message;
+  }
+
+  function setIdeStatus(text) {
+    const status = document.getElementById('caIdeStatus');
+    if (status) status.innerText = text;
+  }
+
+  // --- Tap to Move Logic ---
+  let caSelectedBlockId = null;
+  let caIsDragging = false;
+
+  function caHandleCardTap(blockId) {
+    if (caIsDragging) return;
+    if (caProgress.status === 'completed') return;
+
+    if (!caSelectedBlockId) {
+      caSelectedBlockId = blockId;
+
+      document.querySelectorAll('.ca-card').forEach(card => {
+        card.classList.toggle('selected', card.getAttribute('data-id') === blockId);
+      });
+
+      setCodeArrangementFeedback(null, 'Đã chọn khối code. Bấm vào vị trí khác để di chuyển.');
+      return;
+    }
+
+    if (caSelectedBlockId === blockId) {
+      caSelectedBlockId = null;
+      document.querySelectorAll('.ca-card').forEach(card => card.classList.remove('selected'));
+      setCodeArrangementFeedback(null, 'Đã bỏ chọn khối code.');
+      return;
+    }
+
+    const srcIndex = shuffledBlocks.findIndex(b => b.id === caSelectedBlockId);
+    const targetIndex = shuffledBlocks.findIndex(b => b.id === blockId);
+
+    if (srcIndex >= 0 && targetIndex >= 0) {
+      const [removed] = shuffledBlocks.splice(srcIndex, 1);
+      shuffledBlocks.splice(targetIndex, 0, removed);
+
+      caProgress.dragCount++;
+      caSelectedBlockId = null;
+      caSaveState();
+
+      drawDraggableBlocks();
+      setCodeArrangementFeedback(null, 'Đã di chuyển khối code. Hãy tiếp tục sắp xếp.');
+      setIdeStatus('Đang làm');
+    }
   }
 
   // --- Drag and Drop Logic ---
   let caDragSrcEl = null;
 
   function caHandleDragStart(e) {
+    caIsDragging = true;
     caDragSrcEl = e.currentTarget;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/html', caDragSrcEl.innerHTML);
@@ -465,11 +550,9 @@
       
       // Redraw
       drawDraggableBlocks();
-      
-      // Reset card styles if they were previously checked
-      document.querySelectorAll('.ca-card').forEach(card => {
-        card.classList.remove('wrong', 'correct');
-      });
+      updateCodeArrangementStats();
+      setCodeArrangementFeedback(null, 'Đã cập nhật thứ tự. Khi sẵn sàng, hãy bấm “Kiểm tra thứ tự”.');
+      setIdeStatus('Đang làm');
     }
     return false;
   }
@@ -479,29 +562,40 @@
     document.querySelectorAll('.ca-card').forEach(card => {
       card.classList.remove('drag-over');
     });
+
+    setTimeout(() => {
+      caIsDragging = false;
+    }, 80);
   }
 
   // --- Actions ---
   function checkCodeArrangement() {
     let isAllCorrect = true;
+    let correctCount = 0;
     const cards = document.querySelectorAll('.ca-card');
-    
+
     caProgress.checkCount++;
     caSaveState();
-    
-    // Reset classes
-    cards.forEach(card => card.classList.remove('wrong', 'correct'));
-    
+    updateCodeArrangementStats();
+
+    cards.forEach(card => {
+      card.classList.remove('wrong', 'correct');
+      const icon = card.querySelector('.ca-card-status-icon span');
+      if (icon) icon.innerText = 'radio_button_unchecked';
+    });
+
     cards.forEach((card, index) => {
       const blockId = card.getAttribute('data-id');
+      const icon = card.querySelector('.ca-card-status-icon span');
+
       if (blockId === originalBlocks[index].id) {
         card.classList.add('correct');
+        correctCount++;
+        if (icon) icon.innerText = 'check_circle';
       } else {
         card.classList.add('wrong');
         isAllCorrect = false;
-        // remove shake animation class after it plays
-        setTimeout(() => card.classList.remove('wrong'), 600);
-        setTimeout(() => card.classList.add('wrong'), 610); // re-add for persistent styling without shake
+        if (icon) icon.innerText = 'cancel';
       }
     });
 
@@ -509,17 +603,17 @@
       caProgress.status = 'completed';
       caProgress.endTime = new Date().getTime();
       caSaveState();
-      
+
+      setCodeArrangementFeedback('success', 'Hoàn hảo! Bạn đã sắp xếp đúng toàn bộ code.');
+      setIdeStatus('Hoàn thành');
+
       showCompletedState();
       caCreateConfetti();
-      
+
       if (!isPreviewMode && currentTopicId && currentArrangementId) {
-        // Save progress to server
         google.script.run
           .withSuccessHandler(function(res) {
             console.log("Code Arrangement progress saved:", res);
-            
-            // Cập nhật lại cache chủ đề sau khi đã lưu xong trên server
             if (typeof window.handleTopicCompleted === 'function') {
               window.handleTopicCompleted(currentTopicId);
             }
@@ -529,25 +623,41 @@
           })
           .saveCodeArrangementProgress(currentTopicId, currentArrangementId);
       }
+    } else {
+      setCodeArrangementFeedback(
+        'warning',
+        `Bạn đã đúng ${correctCount}/${originalBlocks.length} khối. Hãy kéo lại các khối đang được đánh dấu đỏ.`
+      );
+      setIdeStatus('Cần chỉnh lại');
     }
   }
 
   function showCompletedState() {
-    document.getElementById('caClientCelebration').style.display = 'block';
+    document.getElementById('caClientCelebration').style.display = 'flex';
     document.getElementById('caClientCheckBtn').style.display = 'none';
     document.getElementById('caClientRetryBtn').style.display = 'inline-flex';
     document.getElementById('caClientCopyBtn').style.display = 'inline-flex';
     document.getElementById('caClientPlaygroundBtn').style.display = 'inline-flex';
-    
-    // Lock cards
+
+    const playgroundBtn = document.getElementById('caClientPlaygroundBtn');
+    if (playgroundBtn) {
+      playgroundBtn.classList.remove('secondary');
+      playgroundBtn.classList.add('primary');
+    }
+
+    setCodeArrangementFeedback('success', 'Bạn đã hoàn thành bài này. Bạn có thể copy code hoặc mở Playground để chạy thử.');
+    setIdeStatus('Hoàn thành');
+    updateCodeArrangementStats();
+
     const cards = document.querySelectorAll('.ca-card');
     cards.forEach(card => {
       card.setAttribute('draggable', 'false');
-      card.classList.remove('wrong', 'correct');
-      card.classList.add('correct');
+      card.classList.remove('wrong');
+      card.classList.add('correct', 'completed');
       card.style.cursor = 'default';
-      const icon = card.querySelector('.ca-card-drag-icon span');
-      if (icon) icon.innerText = 'check_circle';
+
+      const statusIcon = card.querySelector('.ca-card-status-icon span');
+      if (statusIcon) statusIcon.innerText = 'check_circle';
     });
   }
 
@@ -560,16 +670,27 @@
       startTime: new Date().getTime(),
       endTime: null
     };
+
     shuffledBlocks = caShuffleBlocks(originalBlocks);
     caSaveState();
-    
+
     drawDraggableBlocks();
-    
+
     document.getElementById('caClientCelebration').style.display = 'none';
     document.getElementById('caClientCheckBtn').style.display = 'inline-flex';
     document.getElementById('caClientRetryBtn').style.display = 'none';
     document.getElementById('caClientCopyBtn').style.display = 'none';
     document.getElementById('caClientPlaygroundBtn').style.display = 'none';
+
+    const playgroundBtn = document.getElementById('caClientPlaygroundBtn');
+    if (playgroundBtn) {
+      playgroundBtn.classList.remove('primary');
+      playgroundBtn.classList.add('secondary');
+    }
+
+    updateCodeArrangementStats();
+    setCodeArrangementFeedback(null, 'Bài đã được xáo trộn lại. Hãy thử sắp xếp từ đầu.');
+    setIdeStatus('Đang làm');
   }
 
   function copyArrangedCode() {

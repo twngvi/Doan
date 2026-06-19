@@ -5,57 +5,110 @@
   </div>
 </div>
 
-<div class="ca-game-container" id="caGameContainer" style="display: none;">
-  <div style="margin-bottom: 20px;">
-    <button class="ca-action-btn secondary" onclick="goBackToList()">
-      <span class="material-symbols-sharp" style="font-size: 18px;">arrow_back</span> Quay lại danh sách
-    </button>
-  </div>
+<div class="ca-game-container ca-play-layout" id="caGameContainer" style="display: none;">
 
-  <div class="ca-game-header">
+  <!-- Top bar -->
+  <div class="ca-play-topbar">
+    <button class="ca-icon-btn" onclick="goBackToList()">
+      <span class="material-symbols-sharp">arrow_back</span>
+    </button>
+
+    <div class="ca-play-title-area">
+      <div class="ca-play-eyebrow">Code Arrangement</div>
+      <h2 class="ca-game-title" id="caClientTitle">Sắp xếp code</h2>
+    </div>
+
     <div class="ca-game-tags">
       <span class="ca-game-tag" id="caClientLanguageTag">Javascript</span>
-      <span class="ca-game-tag" id="caClientDifficultyTag" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Medium</span>
+      <span class="ca-game-tag" id="caClientDifficultyTag">Medium</span>
     </div>
-    <h2 class="ca-game-title" id="caClientTitle">Sắp xếp code</h2>
-    <div class="ca-game-desc" id="caClientDescription">Hãy kéo thả các khối mã bên dưới để tạo thành chương trình hoàn chỉnh.</div>
   </div>
 
-  <div class="ca-ide-wrapper">
-    <div class="ca-ide-header">
-      <div class="ca-ide-dots">
-        <div class="ca-ide-dot red"></div>
-        <div class="ca-ide-dot yellow"></div>
-        <div class="ca-ide-dot green"></div>
+  <!-- Main play area -->
+  <div class="ca-play-main">
+
+    <!-- Left panel -->
+    <aside class="ca-play-sidebar">
+      <div class="ca-mission-card">
+        <div class="ca-section-label">Nhiệm vụ</div>
+        <p class="ca-game-desc" id="caClientDescription">
+          Hãy kéo thả các khối mã bên dưới để tạo thành chương trình hoàn chỉnh.
+        </p>
       </div>
-      <div class="ca-ide-filename" id="caClientFilename">main.js</div>
-    </div>
-    
-    <div class="ca-ide-body" id="caClientContainer">
-      <!-- Loading state -->
-      <div style="text-align: center; color: #858585; padding: 40px;">
-        <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #858585; border-bottom-color: transparent;"></div>
-        Đang tải câu hỏi...
+
+      <div class="ca-progress-card">
+        <div class="ca-section-label">Tiến độ</div>
+
+        <div class="ca-progress-row">
+          <span>Đã di chuyển</span>
+          <strong id="caDragCountText">0 lần</strong>
+        </div>
+
+        <div class="ca-progress-row">
+          <span>Đã kiểm tra</span>
+          <strong id="caCheckCountText">0 lần</strong>
+        </div>
+
+        <div class="ca-feedback-box" id="caFeedbackBox">
+          Sắp xếp các khối code theo đúng thứ tự rồi bấm “Kiểm tra”.
+        </div>
       </div>
-    </div>
+    </aside>
+
+    <!-- Code panel -->
+    <section class="ca-play-code-area">
+      <div class="ca-ide-wrapper">
+        <div class="ca-ide-header">
+          <div class="ca-ide-dots">
+            <div class="ca-ide-dot red"></div>
+            <div class="ca-ide-dot yellow"></div>
+            <div class="ca-ide-dot green"></div>
+          </div>
+
+          <div class="ca-ide-filename" id="caClientFilename">main.js</div>
+
+          <div class="ca-ide-status" id="caIdeStatus">Đang làm</div>
+        </div>
+
+        <div class="ca-ide-body" id="caClientContainer">
+          <div class="ca-loading-state" style="text-align: center; color: #858585; padding: 40px;">
+            <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #858585; border-bottom-color: transparent;"></div>
+            Đang tải câu hỏi...
+          </div>
+        </div>
+      </div>
+
+      <div id="caClientCelebration" class="ca-celebration" style="display: none;">
+        <div class="ca-celebration-icon">🎉</div>
+        <div>
+          <strong>Hoàn thành xuất sắc!</strong>
+          <p>Bạn đã sắp xếp đúng toàn bộ chương trình.</p>
+        </div>
+      </div>
+      <!-- Actions đặt trong vùng code -->
+      <div class="ca-game-actions ca-sticky-actions">
+        <button class="ca-action-btn primary" id="caClientCheckBtn" onclick="checkCodeArrangement()">
+          <span class="material-symbols-sharp">check_circle</span>
+          Kiểm tra thứ tự
+        </button>
+
+        <button class="ca-action-btn secondary" id="caClientPlaygroundBtn" onclick="openCodeArrangementPlayground()" style="display: none;">
+          <span class="material-symbols-sharp">code</span>
+          Mở Playground
+        </button>
+
+        <button class="ca-action-btn secondary" id="caClientCopyBtn" onclick="copyArrangedCode()" style="display: none;">
+          <span class="material-symbols-sharp">content_copy</span>
+          Copy code
+        </button>
+
+        <button class="ca-action-btn secondary" id="caClientRetryBtn" onclick="retryCodeArrangement()" style="display: none;">
+          <span class="material-symbols-sharp">refresh</span>
+          Làm lại
+        </button>
+      </div>
+    </section>
+
   </div>
 
-  <div id="caClientCelebration" class="ca-celebration" style="display: none;">
-    🎉 Chúc mừng! Bạn đã ghép đúng code!
-  </div>
-
-  <div class="ca-game-actions">
-    <button class="ca-action-btn primary" id="caClientCheckBtn" onclick="checkCodeArrangement()">
-      <span class="material-symbols-sharp" style="font-size: 18px;">check_circle</span> Kiểm tra
-    </button>
-    <button class="ca-action-btn secondary" id="caClientRetryBtn" onclick="retryCodeArrangement()" style="display: none;">
-      <span class="material-symbols-sharp" style="font-size: 18px;">refresh</span> Thử lại
-    </button>
-    <button class="ca-action-btn secondary" id="caClientCopyBtn" onclick="copyArrangedCode()" style="display: none;">
-      <span class="material-symbols-sharp" style="font-size: 18px;">content_copy</span> Copy Code
-    </button>
-    <button class="ca-action-btn secondary" id="caClientPlaygroundBtn" onclick="openCodeArrangementPlayground()" style="display: none;">
-      <span class="material-symbols-sharp" style="font-size: 18px;">code</span> Mở Playground
-    </button>
-  </div>
 </div>
