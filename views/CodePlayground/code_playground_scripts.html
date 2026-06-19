@@ -2086,20 +2086,59 @@
       // Fallback textarea already present
       var ws2 = getActiveWorkspaceState();
       setCurrentCode(ws2.files[ws2.activeFile] || '');
-      updateStateBadge();
     });
   }
 
   var initialized = false;
 
-  function onPageShow() {
-    if (initialized) {
-      applyTabletLayoutSetting();
-      if (cmEditor) setTimeout(function () { cmEditor.refresh(); }, 60);
-      return;
+  function applyExternalParams() {
+    if (window.currentPageParams && window.currentPageParams.code) {
+      var lang = window.currentPageParams.lang || 'web';
+      var code = window.currentPageParams.code;
+      
+      if (lang === 'javascript' || lang === 'js' || lang === 'html' || lang === 'css') {
+        lang = 'web';
+      }
+      
+      if (WORKSPACES[lang]) {
+        if (ide.state && ide.state.activeWorkspace !== lang) {
+           switchWorkspace(lang);
+        }
+        var ws = getActiveWorkspaceState();
+        var targetFile = ws.activeFile;
+        if (lang === 'web') {
+          var origLang = window.currentPageParams.lang || '';
+          if (origLang.includes('html')) targetFile = 'index.html';
+          else if (origLang.includes('css')) targetFile = 'style.css';
+          else targetFile = 'script.js';
+        }
+        
+        if (ws.files) {
+          ws.files[targetFile] = code;
+          ws.activeFile = targetFile;
+        }
+        
+        setCurrentCode(code);
+        renderFiles();
+        applyEditorModeForFile(targetFile);
+        
+        ide.dirty = true;
+        updateStateBadge();
+        scheduleDraftSave();
+      }
+      // Consume the params
+      delete window.currentPageParams.code;
     }
-    initialized = true;
-    boot();
+  }
+
+  function onPageShow() {
+    if (!initialized) {
+      initialized = true;
+      boot();
+    }
+    applyExternalParams();
+    applyTabletLayoutSetting();
+    if (cmEditor) setTimeout(function () { cmEditor.refresh(); }, 60);
   }
 
   function hookShowPage() {
