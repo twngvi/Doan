@@ -48,8 +48,12 @@
       })
       .withFailureHandler(function(error) {
         console.warn("Failed to pre-load topics:", error);
-        // Fallback: load games list anyway
-        loadCodeArrangementGamesList();
+        document.getElementById('caListBody').innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 12px; display: block;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            Lỗi kết nối khi tải trạng thái chủ đề. Vui lòng tải lại trang.
+          </div>
+        `;
       })
       .getTopicsForUserPage();
   }
@@ -130,8 +134,8 @@
           isTopicUnlocked = topic.unlocked !== false;
         }
       } else {
-        // If cache failed to load, fallback to true so we don't completely lock out the user
-        isTopicUnlocked = true;
+        // If cache failed to load, securely lock out the user by default
+        isTopicUnlocked = false;
       }
 
       // Check progress
