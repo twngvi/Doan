@@ -58,7 +58,7 @@
     google.script.run
       .withSuccessHandler(function(response) {
         if (response.success && response.data) {
-          renderCodeArrangementList(response.data);
+          renderCodeArrangementList(response.data, response.completed || []);
         } else {
           document.getElementById('caListBody').innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
@@ -79,7 +79,13 @@
 
   // --- List View Logic ---
   let allAvailableGames = [];
-  function renderCodeArrangementList(games) {
+  let allCompletedArrangements = [];
+  function renderCodeArrangementList(games, completedArrangements = []) {
+    // Cache the completed arrangements globally for when we go back to list
+    if (completedArrangements.length > 0) {
+      allCompletedArrangements = completedArrangements;
+    }
+
     // Sort games:
     // 1. By topic's order/index in globalTopicsCache
     // 2. By difficulty (easy -> medium -> hard) within the same topic
@@ -131,7 +137,16 @@
       // Check progress
       const savedProgressStr = localStorage.getItem(`ca_progress_${game.arrangementId}`);
       let isCompleted = false;
-      if (savedProgressStr) {
+      
+      // 1. Check server data first
+      if (allCompletedArrangements.includes(game.arrangementId)) {
+        isCompleted = true;
+        // Sync local storage if missing
+        if (!savedProgressStr && !localStorage.getItem(`ca_completed_${game.arrangementId}`)) {
+          localStorage.setItem(`ca_completed_${game.arrangementId}`, 'true');
+        }
+      } else if (savedProgressStr) {
+        // 2. Fallback to local storage
         try {
           const progress = JSON.parse(savedProgressStr);
           isCompleted = progress.status === 'completed';
@@ -494,6 +509,18 @@
       showCompletedState();
       caCreateConfetti();
       
+      if (!isPreviewMode && currentTopicId && currentArrangementId) {
+        // Save progress to server
+        google.script.run
+          .withSuccessHandler(function(res) {
+            console.log("Code Arrangement progress saved:", res);
+          })
+          .withFailureHandler(function(err) {
+            console.error("Failed to save progress:", err);
+          })
+          .saveCodeArrangementProgress(currentTopicId, currentArrangementId);
+      }
+      
       // Lên cấp độ tiến trình cho học viên (nếu có hệ thống hooks)
       if (!isPreviewMode && typeof window.handleTopicCompleted === 'function' && currentTopicId) {
         window.handleTopicCompleted(currentTopicId);
@@ -645,4 +672,57 @@
       }[tag])
     );
   }
+
+  // --- Background Sync ---
+  function syncCodeArrangementProgress() {
+    if (!allAvailableGames || allAvailableGames.length === 0) return;
+    
+    let unsyncedGames = [];
+    
+    allAvailableGames.forEach(game => {
+      const arrId = game.arrangementId;
+      const topicId = game.topicId;
+      
+      // If already synced, skip
+      if (localStorage.getItem(`ca_synced_${arrId}`) === 'true') return;
+      
+      // Check if it's completed locally
+      let isCompleted = false;
+      const progressStr = localStorage.getItem(`ca_progress_${arrId}`);
+      if (progressStr) {
+        try {
+          const progress = JSON.parse(progressStr);
+          isCompleted = progress.status === 'completed';
+        } catch(e) {}
+      } else {
+        isCompleted = localStorage.getItem(`ca_completed_${arrId}`) === 'true';
+      }
+      
+      if (isCompleted) {
+        unsyncedGames.push({ arrangementId: arrId, topicId: topicId });
+      }
+    });
+    
+    if (unsyncedGames.length > 0) {
+      console.log(`Syncing ${unsyncedGames.length} Code Arrangement games to database...`);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            // Mark as synced locally so we don't send again
+            unsyncedGames.forEach(g => {
+              localStorage.setItem(`ca_synced_${g.arrangementId}`, 'true');
+            });
+            console.log("Sync successful.", res.message);
+          }
+        })
+        .withFailureHandler(function(err) {
+          console.warn("Failed to sync code arrangement progress:", err);
+        })
+        .syncBulkCodeArrangementProgress(unsyncedGames);
+    }
+  }
+
+  // Set interval to sync every 3 minutes (180,000 ms)
+  setInterval(syncCodeArrangementProgress, 3 * 60 * 1000);
+
 </script>
