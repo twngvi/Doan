@@ -413,6 +413,7 @@
     initStreakTracking();
     initHeaderMeteorShower();
     setupDashboardHeaderMouseEffect();
+    setupDashboardPetMouseEffect();
 
     // Single API call for all dashboard data
     loadAllDashboardData({
@@ -482,6 +483,39 @@
 
     header.addEventListener("mouseleave", () => {
       stars.style.transform = "translate(0, 0)";
+    });
+  }
+
+  /**
+   * Mouse-responsive pet effect (zoom and follow cursor direction)
+   */
+  function setupDashboardPetMouseEffect() {
+    var wrapper = document.getElementById("dashboardPetWelcome");
+    var petImageEl = document.getElementById("dashboardPetImage");
+    if (!wrapper || !petImageEl) return;
+
+    wrapper.addEventListener("mouseenter", () => {
+      wrapper.classList.add("is-hovered");
+    });
+
+    wrapper.addEventListener("mousemove", (e) => {
+      var rect = wrapper.getBoundingClientRect();
+      // Mouse position relative to center of wrapper (-0.5 to 0.5)
+      var x = (e.clientX - rect.left) / rect.width - 0.5;
+      var y = (e.clientY - rect.top) / rect.height - 0.5;
+
+      // Base translation is 60px. Limit extra translation to +/- 20px
+      var moveX = 60 + x * 20;
+      var moveY = y * 15;
+      // Tilt (rotate) towards the cursor
+      var rotateVal = x * 8;
+
+      petImageEl.style.transform = `translateX(${moveX}px) translateY(${moveY}px) scale(1.08) rotate(${rotateVal}deg)`;
+    });
+
+    wrapper.addEventListener("mouseleave", () => {
+      wrapper.classList.remove("is-hovered");
+      petImageEl.style.transform = "";
     });
   }
 
