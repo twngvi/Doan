@@ -1708,10 +1708,13 @@
         return;
       }
 
+      window.petImagesPendingCount = (window.petImagesPendingCount || 0) + 1;
+
       const url = await fetchAssetUrl(fileName);
       if (!url) {
         imgEl.classList.remove("is-visible");
         imgEl.style.display = "none";
+        window.petImagesPendingCount--;
         return;
       }
 
@@ -1719,6 +1722,7 @@
       if (imgEl.src === url || (url.startsWith('blob:') && imgEl.getAttribute('data-original-file') === fileName)) {
         imgEl.style.display = "";
         imgEl.classList.add("is-visible");
+        window.petImagesPendingCount--;
         return;
       }
 
@@ -1726,6 +1730,7 @@
         imgEl.style.display = "";
         imgEl.classList.add("is-visible");
         imgEl.removeEventListener("load", onImageLoad);
+        window.petImagesPendingCount--;
       };
 
       imgEl.addEventListener("load", onImageLoad);
@@ -1733,6 +1738,7 @@
         console.error("Failed to load pet asset:", fileName, "at", url);
         imgEl.classList.remove("is-visible");
         imgEl.style.display = "none";
+        window.petImagesPendingCount--;
       };
       
       imgEl.setAttribute('data-original-file', fileName);
@@ -1749,11 +1755,16 @@
         if (stageEl) stageEl.style.setProperty("--pet-stage-bg-image", "none");
         return;
       }
+      window.petImagesPendingCount = (window.petImagesPendingCount || 0) + 1;
       const url = await fetchAssetUrl(fileName);
       const testImg = new Image();
       testImg.onload = function () {
         const safeUrl = String(url).replace(/"/g, '\"');
         stageEl.style.setProperty("--pet-stage-bg-image", 'url("' + safeUrl + '")');
+        window.petImagesPendingCount--;
+      };
+      testImg.onerror = function() {
+        window.petImagesPendingCount--;
       };
       testImg.src = url;
     }
@@ -2944,7 +2955,13 @@
 
             // Re-render pet with loaded state
             renderPet();
+            hidePetLoading();
+          } else {
+            hidePetLoading();
           }
+        })
+        .withFailureHandler(function() {
+          hidePetLoading();
         })
         .getPetConfig(userId);
     }
@@ -4313,6 +4330,82 @@
       }
     }
 
+    function showPetLoading() {
+      window.petLoadingStartTime = Date.now();
+      const stageWorld = document.getElementById("petStageWorld");
+      const loadingOverlay = document.getElementById("petLoadingOverlay");
+      const progressBar = document.getElementById("petLoadingProgressBar");
+      const loadingText = document.getElementById("petLoadingText");
+      const popup = document.getElementById("petLoadingPopup");
+      
+      if (stageWorld) stageWorld.style.display = "none";
+      if (loadingOverlay) loadingOverlay.style.display = "flex";
+      
+      if (progressBar) {
+        progressBar.style.transition = "none";
+        progressBar.style.width = "0%";
+        void progressBar.offsetWidth; // Force reflow
+        progressBar.style.transition = "width 10s cubic-bezier(0, 1.05, 0.45, 1)";
+        progressBar.style.width = "60%";
+      }
+      
+      if (loadingText) {
+        const quotes = [
+          "Học hành tốt nhé!",
+          "Chúc bạn một ngày học tập hiệu quả!",
+          "Kiến thức là sức mạnh!",
+          "Hãy chăm sóc PET thật tốt nha!",
+          "Cố gắng lên, bạn đang làm rất tốt!",
+          "Học tập là con đường ngắn nhất đến thành công!"
+        ];
+        loadingText.textContent = quotes[Math.floor(Math.random() * quotes.length)];
+      }
+
+      if (popup && !popup.dataset.tiltBound) {
+        popup.dataset.tiltBound = "true";
+        popup.addEventListener("mousemove", function(e) {
+          const rect = popup.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const mouseX = e.clientX - centerX;
+          const mouseY = e.clientY - centerY;
+          const rotateX = -(mouseY / (rect.height / 2)) * 15;
+          const rotateY = (mouseX / (rect.width / 2)) * 15;
+          popup.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+        });
+        popup.addEventListener("mouseleave", function() {
+          popup.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+        });
+      }
+    }
+
+    function hidePetLoading() {
+      const stageWorld = document.getElementById("petStageWorld");
+      const loadingOverlay = document.getElementById("petLoadingOverlay");
+      const progressBar = document.getElementById("petLoadingProgressBar");
+      
+      function checkPending() {
+        const elapsed = Date.now() - (window.petLoadingStartTime || 0);
+        // Ensure at least 1.5 seconds so user can see the quote, and all images are loaded
+        if (window.petImagesPendingCount > 0 || elapsed < 1500) {
+          setTimeout(checkPending, 50);
+          return;
+        }
+        
+        if (progressBar) {
+          progressBar.style.transition = "width 0.2s ease";
+          progressBar.style.width = "100%";
+        }
+        
+        setTimeout(function() {
+          if (stageWorld) stageWorld.style.display = "block";
+          if (loadingOverlay) loadingOverlay.style.display = "none";
+        }, 250);
+      }
+      
+      checkPending();
+    }
+
     function initPetPage() {
       if (!state.initialized) {
         bindPetNameEditor();
@@ -4352,9 +4445,10 @@
       startPetHeaderMeteors();
       setupPetHeaderMouseEffect();
       loadTopicProgressCacheForPet();
+      
+      showPetLoading();
       loadPetConfigFromServer();
       updateXQPUI();
-      renderPet();
     }
 
 

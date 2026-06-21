@@ -1044,6 +1044,17 @@ function getTopicsForUserPage() {
       return !isTopicHidden(topic);
     });
 
+    visibleTopics.sort(function(a, b) {
+      var catA = normalizeCategoryName(a.category);
+      var catB = normalizeCategoryName(b.category);
+
+      if (catA !== catB) {
+        return catA.localeCompare(catB, 'vi');
+      }
+
+      return (a.rowIndex || 0) - (b.rowIndex || 0);
+    });
+
     var progressResult = getUserTopicProgress();
     var progressMap =
       progressResult && progressResult.success
@@ -1055,7 +1066,20 @@ function getTopicsForUserPage() {
       topicMap[String(topic.topicId)] = topic;
     });
 
-    var enhancedTopics = visibleTopics.map(function(topic) {
+    var enhancedTopics = visibleTopics.map(function(topic, index) {
+      // Inject implicit sequential prerequisite if topic is locked and has no explicit prerequisites
+      if (topic.isLocked) {
+        var conditionObj = getUnlockConditionObject(topic);
+        var hasExplicitPrereqs = conditionObj && conditionObj.prerequisiteTopicIds && conditionObj.prerequisiteTopicIds.length > 0;
+        
+        if (!hasExplicitPrereqs && index > 0) {
+          var prevTopic = visibleTopics[index - 1];
+          if (prevTopic) {
+            topic.prerequisiteTopics = String(prevTopic.topicId);
+          }
+        }
+      }
+
       var access = evaluateTopicUnlock(topic, progressMap, topicMap);
 
       return Object.assign({}, topic, {
@@ -1064,17 +1088,6 @@ function getTopicsForUserPage() {
         missingPrerequisites: access.missingPrerequisites || [],
         ignoredHiddenPrerequisites: access.ignoredHiddenPrerequisites || []
       });
-    });
-
-    enhancedTopics.sort(function(a, b) {
-      var catA = normalizeCategoryName(a.category);
-      var catB = normalizeCategoryName(b.category);
-
-      if (catA !== catB) {
-        return catA.localeCompare(catB, 'vi');
-      }
-
-      return (a.rowIndex || 0) - (b.rowIndex || 0);
     });
 
     return {
