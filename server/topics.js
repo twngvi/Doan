@@ -423,6 +423,15 @@ function getUserTopicProgress() {
     const headers = data[0];
     const rows = data.slice(1);
 
+    // Fetch all topics to check quizStatus requirement
+    const topicsResult = getAllTopicsIncludingHidden();
+    const topicMap = {};
+    if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
+      topicsResult.topics.forEach(function (t) {
+        topicMap[String(t.topicId)] = t;
+      });
+    }
+
     // Map progress data - support both old and new schema
     const progress = {};
     rows.forEach((row) => {
@@ -494,10 +503,13 @@ function getUserTopicProgress() {
             (completedCount / totalActivities) * 100,
           );
 
+          const topic = topicMap[topicId];
+          const quizRequired = topic && topic.quizStatus === "active";
+
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && mindmapDone && flashcardsDone && miniQuizDone,
+              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone),
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,

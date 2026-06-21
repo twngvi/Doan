@@ -98,7 +98,12 @@
           if (merged[topicId].flashcardsCompleted) count++;
           if (merged[topicId].miniQuizCompleted) count++;
           merged[topicId].progress = Math.round((count / 4) * 100);
-          merged[topicId].completed = count === 4;
+
+          var topic = allTopics.find(function(t) { return t.topicId === topicId; });
+          var quizRequired = topic && topic.quizStatus === "active";
+          var quizDone = merged[topicId].quizDone === true;
+
+          merged[topicId].completed = (count === 4) && (!quizRequired || quizDone);
         }
       } catch (e) {
         console.warn("⚠️ Could not merge localStorage progress:", e);
@@ -388,12 +393,6 @@
         }).length;
 
         section.innerHTML = `
-          <div class="topic-category-header">
-            <div>
-              <h3>${escapeHtml(group.category)}</h3>
-              <p>${completedCount}/${group.topics.length} bài đã hoàn thành</p>
-            </div>
-          </div>
           <div class="topic-category-grid"></div>
         `;
 
@@ -516,11 +515,11 @@
         progressCircle = `
           <div class="list-item-progress-circle completed">
             <svg width="36" height="36" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="16" fill="none" stroke="#e8f7ee" stroke-width="3"/>
-              <circle cx="18" cy="18" r="16" fill="none" stroke="#2fa36b" stroke-width="3"
+              <circle cx="18" cy="18" r="16" fill="none" stroke="#fdf2f8" stroke-width="3"/>
+              <circle cx="18" cy="18" r="16" fill="none" stroke="#db2777" stroke-width="3"
                 stroke-dasharray="100.5" stroke-dashoffset="0" stroke-linecap="round"
                 transform="rotate(-90 18 18)"/>
-              <path d="M12 18l4 4 8-8" fill="none" stroke="#2fa36b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 18l4 4 8-8" fill="none" stroke="#db2777" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>`;
       } else if (progressPercent > 0) {
@@ -599,19 +598,8 @@
       const progressPercent = progress.progress || 0;
       const statusMeta = getTopicCardStatusMeta(status, progress);
 
-      // ⭐ Progress overlay: determine completion of 3 activities
-      const theoryDone = !isLocked && !!(progress.lessonCompleted || progress.completed);
-      const quizDone = !isLocked && !!(progress.quizDone || getTopicQuizPercent(topic.topicId) > 0);
-      const matchingDone = !isLocked && !!(progress.matchingDone || getTopicMatchingPercent(topic.topicId) > 0);
-
-      // Build overlay HTML (only for non-locked cards)
-      const progressOverlayHTML = isLocked ? '' : `
-        <div class="card-progress-overlay">
-          <div class="card-progress-zone zone-theory${theoryDone ? ' done' : ''}"></div>
-          <div class="card-progress-zone zone-quiz${quizDone ? ' done' : ''}"></div>
-          <div class="card-progress-zone zone-matching${matchingDone ? ' done' : ''}"></div>
-        </div>
-      `;
+      // Progress overlay removed to avoid partial color changes
+      const progressOverlayHTML = '';
 
       // SVG icons for buttons
       const playIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -1306,7 +1294,7 @@
 
       const completedEl = document.getElementById("completedTopics");
       if (completedEl) {
-        completedEl.textContent = completed;
+        completedEl.textContent = completed + "/" + (allTopics ? allTopics.length : 0);
       }
     }
 

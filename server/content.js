@@ -2374,13 +2374,21 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
       var currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1;
-      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1;
-      var flashcardsDone =
-        currentData[headers.indexOf("flashcardsCompleted")] === 1;
+      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1 || currentData[headers.indexOf("lessonCompleted")] === true;
+      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1 || currentData[headers.indexOf("mindmapViewed")] === true;
+      var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
+      var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
+      var quizDone = true; // quiz is now done too
 
-      if (lessonDone && mindmapDone && flashcardsDone) {
-        // All 4 activities done (quiz is now done too)
+      // Check if topic has active quiz
+      var topicsResult = getAllTopicsIncludingHidden();
+      var topic = null;
+      if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
+        topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
+      }
+      var quizRequired = topic && topic.quizStatus === "active";
+
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
         if (statusCol >= 0)
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
@@ -2677,13 +2685,21 @@ function updateMatchingDoneInTopicProgress(userId, topicId) {
       var currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1;
-      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1;
-      var flashcardsDone =
-        currentData[headers.indexOf("flashcardsCompleted")] === 1;
-      var quizDone = currentData[headers.indexOf("quizDone")] === 1;
+      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1 || currentData[headers.indexOf("lessonCompleted")] === true;
+      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1 || currentData[headers.indexOf("mindmapViewed")] === true;
+      var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
+      var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
+      var quizDone = currentData[headers.indexOf("quizDone")] === 1 || currentData[headers.indexOf("quizDone")] === true;
 
-      if (lessonDone && mindmapDone && flashcardsDone && quizDone) {
+      // Check if topic has active quiz
+      var topicsResult = getAllTopicsIncludingHidden();
+      var topic = null;
+      if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
+        topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
+      }
+      var quizRequired = topic && topic.quizStatus === "active";
+
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
         if (statusCol >= 0)
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
@@ -5499,12 +5515,13 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       if (lastUpdatedCol >= 0)
         sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
 
-      // Check if all 4 parts completed -> update status
-      // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
+      // Check if all parts completed -> update status
+      // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz + Quiz (nếu active)
       const lessonCol = headers.indexOf("lessonCompleted");
       const mindmapCol = headers.indexOf("mindmapViewed");
       const flashcardsCol = headers.indexOf("flashcardsCompleted");
       const miniQuizCol = headers.indexOf("miniQuizCompleted");
+      const quizCol = headers.indexOf("quizDone");
 
       const currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
@@ -5518,8 +5535,17 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
         flashcardsCol >= 0 && isChecked(currentData[flashcardsCol]);
       const miniQuizDone =
         miniQuizCol >= 0 && isChecked(currentData[miniQuizCol]);
+      const quizDone = quizCol >= 0 && isChecked(currentData[quizCol]);
 
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone) {
+      // Check if topic has active quiz
+      var topicsResult = getAllTopicsIncludingHidden();
+      var topic = null;
+      if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
+        topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
+      }
+      var quizRequired = topic && topic.quizStatus === "active";
+
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
         const statusCol = headers.indexOf("status");
         const completedAtCol = headers.indexOf("completedAt");
         if (statusCol >= 0)
