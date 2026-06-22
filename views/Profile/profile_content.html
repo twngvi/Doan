@@ -46,11 +46,11 @@
                 <circle cx="12" cy="13" r="4" />
               </svg>
             </button>
+            <div class="profile-user-id" id="profile-user-id">ID: --</div>
           </div>
 
           <div class="profile-user-meta">
             <h1 class="profile-name-left profile-name-animated" id="profile-fullname">User</h1>
-            <div class="profile-user-id" id="profile-user-id">ID: --</div>
           </div>
         </div>
       </div>
@@ -606,67 +606,157 @@
             onsubmit="window.handleStudySettingsSave(event)"
           >
             <!-- Mục tiêu ngày -->
-            <div class="form-group-pro floating">
-              <input
-                type="number"
-                id="dailyGoal"
-                class="form-input-pro"
-                placeholder=" "
-                min="1"
-                max="20"
-                value="5"
-                required
-              />
-              <label class="form-label-pro" for="dailyGoal">Mục tiêu số bài học mỗi ngày</label>
-              <div class="input-highlight"></div>
-            </div>
-
-            <div class="form-group-pro floating">
-              <input
-                type="number"
-                id="dailyTimeGoal"
-                class="form-input-pro"
-                placeholder="Ví dụ: 15"
-                min="1"
-                max="300"
-                value="15"
-                required
-              />
-              <label class="form-label-pro" for="dailyTimeGoal">Thời gian học mỗi ngày (phút)</label>
-              <div class="input-highlight"></div>
-            </div>
-
-            <!-- Nhắc nhở email toggle -->
-            <div class="form-group-pro">
-              <label class="toggle-switch-pro">
-                <input type="checkbox" id="emailReminderEnabled" />
-                <span class="slider round"></span>
-                <span class="toggle-label">Gửi email nhắc nhở học tập</span>
-              </label>
-            </div>
-
-            <!-- Các thiết lập chi tiết khi bật nhắc nhở -->
-            <div id="emailReminderSettings" style="display: none; padding-left: 1rem; border-left: 2px solid #e2e8f0; margin-bottom: 1rem;">
-              <div class="form-group-pro floating">
+            <div class="goals-row">
+              <div class="form-group-pro floating flex-goal">
+                <button type="button" class="goal-btn minus" onclick="adjustGoal('dailyGoal', -1)">-</button>
                 <input
-                  type="text"
-                  id="reminderTimes"
-                  class="form-input-pro"
-                  placeholder="Ví dụ: 07:00, 20:00"
-                  value="20:00"
+                  type="number"
+                  id="dailyGoal"
+                  class="form-input-pro goal-input"
+                  placeholder=" "
+                  min="1"
+                  max="20"
+                  value="5"
+                  required
                 />
-                <label class="form-label-pro" for="reminderTimes">Khung giờ nhắc nhở (cách nhau dấu phẩy)</label>
+                <button type="button" class="goal-btn plus" onclick="adjustGoal('dailyGoal', 1)">+</button>
+                <label class="form-label-pro" for="dailyGoal">Số bài/ngày</label>
                 <div class="input-highlight"></div>
               </div>
 
-              <div class="form-group-pro">
-                <label class="form-label-pro" style="position: static; font-size: 0.85rem; margin-bottom: 0.5rem; display: block; color: var(--text-secondary);">Chế độ nhắc nhở</label>
-                <select id="reminderMode" class="form-input-pro">
-                  <option value="1">Nhắc một lần</option>
-                  <option value="2">Nhắc đến khi hoàn thành</option>
-                  <option value="3">Nhắc tăng dần mức độ khẩn cấp</option>
-                </select>
+              <div class="form-group-pro floating flex-goal">
+                <button type="button" class="goal-btn minus" onclick="adjustGoal('dailyTimeGoal', -5)">-</button>
+                <input
+                  type="number"
+                  id="dailyTimeGoal"
+                  class="form-input-pro goal-input"
+                  placeholder=" "
+                  min="1"
+                  max="300"
+                  value="15"
+                  required
+                />
+                <button type="button" class="goal-btn plus" onclick="adjustGoal('dailyTimeGoal', 5)">+</button>
+                <label class="form-label-pro" for="dailyTimeGoal">Phút/ngày</label>
+                <div class="input-highlight"></div>
               </div>
+            </div>
+
+            <!-- Nhắc nhở thông minh Toggle & Status -->
+            <div class="reminder-master-toggle">
+              <div class="reminder-toggle-header">
+                <div class="reminder-toggle-info">
+                  <div class="reminder-toggle-title">Nhắc học qua email</div>
+                  <div class="reminder-toggle-status" id="reminderStatusText">Trạng thái: Đang tắt</div>
+                </div>
+                <label class="smart-switch">
+                  <input type="checkbox" id="emailReminderEnabled" />
+                  <span class="smart-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Các thiết lập chi tiết khi bật nhắc nhở -->
+            <div id="emailReminderSettings" class="reminder-advanced-settings" style="display: none;">
+              
+              <!-- Khung giờ nhắc -->
+              <div class="reminder-section">
+                <div class="reminder-section-title">Khung giờ nhắc</div>
+                <div class="reminder-chips-container" id="reminderTimeChips">
+                  <!-- Chips will be generated by JS -->
+                </div>
+              </div>
+
+              <!-- Nhắc vào ngày -->
+              <div class="reminder-section">
+                <div class="reminder-section-title">Nhắc vào ngày</div>
+                <div class="reminder-days-group" id="reminderDaysGroup">
+                  <button type="button" class="day-chip" data-day="1">T2</button>
+                  <button type="button" class="day-chip" data-day="2">T3</button>
+                  <button type="button" class="day-chip" data-day="3">T4</button>
+                  <button type="button" class="day-chip" data-day="4">T5</button>
+                  <button type="button" class="day-chip" data-day="5">T6</button>
+                  <button type="button" class="day-chip" data-day="6">T7</button>
+                  <button type="button" class="day-chip" data-day="0">CN</button>
+                </div>
+              </div>
+
+              <!-- Nhắc trước giờ học -->
+              <div class="reminder-section">
+                <div class="reminder-section-title">Nhắc trước giờ học</div>
+                <div class="reminder-before-group" id="reminderBeforeGroup">
+                  <button type="button" class="before-chip" data-min="0">Đúng giờ</button>
+                  <button type="button" class="before-chip" data-min="5">Trước 5 phút</button>
+                  <button type="button" class="before-chip" data-min="10">Trước 10 phút</button>
+                  <button type="button" class="before-chip" data-min="15">Trước 15 phút</button>
+                  <button type="button" class="before-chip" data-min="30">Trước 30 phút</button>
+                </div>
+              </div>
+
+              <!-- Gợi ý giờ học thông minh -->
+              <div class="reminder-section">
+                <div class="reminder-toggle-header" style="margin-bottom: 12px; padding: 0; background: none; box-shadow: none;">
+                  <div class="reminder-toggle-info">
+                    <div class="reminder-section-title" style="margin: 0;">Gợi ý giờ học thông minh</div>
+                  </div>
+                  <div style="display: flex; align-items: center;">
+                    <label class="smart-switch smart-switch-small">
+                      <input type="checkbox" id="smartReminderEnabled" checked />
+                      <span class="smart-slider"></span>
+                    </label>
+                    <span style="font-size: 0.9rem; margin-left: 8px; color: var(--text-primary); font-weight: 500;">Bật</span>
+                  </div>
+                </div>
+                
+                <div id="smartSuggestionContainer" class="smart-suggestion-box">
+                  <div class="smart-suggestion-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 6a6 6 0 0 0-6 6c0 2 1.5 3.5 1.5 5h9c0-1.5 1.5-3 1.5-5a6 6 0 0 0-6-6z"/></svg>
+                  </div>
+                  <div class="smart-suggestion-content">
+                    <div class="smart-suggestion-title">Giờ học đề xuất cho bạn</div>
+                    <div class="smart-suggestion-desc" id="smartSuggestionDescText">Chưa có đủ dữ liệu. Gợi ý mặc định: <strong id="smartSuggestionTime">20:30</strong></div>
+                  </div>
+                  <button type="button" class="btn-use-suggestion" id="btnUseSmartSuggestion">Dùng giờ gợi ý</button>
+                </div>
+              </div>
+
+              <!-- Nếu chưa học: Tự động nhắc lại -->
+              <div class="reminder-section">
+                <div class="reminder-toggle-header" style="margin-bottom: 12px; padding: 0; background: none; box-shadow: none;">
+                  <div class="reminder-toggle-info">
+                    <div class="reminder-section-title" style="margin: 0;">Tự động nhắc lại nếu chưa học</div>
+                  </div>
+                  <div style="display: flex; align-items: center;">
+                    <label class="smart-switch smart-switch-small">
+                      <input type="checkbox" id="autoRetryIfMissed" />
+                      <span class="smart-slider"></span>
+                    </label>
+                    <span style="font-size: 0.9rem; margin-left: 8px; color: var(--text-primary); font-weight: 500;">Bật tự động nhắc lại</span>
+                  </div>
+                </div>
+                
+                <div id="retrySettingsBox" class="retry-settings-box" style="display: none;">
+                  <div class="retry-field">
+                    <label>Nhắc lại sau:</label>
+                    <select id="retryInterval" class="retry-select">
+                      <option value="15">15 phút</option>
+                      <option value="30">30 phút</option>
+                      <option value="45">45 phút</option>
+                      <option value="60">60 phút</option>
+                    </select>
+                  </div>
+                  <div class="retry-field">
+                    <label>Tối đa:</label>
+                    <select id="maxRetries" class="retry-select">
+                      <option value="1">1 lần/ngày</option>
+                      <option value="2">2 lần/ngày</option>
+                      <option value="3">3 lần/ngày</option>
+                      <option value="5">5 lần/ngày</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
             <button type="submit" class="btn-gradient-pro btn-save" id="btnSaveStudySettings">

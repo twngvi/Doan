@@ -26,6 +26,83 @@ function parseStudyNumber_(val, fallback) {
   return isNaN(parsed) ? fallback : parsed;
 }
 
+function parseStudyBoolean_(value, fallback) {
+  if (value === "" || value === null || value === undefined) {
+    return fallback;
+  }
+  if (value === true || value === false) {
+    return value;
+  }
+  const text = String(value).trim().toLowerCase();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  return fallback;
+}
+
+function parseStudyJsonArraySafe_(raw, fallback) {
+  if (raw === "" || raw === null || raw === undefined) {
+    return fallback.slice();
+  }
+
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed === null || parsed === undefined) return fallback.slice();
+    return [parsed];
+  } catch (e) {
+    if (Array.isArray(raw)) return raw;
+    const text = String(raw).trim();
+    if (!text) return fallback.slice();
+    if (text.indexOf(",") !== -1) {
+      return text
+        .split(",")
+        .map(function (item) {
+          return String(item || "").trim();
+        })
+        .filter(function (item) {
+          return item !== "";
+        });
+    }
+    return [text];
+  }
+}
+
+function normalizeReminderTimesForSettings_(raw) {
+  const arr = parseStudyJsonArraySafe_(raw, ["20:00"]);
+  const map = {};
+
+  arr.forEach(function (item) {
+    const time = String(item || "").trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
+    map[time] = true;
+  });
+
+  const out = Object.keys(map).sort();
+  return out.length ? out : ["20:00"];
+}
+
+function normalizeReminderDaysForSettings_(raw) {
+  const arr = parseStudyJsonArraySafe_(raw, [1, 2, 3, 4, 5, 6, 0]);
+  const map = {};
+
+  arr.forEach(function (item) {
+    const day = parseInt(item, 10);
+    if (isNaN(day) || day < 0 || day > 6) return;
+    map[day] = true;
+  });
+
+  const out = Object.keys(map).map(function (key) {
+    return parseInt(key, 10);
+  });
+
+  return out.length ? out : [1, 2, 3, 4, 5, 6, 0];
+}
+
+function normalizeAllowedStudyInteger_(value, allowedValues, fallback) {
+  const parsed = parseStudyNumber_(value, fallback);
+  return allowedValues.indexOf(parsed) !== -1 ? parsed : fallback;
+}
+
 function getStudyColumnInfo_(usersSheet) {
   let lastCol = Math.max(usersSheet.getLastColumn(), 1);
   let headers = usersSheet
@@ -38,6 +115,12 @@ function getStudyColumnInfo_(usersSheet) {
     "dailyTimeGoal",
     "emailReminderEnabled",
     "reminderTimes",
+    "reminderDays",
+    "reminderLeadMinutes",
+    "repeatIfMissed",
+    "repeatIntervalMinutes",
+    "repeatMaxPerDay",
+    "smartReminderEnabled",
     "reminderMode"
   ];
 
@@ -102,27 +185,57 @@ function parseStudySettingsFromRow_(row, colMap) {
   const dailyTimeGoalRaw = readFirstStudyValue_(row, colMap.dailyTimeGoal);
   const emailReminderRaw = readFirstStudyValue_(row, colMap.emailReminderEnabled);
   const reminderTimesRaw = readFirstStudyValue_(row, colMap.reminderTimes);
+  const reminderDaysRaw = readFirstStudyValue_(row, colMap.reminderDays);
+  const reminderLeadMinutesRaw = readFirstStudyValue_(row, colMap.reminderLeadMinutes);
+  const repeatIfMissedRaw = readFirstStudyValue_(row, colMap.repeatIfMissed);
+  const repeatIntervalMinutesRaw = readFirstStudyValue_(row, colMap.repeatIntervalMinutes);
+  const repeatMaxPerDayRaw = readFirstStudyValue_(row, colMap.repeatMaxPerDay);
+  const smartReminderEnabledRaw = readFirstStudyValue_(row, colMap.smartReminderEnabled);
   const reminderModeRaw = readFirstStudyValue_(row, colMap.reminderMode);
 
-  let reminderTimes = ["20:00"];
+  const legacyRepeatIfMissedRaw = readFirstStudyValue_(row, colMap.autoRetryIfMissed);
+  const legacyRepeatIntervalRaw = readFirstStudyValue_(row, colMap.retryInterval);
+  const legacyRepeatMaxRaw = readFirstStudyValue_(row, colMap.maxRetries);
 
-  if (reminderTimesRaw !== "" && reminderTimesRaw !== null && reminderTimesRaw !== undefined) {
-    try {
-      const parsed = JSON.parse(String(reminderTimesRaw));
-      reminderTimes = Array.isArray(parsed) ? parsed : [String(parsed)];
-    } catch (e) {
-      reminderTimes = [String(reminderTimesRaw)];
-    }
-  }
+  const repeatIfMissed = parseStudyBoolean_(
+    repeatIfMissedRaw !== "" && repeatIfMissedRaw !== null && repeatIfMissedRaw !== undefined
+      ? repeatIfMissedRaw
+      : legacyRepeatIfMissedRaw,
+    false
+  );
+
+  const repeatIntervalMinutes = normalizeAllowedStudyInteger_(
+    repeatIntervalMinutesRaw !== "" && repeatIntervalMinutesRaw !== null && repeatIntervalMinutesRaw !== undefined
+      ? repeatIntervalMinutesRaw
+      : legacyRepeatIntervalRaw,
+    [15, 30, 45, 60],
+    30
+  );
+
+  const repeatMaxPerDay = normalizeAllowedStudyInteger_(
+    repeatMaxPerDayRaw !== "" && repeatMaxPerDayRaw !== null && repeatMaxPerDayRaw !== undefined
+      ? repeatMaxPerDayRaw
+      : legacyRepeatMaxRaw,
+    [1, 2, 3, 5],
+    3
+  );
 
   return {
     dailyGoal: parseStudyNumber_(dailyGoalRaw, 5),
     dailyTimeGoal: parseStudyNumber_(dailyTimeGoalRaw, 15),
-    emailReminderEnabled:
-      emailReminderRaw === true ||
-      String(emailReminderRaw).trim().toLowerCase() === "true",
-    reminderTimes: reminderTimes,
-    reminderMode: parseStudyNumber_(reminderModeRaw, 1)
+    emailReminderEnabled: parseStudyBoolean_(emailReminderRaw, false),
+    reminderTimes: normalizeReminderTimesForSettings_(reminderTimesRaw),
+    reminderDays: normalizeReminderDaysForSettings_(reminderDaysRaw),
+    reminderLeadMinutes: Math.max(0, Math.min(180, parseStudyNumber_(reminderLeadMinutesRaw, 10))),
+    repeatIfMissed: repeatIfMissed,
+    repeatIntervalMinutes: repeatIntervalMinutes,
+    repeatMaxPerDay: repeatMaxPerDay,
+    smartReminderEnabled: parseStudyBoolean_(smartReminderEnabledRaw, true),
+    reminderMode: normalizeAllowedStudyInteger_(reminderModeRaw, [1, 2, 3], 2),
+    // Legacy aliases to keep old frontend code working.
+    autoRetryIfMissed: repeatIfMissed,
+    retryInterval: repeatIntervalMinutes,
+    maxRetries: repeatMaxPerDay
   };
 }
 
@@ -279,10 +392,24 @@ function updateStudySettings(userContext, settings) {
       dailyGoal: Number(settings.dailyGoal),
       dailyTimeGoal: Number(settings.dailyTimeGoal),
       emailReminderEnabled: settings.emailReminderEnabled === true,
-      reminderTimes: Array.isArray(settings.reminderTimes)
-        ? settings.reminderTimes
-        : ["20:00"],
-      reminderMode: Number(settings.reminderMode || 1)
+      reminderTimes: normalizeReminderTimesForSettings_(settings.reminderTimes),
+      reminderDays: normalizeReminderDaysForSettings_(settings.reminderDays),
+      reminderLeadMinutes: Math.max(0, Math.min(180, parseStudyNumber_(settings.reminderLeadMinutes, 10))),
+      repeatIfMissed:
+        settings.repeatIfMissed === true ||
+        settings.autoRetryIfMissed === true,
+      repeatIntervalMinutes: normalizeAllowedStudyInteger_(
+        settings.repeatIntervalMinutes !== undefined ? settings.repeatIntervalMinutes : settings.retryInterval,
+        [15, 30, 45, 60],
+        30
+      ),
+      repeatMaxPerDay: normalizeAllowedStudyInteger_(
+        settings.repeatMaxPerDay !== undefined ? settings.repeatMaxPerDay : settings.maxRetries,
+        [1, 2, 3, 5],
+        3
+      ),
+      smartReminderEnabled: settings.smartReminderEnabled !== false,
+      reminderMode: normalizeAllowedStudyInteger_(settings.reminderMode, [1, 2, 3], 2)
     };
 
     if (
@@ -341,6 +468,12 @@ function updateStudySettings(userContext, settings) {
     writeStudyValueToAllCols_(row, colInfo.map.dailyTimeGoal, normalizedSettings.dailyTimeGoal);
     writeStudyValueToAllCols_(row, colInfo.map.emailReminderEnabled, normalizedSettings.emailReminderEnabled);
     writeStudyValueToAllCols_(row, colInfo.map.reminderTimes, JSON.stringify(normalizedSettings.reminderTimes));
+    writeStudyValueToAllCols_(row, colInfo.map.reminderDays, JSON.stringify(normalizedSettings.reminderDays));
+    writeStudyValueToAllCols_(row, colInfo.map.reminderLeadMinutes, normalizedSettings.reminderLeadMinutes);
+    writeStudyValueToAllCols_(row, colInfo.map.repeatIfMissed, normalizedSettings.repeatIfMissed);
+    writeStudyValueToAllCols_(row, colInfo.map.repeatIntervalMinutes, normalizedSettings.repeatIntervalMinutes);
+    writeStudyValueToAllCols_(row, colInfo.map.repeatMaxPerDay, normalizedSettings.repeatMaxPerDay);
+    writeStudyValueToAllCols_(row, colInfo.map.smartReminderEnabled, normalizedSettings.smartReminderEnabled);
     writeStudyValueToAllCols_(row, colInfo.map.reminderMode, normalizedSettings.reminderMode);
 
     usersSheet.getRange(targetRow, 1, 1, colInfo.lastCol).setValues([row]);
@@ -350,6 +483,15 @@ function updateStudySettings(userContext, settings) {
       usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
     });
     colInfo.map.dailyTimeGoal.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+    colInfo.map.reminderLeadMinutes.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+    colInfo.map.repeatIntervalMinutes.forEach(function (idx) {
+      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
+    });
+    colInfo.map.repeatMaxPerDay.forEach(function (idx) {
       usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
     });
     colInfo.map.reminderMode.forEach(function (idx) {

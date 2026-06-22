@@ -148,6 +148,101 @@ function parseStudyNumber_(val, fallback) {
   return isNaN(parsed) ? fallback : parsed;
 }
 
+function parseStudyBoolean_(value, fallback) {
+  if (value === "" || value === null || value === undefined) {
+    return fallback;
+  }
+  if (value === true || value === false) {
+    return value;
+  }
+  const text = String(value).trim().toLowerCase();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  return fallback;
+}
+
+function normalizeReminderDaysForEmail_(value) {
+  if (value === "" || value === null || value === undefined) {
+    return [1, 2, 3, 4, 5, 6, 0];
+  }
+
+  let arr = [];
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (Array.isArray(parsed)) {
+      arr = parsed;
+    } else if (parsed !== null && parsed !== undefined) {
+      arr = [parsed];
+    }
+  } catch (e) {
+    arr = String(value).split(",");
+  }
+
+  const map = {};
+  arr.forEach(function (item) {
+    const day = parseInt(item, 10);
+    if (isNaN(day) || day < 0 || day > 6) return;
+    map[day] = true;
+  });
+
+  const out = Object.keys(map).map(function (key) {
+    return parseInt(key, 10);
+  });
+  return out.length ? out : [1, 2, 3, 4, 5, 6, 0];
+}
+
+function normalizeAllowedReminderInteger_(value, allowedValues, fallback) {
+  const parsed = parseStudyNumber_(value, fallback);
+  return allowedValues.indexOf(parsed) !== -1 ? parsed : fallback;
+}
+
+function buildStudyReminderInitialKey_(todayKey, email, reminderTime) {
+  return (
+    STUDY_REMINDER_SENT_PREFIX +
+    todayKey +
+    "_" +
+    email +
+    "_" +
+    reminderTime +
+    "_initial"
+  );
+}
+
+function buildStudyReminderRepeatKey_(todayKey, email, reminderTime, repeatIndex) {
+  return (
+    STUDY_REMINDER_SENT_PREFIX +
+    todayKey +
+    "_" +
+    email +
+    "_" +
+    reminderTime +
+    "_repeat_" +
+    repeatIndex
+  );
+}
+
+function countSentRepeatsForSlot_(props, todayKey, email, reminderTime, repeatMaxPerDay) {
+  let count = 0;
+  for (let i = 1; i <= repeatMaxPerDay; i++) {
+    const key = buildStudyReminderRepeatKey_(todayKey, email, reminderTime, i);
+    const val = props.getProperty(key);
+    if (val && String(val).indexOf("SENT_") === 0) {
+      count = i;
+    }
+  }
+  return count;
+}
+
+function extractSentAtFromAttemptFlag_(flagValue) {
+  const text = String(flagValue || "").trim();
+  if (text.indexOf("SENT_") !== 0) return null;
+  const iso = text.substring(5);
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return null;
+  return dt;
+}
+
 function isReminderTimeDue_(reminderTime, now) {
   const nowHour = Number(Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "H"));
   const nowMinute = Number(Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "m"));
@@ -175,6 +270,117 @@ function isReminderTimeDue_(reminderTime, now) {
 
   // Cho phép trigger trễ tối đa 15 phút.
   return diff >= 0 && diff <= 15;
+}
+
+function isStudyReminderDueWithLead_(reminderTime, reminderDays, leadMinutes, now) {
+  const parts = String(reminderTime || "").trim().split(":");
+  if (parts.length !== 2) return false;
+  
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return false;
+
+  // Thuật toán: thời điểm lý tưởng gửi email là EventTime - leadMinutes.
+  // cron job chạy mỗi 5 phút, ta cho phép trễ 15 phút.
+  // => Email Send Time <= now <= Email Send Time + 15 mins
+  // => EventTime - leadMinutes <= now <= EventTime - leadMinutes + 15 mins
+  // => EventTime <= now + leadMinutes <= EventTime + 15 mins
+  
+  const nowPlusLead = new Date(now.getTime() + leadMinutes * 60000);
+  
+  // Tạo các ứng viên EventTime (hôm qua, hôm nay, ngày mai) để bao quát trường hợp qua nửa đêm
+  const eventTimeToday = new Date(nowPlusLead.getTime());
+  eventTimeToday.setHours(h, m, 0, 0);
+  
+  const eventTimeYesterday = new Date(eventTimeToday.getTime() - 24 * 3600000);
+  const eventTimeTomorrow = new Date(eventTimeToday.getTime() + 24 * 3600000);
+  
+  const candidates = [eventTimeYesterday, eventTimeToday, eventTimeTomorrow];
+  
+  for (let i = 0; i < candidates.length; i++) {
+    const candidateEvent = candidates[i];
+    
+    // Kiểm tra xem ngày của Candidate Event có nằm trong danh sách nhắc nhở không
+    if (!reminderDays.includes(candidateEvent.getDay())) continue;
+    
+    // Tính khoảng cách thời gian (phút)
+    const diffMs = nowPlusLead.getTime() - candidateEvent.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    // Nếu nowPlusLead đang nằm trong khoảng từ [candidateEvent, candidateEvent + 15 phút]
+    if (diffMins >= 0 && diffMins <= 15) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function getInitialReminderSlotInfo_(reminderTime, reminderDays, leadMinutes, now) {
+  const parts = String(reminderTime || "").trim().split(":");
+  if (parts.length !== 2) {
+    return { due: false, eventTime: null, sendTime: null };
+  }
+
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return { due: false, eventTime: null, sendTime: null };
+  }
+
+  const safeLead = Math.max(0, parseStudyNumber_(leadMinutes, 10));
+  const nowPlusLead = new Date(now.getTime() + safeLead * 60000);
+  const eventToday = new Date(nowPlusLead.getTime());
+  eventToday.setHours(h, m, 0, 0);
+
+  const candidates = [
+    new Date(eventToday.getTime() - 24 * 3600000),
+    eventToday,
+    new Date(eventToday.getTime() + 24 * 3600000)
+  ];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidateEvent = candidates[i];
+    if (!reminderDays.includes(candidateEvent.getDay())) continue;
+
+    const sendTime = new Date(candidateEvent.getTime() - safeLead * 60000);
+    const diffMins = Math.floor((now.getTime() - sendTime.getTime()) / 60000);
+    if (diffMins >= 0 && diffMins <= 15) {
+      return {
+        due: true,
+        eventTime: candidateEvent,
+        sendTime: sendTime
+      };
+    }
+  }
+
+  return { due: false, eventTime: null, sendTime: null };
+}
+
+function applyReminderUrgencyByMode_(rendered, reminderMode, sendType, repeatIndex) {
+  if (Number(reminderMode || 1) !== 3 || sendType !== "repeat") {
+    return rendered;
+  }
+
+  const level = Number(repeatIndex || 1);
+  let prefix = "[Nhắc lại] ";
+  if (level >= 3) {
+    prefix = "[Khẩn cấp] ";
+  } else if (level >= 2) {
+    prefix = "[Quan trọng] ";
+  }
+
+  let footer =
+    '<p style="margin-top:12px;color:#b45309;"><b>Nhắc lại:</b> Bạn vẫn chưa hoàn thành mục tiêu học hôm nay.</p>';
+  if (level >= 3) {
+    footer =
+      '<p style="margin-top:12px;color:#b91c1c;"><b>Khẩn cấp:</b> Bạn sắp bỏ lỡ mục tiêu học hôm nay. Hãy bắt đầu ngay bây giờ.</p>';
+  }
+
+  return {
+    subject: prefix + String(rendered.subject || ""),
+    body: String(rendered.body || "") + footer
+  };
 }
 
 function renderStudyReminderTemplate_(template, vars) {
@@ -278,6 +484,15 @@ function getAllStudyReminderUsers_() {
   const dailyTimeGoalCol = col("dailyTimeGoal");
   const emailReminderEnabledCol = col("emailReminderEnabled");
   const reminderTimesCol = col("reminderTimes");
+  const reminderDaysCol = col("reminderDays");
+  const reminderLeadMinutesCol = col("reminderLeadMinutes");
+  const repeatIfMissedCol = col("repeatIfMissed");
+  const repeatIntervalMinutesCol = col("repeatIntervalMinutes");
+  const repeatMaxPerDayCol = col("repeatMaxPerDay");
+  const smartReminderEnabledCol = col("smartReminderEnabled");
+  const autoRetryIfMissedCol = col("autoRetryIfMissed");
+  const retryIntervalCol = col("retryInterval");
+  const maxRetriesCol = col("maxRetries");
   const reminderModeCol = col("reminderMode");
 
   if (emailCol === -1) {
@@ -308,6 +523,36 @@ function getAllStudyReminderUsers_() {
 
     if (!reminderTimes.length) continue;
 
+    const reminderDays = normalizeReminderDaysForEmail_(
+      reminderDaysCol !== -1 ? row[reminderDaysCol] : null
+    );
+
+    const reminderLeadMinutes =
+      reminderLeadMinutesCol !== -1
+        ? parseStudyNumber_(row[reminderLeadMinutesCol], 10)
+        : 10;
+
+    const repeatIfMissedRaw =
+      repeatIfMissedCol !== -1
+        ? row[repeatIfMissedCol]
+        : autoRetryIfMissedCol !== -1
+          ? row[autoRetryIfMissedCol]
+          : false;
+
+    const repeatIntervalRaw =
+      repeatIntervalMinutesCol !== -1
+        ? row[repeatIntervalMinutesCol]
+        : retryIntervalCol !== -1
+          ? row[retryIntervalCol]
+          : 30;
+
+    const repeatMaxRaw =
+      repeatMaxPerDayCol !== -1
+        ? row[repeatMaxPerDayCol]
+        : maxRetriesCol !== -1
+          ? row[maxRetriesCol]
+          : 3;
+
     users.push({
       rowNumber: i + 1,
       email: email,
@@ -323,8 +568,17 @@ function getAllStudyReminderUsers_() {
           dailyTimeGoalCol !== -1 ? parseStudyNumber_(row[dailyTimeGoalCol], 15) : 15,
         emailReminderEnabled: enabled,
         reminderTimes: reminderTimes,
+        reminderDays: reminderDays,
+        reminderLeadMinutes: reminderLeadMinutes,
+        repeatIfMissed: parseStudyBoolean_(repeatIfMissedRaw, false),
+        repeatIntervalMinutes: normalizeAllowedReminderInteger_(repeatIntervalRaw, [15, 30, 45, 60], 30),
+        repeatMaxPerDay: normalizeAllowedReminderInteger_(repeatMaxRaw, [1, 2, 3, 5], 3),
+        smartReminderEnabled:
+          smartReminderEnabledCol !== -1
+            ? parseStudyBoolean_(row[smartReminderEnabledCol], true)
+            : true,
         reminderMode:
-          reminderModeCol !== -1 ? parseStudyNumber_(row[reminderModeCol], 1) : 1
+          reminderModeCol !== -1 ? parseStudyNumber_(row[reminderModeCol], 2) : 2
       }
     });
   }
@@ -353,29 +607,92 @@ function processStudyReminderEmails() {
 
   let sentCount = 0;
   let skippedCount = 0;
+  const sentInThisRun = {};
 
   users.forEach(function (user) {
     Logger.log("Checking user: " + user.email + " settings=" + JSON.stringify(user.settings));
 
     const times = user.settings.reminderTimes || [];
+    const reminderDays = user.settings.reminderDays || [1, 2, 3, 4, 5, 6, 0];
+    const leadMinutes = parseStudyNumber_(user.settings.reminderLeadMinutes, 10);
+    const smartReminderEnabled = user.settings.smartReminderEnabled !== false;
+    const reminderModeRaw = parseStudyNumber_(user.settings.reminderMode, 2);
+    const reminderMode = [1, 2, 3].indexOf(reminderModeRaw) >= 0 ? reminderModeRaw : 2;
 
     times.forEach(function (time) {
-      const due = isReminderTimeDue_(time, now);
+      const slotInfo = getInitialReminderSlotInfo_(time, reminderDays, leadMinutes, now);
+      const due = slotInfo.due;
+      const repeatIfMissed = user.settings.repeatIfMissed === true && reminderMode !== 1 && smartReminderEnabled;
+      const repeatIntervalMinutes = normalizeAllowedReminderInteger_(
+        user.settings.repeatIntervalMinutes,
+        [15, 30, 45, 60],
+        30
+      );
+      const repeatMaxPerDay = normalizeAllowedReminderInteger_(
+        user.settings.repeatMaxPerDay,
+        [1, 2, 3, 5],
+        3
+      );
+      const initialKey = buildStudyReminderInitialKey_(todayKey, user.email, time);
+      const initialValue = props.getProperty(initialKey);
+      const hasInitialSent = !!(initialValue && String(initialValue).indexOf("SENT_") === 0);
+      const sentRepeats = countSentRepeatsForSlot_(props, todayKey, user.email, time, repeatMaxPerDay);
 
       Logger.log("Time check: " + user.email + " time=" + time + " due=" + due);
 
-      if (!due) {
+      const stats = getTodayStudyReminderStats_(user.email, user.settings);
+      const completed = isStudyGoalCompleted_(stats);
+
+      if (completed) {
         skippedCount++;
         return;
       }
 
-      const sentKey =
-        "STUDY_REMINDER_SENT_" +
-        todayKey +
-        "_" +
-        user.email +
-        "_" +
-        time;
+      let sendType = "";
+      let repeatIndex = 0;
+      let sentKey = "";
+
+      if (!hasInitialSent) {
+        if (!due) {
+          skippedCount++;
+          return;
+        }
+        sendType = "initial";
+        sentKey = initialKey;
+      } else {
+        if (!repeatIfMissed) {
+          skippedCount++;
+          return;
+        }
+
+        if (sentRepeats >= repeatMaxPerDay) {
+          skippedCount++;
+          return;
+        }
+
+        const initialSentAt = extractSentAtFromAttemptFlag_(initialValue);
+        if (!initialSentAt) {
+          skippedCount++;
+          return;
+        }
+
+        repeatIndex = sentRepeats + 1;
+        const repeatDueAt = new Date(
+          initialSentAt.getTime() + repeatIndex * repeatIntervalMinutes * 60000
+        );
+        if (now.getTime() < repeatDueAt.getTime()) {
+          skippedCount++;
+          return;
+        }
+
+        sendType = "repeat";
+        sentKey = buildStudyReminderRepeatKey_(todayKey, user.email, time, repeatIndex);
+      }
+
+      if (sentInThisRun[sentKey]) {
+        skippedCount++;
+        return;
+      }
 
       if (props.getProperty(sentKey)) {
         Logger.log("Already sent today: " + sentKey);
@@ -383,18 +700,7 @@ function processStudyReminderEmails() {
         return;
       }
 
-      const stats = getTodayStudyReminderStats_(user.email, user.settings);
-      const completed = isStudyGoalCompleted_(stats);
-      const mode = Number(user.settings.reminderMode || 1);
-
-      // Mode 2 và 3: nếu đã hoàn thành mục tiêu thì không gửi nữa.
-      if ((mode === 2 || mode === 3) && completed) {
-        props.setProperty(sentKey, "SKIPPED_COMPLETED_" + new Date().toISOString());
-        skippedCount++;
-        return;
-      }
-
-      const rendered = renderStudyReminderTemplate_(
+      const renderedBase = renderStudyReminderTemplate_(
         {
           subject: templateRes.subject,
           body: templateRes.body
@@ -414,6 +720,13 @@ function processStudyReminderEmails() {
         }
       );
 
+      const rendered = applyReminderUrgencyByMode_(
+        renderedBase,
+        reminderMode,
+        sendType,
+        repeatIndex
+      );
+
       MailApp.sendEmail({
         to: user.email,
         subject: rendered.subject,
@@ -421,10 +734,19 @@ function processStudyReminderEmails() {
         name: "TERRACODE"
       });
 
+      sentInThisRun[sentKey] = true;
       props.setProperty(sentKey, "SENT_" + new Date().toISOString());
       sentCount++;
 
-      Logger.log("Sent reminder to: " + user.email);
+      Logger.log(
+        "Sent reminder to: " +
+          user.email +
+          " time=" +
+          time +
+          " type=" +
+          sendType +
+          (repeatIndex ? " repeat=" + repeatIndex : "")
+      );
     });
   });
 

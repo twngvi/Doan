@@ -25,9 +25,9 @@
 
     // Reset list UI
     document.getElementById('caListBody').innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; color: #858585; padding: 40px;">
-        <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #858585; border-bottom-color: transparent;"></div>
-        Đang tải danh sách bài tập...
+      <div class="ca-ladder-empty">
+        <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #8a5a24; border-bottom-color: transparent;"></div>
+        Đang dựng thang thử thách...
       </div>
     `;
 
@@ -65,7 +65,7 @@
           renderCodeArrangementList(response.data, response.completed || []);
         } else {
           document.getElementById('caListBody').innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+            <div class="ca-ladder-empty">
               ${response.message || "Không có bài tập nào."}
             </div>
           `;
@@ -73,7 +73,7 @@
       })
       .withFailureHandler(function(error) {
         document.getElementById('caListBody').innerHTML = `
-          <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+          <div class="ca-ladder-empty">
             Lỗi kết nối: ${error.message}
           </div>
         `;
@@ -117,7 +117,7 @@
     const listBody = document.getElementById('caListBody');
     if (!games || games.length === 0) {
       listBody.innerHTML = `
-        <div style="grid-column: 1 / -1; text-align: center; color: #858585; padding: 40px;">
+        <div class="ca-ladder-empty">
           Chưa có bài tập nào được xuất bản.
         </div>
       `;
@@ -194,27 +194,59 @@
         `;
       }
 
+      const ladderStateClass = !isTopicUnlocked
+        ? 'ca-ladder-locked'
+        : isCompleted
+          ? 'ca-ladder-completed'
+          : 'ca-ladder-available';
+
+      const ladderIcon = !isTopicUnlocked
+        ? 'lock'
+        : isCompleted
+          ? 'check_circle'
+          : 'play_arrow';
+
+      const ladderActionText = !isTopicUnlocked
+        ? 'Đang khóa'
+        : isCompleted
+          ? 'Chơi lại'
+          : 'Bắt đầu';
+
       html += `
-        <div class="topic-card ${cardStatusClass}" style="${cursorStyle}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
-          <div class="topic-card-header">
-            <div class="topic-icon-wrapper">
-              <div class="topic-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <div
+          class="ca-ladder-card ${cardStatusClass} ${ladderStateClass}"
+          data-ladder-index="${index}"
+          style="${cursorStyle}"
+          ${clickHandler ? `onclick="${clickHandler}"` : ''}
+        >
+          <div class="ca-ladder-card-main">
+            <div class="ca-ladder-icon">
+              <span class="material-symbols-sharp">${ladderIcon}</span>
+            </div>
+
+            <div class="ca-ladder-content">
+              <div class="ca-ladder-meta">
+                <span class="ca-ladder-badge">${game.programmingLanguage || 'Code'}</span>
+                <span class="ca-ladder-badge ${badgeClass}">${badgeText}</span>
               </div>
+
+              <h3 class="ca-ladder-title">${game.title || "Game Sắp xếp"}</h3>
+
+              <p class="ca-ladder-desc">
+                ${game.description ? game.description.substring(0, 90) + '...' : 'Sắp xếp các khối code theo đúng thứ tự.'}
+              </p>
             </div>
-            <div class="topic-badges">
-              <span class="badge badge-category">${game.programmingLanguage || 'Code'}</span>
-              <span class="badge topic-state-badge ${badgeClass}">${badgeText}</span>
-            </div>
+
+            <button class="ca-ladder-action" ${!isTopicUnlocked ? 'disabled' : ''}>
+              ${ladderActionText}
+            </button>
           </div>
-          <h3 class="topic-title">${game.title || "Game Sắp xếp"}</h3>
-          <p class="topic-description">${game.description ? game.description.substring(0, 80) + '...' : ''}</p>
-          ${btnHtml}
         </div>
       `;
     });
     
     listBody.innerHTML = html;
+    requestAnimationFrame(initCodeArrangementLadderTilt);
   }
 
   function startCodeArrangementGame(arrangementId) {
@@ -849,5 +881,74 @@
 
   // Set interval to sync every 3 minutes (180,000 ms)
   setInterval(syncCodeArrangementProgress, 3 * 60 * 1000);
+
+  function initCodeArrangementLadderTilt() {
+    const cards = Array.from(document.querySelectorAll('#caListBody .ca-ladder-card'));
+    if (!cards.length) return;
+
+    function resetCard(card) {
+      if (!card) return;
+      card.classList.remove('is-tilting', 'is-following', 'is-pressed');
+      card.style.setProperty('--ca-tilt-x', '0deg');
+      card.style.setProperty('--ca-tilt-y', '0deg');
+      card.style.setProperty('--ca-follow-z', '0deg');
+      card.style.setProperty('--ca-lift', '0px');
+    }
+
+    cards.forEach((card, index) => {
+      card.addEventListener('pointermove', function(e) {
+        if (card.classList.contains('ca-ladder-locked')) return;
+
+        const rect = card.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width - 0.5;
+        const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+        const rotateY = x * 10;
+        const rotateX = y * -6;
+        const followZ = x * 2.4;
+
+        cards.forEach((item, itemIndex) => {
+          if (itemIndex !== index && itemIndex !== index + 1) {
+            resetCard(item);
+          }
+        });
+
+        card.classList.add('is-tilting');
+        card.style.setProperty('--ca-tilt-x', `${rotateX}deg`);
+        card.style.setProperty('--ca-tilt-y', `${rotateY}deg`);
+        card.style.setProperty('--ca-follow-z', `${x * 0.8}deg`);
+        card.style.setProperty('--ca-lift', '-6px');
+
+        const nextCard = cards[index + 1];
+        if (nextCard) {
+          nextCard.classList.add('is-following');
+          nextCard.style.setProperty('--ca-tilt-x', `${rotateX * 0.25}deg`);
+          nextCard.style.setProperty('--ca-tilt-y', `${rotateY * 0.25}deg`);
+          nextCard.style.setProperty('--ca-follow-z', `${followZ}deg`);
+          nextCard.style.setProperty('--ca-lift', '-2px');
+        }
+      });
+
+      card.addEventListener('pointerleave', function() {
+        resetCard(card);
+        resetCard(cards[index + 1]);
+      });
+
+      card.addEventListener('pointerdown', function() {
+        if (!card.classList.contains('ca-ladder-locked')) {
+          card.classList.add('is-pressed');
+        }
+      });
+
+      card.addEventListener('pointerup', function() {
+        card.classList.remove('is-pressed');
+      });
+
+      card.addEventListener('pointercancel', function() {
+        resetCard(card);
+        resetCard(cards[index + 1]);
+      });
+    });
+  }
 
 </script>

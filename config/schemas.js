@@ -631,7 +631,14 @@ const USER_DB_CONFIG = {
         "weeklyGoal",
         "questsCompleted",
         "streakRecoveryUsedAt",
-        "mostActiveHour"
+        "mostActiveHour",
+        "reminderDays",
+        "reminderLeadMinutes",
+        "repeatIfMissed",
+        "repeatIntervalMinutes",
+        "repeatMaxPerDay",
+        "smartSuggestionUsed",
+        "smartReminderEnabled"
       ],
     },
     DAILY_QUESTS: {

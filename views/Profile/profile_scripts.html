@@ -1635,18 +1635,274 @@
     return theme;
   }
 
-  // ===== STUDY SETTINGS =====
+  // ===== SMART STUDY SETTINGS =====
+  window.currentReminderTimes = [];
+  window.currentReminderDays = [];
+  window.currentReminderLead = 0;
+  window.smartSuggestionUsed = false;
+  window.smartReminderInitialized = false;
+
   function normalizeReminderTimes(value) {
     if (Array.isArray(value)) return value;
-
     if (!value) return ["20:00"];
-
     return String(value)
       .split(",")
-      .map(function (item) {
-        return item.trim();
-      })
-      .filter(Boolean);
+      .map(item => item.trim())
+      .filter(Boolean)
+      .sort(); // Sort times ascending
+  }
+
+  function renderReminderTimeChips() {
+    const container = document.getElementById("reminderTimeChips");
+    if (!container) return;
+    
+    container.innerHTML = "";
+    
+    // Sort before rendering
+    window.currentReminderTimes.sort();
+
+    window.currentReminderTimes.forEach((time, index) => {
+      const chip = document.createElement("div");
+      chip.className = "time-chip";
+      chip.innerHTML = `
+        ${time}
+        <span class="remove-chip" data-index="${index}" title="Xóa giờ này">✕</span>
+      `;
+      container.appendChild(chip);
+    });
+
+    const addContainer = document.createElement("div");
+    addContainer.className = "inline-time-adder";
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn-add-time";
+    addBtn.innerHTML = `+ Thêm`;
+    
+    const timeInput = document.createElement("input");
+    timeInput.type = "time";
+    timeInput.className = "inline-time-input";
+    timeInput.value = "20:00";
+    timeInput.style.display = "none";
+    
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "btn-add-time-confirm";
+    confirmBtn.innerHTML = `Lưu`;
+    confirmBtn.style.display = "none";
+
+    addBtn.onclick = function() {
+      addBtn.style.display = "none";
+      timeInput.style.display = "block";
+      confirmBtn.style.display = "block";
+      timeInput.focus();
+    };
+
+    const saveTime = function() {
+      const newTime = timeInput.value;
+      if (newTime) {
+        if (/^([01]\d|2[0-3]):([0-5]\d)$/.test(newTime)) {
+          if (window.currentReminderTimes.includes(newTime)) {
+            if (typeof showToast === "function") showToast("Khung giờ này đã có", "info");
+          } else {
+            window.currentReminderTimes.push(newTime);
+            renderReminderTimeChips();
+            updateReminderStatus();
+          }
+        } else {
+          if (typeof showToast === "function") showToast("Định dạng giờ không hợp lệ", "error");
+        }
+      }
+      
+      addBtn.style.display = "flex";
+      timeInput.style.display = "none";
+      confirmBtn.style.display = "none";
+    };
+
+    confirmBtn.onclick = saveTime;
+    
+    timeInput.onkeypress = function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveTime();
+      }
+    };
+
+    addContainer.appendChild(addBtn);
+    addContainer.appendChild(timeInput);
+    addContainer.appendChild(confirmBtn);
+    container.appendChild(addContainer);
+
+    // Bind remove events
+    const removeBtns = container.querySelectorAll(".remove-chip");
+    removeBtns.forEach(btn => {
+      btn.onclick = function() {
+        const idx = parseInt(this.getAttribute("data-index"));
+        window.currentReminderTimes.splice(idx, 1);
+        renderReminderTimeChips();
+        updateReminderStatus();
+      };
+    });
+  }
+
+  function updateReminderStatus() {
+    const statusText = document.getElementById("reminderStatusText");
+    const enabled = document.getElementById("emailReminderEnabled")?.checked;
+    
+    if (!statusText) return;
+    
+    if (!enabled) {
+      statusText.textContent = "Đang tắt · Bạn sẽ không nhận email nhắc học.";
+      statusText.style.color = "var(--text-secondary)";
+      return;
+    }
+
+    if (window.currentReminderTimes.length === 0) {
+      statusText.textContent = "Chưa có khung giờ nhắc · Hãy thêm ít nhất 1 giờ.";
+      statusText.style.color = "#ef4444";
+      return;
+    }
+
+    if (window.currentReminderDays.length === 0) {
+      statusText.textContent = "Chưa có ngày nhắc · Hãy chọn ít nhất 1 ngày.";
+      statusText.style.color = "#ef4444";
+      return;
+    }
+
+    const now = new Date();
+    let nextSendDate = null;
+    let found = false;
+
+    // Tìm trong 8 ngày tới (để cover trường hợp trừ lead minutes qua ngày)
+    for (let i = 0; i < 8; i++) {
+      const checkDate = new Date(now.getTime() + i * 24 * 3600000);
+      const checkDay = checkDate.getDay();
+      
+      if (!window.currentReminderDays.includes(checkDay)) continue;
+
+      for (const timeStr of window.currentReminderTimes) {
+        const [h, m] = timeStr.split(":").map(Number);
+        
+        const eventTime = new Date(checkDate.getTime());
+        eventTime.setHours(h, m, 0, 0);
+        
+        // Thời gian gửi thật sự
+        const sendTime = new Date(eventTime.getTime() - window.currentReminderLead * 60000);
+        
+        if (sendTime > now) {
+          nextSendDate = sendTime;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+
+    if (nextSendDate) {
+      const h = String(nextSendDate.getHours()).padStart(2, "0");
+      const m = String(nextSendDate.getMinutes()).padStart(2, "0");
+      
+      let dayStr = "";
+      if (nextSendDate.toDateString() === now.toDateString()) {
+        dayStr = "Hôm nay";
+      } else {
+        const tmr = new Date(now.getTime() + 24*3600000);
+        if (nextSendDate.toDateString() === tmr.toDateString()) {
+          dayStr = "Ngày mai";
+        } else {
+          const daysMap = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+          dayStr = daysMap[nextSendDate.getDay()];
+        }
+      }
+
+      statusText.textContent = `Đang bật · Lần nhắc tiếp theo: ${dayStr} lúc ${h}:${m}`;
+      statusText.style.color = "#22c55e";
+    } else {
+      statusText.textContent = "Đang bật · Đang tính toán...";
+      statusText.style.color = "#22c55e";
+    }
+  }
+
+  function initSmartReminderUI() {
+    // 1. Master toggle
+    const masterToggle = document.getElementById("emailReminderEnabled");
+    if (masterToggle) {
+      masterToggle.addEventListener("change", function() {
+        const settingsDiv = document.getElementById("emailReminderSettings");
+        if (settingsDiv) {
+          settingsDiv.style.display = this.checked ? "flex" : "none";
+        }
+        updateReminderStatus();
+      });
+    }
+
+    // 2. Day chips
+    const dayChips = document.querySelectorAll(".day-chip");
+    dayChips.forEach(chip => {
+      chip.addEventListener("click", function() {
+        const day = parseInt(this.getAttribute("data-day"));
+        if (this.classList.contains("active")) {
+          // Bỏ chọn
+          this.classList.remove("active");
+          window.currentReminderDays = window.currentReminderDays.filter(d => d !== day);
+        } else {
+          // Chọn
+          this.classList.add("active");
+          if (!window.currentReminderDays.includes(day)) window.currentReminderDays.push(day);
+        }
+        updateReminderStatus();
+      });
+    });
+
+    // 3. Before chips
+    const beforeChips = document.querySelectorAll(".before-chip");
+    beforeChips.forEach(chip => {
+      chip.addEventListener("click", function() {
+        beforeChips.forEach(c => c.classList.remove("active"));
+        this.classList.add("active");
+        window.currentReminderLead = parseInt(this.getAttribute("data-min"));
+        updateReminderStatus();
+      });
+    });
+
+    // 4. Repeat-if-missed toggle
+    const retryToggle = document.getElementById("autoRetryIfMissed");
+    if (retryToggle) {
+      retryToggle.addEventListener("change", function() {
+        const box = document.getElementById("retrySettingsBox");
+        if (box) {
+          box.style.display = this.checked ? "flex" : "none";
+        }
+      });
+    }
+
+    // 5. Smart suggestion
+    const btnUseSuggestion = document.getElementById("btnUseSmartSuggestion");
+    if (btnUseSuggestion) {
+      btnUseSuggestion.addEventListener("click", function() {
+        const suggestedTime = document.getElementById("smartSuggestionTime")?.textContent || "20:30";
+        if (!window.currentReminderTimes.includes(suggestedTime)) {
+          window.currentReminderTimes.push(suggestedTime);
+          renderReminderTimeChips();
+          updateReminderStatus();
+          showToast("Đã thêm giờ gợi ý: " + suggestedTime, "success");
+        } else {
+          showToast("Giờ gợi ý đã có trong danh sách", "info");
+        }
+        window.smartSuggestionUsed = true;
+      });
+    }
+
+    // 6. Smart Suggestion Toggle
+    const smartEnabledToggle = document.getElementById("smartReminderEnabled");
+    if (smartEnabledToggle) {
+      smartEnabledToggle.addEventListener("change", function() {
+        const box = document.getElementById("smartSuggestionContainer");
+        if (box) {
+          box.style.display = this.checked ? "flex" : "none";
+        }
+      });
+    }
   }
 
   function setStudySettingsToForm(settings) {
@@ -1656,28 +1912,98 @@
     const dailyTimeGoal = document.getElementById("dailyTimeGoal");
     const emailEnabled = document.getElementById("emailReminderEnabled");
     const reminderSettings = document.getElementById("emailReminderSettings");
-    const reminderTimes = document.getElementById("reminderTimes");
     const reminderMode = document.getElementById("reminderMode");
 
     if (dailyGoal) dailyGoal.value = Number(settings.dailyGoal || 5);
     if (dailyTimeGoal) dailyTimeGoal.value = Number(settings.dailyTimeGoal || 15);
+    if (reminderMode) reminderMode.value = String(settings.reminderMode || 1);
 
+    // Initialize State
+    window.currentReminderTimes = normalizeReminderTimes(settings.reminderTimes);
+    window.currentReminderDays = Array.isArray(settings.reminderDays) ? settings.reminderDays : [1, 2, 3, 4, 5, 6, 0];
+    window.currentReminderLead = typeof settings.reminderLeadMinutes === "number" ? settings.reminderLeadMinutes : 15;
+    window.smartSuggestionUsed = settings.smartSuggestionUsed === true;
+
+    // Render Time Chips
+    renderReminderTimeChips();
+
+    // Render Master Toggle
     if (emailEnabled) {
       emailEnabled.checked = settings.emailReminderEnabled === true;
+      if (reminderSettings) {
+        reminderSettings.style.display = emailEnabled.checked ? "flex" : "none";
+      }
+      updateReminderStatus();
     }
 
-    if (reminderSettings) {
-      reminderSettings.style.display =
-        settings.emailReminderEnabled === true ? "block" : "none";
+    // Init UI Listeners if not done yet
+    if (!window.smartReminderInitialized) {
+      initSmartReminderUI();
+      window.smartReminderInitialized = true;
     }
 
-    if (reminderTimes) {
-      reminderTimes.value = normalizeReminderTimes(settings.reminderTimes).join(", ");
+    // Sync Day Chips UI
+    document.querySelectorAll(".day-chip").forEach(chip => {
+      if (window.currentReminderDays.includes(parseInt(chip.getAttribute("data-day")))) {
+        chip.classList.add("active");
+      } else {
+        chip.classList.remove("active");
+      }
+    });
+
+    // Sync Before Chips UI
+    document.querySelectorAll(".before-chip").forEach(chip => {
+      if (parseInt(chip.getAttribute("data-min")) === window.currentReminderLead) {
+        chip.classList.add("active");
+      } else {
+        chip.classList.remove("active");
+      }
+    });
+
+    // Sync Auto Retry UI
+    const autoRetry = document.getElementById("autoRetryIfMissed");
+    if (autoRetry) {
+      autoRetry.checked = settings.repeatIfMissed === true || settings.autoRetryIfMissed === true;
+      const retryBox = document.getElementById("retrySettingsBox");
+      if (retryBox) retryBox.style.display = autoRetry.checked ? "flex" : "none";
+    }
+    
+    const retryInt = document.getElementById("retryInterval");
+    if (retryInt) {
+      retryInt.value = String(settings.repeatIntervalMinutes || settings.retryInterval || 30);
+    }
+    
+    const maxRet = document.getElementById("maxRetries");
+    if (maxRet) {
+      maxRet.value = String(settings.repeatMaxPerDay || settings.maxRetries || 3);
     }
 
-    if (reminderMode) {
-      reminderMode.value = String(settings.reminderMode || 1);
+    // Gợi ý giờ học thông minh
+    const smartToggle = document.getElementById("smartReminderEnabled");
+    if (smartToggle) {
+      smartToggle.checked = settings.smartReminderEnabled !== false;
+      const box = document.getElementById("smartSuggestionContainer");
+      if (box) box.style.display = smartToggle.checked ? "flex" : "none";
     }
+
+    const mostActiveHour = settings.mostActiveHour;
+    let suggestedTime = "20:30";
+    let suggestedDesc = "Chưa có đủ dữ liệu. Gợi ý mặc định:";
+    if (typeof mostActiveHour === "number") {
+      if (mostActiveHour >= 5 && mostActiveHour <= 11) {
+        suggestedTime = "07:30";
+        suggestedDesc = "Bạn thường học tốt vào buổi sáng. Gợi ý:";
+      } else if (mostActiveHour >= 12 && mostActiveHour <= 17) {
+        suggestedTime = "12:30";
+        suggestedDesc = "Bạn thường học tốt vào buổi trưa/chiều. Gợi ý:";
+      } else {
+        suggestedTime = "20:30";
+        suggestedDesc = "Bạn thường học tốt vào buổi tối. Gợi ý:";
+      }
+    }
+
+    const suggDescEl = document.getElementById("smartSuggestionDescText");
+    if (suggDescEl) suggDescEl.innerHTML = `${suggestedDesc} <strong id="smartSuggestionTime">${suggestedTime}</strong>`;
   }
 
   function loadStudySettings() {
@@ -1711,6 +2037,7 @@
 
     const dailyGoalVal = Number(document.getElementById("dailyGoal")?.value || 5);
     const dailyTimeGoalVal = Number(document.getElementById("dailyTimeGoal")?.value || 15);
+    const emailEnabled = document.getElementById("emailReminderEnabled")?.checked === true;
 
     if (!Number.isInteger(dailyGoalVal) || dailyGoalVal < 1 || dailyGoalVal > 20) {
       showToast("Mục tiêu bài học phải từ 1 đến 20", "error");
@@ -1719,6 +2046,16 @@
 
     if (!Number.isInteger(dailyTimeGoalVal) || dailyTimeGoalVal < 1 || dailyTimeGoalVal > 300) {
       showToast("Thời gian học phải từ 1 đến 300 phút", "error");
+      return false;
+    }
+
+    if (emailEnabled && window.currentReminderTimes.length === 0) {
+      showToast("Vui lòng thêm ít nhất một khung giờ nhắc học!", "warning");
+      return false;
+    }
+
+    if (emailEnabled && window.currentReminderDays.length === 0) {
+      showToast("Vui lòng chọn ít nhất 1 ngày nhắc trong tuần!", "warning");
       return false;
     }
 
@@ -1733,11 +2070,19 @@
     const settings = {
       dailyGoal: dailyGoalVal,
       dailyTimeGoal: dailyTimeGoalVal,
-      emailReminderEnabled:
-        document.getElementById("emailReminderEnabled")?.checked === true,
-      reminderTimes: normalizeReminderTimes(
-        document.getElementById("reminderTimes")?.value || "20:00"
-      ),
+      emailReminderEnabled: emailEnabled,
+      reminderTimes: window.currentReminderTimes,
+      reminderDays: window.currentReminderDays,
+      reminderLeadMinutes: window.currentReminderLead,
+      repeatIfMissed: document.getElementById("autoRetryIfMissed")?.checked === true,
+      repeatIntervalMinutes: Number(document.getElementById("retryInterval")?.value || 30),
+      repeatMaxPerDay: Number(document.getElementById("maxRetries")?.value || 3),
+      // Legacy aliases for older backend readers.
+      autoRetryIfMissed: document.getElementById("autoRetryIfMissed")?.checked === true,
+      retryInterval: Number(document.getElementById("retryInterval")?.value || 30),
+      maxRetries: Number(document.getElementById("maxRetries")?.value || 3),
+      smartSuggestionUsed: window.smartSuggestionUsed === true,
+      smartReminderEnabled: document.getElementById("smartReminderEnabled")?.checked !== false,
       reminderMode: Number(document.getElementById("reminderMode")?.value || 1)
     };
 
@@ -1779,7 +2124,7 @@
             loadStudyWidgetData();
           }
 
-          showToast("Đã lưu cài đặt học tập!", "success");
+          showToast("Đã lưu cài đặt học tập thông minh!", "success");
         } else {
           showToast(
             response?.message || "Dữ liệu chưa được lưu đúng, vui lòng thử lại",
@@ -1806,6 +2151,22 @@
 
   window.handleStudySettingsSave = handleStudySettingsSave;
   window.handleStudySettingsSubmit = handleStudySettingsSave;
+
+  window.adjustGoal = function(id, amount) {
+    const input = document.getElementById(id);
+    if (!input) return;
+    
+    let currentValue = parseInt(input.value) || 0;
+    let newValue = currentValue + amount;
+    
+    const min = parseInt(input.min) || 1;
+    const max = parseInt(input.max) || 300;
+    
+    if (newValue < min) newValue = min;
+    if (newValue > max) newValue = max;
+    
+    input.value = newValue;
+  };
 
   console.log("✅ Profile scripts loaded and exported.");
 </script>
