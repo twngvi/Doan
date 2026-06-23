@@ -495,6 +495,73 @@
             }
           });
         }
+        this.setupMagicLine();
+      },
+
+      setupMagicLine: function () {
+        const navGroup = this.sidebar.querySelector(".top-nav-group-main");
+        if (!navGroup) return;
+
+        let magicLine = navGroup.querySelector(".nav-magic-line");
+        if (!magicLine) {
+          magicLine = document.createElement("div");
+          magicLine.className = "nav-magic-line";
+          navGroup.appendChild(magicLine);
+        }
+
+        const navItems = Array.from(navGroup.querySelectorAll(".nav-item"));
+
+        const updateMagicLine = (targetItem, isHover) => {
+          if (!targetItem) {
+            magicLine.style.opacity = "0";
+            return;
+          }
+          const itemRect = targetItem.getBoundingClientRect();
+          const groupRect = navGroup.getBoundingClientRect();
+
+          const itemWidth = itemRect.width;
+          const lineWidth = itemWidth * 0.7;
+          const leftOffset = itemRect.left - groupRect.left + itemWidth * 0.15;
+
+          magicLine.style.width = `${lineWidth}px`;
+          magicLine.style.left = `${leftOffset}px`;
+          magicLine.style.opacity = isHover ? "0.4" : "1";
+        };
+
+        const resetToActive = () => {
+          const activeItem = navGroup.querySelector(".nav-item.active");
+          updateMagicLine(activeItem, false);
+        };
+
+        navItems.forEach((item) => {
+          item.addEventListener("mouseenter", (e) => {
+            updateMagicLine(e.currentTarget, true);
+          });
+        });
+
+        navGroup.addEventListener("mouseleave", () => {
+          resetToActive();
+        });
+
+        setTimeout(resetToActive, 100);
+
+        window.addEventListener("resize", () => {
+          resetToActive();
+        });
+
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.attributeName === "class") {
+              if (mutation.target.classList.contains("active")) {
+                resetToActive();
+              }
+            }
+          });
+        });
+
+        navItems.forEach((item) => {
+          observer.observe(item, { attributes: true });
+        });
       },
 
       setTopNavCheckinState: function (hasCheckedInToday, streakValue) {
