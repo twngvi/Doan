@@ -3404,7 +3404,11 @@
   window.addEventListener("pagehide", tryClearSessionOnClose);
 
   // ==================== Study Widget Logic ====================
-  function toggleStudyWidget() {
+  function toggleStudyWidget(e) {
+     if (window.isDraggingStudyWidget) {
+         if (e) { e.preventDefault(); e.stopPropagation(); }
+         return;
+     }
      const panel = document.getElementById("study-widget-panel");
      if (!panel) return;
      if (panel.style.display === "none") {
@@ -3554,5 +3558,86 @@
       })
       .apiGetDailyQuests({ email: user.email });
   }
+  // ==================== Study Widget Drag Logic ====================
+  (function() {
+      const widget = document.getElementById("study-widget");
+      const btn = document.getElementById("study-widget-btn");
+      
+      if (!widget || !btn) {
+          console.warn("Study widget elements not found for drag logic");
+          return;
+      }
+      
+      // Prevent browser default touch actions like scrolling when touching the button
+      btn.style.touchAction = "none";
+      
+      let startY = 0;
+      let startBottom = 0;
+      let isDragging = false;
+      let dragged = false;
+
+      function onPointerDown(e) {
+          // ignore right click
+          if (e.button !== undefined && e.button !== 0) return;
+          
+          isDragging = true;
+          dragged = false;
+          startY = e.clientY || (e.touches && e.touches[0].clientY);
+          
+          const style = window.getComputedStyle(widget);
+          startBottom = parseFloat(style.bottom) || 20;
+          
+          btn.style.cursor = "grabbing";
+          document.body.style.userSelect = "none";
+          
+          document.addEventListener("mousemove", onPointerMove);
+          document.addEventListener("touchmove", onPointerMove, { passive: false });
+          document.addEventListener("mouseup", onPointerUp);
+          document.addEventListener("touchend", onPointerUp);
+      }
+      
+      function onPointerMove(e) {
+          if (!isDragging) return;
+          
+          const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+          const deltaY = currentY - startY;
+          
+          if (Math.abs(deltaY) > 5) {
+              dragged = true;
+              window.isDraggingStudyWidget = true;
+          }
+          
+          if (dragged) {
+              if (e.cancelable) e.preventDefault();
+              let newBottom = startBottom - deltaY;
+              
+              const maxBottom = window.innerHeight - widget.offsetHeight - 20;
+              if (newBottom < 20) newBottom = 20;
+              if (newBottom > maxBottom) newBottom = maxBottom;
+              
+              widget.style.bottom = newBottom + "px";
+          }
+      }
+      
+      function onPointerUp(e) {
+          if (!isDragging) return;
+          isDragging = false;
+          
+          btn.style.cursor = "pointer";
+          document.body.style.userSelect = "";
+          
+          document.removeEventListener("mousemove", onPointerMove);
+          document.removeEventListener("touchmove", onPointerMove);
+          document.removeEventListener("mouseup", onPointerUp);
+          document.removeEventListener("touchend", onPointerUp);
+          
+          setTimeout(() => {
+              window.isDraggingStudyWidget = false;
+          }, 50);
+      }
+
+      btn.addEventListener("mousedown", onPointerDown);
+      btn.addEventListener("touchstart", onPointerDown, { passive: true });
+  })();
 
 </script>
