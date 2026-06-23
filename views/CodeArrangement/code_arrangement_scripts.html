@@ -13,6 +13,34 @@
     endTime: null
   };
   let isPreviewMode = false;
+  let caIs3ColGrid = localStorage.getItem('ca_grid_3col') === 'true';
+
+  function caToggleGridLayout() {
+    caIs3ColGrid = !caIs3ColGrid;
+    localStorage.setItem('ca_grid_3col', caIs3ColGrid ? 'true' : 'false');
+    caApplyGridLayout();
+  }
+
+  function caApplyGridLayout() {
+    const listBody = document.getElementById('caListBody');
+    const track = document.getElementById('caToggleTrack');
+    const label1 = document.getElementById('caToggleLabel1col');
+    const label3 = document.getElementById('caToggleLabel3col');
+
+    if (!listBody) return;
+
+    if (caIs3ColGrid) {
+      listBody.classList.add('ca-grid-3col');
+      if (track) track.classList.add('active');
+      if (label1) label1.classList.remove('active');
+      if (label3) label3.classList.add('active');
+    } else {
+      listBody.classList.remove('ca-grid-3col');
+      if (track) track.classList.remove('active');
+      if (label1) label1.classList.add('active');
+      if (label3) label3.classList.remove('active');
+    }
+  }
 
   function initCodeArrangementPage() {
     isPreviewMode = false;
@@ -22,6 +50,9 @@
     // Show list view, hide game view
     document.getElementById('caListContainer').style.display = 'block';
     document.getElementById('caGameContainer').style.display = 'none';
+
+    // Restore grid layout preference
+    caApplyGridLayout();
 
     // Reset list UI
     document.getElementById('caListBody').innerHTML = `
@@ -246,6 +277,7 @@
     });
     
     listBody.innerHTML = html;
+    caApplyGridLayout();
     requestAnimationFrame(initCodeArrangementLadderTilt);
   }
 
