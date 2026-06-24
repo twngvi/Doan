@@ -71,7 +71,7 @@
     settings: {
       fontSize: 14,
       wordWrap: false,
-      theme: 'auto',
+      theme: 'light',
       autoRun: true,
       tabSize: 2,
       tabletLayout: 'auto'
@@ -728,7 +728,6 @@
     setCurrentCode(wsState.files[wsState.activeFile] || '');
     switchOutputTab(defaultOutputTabForWorkspace(nextWs));
     applyPreviewVisibilityForWorkspace();
-    setPreviewOverlay(false, '');
     setEngineLabels();
     updateConsoleInputVisibility();
     scheduleDraftSave();
@@ -800,11 +799,6 @@
   /* ================================================================
      PREVIEW
      ================================================================ */
-  function setPreviewOverlay(show, message) {
-    if (!el.previewOverlay) return;
-    if (el.previewOverlayBody) el.previewOverlayBody.textContent = message || '';
-    setHidden(el.previewOverlay, !show);
-  }
 
   function applyZoom() {
     if (!el.previewFrame) return;
@@ -970,7 +964,6 @@
     setStatus('running', 'Đang chạy...');
     setConsoleMeta('Running', '—', '—');
     setEngineLabels();
-    setPreviewOverlay(false, '');
 
     if (wsMeta.engine === 'iframe') {
       clearConsole();
@@ -1509,11 +1502,6 @@
     toast('Test case added');
   }
 
-  function toggleSidebar() {
-    el.root.classList.toggle('sidebar-collapsed');
-    if (cmEditor) cmEditor.refresh();
-  }
-
   function removeTestCase(idx) {
     var wsId = ide.state.activeWorkspace;
     var tests = ide.state.tests[wsId];
@@ -1555,7 +1543,6 @@
     renderFiles();
     applyEditorModeForFile(def.activeFile);
     setCurrentCode(def.files[def.activeFile] || '');
-    setPreviewOverlay(false, '');
     scheduleDraftSave();
     toast('Reset');
   }
@@ -1670,7 +1657,7 @@
     if (!el.root) return;
     var theme = ide.state.settings.theme; // 'light' or 'dark'
     if (theme !== 'light' && theme !== 'dark') {
-      theme = 'dark'; // Default to dark
+      theme = 'light'; // Default to light
     }
     el.root.classList.remove('cp-theme-light', 'cp-theme-dark');
     el.root.classList.add('cp-theme-' + theme);
@@ -1770,7 +1757,6 @@
         updateStateBadge();
         appendConsole('error', String(data.message || 'Runtime error'));
         // Keep preview visible even if runtime errors occur; show details in Console.
-        setPreviewOverlay(false, '');
       }
     });
   }
@@ -1780,7 +1766,6 @@
      ================================================================ */
   function bindDom() {
     el.root = byId('cpRoot');
-    el.sidebarToggleBtn = byId('cpSidebarToggleBtn');
     el.editorWrap = byId('cpEditorWrap');
     el.editorPane = byId('cpEditorPane');
     el.outputPane = byId('cpOutputPane');
@@ -1816,8 +1801,6 @@
 
     el.previewFrame = byId('cpPreviewFrame');
     el.previewViewport = byId('cpPreviewViewport');
-    el.previewOverlay = byId('cpPreviewOverlay');
-    el.previewOverlayBody = byId('cpPreviewOverlayBody');
     el.previewOpenConsoleBtn = byId('cpPreviewOpenConsoleBtn');
     el.mdPreview = byId('cpMarkdownPreview');
     el.previewRefreshBtn = byId('cpPreviewRefreshBtn');
@@ -1936,7 +1919,6 @@
     }
 
     if (el.runBtn) el.runBtn.addEventListener('click', function () { runCode(false); });
-    if (el.sidebarToggleBtn) el.sidebarToggleBtn.addEventListener('click', toggleSidebar);
     if (el.runBtnMobile) el.runBtnMobile.addEventListener('click', function () { runCode(false); });
     if (el.stopBtn) el.stopBtn.addEventListener('click', stopRun);
     if (el.saveBtn) el.saveBtn.addEventListener('click', saveExplicit);
@@ -1968,11 +1950,6 @@
 
     if (el.previewRefreshBtn) el.previewRefreshBtn.addEventListener('click', function () { runCode(false); });
     if (el.previewOpenBtn) el.previewOpenBtn.addEventListener('click', openPreviewInNewTab);
-    if (el.previewFrame) {
-      el.previewFrame.addEventListener('load', function () {
-        setPreviewOverlay(false, '');
-      });
-    }
     if (el.previewOpenConsoleBtn) el.previewOpenConsoleBtn.addEventListener('click', function () {
       switchOutputTab('console');
       var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
