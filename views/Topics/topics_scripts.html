@@ -13,6 +13,10 @@
     let selectedTopic = null;
     let userProgress = {};
 
+    // ⭐ Navigation lock: chặn bấm liên tục khi đang chuyển trang
+    let isTopicNavigating = false;
+    let topicNavigationToken = 0;
+
     // ⭐ CACHE để tránh reload không cần thiết
     let topicsCache = null;
     let progressCache = null;
@@ -635,7 +639,9 @@
         !hasContent ? "coming-soon" : ""
       }"
               onclick="event.stopPropagation(); ${
-                status === "locked" ? "" : `startTopic('${topic.topicId}')`
+                status === "locked"
+                  ? `showNotification('${escapeHtml(getLockedReason(topic))}', 'warning')`
+                  : `window.toggleTopicCardMenu(this.closest('.topic-card'), event)`
               }">
         ${
           status === "locked"
@@ -888,22 +894,165 @@
     }
 
 
+    function isTopicActionMenuOpen() {
+      const pageTopics = document.getElementById('page-topics');
+      return pageTopics ? pageTopics.classList.contains('topic-menu-open') : false;
+    }
 
+    window.closeAllTopicMenus = function(e) {
+      if (e && e.target && e.target.closest && e.target.closest('.topic-action-menu')) return;
+      document.querySelectorAll('.topic-card.menu-open').forEach(card => {
+        card.classList.remove('menu-open', 'selected');
+        const menu = card.querySelector('.topic-action-menu');
+        if (menu) menu.remove();
+      });
+      const pageTopics = document.getElementById('page-topics');
+      if (pageTopics) pageTopics.classList.remove('topic-menu-open');
+    };
+
+    // Close menu when clicking outside
+    document.addEventListener('click', window.closeAllTopicMenus);
+
+    function toggleTopicCardMenu(card, e) {
+      if (e) e.stopPropagation();
+      
+      const isAlreadyOpen = card.classList.contains('menu-open');
+      
+      // Close all other menus
+      window.closeAllTopicMenus();
+      
+      if (isAlreadyOpen) return;
+      
+      const topicId = card.dataset.topicId;
+      const topic = allTopics.find(t => t.topicId === topicId);
+      if (!topic) return;
+
+      const progress = userProgress[topicId] || {};
+      
+      // Lesson status
+      const lessonClass = progress.lessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
+      // Quiz status
+      const quizRequired = topic.quizStatus === "active";
+      const quizDone = progress.quizDone === true;
+      const quizClass = !quizRequired ? 'locked' : (quizDone ? 'completed-quiz' : 'unlocked-quiz');
+      // Matching status
+      const matchingDone = progress.matchingDone === true;
+      const matchingClass = matchingDone ? 'completed-matching' : 'unlocked-matching';
+
+      const menu = document.createElement('div');
+      menu.className = 'topic-action-menu menu-right';
+      
+      menu.innerHTML = `
+        <div class="action-btn-item ${lessonClass}" onclick="window.startTopicDirect('${topicId}', 'lesson')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          Lý thuyết
+        </div>
+        <div class="action-btn-item ${quizClass}" onclick="${quizClass !== 'locked' ? `window.startTopicDirect('${topicId}', 'quiz')` : ''}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Chơi Quiz
+        </div>
+        <div class="action-btn-item ${matchingClass}" onclick="window.startTopicDirect('${topicId}', 'matching')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Matching
+        </div>
+      `;
+
+      card.appendChild(menu);
+      card.classList.add('menu-open', 'selected');
+      const pageTopics = document.getElementById('page-topics');
+      if (pageTopics) pageTopics.classList.add('topic-menu-open');
+      
+      // Determine if it should open to left or right
+      setTimeout(() => {
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+          menu.classList.remove('menu-right');
+          menu.classList.add('menu-left');
+        }
+      }, 0);
+    }
+
+    // ========================================
+    // NAVIGATION LOCK HELPERS
+    // ========================================
+    function isStillOnTopicsPage() {
+      var page = document.getElementById('page-topics');
+      return page && page.style.display !== 'none' && page.offsetParent !== null;
+    }
+
+    function showTopicOpeningState(topic, mode) {
+      var pageTopics = document.getElementById('page-topics');
+      if (pageTopics) pageTopics.classList.add('is-topic-opening');
+
+      var modeLabel = mode === 'quiz' ? 'Quiz' : mode === 'matching' ? 'Matching' : 'Lý thuyết';
+      showNotification('Đang mở ' + modeLabel + '...', 'info');
+    }
+
+    function releaseTopicNavigation() {
+      isTopicNavigating = false;
+      var pageTopics = document.getElementById('page-topics');
+      if (pageTopics) pageTopics.classList.remove('is-topic-opening');
+    }
+
+    function releaseTopicNavigationSoon() {
+      setTimeout(releaseTopicNavigation, 500);
+    }
+
+    window.startTopicDirect = function(topicId, mode) {
+      if (isTopicNavigating) return;
+
+      isTopicNavigating = true;
+      topicNavigationToken++;
+      var token = topicNavigationToken;
+
+      window.closeAllTopicMenus();
+
+      var topic = allTopics.find(function(t) { return t.topicId === topicId; });
+      if (!topic) {
+        releaseTopicNavigation();
+        showNotification('Không tìm thấy bài học', 'error');
+        return;
+      }
+
+      // Hiện phản hồi ngay lập tức
+      showTopicOpeningState(topic, mode);
+
+      if (mode === 'lesson') {
+        startTopic(topicId, token);
+      } else if (mode === 'quiz') {
+        navigateToQuiz(topic);
+        releaseTopicNavigationSoon();
+      } else if (mode === 'matching') {
+        navigateToMatching(topic);
+        releaseTopicNavigationSoon();
+      }
+    };
 
     /**
-     * Start topic - Show lesson content first
+     * Start topic - Vào bài ngay dựa trên dữ liệu local (topic.unlocked)
+     * Không chờ server checkTopicAccess() để tránh UX chậm.
+     * @param {string} topicId
+     * @param {number} [token] - navigation token để bỏ qua callback cũ
      */
-    function startTopic(topicId) {
-      const topic = topicId
-        ? allTopics.find((t) => t.topicId === topicId)
+    function startTopic(topicId, token) {
+      var topic = topicId
+        ? allTopics.find(function(t) { return t.topicId === topicId; })
         : selectedTopic;
 
       if (!topic) {
-        showNotification("Topic not found", "error");
+        releaseTopicNavigation();
+        showNotification('Không tìm thấy bài học', 'error');
+        return;
+      }
+
+      if (!topicHasContent(topic)) {
+        releaseTopicNavigation();
+        showNotification('Chủ đề "' + topic.title + '" chưa có nội dung.', 'warning');
         return;
       }
 
       if (!checkTopicUnlocked(topic)) {
+        releaseTopicNavigation();
         showNotification(
           topic.lockedReason || 'Bạn cần hoàn thành bài học điều kiện trước.',
           'warning'
@@ -911,35 +1060,10 @@
         return;
       }
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (!result || !result.success) {
-            showNotification((result && result.message) || 'Không thể kiểm tra quyền truy cập.', 'error');
-            return;
-          }
-
-          if (!result.unlocked) {
-            showNotification(result.reason || 'Bài học này đang bị khóa.', 'warning');
-            loadTopics(true);
-            return;
-          }
-
-          if (!topicHasContent(topic)) {
-            showNotification(
-              '⚠️ Chủ đề "' + topic.title + '" chưa có nội dung. Sẽ được cập nhật sớm!',
-              'warning'
-            );
-            closeTopicDetail();
-            return;
-          }
-
-          navigateToLesson(topic);
-          closeTopicDetail();
-        })
-        .withFailureHandler(function(error) {
-          showNotification(error.message || error.toString(), 'error');
-        })
-        .checkTopicAccess(topic.topicId);
+      // ⭐ Vào bài ngay, không chờ server nữa
+      navigateToLesson(topic);
+      closeTopicDetail();
+      releaseTopicNavigationSoon();
     }
 
     /**
@@ -1419,6 +1543,10 @@
       const container = document.querySelector(".topics-grid, .journey-view");
       if (!container) return;
 
+      // ⭐ Chống gắn lặp listener khi render nhiều lần
+      if (container.dataset.tiltBound === '1') return;
+      container.dataset.tiltBound = '1';
+
       container.addEventListener("mousemove", function (e) {
         const card = e.target.closest(".topic-card");
         if (!card || card.classList.contains("menu-open") || isTopicActionMenuOpen()) {
@@ -1467,12 +1595,7 @@
       });
     }
 
-    // Setup tilt after each render
-    const origRenderTopics = renderTopics;
-    renderTopics = function () {
-      origRenderTopics.apply(this, arguments);
-      setTimeout(setupCardTiltEffect, 100);
-    };
+    // ⭐ Không còn bọc renderTopics để gọi setupCardTiltEffect (dùng setupGridCardTilt thay thế)
 
     // ========================================
     // EXPORT GLOBAL FUNCTIONS
@@ -1507,97 +1630,22 @@
       currentActiveCard = null;
     }
 
-    function toggleTopicCardMenu(targetOrButton, event) {
-      if (event && event.stopPropagation) event.stopPropagation();
+    // (Duplicate toggleTopicCardMenu removed — the correct version is at line ~910)
 
-      const pageTopics = document.getElementById("page-topics");
+    // ⭐ Menu navigation funcs: tất cả route qua startTopicDirect để có navigation lock
+    function navigateToLessonFromMenu(topicId) {
+      clearTopicMenuState();
+      window.startTopicDirect(topicId, 'lesson');
+    }
 
-      // Accept either the menu button element or the card element itself
-      let card = null;
-      try {
-        if (targetOrButton && targetOrButton.classList && targetOrButton.classList.contains && targetOrButton.classList.contains('topic-card')) {
-          card = targetOrButton;
-        } else if (targetOrButton && typeof targetOrButton.closest === 'function') {
-          card = targetOrButton.closest('.topic-card');
-        }
-      } catch (e) {
-        card = null;
-      }
-
-      if (!card || !pageTopics) return;
-
-      const isOpening = !card.classList.contains("menu-open");
-
-      document.querySelectorAll(".topic-card.menu-open").forEach(function (item) {
-        item.classList.remove("menu-open", "selected");
-        item.style.transform = "";
-        item.style.transition = "";
-        const menu = item.querySelector(".topic-action-menu");
-        if (menu) menu.remove();
-      });
-
-      if (isOpening) {
-        card.classList.add("menu-open", "selected");
-        pageTopics.classList.add("topic-menu-open");
-        currentActiveCard = card;
-
-        card.style.transform = "";
-        card.style.transition = "transform 0.3s ease";
-
-        const rect = card.getBoundingClientRect();
-        const positionClass = rect.right > window.innerWidth / 2 ? 'menu-left' : 'menu-right';
-
-        const topicId = card.dataset.topicId;
-        const topic = allTopics.find(function (item) {
-          return item.topicId === topicId;
-        });
-        if (!topic) return;
-
-        const progress = userProgress[topic.topicId] || {};
-        const isLessonCompleted = progress.completed;
-        const quizPercent = getTopicQuizPercent(topic.topicId);
-        const matchingPercent = getTopicMatchingPercent(topic.topicId);
-        const isQuizUnlocked = isLessonCompleted;
-        const isMatchingUnlocked = isLessonCompleted;
-        const quizCompleted = quizPercent > 0;
-        const matchingCompleted = matchingPercent > 0;
-
-        function getClass(isUnlocked, isCompleted, type) {
-          if (!isUnlocked) return 'locked';
-          if (isCompleted) return 'completed-' + type;
-          return 'unlocked-' + type;
-        }
-
-        const lessonClass = isLessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
-        const quizClass = getClass(isQuizUnlocked, quizCompleted, 'quiz');
-        const matchingClass = getClass(isMatchingUnlocked, matchingCompleted, 'matching');
-
-        const menuHTML = `
-          <div class="topic-action-menu ${positionClass}" onclick="event.stopPropagation()">
-            <div class="action-btn-item ${lessonClass}" onclick="event.stopPropagation(); navigateToLessonFromMenu('${topic.topicId}')">
-              <span>Lý thuyết</span>
-            </div>
-            <div class="action-btn-item ${quizClass}" onclick="event.stopPropagation(); navigateToQuizFromMenu('${topic.topicId}')">
-              <span>Quiz</span>
-            </div>
-            <div class="action-btn-item ${matchingClass}" onclick="event.stopPropagation(); navigateToMatchingFromMenu('${topic.topicId}')">
-              <span>Matching</span>
-            </div>
-          </div>
-        `;
-
-        card.insertAdjacentHTML('beforeend', menuHTML);
-      } else {
-        clearTopicMenuState();
-      }
-
-      setTopicMenuOpenState(isOpening);
+    function navigateToQuizFromMenu(topicId) {
+      clearTopicMenuState();
+      window.startTopicDirect(topicId, 'quiz');
     }
 
     function navigateToMatchingFromMenu(topicId) {
       clearTopicMenuState();
-      const topic = allTopics.find(t => t.topicId === topicId);
-      if (topic) navigateToMatching(topic);
+      window.startTopicDirect(topicId, 'matching');
     }
 
     window.toggleTopicCardMenu = toggleTopicCardMenu;
@@ -1615,24 +1663,6 @@
         clearTopicMenuState();
       }
     });
-
-    function navigateToLessonFromMenu(topicId) {
-      clearTopicMenuState();
-      const topic = allTopics.find(t => t.topicId === topicId);
-      if (topic) {
-        if (!topicHasContent(topic)) {
-          showNotification('⚠️ Chủ đề "' + topic.title + '" chưa có nội dung. Sẽ được cập nhật sớm!', "warning");
-          return;
-        }
-        navigateToLesson(topic);
-      }
-    }
-
-    function navigateToQuizFromMenu(topicId) {
-      clearTopicMenuState();
-      const topic = allTopics.find(t => t.topicId === topicId);
-      if (topic) navigateToQuiz(topic);
-    }
 
 
 
