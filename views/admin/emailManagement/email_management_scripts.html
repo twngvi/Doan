@@ -1,75 +1,389 @@
 <script>
+const EMAIL_TEMPLATE_TYPES = [
+    {
+        key: "study_reminder",
+        name: "Email nhắc học",
+        icon: "notifications_active",
+        description: "Tự động gửi khi user tới giờ nhưng chưa hoàn thành mục tiêu học tập.",
+        status: "active",
+        statusText: "Đang hoạt động",
+        variables: [
+            { key: "{{userName}}", name: "Tên người dùng", demo: "Test User" },
+            { key: "{{email}}", name: "Email người nhận", demo: "admin@gmail.com" },
+            { key: "{{dailyGoal}}", name: "Mục tiêu số bài", demo: "5" },
+            { key: "{{completedLessons}}", name: "Đã hoàn thành", demo: "3" },
+            { key: "{{remainingLessons}}", name: "Còn lại", demo: "2" },
+            { key: "{{dailyTimeGoal}}", name: "Mục tiêu phút", demo: "30" },
+            { key: "{{studiedMinutes}}", name: "Đã học", demo: "15" },
+            { key: "{{streak}}", name: "Chuỗi streak", demo: "7" },
+            { key: "{{todayDate}}", name: "Ngày gửi", demo: "24/06/2026" },
+            { key: "{{learningUrl}}", name: "Link học", demo: "https://.../dashboard" }
+        ],
+        draftPrefix: "[TERRACODE_REMINDER]",
+        tabs: [
+            { id: "overview", name: "Tổng quan", icon: "info" },
+            { id: "gmail_draft", name: "Mẫu Gmail", icon: "mail" },
+            { id: "variables", name: "Biến cá nhân hóa", icon: "data_object" },
+            { id: "preview", name: "Xem trước & Test", icon: "visibility" }
+        ]
+    },
+    {
+        key: "verification",
+        name: "Email xác thực tài khoản",
+        icon: "verified_user",
+        description: "Gửi mã xác thực khi người dùng đăng ký.",
+        status: "coming_soon",
+        statusText: "Sắp hỗ trợ",
+        variables: [],
+        tabs: []
+    },
+    {
+        key: "password_reset",
+        name: "Email quên mật khẩu",
+        icon: "lock_reset",
+        description: "Gửi mã đặt lại mật khẩu.",
+        status: "coming_soon",
+        statusText: "Sắp hỗ trợ",
+        variables: [],
+        tabs: []
+    },
+    {
+        key: "welcome",
+        name: "Email chào mừng",
+        icon: "celebration",
+        description: "Gửi khi user xác thực email thành công.",
+        status: "coming_soon",
+        statusText: "Sắp hỗ trợ",
+        variables: [],
+        tabs: []
+    },
+    {
+        key: "system_alert",
+        name: "Thông báo hệ thống",
+        icon: "campaign",
+        description: "Email cảnh báo, bảo trì gửi từ hệ thống.",
+        status: "coming_soon",
+        statusText: "Sắp hỗ trợ",
+        variables: [],
+        tabs: []
+    }
+];
+
+let selectedEmailType = 'study_reminder';
+let currentTabId = 'overview';
+// Cache for preview data so switching tabs doesn't clear it
+let previewDataCache = {
+    subject: '',
+    body: ''
+};
+
 function initEmailManagement() {
-    loadEmailTemplate();
+    renderStats();
+    renderSidebar();
+    selectEmailType('study_reminder');
 
-    // Không còn form HTML nhập tay
+    // Load initial server state for study reminder badge
+    loadEmailTemplateStatus();
+    
+    // Use Event Delegation for all dynamically generated buttons
+    document.getElementById('emailDetailContainer').addEventListener('click', handleDetailClicks);
+}
 
-    const testBtn = document.getElementById('btnTestEmailTemplate');
-    if (testBtn) {
-        testBtn.addEventListener('click', function() {
-            sendTestEmail();
-        });
+function renderStats() {
+    const container = document.getElementById('emailStatsContainer');
+    container.innerHTML = `
+        <div class="email-stat-card">
+            <span class="email-stat-label">Tổng loại email</span>
+            <span class="email-stat-value">${EMAIL_TEMPLATE_TYPES.length}</span>
+        </div>
+        <div class="email-stat-card">
+            <span class="email-stat-label">Đang hoạt động</span>
+            <span class="email-stat-value">${EMAIL_TEMPLATE_TYPES.filter(t => t.status === 'active').length}</span>
+        </div>
+        <div class="email-stat-card">
+            <span class="email-stat-label">Sắp ra mắt (Coming soon)</span>
+            <span class="email-stat-value">${EMAIL_TEMPLATE_TYPES.filter(t => t.status === 'coming_soon').length}</span>
+        </div>
+    `;
+}
+
+function renderSidebar() {
+    const sidebar = document.getElementById('emailSidebar');
+    sidebar.innerHTML = EMAIL_TEMPLATE_TYPES.map(type => `
+        <div class="email-type-item ${type.key === selectedEmailType ? 'active' : ''}" data-key="${type.key}" onclick="selectEmailType('${type.key}')">
+            <div class="email-type-header">
+                <span class="material-symbols-sharp email-type-icon">${type.icon}</span>
+                <span>${type.name}</span>
+            </div>
+            <div class="email-type-desc">${type.description}</div>
+            <div style="margin-top: auto;">
+                <span class="email-badge ${type.status === 'active' ? 'badge-success' : 'badge-disabled'}">
+                    ${type.statusText}
+                </span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectEmailType(key) {
+    selectedEmailType = key;
+    renderSidebar(); // Update active state visually
+    
+    const typeObj = EMAIL_TEMPLATE_TYPES.find(t => t.key === key);
+    const detailContainer = document.getElementById('emailDetailContainer');
+
+    if (typeObj.status === 'coming_soon') {
+        detailContainer.innerHTML = `
+            <div class="email-empty-state">
+                <span class="material-symbols-sharp email-empty-icon">${typeObj.icon}</span>
+                <h3 style="margin-bottom: 8px;">${typeObj.name}</h3>
+                <p>Tính năng này sẽ được phát triển ở giai đoạn sau.</p>
+                <div style="text-align: left; background: var(--email-bg); padding: 20px; border-radius: 12px; margin-top: 20px; width: 100%; max-width: 400px; border: 1px dashed var(--email-border);">
+                    <h4 style="margin-top: 0; color: var(--email-text-primary);">Cấu trúc dự kiến:</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: var(--email-text-secondary); line-height: 1.8;">
+                        <li>Nguồn mẫu: Dùng Gmail Draft</li>
+                        <li>Bộ biến cá nhân hóa riêng biệt</li>
+                        <li>Giao diện xem trước và gửi thử nghiệm</li>
+                        <li>Lịch sử log gửi email</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+        return;
     }
 
-    const btnFetch = document.getElementById('btnFetchGmailDrafts');
-    if (btnFetch) {
-        btnFetch.addEventListener('click', fetchGmailDrafts);
+    // Default back to first tab when switching email type
+    currentTabId = typeObj.tabs[0].id;
+    
+    renderTemplateDetail(typeObj);
+}
+
+function renderTemplateDetail(typeObj) {
+    const detailContainer = document.getElementById('emailDetailContainer');
+    
+    let html = `
+        <div class="email-detail-header">
+            <h2 class="email-detail-title">
+                <span class="material-symbols-sharp" style="color: var(--email-primary);">${typeObj.icon}</span>
+                ${typeObj.name}
+            </h2>
+            <p class="email-detail-desc">${typeObj.description}</p>
+            <div class="email-detail-meta">
+                <span class="email-badge badge-success">Sẵn sàng hoạt động</span>
+                <span class="email-badge badge-primary" id="systemCurrentTemplateSource">Nguồn: Đang tải...</span>
+            </div>
+        </div>
+        
+        <div class="email-tabs-nav">
+            ${typeObj.tabs.map(tab => `
+                <button class="email-tab-btn ${tab.id === currentTabId ? 'active' : ''}" onclick="switchTab('${tab.id}')">
+                    <span class="material-symbols-sharp" style="font-size: 16px; vertical-align: bottom; margin-right: 4px;">${tab.icon}</span>
+                    ${tab.name}
+                </button>
+            `).join('')}
+        </div>
+        
+        <div id="emailTabContentArea" style="display: flex; flex-direction: column; flex: 1; overflow-y: auto;">
+            ${renderTabContent(typeObj, currentTabId)}
+        </div>
+    `;
+    
+    detailContainer.innerHTML = html;
+}
+
+// Ensure globally accessible
+window.switchTab = function(tabId) {
+    currentTabId = tabId;
+    const typeObj = EMAIL_TEMPLATE_TYPES.find(t => t.key === selectedEmailType);
+    renderTemplateDetail(typeObj);
+}
+
+function renderTabContent(typeObj, tabId) {
+    if (tabId === 'overview') {
+        return `
+            <div class="email-tab-panel active">
+                <div class="email-section-card">
+                    <h3 class="email-section-title"><span class="material-symbols-sharp">target</span> Mục đích</h3>
+                    <p style="color: var(--email-text-secondary); line-height: 1.5; margin: 0;">Email này dùng để nhắc nhở người dùng khi đến giờ học mà họ vẫn chưa hoàn thành mục tiêu trong ngày, nhằm tăng tỷ lệ giữ chân người dùng và giúp họ không làm mất chuỗi streak.</p>
+                </div>
+                
+                <div class="email-section-card">
+                    <h3 class="email-section-title"><span class="material-symbols-sharp">schedule</span> Điều kiện kích hoạt tự động</h3>
+                    <ul style="color: var(--email-text-secondary); line-height: 1.6; margin: 0; padding-left: 20px;">
+                        <li>User đã <b>bật</b> tùy chọn nhận email nhắc nhở trong cài đặt cá nhân.</li>
+                        <li>Trùng khớp với <b>khung giờ nhắc nhở</b> mà user đã chọn.</li>
+                        <li>User <b>chưa hoàn thành</b> mục tiêu ngày (bài học hoặc thời gian).</li>
+                        <li>Chưa từng gửi email nào cho user này trong cùng slot giờ ngày hôm nay.</li>
+                    </ul>
+                </div>
+
+                <div class="email-section-card" style="border-left: 4px solid var(--email-warning); background: var(--email-warning-light);">
+                    <h3 class="email-section-title" style="color: var(--email-warning);"><span class="material-symbols-sharp">warning</span> Tiêu chuẩn nguồn Gmail Draft</h3>
+                    <p style="color: #555; margin: 0 0 8px 0;">Hệ thống sẽ không gửi trực tiếp thư nháp đi, mà sẽ dùng thư nháp làm KHUÔN (Template) để tự động thay thế dữ liệu rồi gửi dưới danh nghĩa hệ thống.</p>
+                    <p style="color: #555; margin: 0;">Tiêu đề thư nháp <strong>bắt buộc</strong> phải chứa tiền tố: <code style="background: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; border: 1px solid #ccc;">${typeObj.draftPrefix}</code></p>
+                </div>
+            </div>
+        `;
+    }
+    
+    if (tabId === 'gmail_draft') {
+        return `
+            <div class="email-tab-panel active">
+                <div class="email-section-card">
+                    <h3 class="email-section-title"><span class="material-symbols-sharp" style="color: #ea4335;">mail</span> Quy trình 3 bước cấu hình</h3>
+                    
+                    <div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px dashed var(--email-border);">
+                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 15px;">Bước 1: Tạo bản nháp chuẩn (Khuyên dùng)</div>
+                        <p style="font-size: 13px; color: var(--email-text-secondary); margin-bottom: 12px; line-height: 1.5;">Nhấn nút bên dưới để hệ thống sinh ra một bản nháp có sẵn các biến và bố cục chuẩn vào thẳng tài khoản Gmail của bạn.</p>
+                        <button class="email-btn email-btn-soft" data-action="create-starter-draft">
+                            <span class="material-symbols-sharp">add_box</span>
+                            Tạo nháp mẫu vào Gmail
+                        </button>
+                    </div>
+
+                    <div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px dashed var(--email-border);">
+                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 15px;">Bước 2: Tìm kiếm và quét danh sách</div>
+                        <p style="font-size: 13px; color: var(--email-text-secondary); margin-bottom: 12px; line-height: 1.5;">Mở tab Gmail để xào nấu lại bản nháp theo ý bạn. Sau đó quay về đây bấm nút Đồng bộ để hệ thống quét tìm.</p>
+                        <button class="email-btn email-btn-outline" data-action="fetch-drafts">
+                            <span class="material-symbols-sharp">sync</span>
+                            Đồng bộ danh sách nháp
+                        </button>
+                    </div>
+
+                    <div>
+                        <div style="font-weight: 600; margin-bottom: 12px; font-size: 15px;">Bước 3: Gắn làm mẫu chính thức</div>
+                        <div id="draftSelectorArea" style="display: none; flex-direction: column; gap: 12px; max-width: 500px;">
+                            <select id="gmailDraftSelect" style="padding: 12px; border-radius: 8px; border: 1px solid var(--email-border); font-family: inherit; font-size: 14px; background: var(--email-bg);">
+                                <option value="">-- Chọn một bản nháp đã đồng bộ --</option>
+                            </select>
+                            <button class="email-btn email-btn-primary" data-action="use-draft" style="width: fit-content;">
+                                <span class="material-symbols-sharp">check_circle</span>
+                                Lưu bản nháp này làm Mẫu Chính
+                            </button>
+                        </div>
+                        <p id="draftSelectorEmptyMsg" style="font-size: 13px; color: var(--email-warning); margin: 0; font-style: italic;">(Bấm Đồng bộ ở Bước 2 để hiển thị danh sách)</p>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
-    const btnCreateStarter = document.getElementById('btnCreateStarterDraft');
-    if (btnCreateStarter) {
-        btnCreateStarter.addEventListener('click', createStarterDraft);
+    if (tabId === 'variables') {
+        return `
+            <div class="email-tab-panel active">
+                <div class="email-section-card">
+                    <p style="color: var(--email-text-secondary); margin: 0 0 20px 0; font-size: 14px; line-height: 1.5;">Chỉ cần nhấn vào nút biến bên dưới để sao chép vào bộ nhớ tạm, sau đó dán (Ctrl+V) sang khung soạn thảo Gmail. Việc này đảm bảo bạn không gõ sai cú pháp.</p>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+                        ${typeObj.variables.map(v => `
+                            <div class="email-var-chip" data-action="copy-var" data-var="${v.key}" title="Demo: ${v.demo}">
+                                <span class="email-var-code">${v.key}</span>
+                                <span class="email-var-desc">- ${v.name}</span>
+                                <span class="material-symbols-sharp" style="font-size: 16px; margin-left: auto; color: var(--email-text-secondary); opacity: 0.5;">content_copy</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
-    const copyBtns = document.querySelectorAll('.btn-copy-var');
-    copyBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const varToCopy = this.getAttribute('data-var');
-            if (varToCopy) {
-                navigator.clipboard.writeText(varToCopy).then(() => {
-                    showToast('Đã copy: ' + varToCopy, 'success');
-                }).catch(err => {
-                    showToast('Lỗi copy', 'error');
-                });
-            }
-        });
-    });
+    if (tabId === 'preview') {
+        return `
+            <div class="email-tab-panel active">
+                <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <div class="email-section-card">
+                            <h3 class="email-section-title"><span class="material-symbols-sharp">science</span> Gửi Thử Nghiệm</h3>
+                            <p style="font-size: 13px; color: var(--email-text-secondary); margin-bottom: 16px; line-height: 1.5;">
+                                Hãy gửi thử 1 email test về hòm thư của bạn để kiểm tra hiển thị trên điện thoại và máy tính trước khi cho hệ thống chạy thật.
+                            </p>
+                            <button class="email-btn email-btn-primary" data-action="send-test" style="width: 100%; justify-content: center;">
+                                <span class="material-symbols-sharp">send</span>
+                                Gửi Email Test Tới Tôi
+                            </button>
+                        </div>
 
-    const selectDraft = document.getElementById('gmailDraftSelect');
-    if (selectDraft) {
-        selectDraft.addEventListener('change', function() {
-            if (this.value) {
-                previewDraft(this.value);
-            } else {
-                document.getElementById('gmailDraftPreviewContainer').style.display = 'none';
-                document.getElementById('gmailDraftActions').style.display = 'none';
-            }
-        });
-    }
-
-    const btnUseDraft = document.getElementById('btnUseGmailDraft');
-    if (btnUseDraft) {
-        btnUseDraft.addEventListener('click', function() {
-            const draftId = document.getElementById('gmailDraftSelect').value;
-            if (draftId) saveDraftTemplate(draftId);
-        });
+                        <div class="email-section-card">
+                            <h3 class="email-section-title"><span class="material-symbols-sharp">data_object</span> Dữ liệu test giả lập</h3>
+                            <ul style="font-size: 13px; color: var(--email-text-secondary); line-height: 1.8; margin: 0; padding-left: 20px;">
+                                ${typeObj.variables.map(v => `<li><strong>${v.key}</strong>: ${v.demo}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div style="flex: 2; min-width: 400px;">
+                        <div class="email-preview-container">
+                            <div class="email-preview-header">
+                                <strong style="color: var(--email-primary); margin-right: 8px;">Chủ đề (Subject):</strong> 
+                                <span id="previewRenderedSubject" style="color: #333; font-weight: 500;">${previewDataCache.subject || '(Trống)'}</span>
+                            </div>
+                            <div class="email-preview-body" id="previewRenderedBody">
+                                ${previewDataCache.body || `
+                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #999; opacity: 0.7;">
+                                        <span class="material-symbols-sharp" style="font-size: 40px; margin-bottom: 12px;">visibility_off</span>
+                                        <p style="margin:0;">Chưa có bản xem trước.</p>
+                                        <p style="margin:4px 0 0 0; font-size: 12px;">Qua tab Mẫu Gmail, chọn nháp để tự động hiện xem trước ở đây.</p>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 }
 
-function loadEmailTemplate() {
+// ------------------------------
+// EVENT DELEGATION
+// ------------------------------
+function handleDetailClicks(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    
+    const action = btn.getAttribute('data-action');
+
+    if (action === 'create-starter-draft') {
+        createStarterDraft(btn);
+    } else if (action === 'fetch-drafts') {
+        fetchGmailDrafts(btn);
+    } else if (action === 'use-draft') {
+        useDraft(btn);
+    } else if (action === 'copy-var') {
+        const chip = e.target.closest('.email-var-chip');
+        const varToCopy = chip.getAttribute('data-var');
+        copyToClipboard(varToCopy);
+    } else if (action === 'send-test') {
+        sendTestEmail(btn);
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Đã chép: ' + text, 'success');
+    }).catch(err => {
+        showToast('Lỗi copy', 'error');
+    });
+}
+
+// ------------------------------
+// BACKEND INTEGRATION
+// ------------------------------
+function loadEmailTemplateStatus() {
     google.script.run
         .withSuccessHandler(function(res) {
             if (res && res.success) {
-                const badge = document.getElementById('gmailDraftStatusBadge');
+                const badge = document.getElementById('systemCurrentTemplateSource');
                 if (badge) {
                     if (res.source === 'gmail_draft') {
-                        badge.textContent = res.fromCache ? 'Đang dùng Cache (Lỗi đồng bộ)' : 'Đang dùng Gmail Draft';
-                        badge.style.background = res.fromCache ? '#fce8e6' : '#e6f4ea';
-                        badge.style.color = res.fromCache ? '#d93025' : '#137333';
+                        badge.textContent = 'Nguồn: Mẫu lưu từ Gmail';
+                        badge.classList.remove('badge-primary', 'badge-danger', 'badge-warning');
+                        badge.classList.add('badge-success');
                     } else {
-                        badge.textContent = 'Chưa chọn mẫu Gmail';
-                        badge.style.background = '#e0e0e0';
-                        badge.style.color = '#555';
+                        badge.textContent = 'Nguồn: Chưa có template';
+                        badge.classList.remove('badge-primary', 'badge-success', 'badge-danger');
+                        badge.classList.add('badge-warning');
                     }
                 }
             }
@@ -77,62 +391,73 @@ function loadEmailTemplate() {
         .getStudyReminderEmailTemplate();
 }
 
-function sendTestEmail() {
-    const btn = document.getElementById('btnTestEmailTemplate');
-    const originalText = btn.textContent;
-    btn.textContent = 'Đang gửi...';
+function createStarterDraft(btn) {
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">autorenew</span> Đang tạo...';
     btn.disabled = true;
 
     google.script.run
         .withSuccessHandler(function(res) {
-            btn.textContent = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             if (res && res.success) {
-                showToast(res.message || 'Đã gửi email test thành công!', 'success');
+                showToast(res.message, 'success');
             } else {
-                showToast(res.message || 'Lỗi khi gửi email test', 'error');
+                showToast(res.message || 'Lỗi khi tạo thư nháp mẫu', 'error');
             }
         })
         .withFailureHandler(function(err) {
-            btn.textContent = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .testSendStudyReminderEmailToMe();
+        .createStarterGmailDraft();
 }
 
-function fetchGmailDrafts() {
-    const btn = document.getElementById('btnFetchGmailDrafts');
-    const originalText = btn.innerHTML;
+function fetchGmailDrafts(btn) {
+    const originalContent = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">sync</span> Đang tải...';
     btn.disabled = true;
 
     google.script.run
         .withSuccessHandler(function(res) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             if (res && res.success) {
                 const select = document.getElementById('gmailDraftSelect');
-                select.innerHTML = '<option value="">-- Chọn một bản nháp --</option>';
-                if (res.drafts && res.drafts.length > 0) {
-                    res.drafts.forEach(function(draft) {
-                        const opt = document.createElement('option');
-                        opt.value = draft.id;
-                        opt.textContent = draft.subject;
-                        select.appendChild(opt);
-                    });
-                    document.getElementById('gmailDraftListContainer').style.display = 'block';
-                    showToast('Đã tải danh sách nháp từ Gmail', 'success');
-                } else {
-                    document.getElementById('gmailDraftListContainer').style.display = 'none';
-                    showToast('Không tìm thấy bản nháp nào có tiền tố [TERRACODE_REMINDER]', 'warning');
+                const area = document.getElementById('draftSelectorArea');
+                const emptyMsg = document.getElementById('draftSelectorEmptyMsg');
+
+                if (select && area && emptyMsg) {
+                    select.innerHTML = '<option value="">-- Chọn bản nháp chứa [TERRACODE_REMINDER] --</option>';
+                    if (res.drafts && res.drafts.length > 0) {
+                        res.drafts.forEach(function(draft) {
+                            const opt = document.createElement('option');
+                            opt.value = draft.id;
+                            opt.textContent = draft.subject;
+                            select.appendChild(opt);
+                        });
+                        area.style.display = 'flex';
+                        emptyMsg.style.display = 'none';
+                        showToast('Tải danh sách nháp thành công', 'success');
+
+                        // Gọi preview nháp tự động nếu thay đổi
+                        select.addEventListener('change', function() {
+                            if (this.value) previewDraft(this.value);
+                        });
+                    } else {
+                        area.style.display = 'none';
+                        emptyMsg.style.display = 'block';
+                        emptyMsg.textContent = 'Trống. Không tìm thấy bản nháp hợp lệ nào trong Gmail!';
+                        emptyMsg.style.color = 'var(--email-danger)';
+                    }
                 }
             } else {
-                showToast(res.message || 'Lỗi tải danh sách nháp', 'error');
+                showToast(res.message || 'Lỗi tải danh sách', 'error');
             }
         })
         .withFailureHandler(function(err) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
@@ -140,80 +465,79 @@ function fetchGmailDrafts() {
 }
 
 function previewDraft(draftId) {
-    const previewContainer = document.getElementById('gmailDraftPreviewContainer');
-    const actionsContainer = document.getElementById('gmailDraftActions');
-    
-    document.getElementById('previewDraftSubject').textContent = 'Đang tải...';
-    document.getElementById('previewDraftBody').textContent = 'Vui lòng đợi...';
-    previewContainer.style.display = 'block';
-    actionsContainer.style.display = 'none';
+    showToast('Đang tải bản xem trước...', 'info');
 
     google.script.run
         .withSuccessHandler(function(res) {
             if (res && res.success) {
-                document.getElementById('previewDraftSubject').textContent = res.subject || '';
-                document.getElementById('previewDraftBody').innerHTML = res.body || '';
-                actionsContainer.style.display = 'flex';
+                previewDataCache.subject = res.subject || '';
+                previewDataCache.body = res.body || '';
+                showToast('Lấy bản xem trước thành công', 'success');
+                
+                // Cập nhật ngay nếu đang ở tab preview
+                if (currentTabId === 'preview') {
+                    const subEl = document.getElementById('previewRenderedSubject');
+                    const bodEl = document.getElementById('previewRenderedBody');
+                    if (subEl) subEl.textContent = previewDataCache.subject;
+                    if (bodEl) bodEl.innerHTML = previewDataCache.body;
+                }
             } else {
-                document.getElementById('previewDraftSubject').textContent = 'Lỗi';
-                document.getElementById('previewDraftBody').textContent = res.message || 'Không thể xem trước';
+                showToast(res.message || 'Lỗi khi tải xem trước', 'error');
             }
-        })
-        .withFailureHandler(function(err) {
-            document.getElementById('previewDraftSubject').textContent = 'Lỗi';
-            document.getElementById('previewDraftBody').textContent = err.message;
         })
         .previewStudyReminderGmailDraft(draftId);
 }
 
-function saveDraftTemplate(draftId) {
-    const btn = document.getElementById('btnUseGmailDraft');
-    const originalText = btn.innerHTML;
+function useDraft(btn) {
+    const draftId = document.getElementById('gmailDraftSelect').value;
+    if (!draftId) {
+        showToast('Chưa chọn bản nháp nào!', 'warning');
+        return;
+    }
+
+    const originalContent = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">save</span> Đang lưu...';
     btn.disabled = true;
 
     google.script.run
         .withSuccessHandler(function(res) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             if (res && res.success) {
-                showToast(res.message || 'Đã lưu mẫu từ Gmail Draft', 'success');
-                loadEmailTemplate(); // Reload to update form and badge
+                showToast(res.message || 'Lưu làm mẫu chính thức thành công!', 'success');
+                loadEmailTemplateStatus(); // Tải lại thẻ trạng thái Nguồn
             } else {
-                showToast(res.message || 'Lỗi khi lưu mẫu', 'error');
+                showToast(res.message || 'Lỗi lưu dữ liệu', 'error');
             }
         })
         .withFailureHandler(function(err) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
         .saveStudyReminderGmailDraftTemplate(draftId);
 }
 
-function createStarterDraft() {
-    const btn = document.getElementById('btnCreateStarterDraft');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">add_box</span> Đang tạo...';
+function sendTestEmail(btn) {
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">send</span> Đang gửi...';
     btn.disabled = true;
 
     google.script.run
         .withSuccessHandler(function(res) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             if (res && res.success) {
-                showToast(res.message, 'success');
-                // Tự động load lại danh sách nháp
-                fetchGmailDrafts();
+                showToast(res.message || 'Đã gửi Email Test thành công! Vui lòng check hộp thư.', 'success');
             } else {
-                showToast(res.message || 'Lỗi khi tạo thư nháp mẫu', 'error');
+                showToast(res.message || 'Gửi lỗi. Vui lòng xem log.', 'error');
             }
         })
         .withFailureHandler(function(err) {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalContent;
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .createStarterGmailDraft();
+        .testSendStudyReminderEmailToMe();
 }
 </script>
