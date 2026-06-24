@@ -32,20 +32,40 @@ const EMAIL_TEMPLATE_TYPES = [
         name: "Email xác thực tài khoản",
         icon: "verified_user",
         description: "Gửi mã xác thực khi người dùng đăng ký.",
-        status: "coming_soon",
-        statusText: "Sắp hỗ trợ",
-        variables: [],
-        tabs: []
+        status: "active",
+        statusText: "Đang hoạt động",
+        variables: [
+            { key: "{{fullName}}", name: "Tên người dùng", demo: "Test User" },
+            { key: "{{email}}", name: "Email người nhận", demo: "test@example.com" },
+            { key: "{{code}}", name: "Mã OTP", demo: "123456" }
+        ],
+        draftPrefix: "[TERRACODE_VERIFY]",
+        tabs: [
+            { id: "overview", name: "Tổng quan", icon: "info" },
+            { id: "gmail_draft", name: "Mẫu Gmail", icon: "mail" },
+            { id: "variables", name: "Biến cá nhân hóa", icon: "data_object" },
+            { id: "preview", name: "Xem trước & Test", icon: "visibility" }
+        ]
     },
     {
         key: "password_reset",
         name: "Email quên mật khẩu",
         icon: "lock_reset",
         description: "Gửi mã đặt lại mật khẩu.",
-        status: "coming_soon",
-        statusText: "Sắp hỗ trợ",
-        variables: [],
-        tabs: []
+        status: "active",
+        statusText: "Đang hoạt động",
+        variables: [
+            { key: "{{fullName}}", name: "Tên người dùng", demo: "Test User" },
+            { key: "{{email}}", name: "Email người nhận", demo: "test@example.com" },
+            { key: "{{code}}", name: "Mã Reset", demo: "654321" }
+        ],
+        draftPrefix: "[TERRACODE_RESET]",
+        tabs: [
+            { id: "overview", name: "Tổng quan", icon: "info" },
+            { id: "gmail_draft", name: "Mẫu Gmail", icon: "mail" },
+            { id: "variables", name: "Biến cá nhân hóa", icon: "data_object" },
+            { id: "preview", name: "Xem trước & Test", icon: "visibility" }
+        ]
     },
     {
         key: "welcome",
@@ -381,14 +401,14 @@ function loadEmailTemplateStatus() {
                         badge.classList.remove('badge-primary', 'badge-danger', 'badge-warning');
                         badge.classList.add('badge-success');
                     } else {
-                        badge.textContent = 'Nguồn: Chưa có template';
+                        badge.textContent = 'Nguồn: Mặc định của hệ thống';
                         badge.classList.remove('badge-primary', 'badge-success', 'badge-danger');
                         badge.classList.add('badge-warning');
                     }
                 }
             }
         })
-        .getStudyReminderEmailTemplate();
+        .adminGetEmailTemplateStatus(selectedEmailType);
 }
 
 function createStarterDraft(btn) {
@@ -411,13 +431,15 @@ function createStarterDraft(btn) {
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .createStarterGmailDraft();
+        .adminCreateStarterDraft(selectedEmailType);
 }
 
 function fetchGmailDrafts(btn) {
     const originalContent = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">sync</span> Đang tải...';
     btn.disabled = true;
+
+    const typeObj = EMAIL_TEMPLATE_TYPES.find(t => t.key === selectedEmailType);
 
     google.script.run
         .withSuccessHandler(function(res) {
@@ -429,7 +451,7 @@ function fetchGmailDrafts(btn) {
                 const emptyMsg = document.getElementById('draftSelectorEmptyMsg');
 
                 if (select && area && emptyMsg) {
-                    select.innerHTML = '<option value="">-- Chọn bản nháp chứa [TERRACODE_REMINDER] --</option>';
+                    select.innerHTML = '<option value="">-- Chọn bản nháp chứa ' + typeObj.draftPrefix + ' --</option>';
                     if (res.drafts && res.drafts.length > 0) {
                         res.drafts.forEach(function(draft) {
                             const opt = document.createElement('option');
@@ -442,7 +464,10 @@ function fetchGmailDrafts(btn) {
                         showToast('Tải danh sách nháp thành công', 'success');
 
                         // Gọi preview nháp tự động nếu thay đổi
-                        select.addEventListener('change', function() {
+                        // Gỡ bỏ event listener cũ để tránh bind nhiều lần
+                        const newSelect = select.cloneNode(true);
+                        select.parentNode.replaceChild(newSelect, select);
+                        newSelect.addEventListener('change', function() {
                             if (this.value) previewDraft(this.value);
                         });
                     } else {
@@ -461,7 +486,7 @@ function fetchGmailDrafts(btn) {
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .listStudyReminderGmailDrafts();
+        .adminListEmailDrafts(selectedEmailType);
 }
 
 function previewDraft(draftId) {
@@ -485,7 +510,7 @@ function previewDraft(draftId) {
                 showToast(res.message || 'Lỗi khi tải xem trước', 'error');
             }
         })
-        .previewStudyReminderGmailDraft(draftId);
+        .adminPreviewDraft(draftId, selectedEmailType);
 }
 
 function useDraft(btn) {
@@ -515,7 +540,7 @@ function useDraft(btn) {
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .saveStudyReminderGmailDraftTemplate(draftId);
+        .adminSaveDraftTemplate(draftId, selectedEmailType);
 }
 
 function sendTestEmail(btn) {
@@ -538,6 +563,6 @@ function sendTestEmail(btn) {
             btn.disabled = false;
             showToast('Lỗi server: ' + err.message, 'error');
         })
-        .testSendStudyReminderEmailToMe();
+        .adminTestSendEmail(selectedEmailType);
 }
 </script>
