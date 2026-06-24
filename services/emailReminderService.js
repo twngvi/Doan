@@ -6,6 +6,12 @@ const STUDY_REMINDER_TEMPLATE_KEY = "STUDY_REMINDER_EMAIL_TEMPLATE_V1";
 const STUDY_REMINDER_SENT_PREFIX = "STUDY_REMINDER_SENT_";
 const STUDY_REMINDER_TIMEZONE = "Asia/Ho_Chi_Minh";
 
+const STUDY_REMINDER_TEMPLATE_SOURCE = "STUDY_REMINDER_TEMPLATE_SOURCE";
+const STUDY_REMINDER_GMAIL_DRAFT_ID = "STUDY_REMINDER_GMAIL_DRAFT_ID";
+const STUDY_REMINDER_GMAIL_DRAFT_SUBJECT_CACHE = "STUDY_REMINDER_GMAIL_DRAFT_SUBJECT_CACHE";
+const STUDY_REMINDER_GMAIL_DRAFT_BODY_CACHE = "STUDY_REMINDER_GMAIL_DRAFT_BODY_CACHE";
+const STUDY_REMINDER_GMAIL_DRAFT_SELECTED_AT = "STUDY_REMINDER_GMAIL_DRAFT_SELECTED_AT";
+
 function getDefaultStudyReminderTemplate_() {
   return {
     subject: "⏰ Đến giờ học rồi, {{userName}}!",
@@ -30,6 +36,37 @@ function getDefaultStudyReminderTemplate_() {
 function getStudyReminderEmailTemplate() {
   try {
     const props = PropertiesService.getScriptProperties();
+    const source = props.getProperty(STUDY_REMINDER_TEMPLATE_SOURCE);
+
+    if (source === "gmail_draft") {
+      const draftId = props.getProperty(STUDY_REMINDER_GMAIL_DRAFT_ID);
+      let subject = props.getProperty(STUDY_REMINDER_GMAIL_DRAFT_SUBJECT_CACHE) || "";
+      let body = props.getProperty(STUDY_REMINDER_GMAIL_DRAFT_BODY_CACHE) || "";
+      let fromCache = true;
+
+      if (draftId) {
+        try {
+          const draft = GmailApp.getDraft(draftId);
+          if (draft) {
+            const message = draft.getMessage();
+            subject = message.getSubject() || subject;
+            body = message.getBody() || body;
+            fromCache = false;
+          }
+        } catch (e) {
+          Logger.log("Error reading Gmail Draft " + draftId + ", fallback to cache: " + e.toString());
+        }
+      }
+
+      return {
+        success: true,
+        subject: subject,
+        body: body,
+        source: "gmail_draft",
+        fromCache: fromCache
+      };
+    }
+
     const raw = props.getProperty(STUDY_REMINDER_TEMPLATE_KEY);
 
     if (!raw) {
@@ -38,7 +75,8 @@ function getStudyReminderEmailTemplate() {
       return {
         success: true,
         subject: def.subject,
-        body: def.body
+        body: def.body,
+        source: "default"
       };
     }
 
@@ -46,7 +84,8 @@ function getStudyReminderEmailTemplate() {
     return {
       success: true,
       subject: parsed.subject || "",
-      body: parsed.body || ""
+      body: parsed.body || "",
+      source: "custom"
     };
   } catch (error) {
     return {
@@ -75,7 +114,8 @@ function saveStudyReminderEmailTemplate(payload) {
       };
     }
 
-    PropertiesService.getScriptProperties().setProperty(
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(
       STUDY_REMINDER_TEMPLATE_KEY,
       JSON.stringify({
         subject: subject,
@@ -83,10 +123,130 @@ function saveStudyReminderEmailTemplate(payload) {
         updatedAt: new Date().toISOString()
       })
     );
+    props.deleteProperty(STUDY_REMINDER_TEMPLATE_SOURCE);
 
     return {
       success: true,
       message: "Đã lưu template email"
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString()
+    };
+  }
+}
+
+// === NEW GMAIL DRAFT FUNCTIONS ===
+
+function listStudyReminderGmailDrafts() {
+  try {
+    if (typeof checkAdminRole === "function" && !checkAdminRole()) {
+      return { success: false, message: "Không có quyền truy cập" };
+    }
+
+    const drafts = GmailApp.getDrafts();
+    const result = [];
+
+    drafts.forEach(function (draft) {
+      const msg = draft.getMessage();
+      const subject = msg.getSubject() || "";
+      
+      if (subject.indexOf("[TERRACODE_REMINDER]") !== -1) {
+        result.push({
+          id: draft.getId(),
+          subject: subject,
+          preview: msg.getPlainBody().substring(0, 100) + "..."
+        });
+      }
+    });
+
+    return {
+      success: true,
+      drafts: result
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString()
+    };
+  }
+}
+
+function previewStudyReminderGmailDraft(draftId) {
+  try {
+    if (typeof checkAdminRole === "function" && !checkAdminRole()) {
+      return { success: false, message: "Không có quyền truy cập" };
+    }
+
+    if (!draftId) return { success: false, message: "Thiếu draftId" };
+
+    const draft = GmailApp.getDraft(draftId);
+    if (!draft) return { success: false, message: "Không tìm thấy bản nháp" };
+
+    const msg = draft.getMessage();
+    const subject = msg.getSubject() || "";
+    const body = msg.getBody() || "";
+
+    const rendered = renderStudyReminderTemplate_(
+      { subject: subject, body: body },
+      {
+        userName: "Test User",
+        displayName: "Test User",
+        email: "test@example.com",
+        dailyGoal: 5,
+        completedLessons: 3,
+        remainingLessons: 2,
+        dailyTimeGoal: 30,
+        studiedMinutes: 15,
+        streak: 7,
+        todayDate: Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"),
+        learningUrl: buildLearningUrl_() || "https://example.com/learning"
+      }
+    );
+
+    return {
+      success: true,
+      subject: rendered.subject,
+      body: rendered.body
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString()
+    };
+  }
+}
+
+function saveStudyReminderGmailDraftTemplate(draftId) {
+  try {
+    if (typeof checkAdminRole === "function" && !checkAdminRole()) {
+      return { success: false, message: "Không có quyền truy cập" };
+    }
+
+    if (!draftId) return { success: false, message: "Thiếu draftId" };
+
+    const draft = GmailApp.getDraft(draftId);
+    if (!draft) return { success: false, message: "Không tìm thấy bản nháp" };
+
+    const msg = draft.getMessage();
+    const subject = msg.getSubject() || "";
+    const body = msg.getBody() || "";
+
+    if (subject.indexOf("[TERRACODE_REMINDER]") === -1) {
+      return { success: false, message: "Tiêu đề bản nháp phải chứa [TERRACODE_REMINDER]" };
+    }
+
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(STUDY_REMINDER_TEMPLATE_SOURCE, "gmail_draft");
+    props.setProperty(STUDY_REMINDER_GMAIL_DRAFT_ID, draftId);
+    props.setProperty(STUDY_REMINDER_GMAIL_DRAFT_SUBJECT_CACHE, subject);
+    props.setProperty(STUDY_REMINDER_GMAIL_DRAFT_BODY_CACHE, body);
+    props.setProperty(STUDY_REMINDER_GMAIL_DRAFT_SELECTED_AT, new Date().toISOString());
+
+    return {
+      success: true,
+      message: "Đã lưu bản nháp Gmail làm mẫu email nhắc nhở"
     };
   } catch (error) {
     return {
@@ -727,6 +887,12 @@ function processStudyReminderEmails() {
         repeatIndex
       );
 
+      const quota = MailApp.getRemainingDailyQuota();
+      if (quota <= 0) {
+        Logger.log("Hết hạn mức gửi email (Quota). Không thể gửi cho " + user.email);
+        return;
+      }
+
       MailApp.sendEmail({
         to: user.email,
         subject: rendered.subject,
@@ -922,3 +1088,53 @@ function debugClearTodaySentFlags() {
     message: "Đã xóa " + clearedCount + " sent flags để bạn test lại."
   };
 }
+
+function authorizeGmailDraftAccess() {
+  const drafts = GmailApp.getDrafts();
+  const quota = MailApp.getRemainingDailyQuota();
+
+  Logger.log("Authorized Gmail Draft access.");
+  Logger.log("Draft count: " + drafts.length);
+  Logger.log("Remaining mail quota: " + quota);
+
+  return {
+    success: true,
+    draftCount: drafts.length,
+    quota: quota,
+    email: Session.getActiveUser().getEmail()
+  };
+}
+
+function createStarterGmailDraft() {
+  try {
+    if (typeof checkAdminRole === "function" && !checkAdminRole()) {
+      return { success: false, message: "Không có quyền truy cập" };
+    }
+
+    const subject = "[TERRACODE_REMINDER] Đến giờ học rồi {{userName}} ơi!";
+    const body = `
+<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;">
+  <h2 style="color: #1a73e8;">Chào {{userName}},</h2>
+  <p>Hôm nay là <b>{{todayDate}}</b>. Bạn đã học được <b>{{studiedMinutes}} phút</b> và hoàn thành <b>{{completedLessons}}/{{dailyGoal}} bài học</b>.</p>
+  <p>Bạn chỉ còn <b>{{remainingLessons}} bài nữa</b> là đạt mục tiêu ngày hôm nay. Hãy tiếp tục học để giữ vững chuỗi <b>{{streak}} ngày học liên tiếp</b> nhé!</p>
+  <br>
+  <a href="{{learningUrl}}" style="background: #1a73e8; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Học tiếp ngay</a>
+  <br><br>
+  <p style="font-size: 12px; color: #777;">Email được gửi tự động từ hệ thống.</p>
+</div>
+    `.trim();
+
+    GmailApp.createDraft("", subject, "", { htmlBody: body });
+
+    return {
+      success: true,
+      message: "Đã tạo một thư nháp mẫu vào hộp thư Gmail của bạn. Vui lòng kiểm tra mục 'Thư nháp' (Drafts) trên Gmail."
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.toString()
+    };
+  }
+}
+

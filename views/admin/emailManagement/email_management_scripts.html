@@ -2,13 +2,7 @@
 function initEmailManagement() {
     loadEmailTemplate();
 
-    const form = document.getElementById('emailTemplateForm');
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-            saveEmailTemplate();
-        });
-    }
+    // Không còn form HTML nhập tay
 
     const testBtn = document.getElementById('btnTestEmailTemplate');
     if (testBtn) {
@@ -16,59 +10,71 @@ function initEmailManagement() {
             sendTestEmail();
         });
     }
+
+    const btnFetch = document.getElementById('btnFetchGmailDrafts');
+    if (btnFetch) {
+        btnFetch.addEventListener('click', fetchGmailDrafts);
+    }
+
+    const btnCreateStarter = document.getElementById('btnCreateStarterDraft');
+    if (btnCreateStarter) {
+        btnCreateStarter.addEventListener('click', createStarterDraft);
+    }
+
+    const copyBtns = document.querySelectorAll('.btn-copy-var');
+    copyBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const varToCopy = this.getAttribute('data-var');
+            if (varToCopy) {
+                navigator.clipboard.writeText(varToCopy).then(() => {
+                    showToast('Đã copy: ' + varToCopy, 'success');
+                }).catch(err => {
+                    showToast('Lỗi copy', 'error');
+                });
+            }
+        });
+    });
+
+    const selectDraft = document.getElementById('gmailDraftSelect');
+    if (selectDraft) {
+        selectDraft.addEventListener('change', function() {
+            if (this.value) {
+                previewDraft(this.value);
+            } else {
+                document.getElementById('gmailDraftPreviewContainer').style.display = 'none';
+                document.getElementById('gmailDraftActions').style.display = 'none';
+            }
+        });
+    }
+
+    const btnUseDraft = document.getElementById('btnUseGmailDraft');
+    if (btnUseDraft) {
+        btnUseDraft.addEventListener('click', function() {
+            const draftId = document.getElementById('gmailDraftSelect').value;
+            if (draftId) saveDraftTemplate(draftId);
+        });
+    }
 }
 
 function loadEmailTemplate() {
-    const btn = document.getElementById('btnSaveEmailTemplate');
-    if (btn) btn.disabled = true;
-
     google.script.run
         .withSuccessHandler(function(res) {
-            if (btn) btn.disabled = false;
             if (res && res.success) {
-                document.getElementById('emailSubject').value = res.subject || '';
-                document.getElementById('emailBody').value = res.body || '';
-            } else {
-                showToast(res.message || 'Lỗi tải template email', 'error');
+                const badge = document.getElementById('gmailDraftStatusBadge');
+                if (badge) {
+                    if (res.source === 'gmail_draft') {
+                        badge.textContent = res.fromCache ? 'Đang dùng Cache (Lỗi đồng bộ)' : 'Đang dùng Gmail Draft';
+                        badge.style.background = res.fromCache ? '#fce8e6' : '#e6f4ea';
+                        badge.style.color = res.fromCache ? '#d93025' : '#137333';
+                    } else {
+                        badge.textContent = 'Chưa chọn mẫu Gmail';
+                        badge.style.background = '#e0e0e0';
+                        badge.style.color = '#555';
+                    }
+                }
             }
-        })
-        .withFailureHandler(function(err) {
-            if (btn) btn.disabled = false;
-            showToast('Lỗi server: ' + err.message, 'error');
         })
         .getStudyReminderEmailTemplate();
-}
-
-function saveEmailTemplate() {
-    const subject = document.getElementById('emailSubject').value;
-    const body = document.getElementById('emailBody').value;
-    const btn = document.getElementById('btnSaveEmailTemplate');
-    
-    if (!subject || !body) {
-        showToast('Vui lòng nhập đầy đủ tiêu đề và nội dung', 'error');
-        return;
-    }
-
-    const originalText = btn.textContent;
-    btn.textContent = 'Đang lưu...';
-    btn.disabled = true;
-
-    google.script.run
-        .withSuccessHandler(function(res) {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            if (res && res.success) {
-                showToast('Lưu template email thành công!', 'success');
-            } else {
-                showToast(res.message || 'Lỗi khi lưu template', 'error');
-            }
-        })
-        .withFailureHandler(function(err) {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            showToast('Lỗi server: ' + err.message, 'error');
-        })
-        .saveStudyReminderEmailTemplate({ subject: subject, body: body });
 }
 
 function sendTestEmail() {
@@ -93,5 +99,121 @@ function sendTestEmail() {
             showToast('Lỗi server: ' + err.message, 'error');
         })
         .testSendStudyReminderEmailToMe();
+}
+
+function fetchGmailDrafts() {
+    const btn = document.getElementById('btnFetchGmailDrafts');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">sync</span> Đang tải...';
+    btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            if (res && res.success) {
+                const select = document.getElementById('gmailDraftSelect');
+                select.innerHTML = '<option value="">-- Chọn một bản nháp --</option>';
+                if (res.drafts && res.drafts.length > 0) {
+                    res.drafts.forEach(function(draft) {
+                        const opt = document.createElement('option');
+                        opt.value = draft.id;
+                        opt.textContent = draft.subject;
+                        select.appendChild(opt);
+                    });
+                    document.getElementById('gmailDraftListContainer').style.display = 'block';
+                    showToast('Đã tải danh sách nháp từ Gmail', 'success');
+                } else {
+                    document.getElementById('gmailDraftListContainer').style.display = 'none';
+                    showToast('Không tìm thấy bản nháp nào có tiền tố [TERRACODE_REMINDER]', 'warning');
+                }
+            } else {
+                showToast(res.message || 'Lỗi tải danh sách nháp', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .listStudyReminderGmailDrafts();
+}
+
+function previewDraft(draftId) {
+    const previewContainer = document.getElementById('gmailDraftPreviewContainer');
+    const actionsContainer = document.getElementById('gmailDraftActions');
+    
+    document.getElementById('previewDraftSubject').textContent = 'Đang tải...';
+    document.getElementById('previewDraftBody').textContent = 'Vui lòng đợi...';
+    previewContainer.style.display = 'block';
+    actionsContainer.style.display = 'none';
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (res && res.success) {
+                document.getElementById('previewDraftSubject').textContent = res.subject || '';
+                document.getElementById('previewDraftBody').innerHTML = res.body || '';
+                actionsContainer.style.display = 'flex';
+            } else {
+                document.getElementById('previewDraftSubject').textContent = 'Lỗi';
+                document.getElementById('previewDraftBody').textContent = res.message || 'Không thể xem trước';
+            }
+        })
+        .withFailureHandler(function(err) {
+            document.getElementById('previewDraftSubject').textContent = 'Lỗi';
+            document.getElementById('previewDraftBody').textContent = err.message;
+        })
+        .previewStudyReminderGmailDraft(draftId);
+}
+
+function saveDraftTemplate(draftId) {
+    const btn = document.getElementById('btnUseGmailDraft');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">save</span> Đang lưu...';
+    btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            if (res && res.success) {
+                showToast(res.message || 'Đã lưu mẫu từ Gmail Draft', 'success');
+                loadEmailTemplate(); // Reload to update form and badge
+            } else {
+                showToast(res.message || 'Lỗi khi lưu mẫu', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .saveStudyReminderGmailDraftTemplate(draftId);
+}
+
+function createStarterDraft() {
+    const btn = document.getElementById('btnCreateStarterDraft');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">add_box</span> Đang tạo...';
+    btn.disabled = true;
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            if (res && res.success) {
+                showToast(res.message, 'success');
+                // Tự động load lại danh sách nháp
+                fetchGmailDrafts();
+            } else {
+                showToast(res.message || 'Lỗi khi tạo thư nháp mẫu', 'error');
+            }
+        })
+        .withFailureHandler(function(err) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            showToast('Lỗi server: ' + err.message, 'error');
+        })
+        .createStarterGmailDraft();
 }
 </script>
