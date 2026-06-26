@@ -58,12 +58,18 @@ function loginWithEmail(credentials) {
           };
         }
 
-        if (data[i][isActiveIndex] !== true) {
-          Logger.log("Account not active");
-          return {
-            success: false,
-            message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin.",
-          };
+        if (isActiveIndex >= 0) {
+          const isActiveVal = data[i][isActiveIndex];
+          // Chấp nhận true (boolean), "true" (string), "TRUE" (string), hoặc 1 (number)
+          const isActive = isActiveVal === true || String(isActiveVal).toUpperCase() === "TRUE" || isActiveVal === 1;
+          
+          if (!isActive) {
+            Logger.log("Account not active");
+            return {
+              success: false,
+              message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin.",
+            };
+          }
         }
 
         const passwordHash = data[i][passwordIndex];
@@ -372,6 +378,18 @@ function checkSession(userId, sessionId) {
         const activeSessionId = data[i][activeSessionIdIndex];
         
         const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
+        const isActiveIndex = headers.indexOf("isActive");
+        
+        // Kiểm tra xem tài khoản có bị khóa không
+        if (isActiveIndex >= 0) {
+          const isActiveVal = data[i][isActiveIndex];
+          const isActive = isActiveVal === true || String(isActiveVal).toUpperCase() === "TRUE" || isActiveVal === 1;
+          if (!isActive) {
+            // Xóa session để không bị lỗi "đang đăng nhập ở thiết bị khác" sau khi được mở khóa
+            usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
+            return { status: "FORCE_LOGOUT", message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin." };
+          }
+        }
 
         // If no active session is set yet (legacy data), consider it valid and update it
         if (!activeSessionId) {

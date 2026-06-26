@@ -366,6 +366,15 @@ function processGoogleUserLogin(googleProfile, force = false) {
   }
 
   if (existingUser) {
+    const isActiveIndex = headers.indexOf("isActive");
+    if (isActiveIndex >= 0) {
+      const isActiveVal = existingUser[isActiveIndex];
+      const isActive = isActiveVal === true || String(isActiveVal).toUpperCase() === "TRUE" || isActiveVal === 1;
+      if (!isActive) {
+        throw new Error("Tài khoản đã bị khóa. Vui lòng liên hệ admin.");
+      }
+    }
+
     // === KIỂM TRA SESSION ĐANG HOẠT ĐỘNG ===
     const activeSessionIdIndex = headers.indexOf("activeSessionId");
     const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
