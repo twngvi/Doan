@@ -1,6 +1,5 @@
 <script>
   let caList = [];
-  let caTopics = [];
   let currentSlicedBlocks = [];
   let isCaFormDirty = false;
 
@@ -14,36 +13,7 @@
   });
 
   function initCodeArrangementManager() {
-    loadCATopics();
     loadCAList();
-  }
-
-  function loadCATopics() {
-    google.script.run
-      .withSuccessHandler(function(response) {
-        if (response.success) {
-          caTopics = response.topics || [];
-          renderCATopics();
-        }
-      })
-      .adminGetTopicsWithQuizStatus();
-  }
-
-  function renderCATopics() {
-    const filterSelect = document.getElementById('caTopicFilter');
-    const formSelect = document.getElementById('caTopic');
-    
-    let html = '<option value="">Tất cả Topic</option>';
-    let formHtml = '';
-    
-    caTopics.forEach(t => {
-      const option = `<option value="${t.topicId}">${t.title}</option>`;
-      html += option;
-      formHtml += option;
-    });
-    
-    if (filterSelect) filterSelect.innerHTML = html;
-    if (formSelect) formSelect.innerHTML = formHtml;
   }
 
   function loadCAList() {
@@ -67,14 +37,12 @@
 
   function filterCAList() {
     const search = document.getElementById('caSearchInput').value.toLowerCase();
-    const topicId = document.getElementById('caTopicFilter').value;
     const status = document.getElementById('caStatusFilter').value;
     
     const filtered = caList.filter(item => {
       const matchSearch = item.title.toLowerCase().includes(search) || item.arrangementId.toLowerCase().includes(search);
-      const matchTopic = topicId === "" || item.topicId === topicId;
       const matchStatus = status === "" || item.status === status;
-      return matchSearch && matchTopic && matchStatus;
+      return matchSearch && matchStatus;
     });
     
     renderCAList(filtered);
@@ -89,10 +57,6 @@
     
     let html = '';
     list.forEach(item => {
-      let topicName = item.topicId;
-      const t = caTopics.find(x => x.topicId === item.topicId);
-      if (t) topicName = t.title;
-      
       let statusClass = "status-draft";
       let statusText = "Bản nháp";
       
@@ -114,7 +78,6 @@
         <tr>
           <td><span style="font-family: monospace; background: var(--theme-bg); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${item.arrangementId}</span></td>
           <td style="font-weight: 600;">${item.title}</td>
-          <td>${topicName}</td>
           <td style="text-transform: capitalize;">${item.programmingLanguage}</td>
           <td style="text-transform: capitalize;">${item.difficulty}</td>
           <td><span class="ca-status-badge ${statusClass}">${statusText}</span></td>
@@ -141,7 +104,6 @@
   function openCAModal() {
     document.getElementById('caId').value = '';
     document.getElementById('caTitle').value = '';
-    document.getElementById('caTopic').value = '';
     document.getElementById('caDescription').value = '';
     document.getElementById('caLanguage').value = 'javascript';
     document.getElementById('caDifficulty').value = 'medium';
@@ -172,7 +134,6 @@
     
     document.getElementById('caId').value = item.arrangementId;
     document.getElementById('caTitle').value = item.title;
-    document.getElementById('caTopic').value = item.topicId;
     document.getElementById('caDescription').value = item.description;
     document.getElementById('caLanguage').value = item.programmingLanguage;
     document.getElementById('caDifficulty').value = item.difficulty || 'medium';
@@ -203,7 +164,6 @@
     const payload = {
       arrangementId: document.getElementById('caId').value,
       title: document.getElementById('caTitle').value,
-      topicId: document.getElementById('caTopic').value,
       description: document.getElementById('caDescription').value,
       programmingLanguage: document.getElementById('caLanguage').value,
       difficulty: document.getElementById('caDifficulty').value,
@@ -215,10 +175,6 @@
     
     if (!payload.title || payload.title.trim() === '') {
       caShowToast("Thiếu tiêu đề", "warning", "Vui lòng điền tiêu đề cho câu hỏi.");
-      return;
-    }
-    if (!payload.topicId) {
-      caShowToast("Chưa chọn Topic", "warning", "Vui lòng chọn Topic trước khi lưu.");
       return;
     }
     if (!payload.description || payload.description.trim() === '') {
