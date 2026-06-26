@@ -62,7 +62,46 @@
       </div>
     `;
 
-    // Load topics first to ensure we know which ones are unlocked
+    // ===== BẮT ĐẦU: OFFLINE-FIRST CACHE LOGIC =====
+    let hasRenderedFromCache = false;
+    let localStoreCACache = readCALocalCache();
+
+    // Thử lấy topics từ cache LocalStorage nếu globalCache chưa có
+    if (!window.globalTopicsCache || !window.globalTopicsCache.data) {
+       var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+       var topicsKey = "tisvua:topics:" + userKey + ":v1";
+       try {
+         var raw = localStorage.getItem(topicsKey);
+         if (raw) {
+           var payload = JSON.parse(raw);
+           if (payload && payload.data && payload.data.success) {
+             window.globalTopicsCache = {
+               data: payload.data.topics || [],
+               progress: payload.data.progress || {},
+               lastLoadTime: payload.savedAt,
+               cacheDuration: 60000
+             };
+           }
+         }
+       } catch(e) {}
+    }
+
+    let hasGlobalTopics = window.globalTopicsCache && window.globalTopicsCache.data;
+
+    // ƯU TIÊN: Nếu có cả Topics (từ RAM hoặc LS) và CA List từ LS -> Render ngay
+    if (hasGlobalTopics && localStoreCACache && localStoreCACache.data) {
+        console.log("✅ Using LOCAL STORAGE cached CA List, rendering instantly...");
+        renderCodeArrangementList(localStoreCACache.data.data, localStoreCACache.data.completed || []);
+        hasRenderedFromCache = true;
+    }
+
+    // Sau đó luôn gọi server để fetch data mới (Background Refresh)
+    // Nếu chưa có cache, nó đóng vai trò là initial load
+    if (hasRenderedFromCache) {
+       console.log("🔄 Background refreshing Topics and CA List...");
+    }
+
+    // Tải Topics
     google.script.run
       .withSuccessHandler(function(topicsResponse) {
         if (topicsResponse && topicsResponse.success) {
@@ -74,42 +113,83 @@
           window.globalTopicsCache.lastLoadTime = Date.now();
         }
         
-        // Now load the client code arrangements
-        loadCodeArrangementGamesList();
+        // Tải CA List
+        loadCodeArrangementGamesList(hasRenderedFromCache);
       })
       .withFailureHandler(function(error) {
         console.warn("Failed to pre-load topics:", error);
-        document.getElementById('caListBody').innerHTML = `
-          <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 12px; display: block;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            Lỗi kết nối khi tải trạng thái chủ đề. Vui lòng tải lại trang.
-          </div>
-        `;
+        if (!hasRenderedFromCache) {
+            document.getElementById('caListBody').innerHTML = `
+              <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 12px; display: block;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                Lỗi kết nối khi tải trạng thái chủ đề. Vui lòng tải lại trang.
+              </div>
+            `;
+        }
       })
       .getTopicsForUserPage();
   }
 
-  function loadCodeArrangementGamesList() {
+  function loadCodeArrangementGamesList(isBackgroundRefresh = false) {
     google.script.run
       .withSuccessHandler(function(response) {
         if (response.success && response.data) {
+          saveCALocalCache(response);
           renderCodeArrangementList(response.data, response.completed || []);
         } else {
-          document.getElementById('caListBody').innerHTML = `
-            <div class="ca-ladder-empty">
-              ${response.message || "Không có bài tập nào."}
-            </div>
-          `;
+          if (!isBackgroundRefresh) {
+              document.getElementById('caListBody').innerHTML = `
+                <div class="ca-ladder-empty">
+                  ${response.message || "Không có bài tập nào."}
+                </div>
+              `;
+          }
         }
       })
       .withFailureHandler(function(error) {
-        document.getElementById('caListBody').innerHTML = `
-          <div class="ca-ladder-empty">
-            Lỗi kết nối: ${error.message}
-          </div>
-        `;
+        if (!isBackgroundRefresh) {
+            document.getElementById('caListBody').innerHTML = `
+              <div class="ca-ladder-empty">
+                Lỗi kết nối: ${error.message}
+              </div>
+            `;
+        }
       })
       .getAllClientCodeArrangements();
+  }
+
+  // ===== CA LOCAL STORAGE CACHE HELPERS =====
+  const CA_LOCAL_CACHE_VERSION = "v1";
+  const CA_LOCAL_CACHE_MAX_AGE = 10 * 60 * 1000; // 10 phút
+
+  function getCALocalCacheKey() {
+    var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+    return "tisvua:ca_list:" + userKey + ":" + CA_LOCAL_CACHE_VERSION;
+  }
+
+  function saveCALocalCache(data) {
+    try {
+      if (!data || !data.success) return;
+      var payload = { savedAt: Date.now(), data: data };
+      localStorage.setItem(getCALocalCacheKey(), JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Không thể lưu CA List vào localStorage:", e);
+    }
+  }
+
+  function readCALocalCache() {
+    try {
+      var raw = localStorage.getItem(getCALocalCacheKey());
+      if (!raw) return null;
+      var payload = JSON.parse(raw);
+      if (!payload || !payload.data || !payload.savedAt) return null;
+      var age = Date.now() - payload.savedAt;
+      if (age > CA_LOCAL_CACHE_MAX_AGE) return null;
+      return payload;
+    } catch (e) {
+      console.warn("Không thể đọc CA List localStorage:", e);
+      return null;
+    }
   }
 
   // --- List View Logic ---

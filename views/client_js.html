@@ -1689,6 +1689,73 @@
     }
   }
 
+  window.preloadAppOfflineCaches = function() {
+    console.log("🚀 Preloading offline caches in background...");
+    if (typeof google === "undefined" || !google.script || !google.script.run) return;
+
+    // 1. Dashboard
+    google.script.run
+      .withSuccessHandler(function(response) {
+         if(response && response.success && response.data) {
+            try {
+               let payload = { savedAt: Date.now(), data: response };
+               localStorage.setItem("tisvua:dashboard:" + response.data.email + ":v1", JSON.stringify(payload));
+               console.log("✅ Preloaded Dashboard cache");
+            } catch(e){}
+         }
+      })
+      .getDashboardData();
+
+    // 2. Topics
+    google.script.run
+      .withSuccessHandler(function(topicsResponse) {
+         if(topicsResponse && topicsResponse.success) {
+            try {
+               let userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+               let payload = { savedAt: Date.now(), data: topicsResponse };
+               localStorage.setItem("tisvua:topics:" + userKey + ":v1", JSON.stringify(payload));
+               console.log("✅ Preloaded Topics cache");
+               
+               if (!window.globalTopicsCache) {
+                 window.globalTopicsCache = { data: null, progress: null, lastLoadTime: 0, cacheDuration: 60000 };
+               }
+               window.globalTopicsCache.data = topicsResponse.topics || [];
+               window.globalTopicsCache.progress = topicsResponse.progress || {};
+               window.globalTopicsCache.lastLoadTime = Date.now();
+            } catch(e){}
+         }
+      })
+      .getTopicsForUserPage();
+
+    // 3. Code Arrangement
+    google.script.run
+      .withSuccessHandler(function(caResponse) {
+         if(caResponse && caResponse.success) {
+            try {
+               let userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+               let payload = { savedAt: Date.now(), data: caResponse };
+               localStorage.setItem("tisvua:ca_list:" + userKey + ":v1", JSON.stringify(payload));
+               console.log("✅ Preloaded Code Arrangement cache");
+            } catch(e){}
+         }
+      })
+      .getAllClientCodeArrangements();
+  };
+
+  function clearAppLocalCaches() {
+    try {
+      Object.keys(localStorage).forEach(function(key) {
+        if (key.indexOf("tisvua:dashboard:") === 0 || 
+            key.indexOf("tisvua:topics:") === 0 || 
+            key.indexOf("tisvua:ca_list:") === 0) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.warn("Không thể xóa App cache:", e);
+    }
+  }
+
   /**
    * Handle logout
    */
@@ -1727,6 +1794,9 @@
     localStorage.removeItem("userSession");
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("userId");
+
+    // Clear App caches (Dashboard, Topics, etc.)
+    clearAppLocalCaches();
 
     // â­ FIX F5: XÃ³a trang Ä‘Ã£ lÆ°u Ä‘á»ƒ trÃ¡nh quay láº¡i trang cÅ©
     localStorage.removeItem("lastActivePage");
@@ -1899,6 +1969,9 @@
           applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
+
+          // ⭐ Preload offline caches
+          if (typeof window.preloadAppOfflineCaches === "function") window.preloadAppOfflineCaches();
 
           setTimeout(() => {
             showPage("page-dashboard");
