@@ -86,6 +86,9 @@ function qmRenderTopicDropdown(topicsList) {
       const clearBtn = document.getElementById("qmClearSearchBtn");
       if (clearBtn) clearBtn.style.display = "block";
       
+      const searchGroup = document.getElementById("qmQuestionSearchGroup");
+      if (searchGroup) searchGroup.style.display = "block";
+      
       qmLoadTopicQuestions(t.topicId);
     };
     dropdown.appendChild(item);
@@ -109,6 +112,9 @@ function qmOnTopicSearch() {
   if (val.length === 0 && qmSelectedTopicIdStr !== "") {
     qmSelectedTopicIdStr = "";
     qmLoadTopicQuestions(''); // Trigger empty state
+    const searchGroup = document.getElementById("qmQuestionSearchGroup");
+    if (searchGroup) searchGroup.style.display = "none";
+    qmClearQuestionSearch();
   } else {
     qmSelectedTopicIdStr = "";
   }
@@ -123,6 +129,23 @@ function qmClearSearch() {
   if (input) {
     input.value = "";
     qmOnTopicSearch();
+    input.focus();
+  }
+}
+
+function qmOnQuestionSearch() {
+  const input = document.getElementById("qmQuestionSearchInput");
+  const val = input.value.trim().toLowerCase();
+  const clearBtn = document.getElementById("qmClearQuestionSearchBtn");
+  if (clearBtn) clearBtn.style.display = val.length > 0 ? "block" : "none";
+  qmRenderQuestions();
+}
+
+function qmClearQuestionSearch() {
+  const input = document.getElementById("qmQuestionSearchInput");
+  if (input) {
+    input.value = "";
+    qmOnQuestionSearch();
     input.focus();
   }
 }
@@ -288,12 +311,32 @@ function qmRenderQuestions() {
   
   let html = '';
   
+  const searchInput = document.getElementById("qmQuestionSearchInput");
+  const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : "";
+
   const filteredQuestions = qmCurrentQuestions.filter(q => {
-    if (qmFilterStatus === 'all') return true;
-    const s = (q.status || "").trim().toLowerCase();
-    if (qmFilterStatus === 'approved') return s === 'approved';
-    if (qmFilterStatus === 'draft') return s !== 'approved';
-    return true;
+    let statusMatch = true;
+    if (qmFilterStatus !== 'all') {
+      const s = (q.status || "").trim().toLowerCase();
+      if (qmFilterStatus === 'approved') statusMatch = (s === 'approved');
+      if (qmFilterStatus === 'draft') statusMatch = (s !== 'approved');
+    }
+    
+    let searchMatch = true;
+    if (searchQuery) {
+      const text = (q.questionText || "").toLowerCase();
+      const explanation = (q.explanation || "").toLowerCase();
+      const a = (q.optionA || "").toLowerCase();
+      const b = (q.optionB || "").toLowerCase();
+      const c = (q.optionC || "").toLowerCase();
+      const d = (q.optionD || "").toLowerCase();
+      searchMatch = text.includes(searchQuery) || 
+                    explanation.includes(searchQuery) ||
+                    a.includes(searchQuery) || b.includes(searchQuery) || 
+                    c.includes(searchQuery) || d.includes(searchQuery);
+    }
+    
+    return statusMatch && searchMatch;
   });
   
   if (filteredQuestions.length === 0) {
