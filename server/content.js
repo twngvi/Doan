@@ -4542,6 +4542,7 @@ function clearAllLearningData(userContext) {
     deleted.wrongAnswers += clearSheetDataKeepHeader("Wrong_Answer_Memory");
     deleted.masteredQuestions = clearSheetDataKeepHeader("Mastered_Questions");
     deleted.xpLog = clearSheetDataKeepHeader("XP_Log");
+    deleted.codeArrangementProgress = clearSheetDataKeepHeader("Code_Arrangement_Progress");
 
     const restoredActivityRows = restoreRows(preservedActivityLog);
     const restoredQuestXpRows = restoreRows(preservedXpLog);

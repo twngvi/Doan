@@ -15,6 +15,70 @@
   let isPreviewMode = false;
   let caIs3ColGrid = localStorage.getItem('ca_grid_3col') === 'true';
 
+  function clearCodeArrangementLocalStorage() {
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+
+        if (
+          key.indexOf('ca_progress_') === 0 ||
+          key.indexOf('ca_completed_') === 0 ||
+          key.indexOf('ca_synced_') === 0 ||
+          key.indexOf('tisvua:ca_list:') === 0
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+
+      keysToRemove.forEach(function (key) {
+        localStorage.removeItem(key);
+      });
+    } catch (e) {
+      console.warn('Không thể xóa localStorage Code Arrangement:', e);
+    }
+
+    allAvailableGames = [];
+    allCompletedArrangements = [];
+    currentArrangementData = null;
+    originalBlocks = [];
+    shuffledBlocks = [];
+    currentTopicId = null;
+    currentArrangementId = null;
+    caProgress = {
+      status: 'not_started',
+      order: [],
+      checkCount: 0,
+      dragCount: 0,
+      startTime: null,
+      endTime: null
+    };
+  }
+
+  window.addEventListener('code-arrangement-data-reset', function () {
+    clearCodeArrangementLocalStorage();
+
+    const listBody = document.getElementById('caListBody');
+    const listContainer = document.getElementById('caListContainer');
+    const gameContainer = document.getElementById('caGameContainer');
+
+    if (listContainer) listContainer.style.display = 'block';
+    if (gameContainer) gameContainer.style.display = 'none';
+    if (listBody) {
+      listBody.innerHTML = `
+        <div class="ca-ladder-empty">
+          <div class="loading-spinner" style="width: 24px; height: 24px; margin: 0 auto 12px; border-color: #8a5a24; border-bottom-color: transparent;"></div>
+          Đang tải lại dữ liệu...
+        </div>
+      `;
+    }
+
+    if (listContainer && listBody) {
+      initCodeArrangementPage();
+    }
+  });
+
   function caToggleGridLayout() {
     caIs3ColGrid = !caIs3ColGrid;
     localStorage.setItem('ca_grid_3col', caIs3ColGrid ? 'true' : 'false');
