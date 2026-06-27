@@ -222,17 +222,23 @@ let qmFilterStatus = 'all';
 function qmUpdateStats() {
   let approved = 0;
   let draft = 0;
+  let hidden = 0;
+  
   qmCurrentQuestions.forEach(q => {
     const s = (q.status || "").trim().toLowerCase();
     if (s === 'approved') approved++;
-    else draft++; // Default any non-approved to draft for counting
+    else if (s === 'draft') draft++;
+    else if (s === 'hidden') hidden++;
   });
   
   const approvedEl = document.getElementById("qmApprovedCount");
   const draftEl = document.getElementById("qmDraftCount");
+  const hiddenEl = document.getElementById("qmHiddenCount");
   const totalEl = document.getElementById("qmTotalCount");
+  
   if (approvedEl) approvedEl.textContent = approved;
   if (draftEl) draftEl.textContent = draft;
+  if (hiddenEl) hiddenEl.textContent = hidden;
   if (totalEl) totalEl.textContent = qmCurrentQuestions.length;
 }
 
@@ -240,13 +246,15 @@ function qmSetFilter(status) {
   qmFilterStatus = status;
   qmRenderQuestions();
   
-  // Cập nhật UI filter
   document.querySelectorAll('.qm-stat-item').forEach(el => el.classList.remove('active-filter'));
   if (status === 'approved') {
     const el = document.getElementById("qmStatApproved");
     if (el) el.classList.add('active-filter');
   } else if (status === 'draft') {
     const el = document.getElementById("qmStatDraft");
+    if (el) el.classList.add('active-filter');
+  } else if (status === 'hidden') {
+    const el = document.getElementById("qmStatHidden");
     if (el) el.classList.add('active-filter');
   } else {
     const el = document.getElementById("qmStatAll");
@@ -319,7 +327,8 @@ function qmRenderQuestions() {
     if (qmFilterStatus !== 'all') {
       const s = (q.status || "").trim().toLowerCase();
       if (qmFilterStatus === 'approved') statusMatch = (s === 'approved');
-      if (qmFilterStatus === 'draft') statusMatch = (s !== 'approved');
+      if (qmFilterStatus === 'draft') statusMatch = (s === 'draft');
+      if (qmFilterStatus === 'hidden') statusMatch = (s === 'hidden');
     }
     
     let searchMatch = true;
@@ -355,21 +364,31 @@ function qmRenderQuestions() {
           <div class="qm-q-header-left">
             <input type="checkbox" class="qm-checkbox qm-q-select" data-index="${index}" ${isChecked ? 'checked' : ''} onchange="qmToggleSelect(${index}, this)">
             <strong>Câu ${index + 1}</strong>
-            <div class="qm-q-meta">
-              <span class="qm-meta-tag ${q.source === 'ai_generated' ? 'qm-tag-ai' : 'qm-tag-manual'}">${q.source === 'ai_generated' ? 'AI' : 'Manual'}</span>
+            <div class="qm-meta-tags">
+              <span class="qm-meta-tag qm-tag-source">${q.source || 'manual'}</span>
               <span class="qm-meta-tag qm-tag-${q.difficulty || 'medium'}">${q.difficulty || 'Medium'}</span>
-              <span class="qm-meta-tag" style="background:${s==='approved'?'#dcfce7':'#fef08a'}; color:${s==='approved'?'#166534':'#854d0e'}">${s === 'approved' ? 'Approved' : 'Draft'}</span>
+              <span class="qm-meta-tag" style="background:${s==='approved'?'#dcfce7':(s==='hidden'?'#f1f5f9':'#fef08a')}; color:${s==='approved'?'#166534':(s==='hidden'?'#64748b':'#854d0e')}">${s === 'approved' ? 'Approved' : (s === 'hidden' ? 'Hidden' : 'Draft')}</span>
             </div>
           </div>
           <div>
             <button class="qm-btn qm-btn-outline" onclick="qmToggleEdit(${index})" style="padding: 4px 10px; font-size: 13px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">edit</span> Sửa
             </button>
-            ${s === 'approved' ? '' : `
+            ${s === 'draft' ? `
             <button class="qm-btn qm-btn-primary" onclick="qmSaveSingleQuestion(${index})" style="padding: 4px 10px; font-size: 13px; margin-left: 4px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">save</span> Lưu
             </button>
-            `}
+            ` : ''}
+            ${s === 'approved' ? `
+            <button class="qm-btn qm-btn-outline" onclick="qmHideQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #f59e0b; border-color: #fcd34d; margin-left: 4px;" title="Ẩn">
+              <span class="material-symbols-sharp" style="font-size: 16px;">visibility_off</span>
+            </button>
+            ` : ''}
+            ${s === 'hidden' ? `
+            <button class="qm-btn qm-btn-outline" onclick="qmUnhideQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #10b981; border-color: #6ee7b7; margin-left: 4px;" title="Mở ẩn">
+              <span class="material-symbols-sharp" style="font-size: 16px;">visibility</span>
+            </button>
+            ` : ''}
             <button class="qm-btn qm-btn-outline" onclick="qmDeleteQuestion(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5; margin-left: 4px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">delete</span>
             </button>
@@ -543,6 +562,57 @@ function qmSaveSingleQuestion(index) {
         }
       } else {
         showToast("Lỗi lưu: " + response.message, "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      showToast("Lỗi mạng: " + err, "error");
+    })
+    .adminSaveQuestions(topicId, [q]);
+}
+
+function qmHideQuestion(index) {
+  const q = qmCurrentQuestions[index];
+  const topicId = qmGetSelectedTopicId();
+  if (!topicId) return;
+  
+  if (q.questionId && String(q.questionId).startsWith("TEMP_")) {
+    showToast("Vui lòng lưu câu hỏi trước khi ẩn", "warning");
+    return;
+  }
+  
+  q.status = "hidden";
+  qmRenderQuestions();
+  qmUpdateStats();
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (response.success) {
+        showToast("Đã ẩn câu hỏi", "success");
+      } else {
+        showToast("Lỗi ẩn: " + response.message, "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      showToast("Lỗi mạng: " + err, "error");
+    })
+    .adminSaveQuestions(topicId, [q]);
+}
+
+function qmUnhideQuestion(index) {
+  const q = qmCurrentQuestions[index];
+  const topicId = qmGetSelectedTopicId();
+  if (!topicId) return;
+  
+  q.status = "approved";
+  qmRenderQuestions();
+  qmUpdateStats();
+  
+  google.script.run
+    .withSuccessHandler((response) => {
+      if (response.success) {
+        showToast("Đã mở ẩn câu hỏi", "success");
+      } else {
+        showToast("Lỗi mở ẩn: " + response.message, "error");
       }
     })
     .withFailureHandler((err) => {

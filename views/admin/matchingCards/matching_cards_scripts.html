@@ -289,13 +289,21 @@ function mcRenderCards() {
             <button class="mc-btn mc-btn-outline" onclick="mcToggleEdit(${index})" style="padding: 4px 10px; font-size: 13px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">edit</span> Sửa
             </button>
+            ${s === 'draft' ? `
             <button class="mc-btn mc-btn-primary" onclick="mcSaveSingleCard(${index})" style="padding: 4px 10px; font-size: 13px; margin-left: 4px;">
               <span class="material-symbols-sharp" style="font-size: 16px;">save</span> Lưu
             </button>
-            ${s !== 'hidden' ? `
+            ` : ''}
+            ${s === 'approved' ? `
             <button class="mc-btn mc-btn-outline" onclick="mcHideCard(${index})" style="padding: 4px 10px; font-size: 13px; color: #f59e0b; border-color: #fcd34d; margin-left: 4px;" title="Ẩn">
               <span class="material-symbols-sharp" style="font-size: 16px;">visibility_off</span>
-            </button>` : ''}
+            </button>
+            ` : ''}
+            ${s === 'hidden' ? `
+            <button class="mc-btn mc-btn-outline" onclick="mcUnhideCard(${index})" style="padding: 4px 10px; font-size: 13px; color: #10b981; border-color: #6ee7b7; margin-left: 4px;" title="Mở ẩn">
+              <span class="material-symbols-sharp" style="font-size: 16px;">visibility</span>
+            </button>
+            ` : ''}
             <button class="mc-btn mc-btn-outline" onclick="mcDeleteCard(${index})" style="padding: 4px 10px; font-size: 13px; color: #ef4444; border-color: #fca5a5; margin-left: 4px;" title="Xóa">
               <span class="material-symbols-sharp" style="font-size: 16px;">delete</span>
             </button>
@@ -733,6 +741,30 @@ function mcHideCard(index) {
       if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
     })
     .hideMatchingTermCard([cardId]);
+}
+
+function mcUnhideCard(index) {
+  const c = mcCurrentCards[index];
+  const cardId = c && c.cardId ? String(c.cardId) : "";
+  if (!cardId) return;
+  
+  if (cardId.startsWith("TEMP_")) {
+    if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước", "warning");
+    return;
+  }
+  
+  const topicId = mcGetSelectedTopicId();
+  google.script.run
+    .withSuccessHandler((res) => {
+      if(res.success) {
+        if (typeof showToast === 'function') showToast("Đã mở ẩn thẻ", "success");
+        mcLoadTopicCards(topicId, true);
+      }
+    })
+    .withFailureHandler((err) => {
+      if (typeof showToast === 'function') showToast("Lỗi mạng khi mở ẩn: " + err, "error");
+    })
+    .approveMatchingTermCards([cardId]);
 }
 
 function mcHideSelectedCards() {
