@@ -3478,18 +3478,116 @@
 
   // ==================== Study Widget Logic ====================
   function toggleStudyWidget(e) {
-     if (window.isDraggingStudyWidget) {
-         if (e) { e.preventDefault(); e.stopPropagation(); }
-         return;
-     }
-     const panel = document.getElementById("study-widget-panel");
-     if (!panel) return;
-     if (panel.style.display === "none") {
-         panel.style.display = "block";
-         loadStudyWidgetData();
-     } else {
-         panel.style.display = "none";
-     }
+    if (window.isDraggingStudyWidget) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+  
+    const panel = document.getElementById("study-widget-panel");
+    if (!panel) return;
+  
+    const isOpen = panel.style.display === "block";
+  
+    if (isOpen) {
+      closeStudyWidgetPanel();
+      return;
+    }
+  
+    openStudyWidgetPanel();
+  }
+
+  function openStudyWidgetPanel() {
+    const panel = document.getElementById("study-widget-panel");
+    if (!panel) return;
+  
+    panel.style.display = "block";
+    panel.classList.remove("active");
+  
+    // Cho trình duyệt render trước để đo đúng kích thước panel
+    requestAnimationFrame(function () {
+      positionStudyWidgetPanel();
+  
+      requestAnimationFrame(function () {
+        panel.classList.add("active");
+      });
+    });
+  
+    if (typeof loadStudyWidgetData === "function") {
+      loadStudyWidgetData();
+    }
+  
+    window.addEventListener("resize", positionStudyWidgetPanel);
+    window.addEventListener("scroll", positionStudyWidgetPanel, true);
+  }
+  
+  function closeStudyWidgetPanel() {
+    const panel = document.getElementById("study-widget-panel");
+    if (!panel) return;
+  
+    panel.classList.remove("active");
+  
+    setTimeout(function () {
+      if (!panel.classList.contains("active")) {
+        panel.style.display = "none";
+      }
+    }, 180);
+  
+    window.removeEventListener("resize", positionStudyWidgetPanel);
+    window.removeEventListener("scroll", positionStudyWidgetPanel, true);
+  }
+  
+  function positionStudyWidgetPanel() {
+    const widget = document.getElementById("study-widget");
+    const btn = document.getElementById("study-widget-btn");
+    const panel = document.getElementById("study-widget-panel");
+  
+    if (!widget || !btn || !panel || panel.style.display !== "block") return;
+  
+    const gap = 12;
+    const safe = 12;
+  
+    const btnRect = btn.getBoundingClientRect();
+  
+    // Tạm bật visibility để đo chính xác nhưng không nháy giao diện
+    const oldVisibility = panel.style.visibility;
+    panel.style.visibility = "hidden";
+  
+    const panelRect = panel.getBoundingClientRect();
+    const panelWidth = panelRect.width || 320;
+    const panelHeight = panelRect.height || 300;
+  
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+  
+    const spaceTop = btnRect.top;
+    const spaceBottom = viewportHeight - btnRect.bottom;
+  
+    let placement = "top";
+    let top = btnRect.top - panelHeight - gap;
+  
+    // Nếu phía trên không đủ chỗ thì bung xuống dưới
+    if (spaceTop < panelHeight + gap && spaceBottom > spaceTop) {
+      placement = "bottom";
+      top = btnRect.bottom + gap;
+    }
+  
+    // Căn panel theo tâm của icon
+    let left = btnRect.left + btnRect.width / 2 - panelWidth / 2;
+  
+    // Không cho panel tràn khỏi màn hình
+    left = Math.max(safe, Math.min(left, viewportWidth - panelWidth - safe));
+    top = Math.max(safe, Math.min(top, viewportHeight - panelHeight - safe));
+  
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.dataset.placement = placement;
+  
+    panel.style.visibility = oldVisibility || "visible";
   }
 
   function initStudyWidget() {
@@ -3508,7 +3606,12 @@
      }
 
      const widget = document.getElementById("study-widget");
-     if (widget) widget.style.display = "block";
+     if (widget) {
+         widget.style.display = "block";
+         if (typeof initStudyWidgetDrag === "function") {
+             initStudyWidgetDrag();
+         }
+     }
      loadStudyWidgetData();
      
      // Check if we should show the timeline popup (only once per session/day)
@@ -3632,85 +3735,175 @@
       .apiGetDailyQuests({ email: user.email });
   }
   // ==================== Study Widget Drag Logic ====================
-  (function() {
-      const widget = document.getElementById("study-widget");
-      const btn = document.getElementById("study-widget-btn");
-      
-      if (!widget || !btn) {
-          console.warn("Study widget elements not found for drag logic");
-          return;
-      }
-      
-      // Prevent browser default touch actions like scrolling when touching the button
-      btn.style.touchAction = "none";
-      
-      let startY = 0;
-      let startBottom = 0;
-      let isDragging = false;
-      let dragged = false;
+var _studyWidgetDragInited = false;
 
-      function onPointerDown(e) {
-          // ignore right click
-          if (e.button !== undefined && e.button !== 0) return;
-          
-          isDragging = true;
-          dragged = false;
-          startY = e.clientY || (e.touches && e.touches[0].clientY);
-          
-          const style = window.getComputedStyle(widget);
-          startBottom = parseFloat(style.bottom) || 20;
-          
-          btn.style.cursor = "grabbing";
-          document.body.style.userSelect = "none";
-          
-          document.addEventListener("mousemove", onPointerMove);
-          document.addEventListener("touchmove", onPointerMove, { passive: false });
-          document.addEventListener("mouseup", onPointerUp);
-          document.addEventListener("touchend", onPointerUp);
-      }
-      
-      function onPointerMove(e) {
-          if (!isDragging) return;
-          
-          const currentY = e.clientY || (e.touches && e.touches[0].clientY);
-          const deltaY = currentY - startY;
-          
-          if (Math.abs(deltaY) > 5) {
-              dragged = true;
-              window.isDraggingStudyWidget = true;
-          }
-          
-          if (dragged) {
-              if (e.cancelable) e.preventDefault();
-              let newBottom = startBottom - deltaY;
-              
-              const maxBottom = window.innerHeight - widget.offsetHeight - 20;
-              if (newBottom < 20) newBottom = 20;
-              if (newBottom > maxBottom) newBottom = maxBottom;
-              
-              widget.style.bottom = newBottom + "px";
-          }
-      }
-      
-      function onPointerUp(e) {
-          if (!isDragging) return;
-          isDragging = false;
-          
-          btn.style.cursor = "pointer";
-          document.body.style.userSelect = "";
-          
-          document.removeEventListener("mousemove", onPointerMove);
-          document.removeEventListener("touchmove", onPointerMove);
-          document.removeEventListener("mouseup", onPointerUp);
-          document.removeEventListener("touchend", onPointerUp);
-          
-          setTimeout(() => {
-              window.isDraggingStudyWidget = false;
-          }, 50);
-      }
+function initStudyWidgetDrag() {
+  if (_studyWidgetDragInited) return;
 
-      btn.addEventListener("mousedown", onPointerDown);
-      btn.addEventListener("touchstart", onPointerDown, { passive: true });
-  })();
+  // Xóa key cũ nếu trước đó bạn đã dùng kéo tự do
+  localStorage.removeItem("studyWidgetPosition:v1");
+
+  var widget = document.getElementById("study-widget");
+  var btn = document.getElementById("study-widget-btn");
+
+  if (!widget || !btn) return;
+
+  _studyWidgetDragInited = true;
+
+  var STORAGE_KEY = "studyWidgetVerticalPosition:v1";
+  var startY = 0;
+  var startBottom = 0;
+  var isDragging = false;
+  var dragged = false;
+
+  btn.style.touchAction = "none";
+  widget.style.touchAction = "none";
+
+  function getRightColumnValue() {
+    var backToTop = document.getElementById("app-back-to-top");
+
+    if (backToTop) {
+      var computed = window.getComputedStyle(backToTop);
+      return computed.right || "1.25rem";
+    }
+
+    return window.innerWidth <= 768 ? "1rem" : "1.25rem";
+  }
+
+  function clampBottom(bottomValue) {
+    var safeBottom = 14;
+    var safeTop = 14;
+
+    var widgetHeight = widget.offsetHeight || 46;
+    var maxBottom = window.innerHeight - widgetHeight - safeTop;
+
+    return Math.max(safeBottom, Math.min(bottomValue, maxBottom));
+  }
+
+  function applyVerticalPosition(bottomValue) {
+    var finalBottom = clampBottom(bottomValue);
+
+    widget.style.setProperty("position", "fixed", "important");
+    widget.style.setProperty("right", getRightColumnValue(), "important");
+    widget.style.setProperty("bottom", finalBottom + "px", "important");
+
+    // Khóa ngang tuyệt đối
+    widget.style.setProperty("left", "auto", "important");
+    widget.style.setProperty("top", "auto", "important");
+
+    return finalBottom;
+  }
+
+  function saveVerticalPosition() {
+    var computed = window.getComputedStyle(widget);
+    var bottom = parseFloat(computed.bottom) || 22;
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ bottom: bottom }));
+    } catch (e) {
+      console.warn("Không thể lưu vị trí study widget:", e);
+    }
+  }
+
+  function restoreVerticalPosition() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+
+      if (saved && typeof saved.bottom !== "undefined") {
+        applyVerticalPosition(Number(saved.bottom) || 22);
+      } else {
+        applyVerticalPosition(22);
+      }
+    } catch (e) {
+      applyVerticalPosition(22);
+    }
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+
+    var deltaY = e.clientY - startY;
+
+    if (!dragged && Math.abs(deltaY) > 4) {
+      dragged = true;
+      window.isDraggingStudyWidget = true;
+      widget.classList.add("is-dragging");
+    }
+
+    if (!dragged) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Chỉ thay đổi bottom, không thay đổi left/right
+    var newBottom = startBottom - deltaY;
+    applyVerticalPosition(newBottom);
+
+    if (typeof positionStudyWidgetPanel === "function") {
+      positionStudyWidgetPanel();
+    }
+  }
+
+  function onPointerUp() {
+    if (!isDragging) return;
+
+    isDragging = false;
+
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+
+    widget.classList.remove("is-dragging");
+    document.body.style.userSelect = "";
+
+    if (dragged) {
+      saveVerticalPosition();
+    }
+
+    setTimeout(function () {
+      window.isDraggingStudyWidget = false;
+    }, 120);
+  }
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+
+    if (typeof closeStudyWidgetPanel === "function") {
+      closeStudyWidgetPanel();
+    }
+
+    isDragging = true;
+    dragged = false;
+
+    startY = e.clientY;
+
+    var computed = window.getComputedStyle(widget);
+    startBottom = parseFloat(computed.bottom) || 22;
+
+    widget.style.transition = "none";
+    document.body.style.userSelect = "none";
+
+    // Đảm bảo vừa bấm kéo là nó quay về đúng cột cạnh phải
+    applyVerticalPosition(startBottom);
+
+    if (btn.setPointerCapture) {
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch (err) {}
+    }
+
+    document.addEventListener("pointermove", onPointerMove, { passive: false });
+    document.addEventListener("pointerup", onPointerUp);
+  }
+
+  btn.addEventListener("pointerdown", onPointerDown, { passive: false });
+
+  restoreVerticalPosition();
+
+  window.addEventListener("resize", function () {
+    var computed = window.getComputedStyle(widget);
+    var currentBottom = parseFloat(computed.bottom) || 22;
+    applyVerticalPosition(currentBottom);
+  });
+}
 
 </script>

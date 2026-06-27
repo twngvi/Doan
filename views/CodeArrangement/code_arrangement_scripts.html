@@ -106,6 +106,43 @@
     }
   }
 
+  function caSearchGames(query) {
+    query = (query || '').trim().toLowerCase();
+    const listBody = document.getElementById('caListBody');
+    if (!listBody) return;
+
+    if (!query) {
+      // No query: re-render all games
+      if (allAvailableGames.length > 0) {
+        renderCodeArrangementList(allAvailableGames);
+      }
+      return;
+    }
+
+    // Filter games by title, description, and programming language
+    const filtered = allAvailableGames.filter(function(game) {
+      const title = (game.title || '').toLowerCase();
+      const desc = (game.description || '').toLowerCase();
+      const lang = (game.programmingLanguage || '').toLowerCase();
+      return title.indexOf(query) !== -1 || desc.indexOf(query) !== -1 || lang.indexOf(query) !== -1;
+    });
+
+    if (filtered.length === 0) {
+      listBody.innerHTML = `
+        <div class="ca-ladder-empty">
+          <span class="material-symbols-sharp" style="font-size: 32px; color: #b89a6a; margin-bottom: 8px; display: block;">search_off</span>
+          Không tìm thấy bài tập nào
+        </div>
+      `;
+      return;
+    }
+
+    // Re-render with filtered list (but keep allAvailableGames intact)
+    const savedAll = allAvailableGames;
+    renderCodeArrangementList(filtered, allCompletedArrangements);
+    allAvailableGames = savedAll;
+  }
+
   function initCodeArrangementPage() {
     isPreviewMode = false;
     currentTopicId = null;
