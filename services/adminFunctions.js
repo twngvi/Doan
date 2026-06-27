@@ -482,6 +482,66 @@ function getAdminAIUsageStats(options) {
 }
 
 /**
+ * Khóa hoặc mở khóa tài khoản người dùng
+ * @param {string} userId
+ * @param {boolean} isBlocked - true nếu muốn khóa (isActive = false), false nếu muốn mở khóa (isActive = true)
+ */
+function toggleUserBlockStatus(userId, isBlocked) {
+  try {
+    const sheet = getSheet("Users");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy sheet Users" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: false, message: "Không có người dùng nào" };
+    }
+
+    const headers = data[0];
+    const col = {
+      userId: headers.indexOf("userId"),
+      isActive: headers.indexOf("isActive"),
+    };
+
+    if (col.userId < 0 || col.isActive < 0) {
+      return { success: false, message: "Cấu trúc cột Users không hợp lệ" };
+    }
+
+    let found = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][col.userId] === userId) {
+        // Cập nhật giá trị isActive
+        sheet.getRange(i + 1, col.isActive + 1).setValue(!isBlocked);
+        
+        // NẾU BỊ KHÓA, XÓA LUÔN SESSION ĐỂ BỊ VĂNG KHỎI THIẾT BỊ VÀ TRÁNH LỖI ĐĂNG NHẬP SAU NÀY
+        if (isBlocked) {
+          const activeSessionIdIndex = headers.indexOf("activeSessionId");
+          if (activeSessionIdIndex >= 0) {
+            sheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
+          }
+        }
+        
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      return { success: false, message: "Không tìm thấy người dùng với ID: " + userId };
+    }
+
+    return { 
+      success: true, 
+      message: isBlocked ? "Đã khóa tài khoản thành công" : "Đã mở khóa tài khoản thành công" 
+    };
+  } catch (error) {
+    Logger.log("Error toggling user block status: " + error.toString());
+    return { success: false, message: "Lỗi hệ thống: " + error.toString() };
+  }
+}
+
+/**
  * Lấy dữ liệu trạng thái hoạt động users cho Admin Online Stats
  * Quy ước:
  * - active: hoạt động trong 1 phút

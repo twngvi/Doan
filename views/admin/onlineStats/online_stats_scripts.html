@@ -69,7 +69,6 @@
     }
 
     loadOnlineUsers();
-    loadAIUsageStats();
     loadDashboardCharts();
     startAutoRefresh();
     initMeteorEffect();
@@ -95,38 +94,6 @@
         filterAndRenderUsers();
       });
     });
-
-    const aiDays = document.getElementById('aiUsageDays');
-    if (aiDays) {
-      aiDays.addEventListener('change', () => {
-        loadAIUsageStats();
-      });
-    }
-
-    setupAIUsageToggle();
-  }
-
-  function setupAIUsageToggle() {
-    const section = document.querySelector('.ai-usage-section');
-    const toggleBtn = document.querySelector('.ai-usage-toggle');
-    if (!section || !toggleBtn) return;
-
-    const labelEl = toggleBtn.querySelector('.ai-usage-toggle-text');
-
-    const updateToggle = () => {
-      const isCollapsed = section.classList.contains('is-collapsed');
-      toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
-      if (labelEl) {
-        labelEl.textContent = isCollapsed ? 'Xem chi tiết' : 'Thu gọn';
-      }
-    };
-
-    toggleBtn.addEventListener('click', () => {
-      section.classList.toggle('is-collapsed');
-      updateToggle();
-    });
-
-    updateToggle();
   }
 
   // Load online users from server
@@ -366,102 +333,7 @@
     }
   }
 
-  async function loadAIUsageStats() {
-    if (!isOnlineStatsPageActive()) return;
-    try {
-      const daysEl = document.getElementById('aiUsageDays');
-      const days = Number((daysEl && daysEl.value) || 7);
-      const result = await callAppsScript('getAdminAIUsageStats', { days });
-      if (!result || !result.success) {
-        throw new Error((result && result.message) || 'Không tải được AI usage stats');
-      }
 
-      aiUsageStats = result.data || null;
-      renderAIUsageStats();
-    } catch (error) {
-      console.error('Error loading AI usage stats:', error);
-      renderAIUsageError(error?.message || 'Không tải được AI usage stats');
-    }
-  }
-
-  function renderAIUsageStats() {
-    if (!aiUsageStats) return;
-
-    const setText = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = value;
-    };
-
-    setText('aiTotalRequests', Number(aiUsageStats.totalRequests || 0));
-    setText('aiSuccessRate', `${Number(aiUsageStats.successRate || 0)}%`);
-    setText('aiFailedRequests', Number(aiUsageStats.failedRequests || 0));
-    setText('aiAvgDuration', Number(aiUsageStats.avgDurationMs || 0));
-
-    renderUsageList('aiUsageByUser', aiUsageStats.byUser, (item) => {
-      return `
-        <div class="ai-usage-item">
-          <strong>${escapeHtml(item.userName || item.userId || '(unknown)')}</strong>
-          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
-        </div>
-      `;
-    });
-
-    renderUsageList('aiUsageByTopic', aiUsageStats.byTopic, (item) => {
-      return `
-        <div class="ai-usage-item">
-          <strong>${escapeHtml(item.topicId || '(none)')}</strong>
-          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
-        </div>
-      `;
-    });
-
-    renderUsageList('aiUsageByModel', aiUsageStats.byModel, (item) => {
-      return `
-        <div class="ai-usage-item">
-          <strong>${escapeHtml(item.model || '(unknown)')}</strong>
-          <span>${item.total || 0} req | ${item.successRate || 0}%</span>
-        </div>
-      `;
-    });
-
-    renderUsageList('aiUsageErrors', aiUsageStats.recentErrors, (item) => {
-      return `
-        <div class="ai-error-item">
-          <div><strong>${escapeHtml(item.userName || item.userId || '(unknown)')}</strong>: ${escapeHtml(item.errorMessage || 'Unknown error')}</div>
-          <div class="ai-error-meta">Topic: ${escapeHtml(item.topicId || '(none)')} | Model: ${escapeHtml(item.model || '(unknown)')} | ${formatTimeAgoSafe(item.createdAt)}</div>
-        </div>
-      `;
-    }, '<div class="ai-usage-item">Không có lỗi trong khoảng thời gian đã chọn</div>');
-  }
-
-  function renderAIUsageError(message) {
-    const html = `<div class="ai-usage-item">${escapeHtml(message || 'Không tải được dữ liệu')}</div>`;
-    ['aiUsageByUser', 'aiUsageByTopic', 'aiUsageByModel', 'aiUsageErrors'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = html;
-    });
-  }
-
-  function renderUsageList(elementId, list, renderItem, emptyHtml) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-
-    if (!Array.isArray(list) || list.length === 0) {
-      el.innerHTML = emptyHtml || '<div class="ai-usage-item">Không có dữ liệu</div>';
-      return;
-    }
-
-    el.innerHTML = list.slice(0, 10).map(renderItem).join('');
-  }
-
-  function escapeHtml(str) {
-    return String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
 
   // Update statistics
   function updateStats() {
@@ -556,6 +428,15 @@
             <span class="user-activity">${user.activity}</span>
             <span class="user-time">• ${formatTimeAgoSafe(user.lastActivity)}</span>
           </div>
+        </div>
+        <div class="user-actions">
+          <button class="btn-block-user ${user.status === 'disabled' ? 'unblock' : 'block'}" onclick="toggleUserBlock('${user.id}', ${user.status !== 'disabled'}, event)" title="${user.status === 'disabled' ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              ${user.status === 'disabled' ? 
+                '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>' : 
+                '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>'}
+            </svg>
+          </button>
         </div>
       </div>
     `).join('');
@@ -730,9 +611,7 @@
     loadDashboardCharts();
   }
 
-  function refreshAIUsageStats() {
-    loadAIUsageStats();
-  }
+
 
   let dashboardChartRefreshTick = 0;
 
@@ -743,7 +622,6 @@
     refreshInterval = setInterval(() => {
       if (!isOnlineStatsPageActive()) return;
       loadOnlineUsers();
-      loadAIUsageStats();
 
       dashboardChartRefreshTick++;
       if (dashboardChartRefreshTick >= 4) {
@@ -767,6 +645,54 @@
     if (user) {
       console.log('View user detail:', user);
       // Implement user detail modal or navigation
+    }
+  }
+
+  // Toggle user block status
+  async function toggleUserBlock(userId, isBlocked, event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    const confirmMessage = isBlocked ? 'Bạn có chắc chắn muốn khóa tài khoản này?' : 'Bạn có chắc chắn muốn mở khóa tài khoản này?';
+    
+    const confirmed = typeof window.showAppConfirm === 'function' 
+      ? await window.showAppConfirm(confirmMessage, { 
+          confirmText: isBlocked ? 'Khóa' : 'Mở khóa', 
+          cancelText: 'Hủy', 
+          isDanger: isBlocked 
+        }) 
+      : confirm(confirmMessage);
+      
+    if (!confirmed) {
+      return;
+    }
+    
+    showLoading(true);
+    try {
+      const result = await callAppsScript('toggleUserBlockStatus', userId, isBlocked);
+      if (result && result.success) {
+        if (typeof window.showToast === 'function') {
+          window.showToast(result.message, 'success');
+        }
+        // Refresh list
+        loadOnlineUsers();
+      } else {
+        if (typeof window.showToast === 'function') {
+          window.showToast(result.message || 'Có lỗi xảy ra', 'error');
+        } else {
+          alert(result.message || 'Có lỗi xảy ra');
+        }
+        showLoading(false);
+      }
+    } catch (error) {
+      console.error('Error toggling block status:', error);
+      if (typeof window.showToast === 'function') {
+        window.showToast('Có lỗi xảy ra: ' + error.message, 'error');
+      } else {
+        alert('Có lỗi xảy ra: ' + error.message);
+      }
+      showLoading(false);
     }
   }
 
@@ -849,5 +775,5 @@
     }
   });
 
-  window.refreshAIUsageStats = refreshAIUsageStats;
+
 </script>

@@ -45,6 +45,56 @@
       }
     }
 
+    // ===== TOPICS LOCAL STORAGE CACHE =====
+    const TOPICS_LOCAL_CACHE_VERSION = "v1";
+    const TOPICS_LOCAL_CACHE_MAX_AGE = 10 * 60 * 1000; // 10 phút
+
+    function getTopicsLocalCacheKey() {
+      var userKey =
+        (window.currentUser && (window.currentUser.userId || window.currentUser.email)) ||
+        "guest";
+      return "tisvua:topics:" + userKey + ":" + TOPICS_LOCAL_CACHE_VERSION;
+    }
+
+    function saveTopicsLocalCache(data) {
+      try {
+        if (!data || !data.success) return;
+
+        var payload = {
+          savedAt: Date.now(),
+          data: data
+        };
+
+        localStorage.setItem(
+          getTopicsLocalCacheKey(),
+          JSON.stringify(payload)
+        );
+      } catch (e) {
+        console.warn("Không thể lưu Topics vào localStorage:", e);
+      }
+    }
+
+    function readTopicsLocalCache() {
+      try {
+        var raw = localStorage.getItem(getTopicsLocalCacheKey());
+        if (!raw) return null;
+
+        var payload = JSON.parse(raw);
+        if (!payload || !payload.data || !payload.savedAt) return null;
+
+        var age = Date.now() - payload.savedAt;
+
+        if (age > TOPICS_LOCAL_CACHE_MAX_AGE) {
+          return null;
+        }
+
+        return payload;
+      } catch (e) {
+        console.warn("Không thể đọc Topics localStorage:", e);
+        return null;
+      }
+    }
+
     /**
      * ⭐ Merge localStorage lesson progress into progress map
      * Reads lesson_progress_<topicId> keys written by Lesson page
@@ -220,9 +270,39 @@
         return;
       }
 
-      // ⭐ ƯU TIÊN 3: Load từ server
-      // Show loading state
-      showLoadingState();
+      // ⭐ ƯU TIÊN 3: Kiểm tra LOCAL STORAGE cache
+      var hasRenderedFromLocalStore = false;
+      if (!forceRefresh) {
+        var localStoreCache = readTopicsLocalCache();
+        if (localStoreCache && localStoreCache.data) {
+          console.log("✅ Using LOCAL STORAGE cached topics data, rendering instantly...");
+          var result = localStoreCache.data;
+          
+          allTopics = result.topics || [];
+          filteredTopics = [...allTopics];
+          
+          let serverProgress = result.progress || {};
+          userProgress = mergeLocalStorageProgress(serverProgress, { serverAuthoritative: true });
+          
+          topicsCache = allTopics;
+          progressCache = userProgress;
+          lastLoadTime = localStoreCache.savedAt;
+
+          renderTopics();
+          updateProgressStats();
+          hideLoadingState();
+          
+          hasRenderedFromLocalStore = true;
+        }
+      }
+
+      // ⭐ ƯU TIÊN 4: Load từ server
+      if (!hasRenderedFromLocalStore) {
+        // Show loading state if we haven't rendered anything yet
+        showLoadingState();
+      } else {
+        console.log("🔄 Background refreshing full topics from server...");
+      }
 
       // ⭐ Gọi API mới để lấy topics và progress
       google.script.run
@@ -230,7 +310,11 @@
           processAndRenderUserTopics(result);
         })
         .withFailureHandler(function(error) {
-          showErrorState(error.message || error.toString());
+          if (!hasRenderedFromLocalStore) {
+            showErrorState(error.message || error.toString());
+          } else {
+            console.warn("⚠️ Background refresh failed:", error);
+          }
         })
         .getTopicsForUserPage();
     }
@@ -270,6 +354,9 @@
       window.globalTopicsCache.progress = userProgress;
       window.globalTopicsCache.lastLoadTime = Date.now();
       console.log(`✅ Saved ${allTopics.length} topics to GLOBAL cache`);
+
+      // ⭐ Save to LocalStorage for offline-first architecture
+      saveTopicsLocalCache(result);
 
       // ⭐ RENDER 1 LẦN DUY NHẤT (không có setTimeout delay)
       renderTopics();

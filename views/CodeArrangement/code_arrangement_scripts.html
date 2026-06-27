@@ -62,54 +62,87 @@
       </div>
     `;
 
-    // Load topics first to ensure we know which ones are unlocked
-    google.script.run
-      .withSuccessHandler(function(topicsResponse) {
-        if (topicsResponse && topicsResponse.success) {
-          if (!window.globalTopicsCache) {
-            window.globalTopicsCache = { data: null, progress: null, lastLoadTime: 0, cacheDuration: 60000 };
-          }
-          window.globalTopicsCache.data = topicsResponse.topics || [];
-          window.globalTopicsCache.progress = topicsResponse.progress || {};
-          window.globalTopicsCache.lastLoadTime = Date.now();
-        }
-        
-        // Now load the client code arrangements
-        loadCodeArrangementGamesList();
-      })
-      .withFailureHandler(function(error) {
-        console.warn("Failed to pre-load topics:", error);
-        document.getElementById('caListBody').innerHTML = `
-          <div style="grid-column: 1 / -1; text-align: center; color: #f87171; padding: 40px;">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 12px; display: block;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            Lỗi kết nối khi tải trạng thái chủ đề. Vui lòng tải lại trang.
-          </div>
-        `;
-      })
-      .getTopicsForUserPage();
+    // ===== BẮT ĐẦU: OFFLINE-FIRST CACHE LOGIC =====
+    let hasRenderedFromCache = false;
+    let localStoreCACache = readCALocalCache();
+
+    // ƯU TIÊN: Nếu có CA List từ LS -> Render ngay
+    if (localStoreCACache && localStoreCACache.data) {
+        console.log("✅ Using LOCAL STORAGE cached CA List, rendering instantly...");
+        renderCodeArrangementList(localStoreCACache.data.data, localStoreCACache.data.completed || []);
+        hasRenderedFromCache = true;
+    }
+
+    // Sau đó luôn gọi server để fetch data mới (Background Refresh)
+    // Nếu chưa có cache, nó đóng vai trò là initial load
+    if (hasRenderedFromCache) {
+       console.log("🔄 Background refreshing CA List...");
+    }
+
+    // Tải CA List
+    loadCodeArrangementGamesList(hasRenderedFromCache);
   }
 
-  function loadCodeArrangementGamesList() {
+  function loadCodeArrangementGamesList(isBackgroundRefresh = false) {
     google.script.run
       .withSuccessHandler(function(response) {
         if (response.success && response.data) {
+          saveCALocalCache(response);
           renderCodeArrangementList(response.data, response.completed || []);
         } else {
-          document.getElementById('caListBody').innerHTML = `
-            <div class="ca-ladder-empty">
-              ${response.message || "Không có bài tập nào."}
-            </div>
-          `;
+          if (!isBackgroundRefresh) {
+              document.getElementById('caListBody').innerHTML = `
+                <div class="ca-ladder-empty">
+                  ${response.message || "Không có bài tập nào."}
+                </div>
+              `;
+          }
         }
       })
       .withFailureHandler(function(error) {
-        document.getElementById('caListBody').innerHTML = `
-          <div class="ca-ladder-empty">
-            Lỗi kết nối: ${error.message}
-          </div>
-        `;
+        if (!isBackgroundRefresh) {
+            document.getElementById('caListBody').innerHTML = `
+              <div class="ca-ladder-empty">
+                Lỗi kết nối: ${error.message}
+              </div>
+            `;
+        }
       })
       .getAllClientCodeArrangements();
+  }
+
+  // ===== CA LOCAL STORAGE CACHE HELPERS =====
+  const CA_LOCAL_CACHE_VERSION = "v1";
+  const CA_LOCAL_CACHE_MAX_AGE = 10 * 60 * 1000; // 10 phút
+
+  function getCALocalCacheKey() {
+    var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+    return "tisvua:ca_list:" + userKey + ":" + CA_LOCAL_CACHE_VERSION;
+  }
+
+  function saveCALocalCache(data) {
+    try {
+      if (!data || !data.success) return;
+      var payload = { savedAt: Date.now(), data: data };
+      localStorage.setItem(getCALocalCacheKey(), JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Không thể lưu CA List vào localStorage:", e);
+    }
+  }
+
+  function readCALocalCache() {
+    try {
+      var raw = localStorage.getItem(getCALocalCacheKey());
+      if (!raw) return null;
+      var payload = JSON.parse(raw);
+      if (!payload || !payload.data || !payload.savedAt) return null;
+      var age = Date.now() - payload.savedAt;
+      if (age > CA_LOCAL_CACHE_MAX_AGE) return null;
+      return payload;
+    } catch (e) {
+      console.warn("Không thể đọc CA List localStorage:", e);
+      return null;
+    }
   }
 
   // --- List View Logic ---
@@ -122,23 +155,10 @@
     }
 
     // Sort games:
-    // 1. By topic's order/index in globalTopicsCache
-    // 2. By difficulty (easy -> medium -> hard) within the same topic
-    const topicOrderMap = {};
-    if (window.globalTopicsCache && Array.isArray(window.globalTopicsCache.data)) {
-      window.globalTopicsCache.data.forEach((topic, idx) => {
-        topicOrderMap[topic.topicId] = idx;
-      });
-    }
-
+    // By difficulty (easy -> medium -> hard)
     const diffWeight = { 'easy': 1, 'medium': 2, 'hard': 3 };
 
     games.sort((a, b) => {
-      const orderA = topicOrderMap[a.topicId] !== undefined ? topicOrderMap[a.topicId] : 9999;
-      const orderB = topicOrderMap[b.topicId] !== undefined ? topicOrderMap[b.topicId] : 9999;
-      if (orderA !== orderB) {
-        return orderA - orderB;
-      }
       const diffA = diffWeight[a.difficulty] || 2;
       const diffB = diffWeight[b.difficulty] || 2;
       return diffA - diffB;
@@ -158,16 +178,7 @@
     let html = '';
     games.forEach((game, index) => {
       // Check if topic is unlocked
-      let isTopicUnlocked = false;
-      if (window.globalTopicsCache && Array.isArray(window.globalTopicsCache.data)) {
-        const topic = window.globalTopicsCache.data.find(t => t.topicId === game.topicId);
-        if (topic) {
-          isTopicUnlocked = topic.unlocked !== false;
-        }
-      } else {
-        // If cache failed to load, securely lock out the user by default
-        isTopicUnlocked = false;
-      }
+      let isTopicUnlocked = true;
 
       // Check progress
       const savedProgressStr = localStorage.getItem(`ca_progress_${game.arrangementId}`);
