@@ -106,8 +106,6 @@
   function initAdminSidebar() {
     setupAdminSidebarEvents();
     loadAdminSidebarState();
-    updateOnlineCount();
-    startOnlineCountUpdater();
   }
 
   // Setup Event Listeners
@@ -854,32 +852,6 @@
 
     adminSearchActiveIndex = -1;
     renderAdminSearchResults(adminSearchResultsCache);
-  }
-
-  // Online Count Updater
-  function updateOnlineCount() {
-    const badge = document.getElementById('onlineCountBadge');
-    if (!badge) return;
-
-    if (typeof google === 'undefined' || !google.script || !google.script.run) {
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler((result) => {
-        if (!result || !result.success || !result.data) return;
-        const count = Number(result.data.totalOnline || 0);
-        badge.textContent = count;
-      })
-      .withFailureHandler((error) => {
-        console.error('Failed to update online badge:', error);
-      })
-      .getAdminOnlineUsersData();
-  }
-
-  function startOnlineCountUpdater() {
-    // Update every 30 seconds
-    setInterval(updateOnlineCount, 30000);
   }
 
   // Update Admin Info
