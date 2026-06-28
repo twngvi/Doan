@@ -119,9 +119,20 @@
     isCaFormDirty = false;
   }
 
-  function closeCAModal() {
+  async function closeCAModal(force = false) {
+    if (force === true) {
+      document.getElementById('caModalOverlay').classList.remove('active');
+      return;
+    }
     if (isCaFormDirty) {
-      if (!confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn đóng?")) {
+      const confirmed = await caShowConfirm({
+        title: "Đóng mà chưa lưu?",
+        message: "Các thay đổi hiện tại sẽ bị mất nếu bạn đóng cửa sổ này.",
+        confirmText: "Đóng",
+        cancelText: "Ở lại",
+        type: "warning"
+      });
+      if (!confirmed) {
         return;
       }
     }
@@ -158,7 +169,7 @@
     isCaFormDirty = false;
   }
 
-  function saveCA(action = 'draft') {
+  async function saveCA(action = 'draft') {
     syncBlocksFromUI();
     
     const payload = {
@@ -205,7 +216,14 @@
 
     const normalizeSpace = str => (str || '').replace(/\s+/g, '').trim();
     if (normalizeSpace(payload.originalCode) !== normalizeSpace(concatenatedCards)) {
-      if (!confirm("Cảnh báo: Nội dung các card sau khi ghép lại KHÔNG khớp với code gốc. Bạn có chắc chắn muốn lưu không?")) {
+      const confirmed = await caShowConfirm({
+        title: "Code chưa khớp",
+        message: "Nội dung các card sau khi ghép lại không khớp với code gốc. Bạn vẫn muốn lưu?",
+        confirmText: "Vẫn lưu",
+        cancelText: "Kiểm tra lại",
+        type: "warning"
+      });
+      if (!confirmed) {
         return;
       }
     }
@@ -245,7 +263,7 @@
               };
 
           loadCAList();
-          closeCAModal();
+          closeCAModal(true);
 
           caShowToast(successMessage.title, successMessage.type, successMessage.message);
         } else {
@@ -326,19 +344,27 @@
     }, 250);
   }
 
-  function deleteCA(id) {
-    if (!confirm("Bạn có chắc muốn xóa câu hỏi " + id + " không? Hành động này không thể hoàn tác.")) return;
+  async function deleteCA(id) {
+    const confirmed = await caShowConfirm({
+      title: "Xóa câu hỏi?",
+      message: "Bạn có chắc muốn xóa câu hỏi " + id + " không? Hành động này không thể hoàn tác.",
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      type: "danger"
+    });
+    if (!confirmed) return;
     
     google.script.run
       .withSuccessHandler(function(response) {
         if (response.success) {
           loadCAList();
+          caShowToast("Đã xóa câu hỏi", "success", "Câu hỏi đã được xóa khỏi danh sách.");
         } else {
-          alert("Lỗi: " + response.message);
+          caShowToast("Không thể xóa", "error", response.message);
         }
       })
       .withFailureHandler(function(error) {
-        alert("Lỗi kết nối: " + error.message);
+        caShowToast("Lỗi kết nối", "error", error.message);
       })
       .adminDeleteCodeArrangement(id);
   }
@@ -373,7 +399,7 @@
       if (typeof showPage === 'function') showPage('page-code-game', {}, false);
       initCodeArrangementPreview(draftData);
     } else {
-      showToast('Không tìm thấy giao diện học viên để xem trước.', 'error');
+      caShowToast('Lỗi xem trước', 'error', 'Không tìm thấy giao diện học viên để xem trước.');
     }
   }
 
@@ -388,11 +414,11 @@
     
     if (typeof initCodeArrangementPreview === 'function') {
       // Close the modal just in case, but keep form data intact
-      closeCAModal();
+      closeCAModal(true);
       if (typeof showPage === 'function') showPage('page-code-game', {}, false);
       initCodeArrangementPreview(draftData);
     } else {
-      showToast('Không tìm thấy giao diện học viên để xem trước.', 'error');
+      caShowToast('Lỗi xem trước', 'error', 'Không tìm thấy giao diện học viên để xem trước.');
     }
   }
 
@@ -461,7 +487,7 @@
   function autoSliceBlocks() {
     const code = document.getElementById('caOriginalCode').value;
     if (!code) {
-      alert("Vui lòng nhập Code gốc trước.");
+      caShowToast("Thiếu code gốc", "warning", "Vui lòng nhập Code gốc trước khi tự động cắt.");
       return;
     }
     
@@ -469,7 +495,7 @@
     const lines = code.split('\n');
     
     if (lines.length < count) {
-      alert(`Đoạn code chỉ có ${lines.length} dòng, không thể tự động cắt thành ${count} phần. Vui lòng giảm số phần.`);
+      caShowToast("Không thể cắt code", "warning", `Đoạn code chỉ có ${lines.length} dòng, không thể tự động cắt thành ${count} phần. Vui lòng giảm số phần.`);
       return;
     }
     
@@ -495,8 +521,15 @@
     renderSlicedBlocks();
   }
 
-  function resetBlocksFromOriginal() {
-    if (!confirm("Thao tác này sẽ xóa mọi chỉnh sửa trên các thẻ và cắt lại từ đầu. Tiếp tục?")) return;
+  async function resetBlocksFromOriginal() {
+    const confirmed = await caShowConfirm({
+      title: "Khôi phục từ code gốc?",
+      message: "Các chỉnh sửa hiện tại trên thẻ code sẽ bị thay thế.",
+      confirmText: "Khôi phục",
+      cancelText: "Hủy",
+      type: "warning"
+    });
+    if (!confirmed) return;
     autoSliceBlocks();
   }
 
@@ -506,8 +539,15 @@
     renderSlicedBlocks();
   }
 
-  function deleteBlock(index) {
-    if (!confirm("Bạn có chắc muốn xóa thẻ này?")) return;
+  async function deleteBlock(index) {
+    const confirmed = await caShowConfirm({
+      title: "Xóa thẻ code?",
+      message: "Thẻ này sẽ bị xóa khỏi danh sách khối code.",
+      confirmText: "Xóa thẻ",
+      cancelText: "Hủy",
+      type: "danger"
+    });
+    if (!confirmed) return;
     syncBlocksFromUI();
     currentSlicedBlocks.splice(index, 1);
     renderSlicedBlocks();
@@ -543,7 +583,7 @@
     const lines = block.content.split('\n');
     
     if (lines.length <= 1) {
-      alert("Thẻ này chỉ có 1 dòng, không thể tự động chia đôi. Hãy thêm thẻ mới để chia sẻ nội dung.");
+      caShowToast("Không thể tách thẻ", "warning", "Thẻ này chỉ có 1 dòng. Hãy thêm thẻ mới để chia nội dung.");
       return;
     }
     
@@ -570,5 +610,77 @@
           '"': '&quot;'
         }[tag] || tag)
     );
+  }
+
+  function caShowConfirm(options) {
+    return new Promise((resolve) => {
+      let overlay = document.getElementById('caConfirmOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'caConfirmOverlay';
+        overlay.className = 'ca-confirm-overlay';
+        overlay.innerHTML = `
+          <div class="ca-confirm-dialog">
+            <div class="ca-confirm-icon">
+              <span class="material-symbols-sharp"></span>
+            </div>
+            <div class="ca-confirm-title"></div>
+            <div class="ca-confirm-message"></div>
+            <div class="ca-confirm-actions">
+              <button class="ca-confirm-btn ca-confirm-btn-secondary" id="caConfirmBtnCancel">Hủy</button>
+              <button class="ca-confirm-btn" id="caConfirmBtnOk">Xác nhận</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+      }
+      
+      const iconEl = overlay.querySelector('.ca-confirm-icon span');
+      const iconContainer = overlay.querySelector('.ca-confirm-icon');
+      const titleEl = overlay.querySelector('.ca-confirm-title');
+      const msgEl = overlay.querySelector('.ca-confirm-message');
+      const btnCancel = overlay.querySelector('#caConfirmBtnCancel');
+      const btnOk = overlay.querySelector('#caConfirmBtnOk');
+      
+      titleEl.innerText = options.title || "Xác nhận";
+      msgEl.innerText = options.message || "Bạn có chắc chắn?";
+      btnOk.innerText = options.confirmText || "Đồng ý";
+      btnCancel.innerText = options.cancelText || "Hủy";
+      
+      const type = options.type || "warning";
+      btnOk.className = "ca-confirm-btn";
+      iconContainer.className = "ca-confirm-icon";
+      
+      if (type === "danger") {
+        btnOk.classList.add("ca-confirm-btn-danger");
+        iconContainer.classList.add("ca-confirm-danger");
+        iconEl.innerText = "warning";
+      } else if (type === "info") {
+        btnOk.classList.add("ca-confirm-btn-primary");
+        iconContainer.classList.add("ca-confirm-info");
+        iconEl.innerText = "info";
+      } else {
+        btnOk.classList.add("ca-confirm-btn-primary");
+        iconContainer.classList.add("ca-confirm-warning");
+        iconEl.innerText = "help";
+      }
+      
+      // Force layout calculation for transition
+      overlay.style.display = 'flex';
+      overlay.offsetHeight; 
+      overlay.classList.add('active');
+      
+      const cleanup = () => {
+        overlay.classList.remove('active');
+        setTimeout(() => {
+          overlay.style.display = 'none';
+        }, 250);
+        btnOk.onclick = null;
+        btnCancel.onclick = null;
+      };
+      
+      btnOk.onclick = () => { cleanup(); resolve(true); };
+      btnCancel.onclick = () => { cleanup(); resolve(false); };
+    });
   }
 </script>
