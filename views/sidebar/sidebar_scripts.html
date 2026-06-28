@@ -348,6 +348,17 @@
             e.preventDefault();
             const targetPage = item.getAttribute("data-page");
 
+            if (targetPage === "page-chat") {
+              navItems.forEach((nav) => nav.classList.remove("active"));
+              item.classList.add("active");
+
+              if (typeof showToast === "function") {
+                showToast("💬 Chat - Coming Soon!", "info");
+              }
+
+              return;
+            }
+
             // Game Sắp Xếp: page chưa có, hiện notification
             if (targetPage === "page-sort-game") {
               if (typeof window.showNotification === "function") {
@@ -509,7 +520,15 @@
           navGroup.appendChild(magicLine);
         }
 
-        const navItems = Array.from(navGroup.querySelectorAll(".nav-item"));
+        const MAIN_NAV_SELECTOR = [
+          '.nav-text[data-page="page-dashboard"]',
+          '.nav-text[data-page="page-topics"]',
+          '.nav-sort-game[data-page="page-code-game"]',
+          '.nav-code[data-page="page-code-playground"]',
+          '.nav-chat-btn'
+        ].join(",");
+
+        const navItems = Array.from(navGroup.querySelectorAll(MAIN_NAV_SELECTOR));
 
         const updateMagicLine = (targetItem, isHover) => {
           if (!targetItem) {
@@ -520,8 +539,8 @@
           const groupRect = navGroup.getBoundingClientRect();
 
           const itemWidth = itemRect.width;
-          const lineWidth = itemWidth * 0.7;
-          const leftOffset = itemRect.left - groupRect.left + itemWidth * 0.15;
+          const lineWidth = Math.max(28, itemWidth * 0.56);
+          const leftOffset = itemRect.left - groupRect.left + (itemWidth - lineWidth) / 2;
 
           magicLine.style.width = `${lineWidth}px`;
           magicLine.style.left = `${leftOffset}px`;
@@ -529,8 +548,11 @@
         };
 
         const resetToActive = () => {
-          const activeItem = navGroup.querySelector(".nav-item.active");
-          updateMagicLine(activeItem, false);
+          const activeItem = navItems.find(function (item) {
+            return item.classList.contains("active");
+          });
+
+          updateMagicLine(activeItem || null, false);
         };
 
         navItems.forEach((item) => {
