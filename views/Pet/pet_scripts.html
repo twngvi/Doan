@@ -2181,6 +2181,11 @@
         });
         
         entityEl.addEventListener("click", () => {
+          if (petState.skipNextClick) {
+            petState.skipNextClick = false;
+            return;
+          }
+
           // Focus this pet in header with one click, without resetting stage effects.
           focusPetVariantByIndex(variantIndex, { autoSave: true });
 
@@ -2245,12 +2250,75 @@
           }
         });
 
-        entityEl.addEventListener("mousedown", (e) => {
-          if (petState.level >= 3) {
-            petState.isPressed = true;
-            entityEl.classList.add("is-pressed");
-          }
+        entityEl.addEventListener("pointerdown", function (event) {
+          if (event.button !== undefined && event.button !== 0) return;
+
+          event.preventDefault();
+
+          const worldRect = worldEl.getBoundingClientRect();
+          const entityRect = entityEl.getBoundingClientRect();
+
+          petState.isPressed = true;
+          petState.isDragging = false;
+          petState.dragPointerId = event.pointerId;
+          petState.dragStartX = event.clientX;
+          petState.dragStartY = event.clientY;
+          petState.dragOffsetX = event.clientX - entityRect.left;
+          petState.dragOffsetY = event.clientY - entityRect.top;
+
+          entityEl.classList.add("is-pressed", "is-grabbing");
+
+          try {
+            entityEl.setPointerCapture(event.pointerId);
+          } catch (e) {}
         });
+
+        entityEl.addEventListener("pointermove", function (event) {
+          if (petState.dragPointerId !== event.pointerId) return;
+          if (!petState.isPressed) return;
+
+          const moveX = event.clientX - petState.dragStartX;
+          const moveY = event.clientY - petState.dragStartY;
+
+          if (Math.hypot(moveX, moveY) > 4) {
+            petState.isDragging = true;
+            petState.skipNextClick = true;
+          }
+
+          if (!petState.isDragging) return;
+
+          const worldRect = worldEl.getBoundingClientRect();
+          const bounds = getPetStageBounds(worldEl);
+
+          petState.x = event.clientX - worldRect.left - petState.dragOffsetX;
+          petState.y = event.clientY - worldRect.top - petState.dragOffsetY;
+
+          clampPetToBounds(petState, bounds);
+
+          petState.laneY = petState.y;
+          petState.manualPauseUntil = Date.now() + 1200;
+
+          entityEl.style.left = petState.x + "px";
+          entityEl.style.top = petState.y + "px";
+        });
+
+        function endPetDrag(event) {
+          if (petState.dragPointerId !== event.pointerId) return;
+
+          petState.isPressed = false;
+          petState.isDragging = false;
+          petState.dragPointerId = null;
+          petState.manualPauseUntil = Date.now() + 1200;
+
+          entityEl.classList.remove("is-pressed", "is-grabbing");
+
+          try {
+            entityEl.releasePointerCapture(event.pointerId);
+          } catch (e) {}
+        }
+
+        entityEl.addEventListener("pointerup", endPetDrag);
+        entityEl.addEventListener("pointercancel", endPetDrag);
 
         // Double click rename removed per user request
       });
@@ -2323,7 +2391,16 @@
       const bounds = getPetStageBounds(worldEl);
 
       state.petEntities.forEach(pet => {
-        if (pet.isHovered || pet.isPressed) return;
+        if (
+          pet.isHovered ||
+          pet.isPressed ||
+          pet.isDragging ||
+          (pet.manualPauseUntil || 0) > now
+        ) {
+          pet.el.style.left = pet.x + "px";
+          pet.el.style.top = pet.y + "px";
+          return;
+        }
 
         // Enforce movement area: lower 3/4 of pet stage.
         clampPetToBounds(pet, bounds);
@@ -2957,10 +3034,12 @@
             renderPet();
             hidePetLoading();
           } else {
+            renderPet();
             hidePetLoading();
           }
         })
         .withFailureHandler(function() {
+          renderPet();
           hidePetLoading();
         })
         .getPetConfig(userId);
@@ -4335,10 +4414,20 @@
       const stageWorld = document.getElementById("petStageWorld");
       const loadingOverlay = document.getElementById("petLoadingOverlay");
       const progressBar = document.getElementById("petLoadingProgressBar");
-      const loadingText = document.getElementById("petLoadingText");
       const popup = document.getElementById("petLoadingPopup");
+      const stageEl = document.getElementById("petStage");
+      const loadingImg = document.getElementById("petLoadingPetImage");
       
-      if (stageWorld) stageWorld.style.display = "none";
+      if (stageEl) {
+        stageEl.classList.add("is-loading");
+        stageEl.style.setProperty("--pet-stage-bg-image", "none");
+      }
+
+      if (stageWorld) {
+        stageWorld.style.display = "none";
+        stageWorld.innerHTML = "";
+      }
+      
       if (loadingOverlay) loadingOverlay.style.display = "flex";
       
       if (progressBar) {
@@ -4349,16 +4438,30 @@
         progressBar.style.width = "60%";
       }
       
-      if (loadingText) {
-        const quotes = [
-          "Học hành tốt nhé!",
-          "Chúc bạn một ngày học tập hiệu quả!",
-          "Kiến thức là sức mạnh!",
-          "Hãy chăm sóc PET thật tốt nha!",
-          "Cố gắng lên, bạn đang làm rất tốt!",
-          "Học tập là con đường ngắn nhất đến thành công!"
-        ];
-        loadingText.textContent = quotes[Math.floor(Math.random() * quotes.length)];
+      if (loadingImg) {
+        const sourceVariants =
+          Array.isArray(PET_VARIANTS) && PET_VARIANTS.length >= 12
+            ? PET_VARIANTS.slice(0, 12)
+            : DEFAULT_PET_VARIANTS.slice(0, 12);
+
+        const randomVariant =
+          sourceVariants[Math.floor(Math.random() * sourceVariants.length)];
+
+        const randomPetFile =
+          randomVariant.level2 || randomVariant.level1 || "";
+
+        loadingImg.classList.remove("is-ready");
+        loadingImg.removeAttribute("src");
+
+        fetchAssetUrl(randomPetFile).then(function (url) {
+          if (!url) return;
+
+          loadingImg.onload = function () {
+            loadingImg.classList.add("is-ready");
+          };
+
+          loadingImg.src = url;
+        });
       }
 
       if (popup && !popup.dataset.tiltBound) {
@@ -4400,6 +4503,11 @@
         setTimeout(function() {
           if (stageWorld) stageWorld.style.display = "block";
           if (loadingOverlay) loadingOverlay.style.display = "none";
+
+          const stageEl = document.getElementById("petStage");
+          if (stageEl) {
+            stageEl.classList.remove("is-loading");
+          }
         }, 250);
       }
       
