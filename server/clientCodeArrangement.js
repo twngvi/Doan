@@ -167,6 +167,24 @@ function saveCodeArrangementProgress(topicId, arrangementId) {
       }
     } catch(e) {}
     
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function") {
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: 0,
+          lessonCount: 1,
+          activityCount: 1,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "code_arrangement"
+        });
+      }
+    } catch(e) {}
+    
     return { success: true, message: "Progress saved" };
   } catch(error) {
     Logger.log("Error in saveCodeArrangementProgress: " + error.toString());
@@ -237,6 +255,24 @@ function syncBulkCodeArrangementProgress(games) {
         }
       }
     });
+    
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function" && games.length > 0) {
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: 0,
+          lessonCount: games.length,
+          activityCount: games.length,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "code_arrangement"
+        });
+      }
+    } catch(e) {}
     
     return { success: true, message: `Synced ${games.length} games.` };
   } catch(error) {

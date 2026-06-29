@@ -2278,6 +2278,25 @@ function saveQuizResult(resultData) {
       }
     }
 
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function") {
+        const userId = getUserIdByEmail(userEmail) || "";
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: Number(resultData.timeSpent || resultData.studyMinutes || 0),
+          lessonCount: 1,
+          activityCount: 1,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "quiz"
+        });
+      }
+    } catch(e) {}
+
     return {
       success: true,
       message: "Quiz result saved to personal sheet",
@@ -2595,6 +2614,25 @@ function saveMatchingResult(resultData) {
         );
       }
     }
+
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function") {
+        const userId = getUserIdByEmail(userEmail) || "";
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: Number(resultData.timeSpent || resultData.studyMinutes || 0),
+          lessonCount: 1,
+          activityCount: 1,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "matching"
+        });
+      }
+    } catch(e) {}
 
     return { success: true, message: "Matching result saved" };
   } catch (error) {
@@ -4519,6 +4557,7 @@ function clearAllLearningData(userContext) {
     );
 
     function clearSheetDataKeepHeader(sheetName) {
+      if (sheetName === "StudyCalendarLogs") return 0;
       const sheet = userSpreadsheet.getSheetByName(sheetName);
       if (!sheet) return 0;
 
@@ -5047,6 +5086,25 @@ function saveFlashcardProgress(progressDataJson) {
     // Also update individual card progress
     saveIndividualCardProgress(spreadsheet, progressData);
 
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function") {
+        const userId = getUserIdByEmail(userEmail) || "";
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: Number(progressData.timeSpent || progressData.studyMinutes || 0),
+          lessonCount: 1,
+          activityCount: 1,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "flashcard"
+        });
+      }
+    } catch(e) {}
+
     Logger.log("✅ Flashcard progress saved: " + sessionId);
     return {
       success: true,
@@ -5351,6 +5409,24 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
 
     // Cập nhật Topic_Progress
     updateTopicProgress(userId, topicId, progressType, progressData);
+
+    try {
+      let userSettings = null;
+      try { if (typeof getUserSettingsByEmail === "function") { const res = getUserSettingsByEmail(userEmail); if (res && res.success) userSettings = res.data || res.settings; } } catch (e) {}
+      if (typeof apiRecordStudyCalendarDay === "function") {
+        apiRecordStudyCalendarDay({
+          userId: userId,
+          email: userEmail,
+          date: new Date(),
+          studyMinutes: Number(progressData.studyMinutes || 0),
+          lessonCount: 1,
+          activityCount: 1,
+          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
+          goalLessons: Number(userSettings?.dailyGoal || 0),
+          source: "lesson"
+        });
+      }
+    } catch(e) {}
 
     Logger.log("✅ Learning progress saved successfully");
     return {
