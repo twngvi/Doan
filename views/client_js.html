@@ -1777,8 +1777,12 @@
       : "guest";
   }
 
-  function getAppProgressKey(moduleName, topicId) {
-    return moduleName + "_progress_" + getAppUserKey() + "_" + topicId;
+  function getAppProgressKey(moduleName, topicId, mode) {
+    var key = moduleName + "_progress_" + getAppUserKey() + "_" + topicId;
+    if (mode) {
+      key += "_" + mode;
+    }
+    return key;
   }
 
   function getAppActiveDraftKey(moduleName) {
@@ -1790,17 +1794,27 @@
   window.getAppProgressKey = getAppProgressKey;
   window.getAppActiveDraftKey = getAppActiveDraftKey;
 
-  function clearAppLocalCaches() {
+  function clearAppLocalCaches(options) {
+    var opts = options || {};
+    var clearMcqDrafts = opts.clearMcqDrafts === true;
+
     try {
       Object.keys(localStorage).forEach(function(key) {
-        if (
+        var shouldClear =
           key.indexOf("doan:dashboard:") === 0 ||
           key.indexOf("doan:topics:") === 0 ||
-          key.indexOf("doan:ca_list:") === 0 ||
-          key.indexOf("mcq_progress_") === 0 ||
-          key.indexOf("mcq_active_draft_") === 0 ||
-          key.indexOf("mcq_pending_actions_") === 0
-        ) {
+          key.indexOf("doan:ca_list:") === 0;
+
+        // Chỉ xóa nháp MCQ khi chủ động yêu cầu, không xóa khi logout bình thường
+        if (clearMcqDrafts) {
+          shouldClear =
+            shouldClear ||
+            key.indexOf("mcq_progress_") === 0 ||
+            key.indexOf("mcq_active_draft_") === 0 ||
+            key.indexOf("mcq_pending_actions_") === 0;
+        }
+
+        if (shouldClear) {
           localStorage.removeItem(key);
         }
       });
