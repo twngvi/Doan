@@ -26,7 +26,7 @@
           key.indexOf('ca_progress_') === 0 ||
           key.indexOf('ca_completed_') === 0 ||
           key.indexOf('ca_synced_') === 0 ||
-          key.indexOf('tisvua:ca_list:') === 0
+          key.indexOf('doan:ca_list:') === 0
         ) {
           keysToRemove.push(key);
         }
@@ -218,7 +218,22 @@
 
   function getCALocalCacheKey() {
     var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
-    return "tisvua:ca_list:" + userKey + ":" + CA_LOCAL_CACHE_VERSION;
+    return "doan:ca_list:" + userKey + ":" + CA_LOCAL_CACHE_VERSION;
+  }
+
+  function getCaProgressKey(id) {
+    var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+    return `ca_progress_${userKey}_${id}`;
+  }
+  
+  function getCaCompletedKey(id) {
+    var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+    return `ca_completed_${userKey}_${id}`;
+  }
+  
+  function getCaSyncedKey(id) {
+    var userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
+    return `ca_synced_${userKey}_${id}`;
   }
 
   function saveCALocalCache(data) {
@@ -282,15 +297,15 @@
       let isTopicUnlocked = true;
 
       // Check progress
-      const savedProgressStr = localStorage.getItem(`ca_progress_${game.arrangementId}`);
+      const savedProgressStr = localStorage.getItem(getCaProgressKey(game.arrangementId));
       let isCompleted = false;
       
       // 1. Check server data first
       if (allCompletedArrangements.includes(game.arrangementId)) {
         isCompleted = true;
         // Sync local storage if missing
-        if (!savedProgressStr && !localStorage.getItem(`ca_completed_${game.arrangementId}`)) {
-          localStorage.setItem(`ca_completed_${game.arrangementId}`, 'true');
+        if (!savedProgressStr && !localStorage.getItem(getCaCompletedKey(game.arrangementId))) {
+          localStorage.setItem(getCaCompletedKey(game.arrangementId), 'true');
         }
       } else if (savedProgressStr) {
         // 2. Fallback to local storage
@@ -299,7 +314,7 @@
           isCompleted = progress.status === 'completed';
         } catch(e) {}
       } else {
-        isCompleted = localStorage.getItem(`ca_completed_${game.arrangementId}`) === 'true';
+        isCompleted = localStorage.getItem(getCaCompletedKey(game.arrangementId)) === 'true';
       }
 
       let cardStatusClass = 'status-available';
@@ -430,7 +445,7 @@
     currentArrangementId = 'PREVIEW_MODE';
     currentTopicId = 'PREVIEW_MODE';
     
-    localStorage.removeItem(`ca_progress_PREVIEW_MODE`);
+    localStorage.removeItem(getCaProgressKey('PREVIEW_MODE'));
     caProgress = {
       status: 'not_started',
       order: [],
@@ -498,14 +513,14 @@
 
     // Load progress
     const activeKey = isPreviewMode ? 'PREVIEW_MODE' : currentArrangementId;
-    const savedProgressStr = localStorage.getItem(`ca_progress_${activeKey}`);
+    const savedProgressStr = localStorage.getItem(getCaProgressKey(activeKey));
     if (savedProgressStr) {
       try {
         caProgress = JSON.parse(savedProgressStr);
       } catch(e) {}
     } else {
       // Migrate old completed state if exists
-      const oldCompleted = localStorage.getItem(`ca_completed_${activeKey}`) === 'true';
+      const oldCompleted = localStorage.getItem(getCaCompletedKey(activeKey)) === 'true';
       caProgress = {
         status: oldCompleted ? 'completed' : 'not_started',
         order: [],
@@ -565,7 +580,7 @@
     const activeKey = isPreviewMode ? 'PREVIEW_MODE' : currentArrangementId;
     if (!activeKey) return;
     caProgress.order = shuffledBlocks.map(b => b.id);
-    localStorage.setItem(`ca_progress_${activeKey}`, JSON.stringify(caProgress));
+    localStorage.setItem(getCaProgressKey(activeKey), JSON.stringify(caProgress));
   }
 
   function drawDraggableBlocks() {
@@ -985,18 +1000,18 @@
       const topicId = game.topicId;
       
       // If already synced, skip
-      if (localStorage.getItem(`ca_synced_${arrId}`) === 'true') return;
+      if (localStorage.getItem(getCaSyncedKey(arrId)) === 'true') return;
       
       // Check if it's completed locally
       let isCompleted = false;
-      const progressStr = localStorage.getItem(`ca_progress_${arrId}`);
+      const progressStr = localStorage.getItem(getCaProgressKey(arrId));
       if (progressStr) {
         try {
           const progress = JSON.parse(progressStr);
           isCompleted = progress.status === 'completed';
         } catch(e) {}
       } else {
-        isCompleted = localStorage.getItem(`ca_completed_${arrId}`) === 'true';
+        isCompleted = localStorage.getItem(getCaCompletedKey(arrId)) === 'true';
       }
       
       if (isCompleted) {
@@ -1011,7 +1026,7 @@
           if (res && res.success) {
             // Mark as synced locally so we don't send again
             unsyncedGames.forEach(g => {
-              localStorage.setItem(`ca_synced_${g.arrangementId}`, 'true');
+              localStorage.setItem(getCaSyncedKey(g.arrangementId), 'true');
             });
             console.log("Sync successful.", res.message);
           }

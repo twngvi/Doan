@@ -1696,15 +1696,38 @@
     // 1. Dashboard
     google.script.run
       .withSuccessHandler(function(response) {
-         if(response && response.success && response.data) {
-            try {
-               let payload = { savedAt: Date.now(), data: response };
-               localStorage.setItem("tisvua:dashboard:" + response.data.email + ":v1", JSON.stringify(payload));
-               console.log("✅ Preloaded Dashboard cache");
-            } catch(e){}
-         }
+        if (response && response.success) {
+          try {
+            var user = window.currentUser || currentUser || getStoredCurrentUser();
+            var userKey = user && (user.userId || user.email)
+              ? (user.userId || user.email)
+              : (
+                  response.data && response.data.email
+                    ? response.data.email
+                    : "guest"
+                );
+
+            var payload = {
+              savedAt: Date.now(),
+              data: response
+            };
+
+            localStorage.setItem(
+              "doan:dashboard:" + userKey + ":v1",
+              JSON.stringify(payload)
+            );
+
+            console.log("✅ Preloaded Dashboard cache:", userKey);
+          } catch (e) {
+            console.warn("Không thể preload Dashboard cache:", e);
+          }
+        }
       })
-      .getDashboardData();
+      .getDashboardData({
+        userId: (window.currentUser && window.currentUser.userId) || "",
+        email: (window.currentUser && window.currentUser.email) || "",
+        noCache: false
+      });
 
     // 2. Topics
     google.script.run
@@ -1713,7 +1736,7 @@
             try {
                let userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
                let payload = { savedAt: Date.now(), data: topicsResponse };
-               localStorage.setItem("tisvua:topics:" + userKey + ":v1", JSON.stringify(payload));
+               localStorage.setItem("doan:topics:" + userKey + ":v1", JSON.stringify(payload));
                console.log("✅ Preloaded Topics cache");
                
                if (!window.globalTopicsCache) {
@@ -1734,7 +1757,7 @@
             try {
                let userKey = (window.currentUser && (window.currentUser.userId || window.currentUser.email)) || "guest";
                let payload = { savedAt: Date.now(), data: caResponse };
-               localStorage.setItem("tisvua:ca_list:" + userKey + ":v1", JSON.stringify(payload));
+               localStorage.setItem("doan:ca_list:" + userKey + ":v1", JSON.stringify(payload));
                console.log("✅ Preloaded Code Arrangement cache");
             } catch(e){}
          }
@@ -1745,9 +1768,9 @@
   function clearAppLocalCaches() {
     try {
       Object.keys(localStorage).forEach(function(key) {
-        if (key.indexOf("tisvua:dashboard:") === 0 || 
-            key.indexOf("tisvua:topics:") === 0 || 
-            key.indexOf("tisvua:ca_list:") === 0) {
+        if (key.indexOf("doan:dashboard:") === 0 || 
+            key.indexOf("doan:topics:") === 0 || 
+            key.indexOf("doan:ca_list:") === 0) {
           localStorage.removeItem(key);
         }
       });
@@ -1806,6 +1829,7 @@
     localStorage.removeItem("user");
     localStorage.removeItem("authToken");
     localStorage.removeItem("recentActivities"); // Clear activity cache
+    localStorage.removeItem("streakData");       // Clear streak cache
 
     // Clear theme
     if (window.ThemeManager) {

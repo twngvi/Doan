@@ -59,7 +59,7 @@
       (window.currentUser && (window.currentUser.userId || window.currentUser.email)) ||
       "guest";
 
-    return "tisvua:dashboard:" + userKey + ":" + DASHBOARD_LOCAL_CACHE_VERSION;
+    return "doan:dashboard:" + userKey + ":" + DASHBOARD_LOCAL_CACHE_VERSION;
   }
 
   function saveDashboardLocalCache(data) {
@@ -696,6 +696,7 @@
     };
 
     var now = Date.now();
+    var hasRenderedFromLocalStorage = false;
     
     // 1. Đọc localStorage trước để Dashboard hiện nhanh hơn sau khi F5 / mở lại app
     if (!forceRefresh && !window.DashboardCache.data) {
@@ -709,9 +710,10 @@
 
         renderAllZones(localDashboardCache.data);
         dashboardHasLoadedOnce = true;
+        hasRenderedFromLocalStorage = true;
 
-        // Không return ở đây.
-        // Vẫn cho chạy xuống dưới để nếu cache đã cũ hơn RAM cache timeout thì gọi server cập nhật.
+        // Sau khi đã render cache, đây không còn là màn hình trắng ban đầu nữa
+        initialLoad = false;
       }
     }
     if (
@@ -735,7 +737,7 @@
 
     // Show large loading placeholders only on first load.
     // Background refresh should keep old data on screen.
-    if (initialLoad && !backgroundRefresh) {
+    if (initialLoad && !backgroundRefresh && !hasRenderedFromLocalStorage) {
       showLoadingStates();
     }
 
