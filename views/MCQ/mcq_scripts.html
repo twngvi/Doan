@@ -431,6 +431,11 @@
     startMCQHeaderMeteors();
     setupMCQHeaderMouseEffect();
 
+    // ⭐ Gửi lại các action đúng/sai còn tồn đọng khi user mở lại trang MCQ
+    if (typeof flushMCQPendingActions === "function") {
+      setTimeout(flushMCQPendingActions, 800);
+    }
+
     const entrySource = detectQuizEntrySource();
     quizState.entrySource = entrySource;
 
@@ -448,6 +453,10 @@
     // Có topicId từ trang trước thì mở trang chi tiết topic, không vào chơi trực tiếp
     if (params.topicId) {
       openQuizTopicHubFromParams(params);
+    }
+    
+    if (!params.topicId) {
+      setTimeout(tryShowResumeMCQDraftNotice, 600);
     }
   }
 
@@ -1981,7 +1990,9 @@
 
       return {
         id: question.id,
+        originalId: question.originalId || question.id,
         question: question.question,
+        questionType: question.questionType || "mcq",
         options: options,
         correctAnswer: newCorrectIndex,
         explanation: question.explanation,
@@ -2034,6 +2045,20 @@
       topicId: quizState.topicId,
       forceRegenerate,
     });
+
+    if (!forceRegenerate) {
+      const localDraft = readMCQLocalState();
+
+      if (
+        localDraft &&
+        Array.isArray(localDraft.questions) &&
+        localDraft.questions.length > 0
+      ) {
+        console.log("📦 Start MCQ directly from local draft, skip server reload");
+        startMCQFromLocalDraft(localDraft);
+        return;
+      }
+    }
 
     showLoading();
 
@@ -2104,6 +2129,18 @@
       })
       .withFailureHandler(function (error) {
         clearInterval(loadingInterval);
+
+        const localDraft = readMCQLocalState();
+        if (
+          localDraft &&
+          Array.isArray(localDraft.questions) &&
+          localDraft.questions.length > 0
+        ) {
+          console.warn("⚠️ Server load failed, restoring MCQ from local draft:", error);
+          startMCQFromLocalDraft(localDraft);
+          return;
+        }
+
         handleLoadError(error);
       })
       .getApprovedQuestionsForTopic(quizState.topicId);
@@ -2218,6 +2255,357 @@
     showError(quizState.error);
   }
 
+  const MCQ_LOCAL_DRAFT_VERSION = "v2";
+  const MCQ_LOCAL_DRAFT_MAX_AGE = 24 * 60 * 60 * 1000; // 24 giờ
+
+  function getMCQPendingActionsKey() {
+    var userKey =
+      typeof getAppUserKey === "function"
+        ? getAppUserKey()
+        : (
+            window.currentUser && (window.currentUser.userId || window.currentUser.email)
+              ? (window.currentUser.userId || window.currentUser.email)
+              : "guest"
+          );
+
+    return "mcq_pending_actions_" + userKey;
+  }
+
+  function saveMCQPendingAction(actionName, payload) {
+    try {
+      const key = getMCQPendingActionsKey();
+      const raw = localStorage.getItem(key);
+      const list = raw ? JSON.parse(raw) : [];
+
+      list.push({
+        actionName: actionName,
+        payload: payload,
+        createdAt: Date.now()
+      });
+
+      localStorage.setItem(key, JSON.stringify(list));
+      console.warn("📥 Saved pending MCQ action:", actionName);
+    } catch (e) {
+      console.warn("Could not save pending MCQ action:", e);
+    }
+  }
+
+  function flushMCQPendingActions() {
+    try {
+      if (
+        typeof google === "undefined" ||
+        !google.script ||
+        !google.script.run
+      ) {
+        return;
+      }
+
+      const key = getMCQPendingActionsKey();
+      const raw = localStorage.getItem(key);
+      const list = raw ? JSON.parse(raw) : [];
+
+      if (!Array.isArray(list) || list.length === 0) return;
+
+      localStorage.removeItem(key);
+
+      list.forEach(function (item) {
+        if (!item || !item.actionName || !item.payload) return;
+
+        if (typeof google.script.run[item.actionName] !== "function") {
+          saveMCQPendingAction(item.actionName, item.payload);
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function () {
+            console.log("✅ Flushed pending MCQ action:", item.actionName);
+          })
+          .withFailureHandler(function () {
+            saveMCQPendingAction(item.actionName, item.payload);
+          })[item.actionName](item.payload);
+      });
+    } catch (e) {
+      console.warn("Could not flush pending MCQ actions:", e);
+    }
+  }
+
+  window.addEventListener("online", flushMCQPendingActions);
+
+  function getMCQLocalDraftKey() {
+    if (!quizState || !quizState.topicId) return "";
+    if (typeof getAppProgressKey === "function") {
+      return getAppProgressKey("mcq", quizState.topicId);
+    }
+
+    var userKey =
+      window.currentUser && (window.currentUser.userId || window.currentUser.email)
+        ? (window.currentUser.userId || window.currentUser.email)
+        : "guest";
+
+    return "mcq_progress_" + userKey + "_" + quizState.topicId;
+  }
+
+  function getMCQActiveDraftPointerKey() {
+    if (typeof getAppActiveDraftKey === "function") {
+      return getAppActiveDraftKey("mcq");
+    }
+
+    var userKey =
+      window.currentUser && (window.currentUser.userId || window.currentUser.email)
+        ? (window.currentUser.userId || window.currentUser.email)
+        : "guest";
+
+    return "mcq_active_draft_" + userKey;
+  }
+
+  function saveMCQLocalState() {
+    if (!quizState || !quizState.topicId) return;
+
+    try {
+      const key = getMCQLocalDraftKey();
+      if (!key) return;
+
+      const stateToSave = {
+        version: MCQ_LOCAL_DRAFT_VERSION,
+        status: "in_progress",
+        savedAt: Date.now(),
+
+        topicId: quizState.topicId,
+        topicTitle: quizState.topicTitle,
+        contentDocId: quizState.contentDocId,
+        quizMode: quizState.quizMode,
+        entrySource: quizState.entrySource,
+
+        // Quan trọng: lưu nguyên bộ câu hỏi đã shuffle
+        questions: Array.isArray(quizState.questions)
+          ? quizState.questions
+          : [],
+
+        currentQuestionIndex: quizState.currentQuestionIndex,
+        userAnswers: quizState.userAnswers,
+        answeredQuestions: quizState.answeredQuestions,
+        score: quizState.score,
+
+        retryQueue: quizState.retryQueue || [],
+        startedAt: quizState.startTime
+          ? new Date(quizState.startTime).toISOString()
+          : new Date().toISOString()
+      };
+
+      localStorage.setItem(key, JSON.stringify(stateToSave));
+
+      // Lưu thêm con trỏ nháp gần nhất để sau F5 biết topic nào đang làm dở
+      localStorage.setItem(
+        getMCQActiveDraftPointerKey(),
+        JSON.stringify({
+          key: key,
+          topicId: quizState.topicId,
+          topicTitle: quizState.topicTitle,
+          contentDocId: quizState.contentDocId,
+          quizMode: quizState.quizMode,
+          savedAt: stateToSave.savedAt
+        })
+      );
+    } catch (e) {
+      console.warn("Could not save MCQ state", e);
+    }
+  }
+
+  function clearMCQLocalState() {
+    if (!quizState || !quizState.topicId) return;
+
+    try {
+      const key = getMCQLocalDraftKey();
+      if (key) localStorage.removeItem(key);
+
+      localStorage.removeItem(getMCQActiveDraftPointerKey());
+    } catch (e) {
+      console.warn("Could not clear MCQ state", e);
+    }
+  }
+
+  function readMCQLocalState() {
+    try {
+      const key = getMCQLocalDraftKey();
+      if (!key) return null;
+
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+
+      const savedState = JSON.parse(raw);
+      if (!savedState || savedState.version !== MCQ_LOCAL_DRAFT_VERSION) {
+        return null;
+      }
+
+      if (Date.now() - Number(savedState.savedAt || 0) > MCQ_LOCAL_DRAFT_MAX_AGE) {
+        localStorage.removeItem(key);
+        return null;
+      }
+
+      if (String(savedState.topicId) !== String(quizState.topicId)) {
+        return null;
+      }
+
+      if (String(savedState.quizMode) !== String(quizState.quizMode)) {
+        return null;
+      }
+
+      if (!Array.isArray(savedState.questions) || savedState.questions.length === 0) {
+        return null;
+      }
+
+      return savedState;
+    } catch (e) {
+      console.warn("Could not read MCQ state", e);
+      return null;
+    }
+  }
+
+  function restoreMCQLocalStateIfAvailable() {
+    const savedState = readMCQLocalState();
+    if (!savedState) return false;
+
+    try {
+      const savedQuestions = savedState.questions || [];
+      const savedAnswers = savedState.userAnswers || [];
+      const savedAnswered = savedState.answeredQuestions || [];
+
+      if (savedQuestions.length === 0) return false;
+
+      quizState.questions = savedQuestions;
+      quizState.filteredQuestions = savedQuestions;
+      quizState.userAnswers =
+        savedAnswers.length === savedQuestions.length
+          ? savedAnswers
+          : new Array(savedQuestions.length).fill(null);
+
+      quizState.answeredQuestions =
+        savedAnswered.length === savedQuestions.length
+          ? savedAnswered
+          : new Array(savedQuestions.length).fill(false);
+
+      quizState.currentQuestionIndex = Math.max(
+        0,
+        Math.min(
+          Number(savedState.currentQuestionIndex || 0),
+          savedQuestions.length - 1
+        )
+      );
+
+      quizState.score = Number(savedState.score || 0);
+      quizState.retryQueue = Array.isArray(savedState.retryQueue)
+        ? savedState.retryQueue
+        : [];
+
+      if (quizState.quizSession) {
+        quizState.quizSession.questions = savedQuestions;
+        quizState.quizSession.userAnswers = quizState.userAnswers;
+        quizState.quizSession.currentQuestionIndex = quizState.currentQuestionIndex;
+        quizState.quizSession.score = quizState.score;
+        quizState.quizSession.status = "in_progress";
+      }
+
+      console.log(
+        "🔄 Phục hồi nháp MCQ thành công:",
+        quizState.topicId,
+        "câu",
+        quizState.currentQuestionIndex + 1
+      );
+
+      return true;
+    } catch (e) {
+      console.warn("Could not restore MCQ state", e);
+      return false;
+    }
+  }
+
+  function startMCQFromLocalDraft(savedState) {
+    if (!savedState || !Array.isArray(savedState.questions)) return false;
+
+    quizState.questions = savedState.questions;
+    quizState.filteredQuestions = savedState.questions;
+    quizState.quizMode = savedState.quizMode || quizState.quizMode || "instant";
+    quizState.topicId = savedState.topicId || quizState.topicId;
+    quizState.topicTitle = savedState.topicTitle || quizState.topicTitle || "Quiz";
+    quizState.contentDocId = savedState.contentDocId || quizState.contentDocId || "";
+
+    quizState.quizSession = {
+      sessionId: "LOCAL_" + Date.now(),
+      topicId: quizState.topicId,
+      contentDocId: quizState.contentDocId,
+      quizMode: quizState.quizMode,
+      questions: savedState.questions,
+      currentQuestionIndex: Number(savedState.currentQuestionIndex || 0),
+      userAnswers: savedState.userAnswers || [],
+      score: Number(savedState.score || 0),
+      elapsedTime: 0,
+      startedAt: savedState.startedAt || new Date().toISOString(),
+      status: "in_progress"
+    };
+
+    showQuizView();
+    startQuizSession();
+    return true;
+  }
+
+  function getActiveMCQDraftPointer() {
+    try {
+      const raw = localStorage.getItem(getMCQActiveDraftPointerKey());
+      if (!raw) return null;
+
+      const pointer = JSON.parse(raw);
+      if (!pointer || !pointer.topicId || !pointer.key) return null;
+
+      if (Date.now() - Number(pointer.savedAt || 0) > MCQ_LOCAL_DRAFT_MAX_AGE) {
+        localStorage.removeItem(getMCQActiveDraftPointerKey());
+        return null;
+      }
+
+      return pointer;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function tryShowResumeMCQDraftNotice() {
+    const pointer = getActiveMCQDraftPointer();
+    if (!pointer) return;
+
+    const message =
+      "Bạn có bài Trắc nghiệm đang làm dở: " +
+      (pointer.topicTitle || "Quiz") +
+      ". Bạn muốn tiếp tục không?";
+
+    const resume = function () {
+      quizState.selectedTopic = {
+        topicId: pointer.topicId,
+        title: pointer.topicTitle || "Quiz",
+        contentDocId: pointer.contentDocId || "",
+      };
+      quizState.topicId = pointer.topicId;
+      quizState.topicTitle = pointer.topicTitle || "Quiz";
+      quizState.contentDocId = pointer.contentDocId || "";
+      quizState.quizMode = pointer.quizMode || "instant";
+
+      showQuizView();
+
+      // Load lại data bình thường, sau đó startQuizSession sẽ restore từ localStorage
+      loadQuizData(false);
+    };
+
+    if (typeof window.showAppConfirm === "function") {
+      window.showAppConfirm(message, {
+        title: "Tiếp tục bài đang làm?",
+        confirmText: "Tiếp tục",
+        cancelText: "Để sau",
+      }).then(function (ok) {
+        if (ok) resume();
+      });
+    } else if (confirm(message)) {
+      resume();
+    }
+  }
+
   /**
    * Start quiz session
    */
@@ -2246,6 +2634,15 @@
       false,
     );
 
+    // ⭐ BƯỚC PHỤC HỒI NHÁP (OFFLINE-FIRST)
+    // Lưu ý: phải phục hồi cả bộ questions đã shuffle để tránh lệch đáp án sau F5.
+    const restoredFromDraft = restoreMCQLocalStateIfAvailable();
+
+    if (!restoredFromDraft) {
+      // Tạo nháp lần đầu để nếu user F5 ngay ở câu 1 vẫn có bản lưu
+      saveMCQLocalState();
+    }
+
     quizState.startTime = new Date();
     quizState.isReviewing = false;
 
@@ -2259,6 +2656,7 @@
     document.getElementById("quiz-error").style.display = "none";
     
     startTimer();
+    document.getElementById("current-score").textContent = quizState.score || 0;
     
     if (quizState.gameMode === "review") {
       document.getElementById("quiz-stats").style.display = "none";
@@ -2456,6 +2854,9 @@
     // Hide warning if visible
     const warning = document.getElementById("review-warning");
     if (warning) warning.classList.remove("show");
+
+    // ⭐ LƯU NHÁP (OFFLINE-FIRST)
+    saveMCQLocalState();
   };
 
   /**
@@ -2467,6 +2868,9 @@
     // Hide warning if visible
     const warning = document.getElementById("review-warning");
     if (warning) warning.classList.remove("show");
+
+    // ⭐ LƯU NHÁP (OFFLINE-FIRST)
+    saveMCQLocalState();
   };
 
   /**
@@ -2583,6 +2987,9 @@
     // Show feedback
     showAnswerFeedback(isCorrect, question);
     updateNavigationButtons();
+
+    // ⭐ LƯU NHÁP (OFFLINE-FIRST)
+    saveMCQLocalState();
 
     // Auto-advance cho fill-blank trong instant mode
     if (quizState.gameMode === "instant") {
@@ -2723,6 +3130,9 @@
       renderAnswerOptions(question.options, questionIndex);
       showAnswerFeedback(isCorrect, question);
 
+      // ⭐ LƯU NHÁP (OFFLINE-FIRST)
+      saveMCQLocalState();
+
       // Auto-advance sau khi hiện feedback ở chế độ instant
       if (quizState.autoAdvanceTimer) {
         clearTimeout(quizState.autoAdvanceTimer);
@@ -2760,6 +3170,9 @@
 
       renderAnswerOptions(question.options, questionIndex);
       showAnswerFeedback(isCorrect, question);
+      
+      // ⭐ LƯU NHÁP (OFFLINE-FIRST)
+      saveMCQLocalState();
     }
 
     updateNavigationButtons();
@@ -2777,11 +3190,22 @@
 
     console.log("🏆 Saving mastered question:", masteredData);
 
+    if (
+      typeof google === "undefined" ||
+      !google.script ||
+      !google.script.run ||
+      navigator.onLine === false
+    ) {
+      saveMCQPendingAction("saveMasteredQuestion", masteredData);
+      return;
+    }
+
     google.script.run
       .withSuccessHandler(() => console.log("✅ Mastered question saved"))
-      .withFailureHandler((err) =>
-        console.error("❌ Error saving mastered question:", err),
-      )
+      .withFailureHandler((err) => {
+        console.error("❌ Error saving mastered question:", err);
+        saveMCQPendingAction("saveMasteredQuestion", masteredData);
+      })
       .saveMasteredQuestion(masteredData);
   }
 
@@ -2812,11 +3236,22 @@
       }
     }
 
+    if (
+      typeof google === "undefined" ||
+      !google.script ||
+      !google.script.run ||
+      navigator.onLine === false
+    ) {
+      saveMCQPendingAction("saveWrongAnswer", wrongData);
+      return;
+    }
+
     google.script.run
       .withSuccessHandler(() => console.log("✅ Wrong answer saved"))
-      .withFailureHandler((err) =>
-        console.error("❌ Error saving wrong answer:", err),
-      )
+      .withFailureHandler((err) => {
+        console.error("❌ Error saving wrong answer:", err);
+        saveMCQPendingAction("saveWrongAnswer", wrongData);
+      })
       .saveWrongAnswer(wrongData);
   }
 
@@ -2938,6 +3373,8 @@
     }
     if (quizState.currentQuestionIndex < quizState.questions.length - 1) {
       quizState.currentQuestionIndex++;
+      // ⭐ LƯU NHÁP VỊ TRÍ MỚI
+      saveMCQLocalState();
       displayQuestion();
     } else {
       // Check if there are retry questions to add
@@ -2971,6 +3408,10 @@
 
       // Move to next question (first retry question)
       quizState.currentQuestionIndex++;
+      
+      // ⭐ Lưu lại vì danh sách câu hỏi vừa được nối thêm retryQuestions
+      saveMCQLocalState();
+      
       displayQuestion();
 
       // Show notification
@@ -3016,6 +3457,8 @@
     }
     if (quizState.currentQuestionIndex > 0) {
       quizState.currentQuestionIndex--;
+      // ⭐ LƯU NHÁP VỊ TRÍ MỚI
+      saveMCQLocalState();
       displayQuestion();
     }
   }
@@ -3139,15 +3582,29 @@
     }
 
     // Save MCQ activity to personal Google Sheet
-    google.script.run.saveActivityLog({
-      type: "MCQ",
-      topicId: quizState.currentTopic?.topicId || quizState.topicId,
-      topicTitle:
-        quizState.currentTopic?.topicTitle || quizState.topicTitle || "Quiz",
-      score: finalScore,
-      totalQuestions: totalQuestions,
-      percentage: percentage,
-    });
+    try {
+      if (
+        typeof google !== "undefined" &&
+        google.script &&
+        google.script.run
+      ) {
+        google.script.run
+          .withFailureHandler(function (err) {
+            console.warn("⚠️ Không thể lưu activity log MCQ:", err);
+          })
+          .saveActivityLog({
+            type: "MCQ",
+            topicId: quizState.currentTopic?.topicId || quizState.topicId,
+            topicTitle:
+              quizState.currentTopic?.topicTitle || quizState.topicTitle || "Quiz",
+            score: finalScore,
+            totalQuestions: totalQuestions,
+            percentage: percentage,
+          });
+      }
+    } catch (e) {
+      console.warn("⚠️ Bỏ qua activity log MCQ vì đang offline hoặc lỗi môi trường:", e);
+    }
 
     // Notify dashboard to refresh leaderboard + history
     window.dispatchEvent(new Event("dashboard-needs-refresh"));
@@ -3368,6 +3825,15 @@
     google.script.run
       .withSuccessHandler((response) => {
         console.log("✅ Quiz result saved:", response);
+
+        if (response && response.success === false) {
+          showSaveNotification(false, response.message || "Không thể lưu kết quả.");
+          return;
+        }
+
+        // ⭐ Chỉ xóa nháp sau khi server đã lưu kết quả thành công
+        clearMCQLocalState();
+
         showSaveNotification(true, "Kết quả đã được lưu!");
         if (quizState.topicId) {
           loadQuizTopicHistory(quizState.topicId);

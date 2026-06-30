@@ -1765,12 +1765,42 @@
       .getAllClientCodeArrangements();
   };
 
+  // ===== APP OFFLINE-FIRST KEY HELPERS =====
+  function getAppUserKey() {
+    var user =
+      window.currentUser ||
+      currentUser ||
+      (typeof getStoredCurrentUser === "function" ? getStoredCurrentUser() : null);
+
+    return user && (user.userId || user.email)
+      ? (user.userId || user.email)
+      : "guest";
+  }
+
+  function getAppProgressKey(moduleName, topicId) {
+    return moduleName + "_progress_" + getAppUserKey() + "_" + topicId;
+  }
+
+  function getAppActiveDraftKey(moduleName) {
+    return moduleName + "_active_draft_" + getAppUserKey();
+  }
+
+  // Expose ra window để các file con như mcq_scripts.html dùng chắc chắn
+  window.getAppUserKey = getAppUserKey;
+  window.getAppProgressKey = getAppProgressKey;
+  window.getAppActiveDraftKey = getAppActiveDraftKey;
+
   function clearAppLocalCaches() {
     try {
       Object.keys(localStorage).forEach(function(key) {
-        if (key.indexOf("doan:dashboard:") === 0 || 
-            key.indexOf("doan:topics:") === 0 || 
-            key.indexOf("doan:ca_list:") === 0) {
+        if (
+          key.indexOf("doan:dashboard:") === 0 ||
+          key.indexOf("doan:topics:") === 0 ||
+          key.indexOf("doan:ca_list:") === 0 ||
+          key.indexOf("mcq_progress_") === 0 ||
+          key.indexOf("mcq_active_draft_") === 0 ||
+          key.indexOf("mcq_pending_actions_") === 0
+        ) {
           localStorage.removeItem(key);
         }
       });
