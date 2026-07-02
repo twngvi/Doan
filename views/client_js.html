@@ -293,9 +293,13 @@
     console.log("🌸 [Petal] Container found and forced visible. display:", 
       window.getComputedStyle(container).display);
 
-    const petalImages = [
+    const petalImagesUser = [
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao.png",
       "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/hoadao2.png"
+    ];
+
+    const petalImagesAdmin = [
+      "https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Admin/bongtuyet.png"
     ];
 
     // Preload images
@@ -308,6 +312,11 @@
       }
       return false;
     }
+
+    function isAdminPage() {
+      return document.body.classList.contains("has-admin-sidebar");
+    }
+
     const pageMap = {
       dashboard: "page-dashboard",
       topics: "page-topics",
@@ -335,7 +344,11 @@
       "page-landing",
     ];
 
-    petalImages.forEach(function(src) {
+    petalImagesUser.forEach(function(src) {
+      var img = new Image();
+      img.src = src;
+    });
+    petalImagesAdmin.forEach(function(src) {
       var img = new Image();
       img.src = src;
     });
@@ -343,7 +356,9 @@
     function createPetal() {
       if (isPageExcluded()) return;
 
-      var imgSrc = petalImages[Math.floor(Math.random() * petalImages.length)];
+      var admin = isAdminPage();
+      var images = admin ? petalImagesAdmin : petalImagesUser;
+      var imgSrc = images[Math.floor(Math.random() * images.length)];
 
       // Use <img> element for reliability
       var petal = document.createElement("img");
@@ -375,23 +390,30 @@
       petal.style.opacity = "0";
       petal.style.objectFit = "contain";
       
-      // Base filter: đậm màu hơn (saturate and slight contrast, maybe lower brightness slightly)
-      petal.style.filter = "saturate(1.8) brightness(0.9) contrast(1.1)";
+      // Base filter: adapt based on admin vs user
+      var baseFilter = admin
+        ? "brightness(1.0) contrast(1.05) opacity(0.7)"
+        : "saturate(1.8) brightness(0.9) contrast(1.1)";
+      var glowFilter = admin
+        ? "drop-shadow(0 0 12px #93c5fd) brightness(1.2)"
+        : "drop-shadow(0 0 15px #ff1493) brightness(1.3) saturate(2)";
+
+      petal.style.filter = baseFilter;
       petal.style.transition = "filter 0.3s ease";
 
-      // Glow effect on hover/interaction (phát sáng khi rơ chuột / chạm)
+      // Glow effect on hover/interaction
       petal.addEventListener("mouseenter", function() {
-        petal.style.filter = "drop-shadow(0 0 15px #ff1493) brightness(1.3) saturate(2)";
+        petal.style.filter = glowFilter;
       });
       petal.addEventListener("mouseleave", function() {
-        petal.style.filter = "saturate(1.8) brightness(0.9) contrast(1.1)";
+        petal.style.filter = baseFilter;
       });
       petal.addEventListener("touchstart", function() {
-        petal.style.filter = "drop-shadow(0 0 15px #ff1493) brightness(1.3) saturate(2)";
+        petal.style.filter = glowFilter;
       }, {passive: true});
       petal.addEventListener("touchend", function() {
         setTimeout(() => {
-          petal.style.filter = "saturate(1.8) brightness(0.9) contrast(1.1)";
+          petal.style.filter = baseFilter;
         }, 300);
       }, {passive: true});
 
