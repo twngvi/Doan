@@ -291,7 +291,7 @@ function apiGetStudyCalendarMonth(payload) {
         goalMinutes: Number(row[map.goalMinutes] || 0),
         goalLessons: Number(row[map.goalLessons] || 0),
         status: String(row[map.status] || "none"),
-        lastActivityAt: row[map.lastActivityAt] || ""
+        lastActivityAt: row[map.lastActivityAt] ? String(row[map.lastActivityAt]) : ""
       };
     });
 
