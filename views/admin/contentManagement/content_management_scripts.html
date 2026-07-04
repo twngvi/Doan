@@ -17,6 +17,17 @@ let latestTopicsLoadRequestId = 0; // Tránh race condition khi gọi load nhi�
 function initContentManagement() {
   console.log('[ContentManagement] Initializing...');
 
+  // FIX: đánh dấu body đang ở trang Quản lý Nội dung
+  document.documentElement.classList.add('is-content-management-page');
+  document.body.classList.add('is-content-management-page');
+
+  // FIX: khi mới vào trang, không để trình duyệt giữ vị trí cuộn cũ
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: 'auto'
+  });
+
   // Khôi phục view preference TRƯỚC KHI load data (chỉ set UI, không render)
   const savedView = localStorage.getItem('cm-view-preference');
   if (savedView && (savedView === 'table' || savedView === 'cards')) {
@@ -690,7 +701,13 @@ function viewTopic(topicId) {
       <p style="margin-top: 20px; color: rgba(255,255,255,0.6);">Đang tải nội dung bài học...</p>
     </div>
   `;
-  document.getElementById('cm-preview-overlay').classList.add('active');
+  const previewOverlay = document.getElementById('cm-preview-overlay');
+
+  previewOverlay.classList.add('active');
+  previewOverlay.scrollTop = 0;
+
+  document.documentElement.classList.add('cm-preview-open');
+  document.body.classList.add('cm-preview-open');
 
   // Check if topic has contentDocId
   if (!topic.contentDocId) {
@@ -759,7 +776,15 @@ function viewTopic(topicId) {
 }
 
 function closeContentPreviewModal() {
-  document.getElementById('cm-preview-overlay').classList.remove('active');
+  const previewOverlay = document.getElementById('cm-preview-overlay');
+
+  if (previewOverlay) {
+    previewOverlay.classList.remove('active');
+    previewOverlay.scrollTop = 0;
+  }
+
+  document.documentElement.classList.remove('cm-preview-open');
+  document.body.classList.remove('cm-preview-open');
 }
 
 /**

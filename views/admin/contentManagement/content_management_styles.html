@@ -2630,26 +2630,7 @@
     --admin-card-padding: 16px;
   }
 }
-/* =================================================
-   FIX CONTENT MANAGEMENT: bỏ container ngoài #page-admin
-================================================= */
 
-#page-admin.page-content:has(.content-management-container) {
-  padding: 0 !important;
-  margin: 0 !important;
-  background: transparent !important;
-  overflow-x: hidden !important;
-}
-
-#page-admin.page-content:has(.content-management-container) .content-management-container {
-  width: 100% !important;
-  max-width: none !important;
-  min-height: 100vh !important;
-  margin: 0 !important;
-  padding: 24px !important;
-  background: var(--theme-dashboard-bg) !important;
-  box-sizing: border-box !important;
-}
 /* =================================================
    ADMIN UNIFIED HEADER STANDARD
    Lấy header trang Quiz làm chuẩn cho toàn bộ Admin
@@ -2929,6 +2910,121 @@
     margin-left: 0 !important;
     justify-content: flex-start !important;
   }
+}
+
+/* =================================================
+   FINAL FIX ABSOLUTE: XÓA KHOẢNG TRỐNG TRÊN TRANG QUẢN LÝ NỘI DUNG
+================================================= */
+
+/* Reset scroll/margin tổng khi đang ở trang Quản lý Nội dung */
+html.is-content-management-page,
+body.is-content-management-page {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden !important;
+  scroll-padding-top: 0 !important;
+}
+
+/* Reset các khung cha có thể đang tạo khoảng trống phía trên */
+body.is-content-management-page :is(
+  #app,
+  .app,
+  .app-shell,
+  .admin-layout,
+  .admin-main,
+  .admin-main-content,
+  .admin-content,
+  .main-content,
+  .content-area,
+  .page-wrapper,
+  .page-container,
+  #main-content,
+  #admin-content
+):has(#page-admin.page-content .content-management-container) {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  background: transparent !important;
+}
+
+/* Làm #page-admin biến mất khỏi layout, chỉ giữ DOM wrapper */
+body.is-content-management-page #page-admin.page-content:has(.content-management-container) {
+  display: contents !important;
+}
+
+/* Chặn pseudo-element của page-admin nếu có */
+body.is-content-management-page #page-admin.page-content:has(.content-management-container)::before,
+body.is-content-management-page #page-admin.page-content:has(.content-management-container)::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Page thật: content-management-container chiếm toàn bộ vùng nội dung */
+body.is-content-management-page .content-management-container {
+  width: 100% !important;
+  max-width: none !important;
+
+  margin: 0 !important;
+
+  /* Quan trọng: bỏ padding-top để không còn khoảng xanh phía trên header */
+  padding-top: 0 !important;
+  padding-right: 24px !important;
+  padding-bottom: 24px !important;
+  padding-left: 24px !important;
+
+  min-height: 100vh !important;
+  background: var(--theme-dashboard-bg, #f8fafc) !important;
+
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+}
+
+/* Header phải nằm sát mép trên của vùng content-management-container */
+body.is-content-management-page .content-management-header,
+body.is-content-management-page .content-management-header.admin-unified-header {
+  margin-top: 0 !important;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  body.is-content-management-page .content-management-container {
+    padding-top: 0 !important;
+    padding-right: 16px !important;
+    padding-bottom: 16px !important;
+    padding-left: 16px !important;
+  }
+}
+
+/* =================================================
+   FIX PREVIEW OVERLAY: Không cho thấy nền page-admin phía sau
+================================================= */
+
+body.is-content-management-page #cm-preview-overlay.admin-preview-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  z-index: 99999 !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  background: var(--theme-bg, #f8fafc) !important;
+
+  transform: none !important;
+}
+
+html.cm-preview-open,
+body.cm-preview-open {
+  overflow: hidden !important;
 }
 </style>
 
