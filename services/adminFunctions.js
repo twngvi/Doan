@@ -583,6 +583,7 @@ function getAdminOnlineUsersData() {
       username: headers.indexOf("username"),
       avatarUrl: headers.indexOf("avatarUrl"),
       isActive: headers.indexOf("isActive"),
+      role: headers.indexOf("role"),
       lastLogin: headers.indexOf("lastLogin"),
       lastActiveDate: headers.indexOf("lastActiveDate"),
       createdAt: headers.indexOf("createdAt"),
@@ -597,6 +598,11 @@ function getAdminOnlineUsersData() {
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
+
+      const role = col.role >= 0 ? String(row[col.role] || "").trim().toUpperCase() : "";
+      if (role === "ADMIN") {
+        continue;
+      }
 
       let isAccountEnabled = true;
       if (col.isActive >= 0) {
