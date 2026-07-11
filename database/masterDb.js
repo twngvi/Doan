@@ -117,6 +117,13 @@ function ensureChatSheets(ss) {
       "isRead",
       "createdAt",
     ],
+    Feature_Activity_Logs: [
+      "date",
+      "timestamp",
+      "userId",
+      "featureType",
+      "itemId",
+    ],
   };
 
   Object.keys(chatSheets).forEach(function (sheetName) {
@@ -126,9 +133,14 @@ function ensureChatSheets(ss) {
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      const headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setFontWeight("bold");
+      if (sheetName === "Feature_Activity_Logs") {
+        headerRange.setBackground("#3B82F6");
+        headerRange.setFontColor("white");
+      }
       sheet.setFrozenRows(1);
-      Logger.log("Created missing chat sheet: " + sheetName);
+      Logger.log("Created missing sheet: " + sheetName);
       return;
     }
 
@@ -138,6 +150,20 @@ function ensureChatSheets(ss) {
       sheet.setFrozenRows(1);
     }
   });
+}
+
+/**
+ * Tạo ngay lập tức sheet Feature_Activity_Logs nếu chưa có trên Master DB
+ */
+function initFeatureActivityLogsSheet() {
+  try {
+    const ss = getOrCreateDatabase();
+    ensureChatSheets(ss);
+    return { success: true, message: "Đã kiểm tra và khởi tạo sheet Feature_Activity_Logs trên DB Master" };
+  } catch (err) {
+    Logger.log("Error in initFeatureActivityLogsSheet: " + err.toString());
+    return { success: false, message: err.toString() };
+  }
 }
 
 /**
