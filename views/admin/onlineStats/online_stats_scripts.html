@@ -27,6 +27,9 @@
   let hardestTopicsChart = null;
   let dailyActivityChart = null;
   let featureEngagementChart = null;
+  let peakStudyHoursChart = null;
+  let studyDaysOfWeekChart = null;
+  let studyDuration7DaysChart = null;
 
   function getOnlineStatsCurrentUser() {
     try {
@@ -186,10 +189,12 @@
       setText('valPctCodeGame', `${data.featureEngagement.distribution.codeGame || 0}%`);
     }
     
-    // Nhóm 3: Tiến độ học
-    if (data.progress) {
-      setText('valTopicsCompleted', data.progress.topicsCompleted || 0);
-      setText('valCompletionRate', `${data.progress.completionRate || 0}%`);
+    // Nhóm 3: Thói quen học tập
+    if (data.studyHabits) {
+      setText('valPeakHourRange', data.studyHabits.peakHours?.peakHourRangeLabel || '20:00 - 22:00');
+      setText('valTopStudyDay', data.studyHabits.daysOfWeek?.topDayLabel || 'Thứ 5');
+      setText('valTotalStudyHours', data.studyHabits.last7DaysDuration?.totalStudyHoursLabel || '0 giờ');
+      setText('valAvgStudyMinutes', data.studyHabits.last7DaysDuration?.avgMinutesPerDayLabel || '0 phút');
     }
 
     // Nhóm 3
@@ -278,23 +283,59 @@
       });
     }
 
-    // 1. Phân bố Level (Bar)
-    const ctxLevel = document.getElementById('levelDistributionChart');
-    if (ctxLevel && data.progress && data.progress.levelDistribution) {
-      if (levelDistributionChart) levelDistributionChart.destroy();
-      
-      const gradient = ctxLevel.getContext('2d').createLinearGradient(0, 0, 0, 400);
-      gradient.addColorStop(0, primaryColor);
-      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.2)');
+    // ==========================================
+    // NHÓM 3: THÓI QUEN HỌC TẬP (Study Habits Charts)
+    // ==========================================
+    // 3.1. Khung giờ học phổ biến (24h)
+    const ctxPeakHours = document.getElementById('peakStudyHoursChart');
+    if (ctxPeakHours && data.studyHabits && data.studyHabits.peakHours) {
+      if (peakStudyHoursChart) peakStudyHoursChart.destroy();
 
-      levelDistributionChart = new Chart(ctxLevel, {
+      const gradientPeak = ctxPeakHours.getContext('2d').createLinearGradient(0, 0, 0, 300);
+      gradientPeak.addColorStop(0, '#10b981');
+      gradientPeak.addColorStop(1, 'rgba(16, 185, 129, 0.15)');
+
+      peakStudyHoursChart = new Chart(ctxPeakHours, {
         type: 'bar',
         data: {
-          labels: data.progress.levelDistribution.labels,
+          labels: data.studyHabits.peakHours.labels,
           datasets: [{
-            label: 'Số học viên',
-            data: data.progress.levelDistribution.data,
-            backgroundColor: gradient,
+            label: 'Lượt tương tác học tập',
+            data: data.studyHabits.peakHours.data,
+            backgroundColor: gradientPeak,
+            borderRadius: 5,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
+            x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }
+          }
+        }
+      });
+    }
+
+    // 3.2. Mức độ học theo ngày trong tuần (Thứ 2 -> CN)
+    const ctxDaysOfWeek = document.getElementById('studyDaysOfWeekChart');
+    if (ctxDaysOfWeek && data.studyHabits && data.studyHabits.daysOfWeek) {
+      if (studyDaysOfWeekChart) studyDaysOfWeekChart.destroy();
+
+      const gradientDays = ctxDaysOfWeek.getContext('2d').createLinearGradient(0, 0, 0, 300);
+      gradientDays.addColorStop(0, primaryColor);
+      gradientDays.addColorStop(1, 'rgba(59, 130, 246, 0.2)');
+
+      studyDaysOfWeekChart = new Chart(ctxDaysOfWeek, {
+        type: 'bar',
+        data: {
+          labels: data.studyHabits.daysOfWeek.labels,
+          datasets: [{
+            label: 'Tổng lượt học',
+            data: data.studyHabits.daysOfWeek.data,
+            backgroundColor: gradientDays,
             borderRadius: 6,
             borderWidth: 0
           }]
@@ -311,30 +352,69 @@
       });
     }
 
-    // 2. Top 5 Topic nhiều người học (Horizontal Bar)
-    const ctxTrending = document.getElementById('topTrendingChart');
-    if (ctxTrending && data.progress && data.progress.topTrending) {
-      if (topTrendingChart) topTrendingChart.destroy();
-      
-      topTrendingChart = new Chart(ctxTrending, {
+    // 3.3. Thời gian học 7 ngày gần nhất (Mixed Chart)
+    const ctxDuration7Days = document.getElementById('studyDuration7DaysChart');
+    if (ctxDuration7Days && data.studyHabits && data.studyHabits.last7DaysDuration) {
+      if (studyDuration7DaysChart) studyDuration7DaysChart.destroy();
+
+      const durationData = data.studyHabits.last7DaysDuration;
+
+      studyDuration7DaysChart = new Chart(ctxDuration7Days, {
         type: 'bar',
         data: {
-          labels: data.progress.topTrending.labels,
-          datasets: [{
-            label: 'Lượt tham gia',
-            data: data.progress.topTrending.data,
-            backgroundColor: chartPalette[0],
-            borderRadius: 4
-          }]
+          labels: durationData.labels,
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Thời gian học (phút)',
+              data: durationData.studyMinutes,
+              backgroundColor: 'rgba(59, 130, 246, 0.75)',
+              borderRadius: 6,
+              yAxisID: 'y'
+            },
+            {
+              type: 'line',
+              label: 'Học viên hoạt động',
+              data: durationData.activeUsers,
+              borderColor: '#10b981',
+              backgroundColor: '#10b981',
+              borderWidth: 3,
+              pointRadius: 4,
+              pointBackgroundColor: '#10b981',
+              tension: 0.3,
+              yAxisID: 'y1'
+            }
+          ]
         },
         options: {
-          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: { usePointStyle: true, boxWidth: 8, padding: 16 }
+            }
+          },
           scales: {
-            x: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
-            y: { grid: { display: false } }
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              beginAtZero: true,
+              grid: { color: gridColor },
+              title: { display: true, text: 'Phút' }
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              beginAtZero: true,
+              grid: { drawOnChartArea: false },
+              ticks: { precision: 0 },
+              title: { display: true, text: 'Người' }
+            },
+            x: { grid: { display: false } }
           }
         }
       });

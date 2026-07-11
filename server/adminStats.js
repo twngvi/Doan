@@ -276,6 +276,122 @@ function getAdminDashboardChartsData() {
     const pctMatching = totalFeatures > 0 ? Number(((countMatching / totalFeatures) * 100).toFixed(1)) : 25;
     const pctCodeGame = totalFeatures > 0 ? Number((100 - pctLesson - pctQuiz - pctMatching).toFixed(1)) : 25;
 
+    // ==========================================
+    // NHÓM 3: THÓI QUEN HỌC TẬP (Study Habits)
+    // ==========================================
+    // 1. Khung giờ học phổ biến (24h: 00:00 - 23:59)
+    const peakHoursData = new Array(24).fill(0);
+    // 2. Mức độ học theo ngày trong tuần (Thứ 2 - CN)
+    const daysOfWeekData = new Array(7).fill(0);
+    // 3. Thời gian học 7 ngày gần nhất
+    const studyMinutes7Days = new Array(7).fill(0);
+    const activeUsers7DaysMap = [new Set(), new Set(), new Set(), new Set(), new Set(), new Set(), new Set()];
+
+    if (answerData.length > 1) {
+      const h = answerData[0].map(x => String(x || "").trim());
+      const dateCol = h.indexOf("answeredAt");
+      const timeTakenCol = h.indexOf("timeTaken");
+      const userCol = h.indexOf("userId");
+
+      if (dateCol !== -1) {
+        for (let i = 1; i < answerData.length; i++) {
+          const valDate = answerData[i][dateCol];
+          if (!valDate) continue;
+          const ansDate = valDate instanceof Date ? valDate : new Date(valDate);
+          if (isNaN(ansDate.getTime())) continue;
+
+          // Khung giờ 0-23
+          const hour = ansDate.getHours();
+          if (hour >= 0 && hour < 24) {
+            peakHoursData[hour]++;
+          }
+
+          // Ngày trong tuần (Thứ 2 -> CN)
+          const day = ansDate.getDay();
+          const dayIdx = day === 0 ? 6 : day - 1;
+          daysOfWeekData[dayIdx]++;
+
+          // 7 ngày gần nhất
+          const diffDays = Math.floor((nowTime - ansDate.getTime()) / DAY_MS);
+          if (diffDays >= 0 && diffDays < 7) {
+            const idx7 = 6 - diffDays;
+            const sec = timeTakenCol !== -1 ? Number(answerData[i][timeTakenCol]) || 30 : 30;
+            studyMinutes7Days[idx7] += Math.round(sec / 60);
+            if (userCol !== -1 && answerData[i][userCol]) {
+              activeUsers7DaysMap[idx7].add(String(answerData[i][userCol]));
+            }
+          }
+        }
+      }
+    }
+
+    // Cộng thêm thời gian học thực tế từ bảng Feature_Activity_Logs (Lesson, Matching, Code Game)
+    if (featureData.length > 1) {
+      const hF = featureData[0].map(x => String(x || "").trim());
+      const cDate = hF.indexOf("date");
+      const cTime = hF.indexOf("timestamp");
+      const cType = hF.indexOf("featureType");
+      const cUser = hF.indexOf("userId");
+
+      for (let i = 1; i < featureData.length; i++) {
+        const row = featureData[i];
+        const valDate = row[cTime] || row[cDate];
+        if (!valDate) continue;
+        const fDate = valDate instanceof Date ? valDate : new Date(valDate);
+        if (isNaN(fDate.getTime())) continue;
+
+        const hour = fDate.getHours();
+        if (hour >= 0 && hour < 24) peakHoursData[hour]++;
+
+        const day = fDate.getDay();
+        const dayIdx = day === 0 ? 6 : day - 1;
+        daysOfWeekData[dayIdx]++;
+
+        const diffDays = Math.floor((nowTime - fDate.getTime()) / DAY_MS);
+        if (diffDays >= 0 && diffDays < 7) {
+          const idx7 = 6 - diffDays;
+          const fType = String(row[cType] || "").trim().toLowerCase();
+          const estMin = fType === "lesson" ? 5 : 3;
+          studyMinutes7Days[idx7] += estMin;
+          if (cUser !== -1 && row[cUser]) {
+            activeUsers7DaysMap[idx7].add(String(row[cUser]));
+          }
+        }
+      }
+    }
+
+    const activeUsers7DaysList = activeUsers7DaysMap.map(set => set.size);
+
+    let maxTwoHourSum = 0;
+    let bestStartHour = -1;
+    for (let h = 0; h < 23; h++) {
+      const s = peakHoursData[h] + peakHoursData[h + 1];
+      if (s > maxTwoHourSum) {
+        maxTwoHourSum = s;
+        bestStartHour = h;
+      }
+    }
+    const peakHourRangeLabel = bestStartHour >= 0
+      ? `${String(bestStartHour).padStart(2, '0')}:00 - ${String(bestStartHour + 2).padStart(2, '0')}:00`
+      : "Chưa có";
+
+    const dayNamesVN = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "CN"];
+    let maxDayVal = 0;
+    let topDayIdx = -1;
+    for (let d = 0; d < 7; d++) {
+      if (daysOfWeekData[d] > maxDayVal) {
+        maxDayVal = daysOfWeekData[d];
+        topDayIdx = d;
+      }
+    }
+    const topDayLabel = topDayIdx >= 0 ? dayNamesVN[topDayIdx] : "Chưa có";
+
+    const sumMinutes7Days = studyMinutes7Days.reduce((a, b) => a + b, 0);
+    const totalStudyHoursLabel = `${(sumMinutes7Days / 60).toFixed(1)} giờ`;
+    const sumActiveUsers7Days = activeUsers7DaysList.reduce((a, b) => a + b, 0);
+    const avgMinutesPerDayVal = sumActiveUsers7Days > 0 ? Math.round(sumMinutes7Days / sumActiveUsers7Days) : 0;
+    const avgMinutesPerDayLabel = `${avgMinutesPerDayVal} phút`;
+
     return {
       success: true,
       data: {
@@ -304,7 +420,27 @@ function getAdminDashboardChartsData() {
             }
           }
         },
-        // Nhóm 2: Tiến độ học
+        // Nhóm 3: Thói quen học tập
+        studyHabits: {
+          peakHours: {
+            labels: ["0h", "1h", "2h", "3h", "4h", "5h", "6h", "7h", "8h", "9h", "10h", "11h", "12h", "13h", "14h", "15h", "16h", "17h", "18h", "19h", "20h", "21h", "22h", "23h"],
+            data: peakHoursData,
+            peakHourRangeLabel: peakHourRangeLabel
+          },
+          daysOfWeek: {
+            labels: dayNamesVN,
+            data: daysOfWeekData,
+            topDayLabel: topDayLabel
+          },
+          last7DaysDuration: {
+            labels: dateKeys7Days,
+            studyMinutes: studyMinutes7Days,
+            activeUsers: activeUsers7DaysList,
+            totalStudyHoursLabel: totalStudyHoursLabel,
+            avgMinutesPerDayLabel: avgMinutesPerDayLabel
+          }
+        },
+        // Tiến độ học (dự phòng)
         progress: {
           levelDistribution: {
             labels: levelLabels.length > 0 ? levelLabels : ["Level 1"],
@@ -317,7 +453,7 @@ function getAdminDashboardChartsData() {
             data: sortedTrending.map(t => t.value)
           }
         },
-        // Nhóm 3: Kết quả học tập
+        // Nhóm 4: Kết quả học tập
         results: {
           avgAccuracy,
           passRate,
