@@ -306,3 +306,33 @@ function fixMissingPlayerIds() {
     message: "Đã thêm playerId cho các user bị thiếu."
   };
 }
+
+/**
+ * Log a feature activity to the central Feature_Activity_Logs sheet in Master DB
+ * @param {string} userId - User ID or Email
+ * @param {string} featureType - 'lesson' | 'quiz' | 'matching' | 'code_game'
+ * @param {string} itemId - Topic or item ID
+ */
+function logFeatureActivityToMaster(userId, featureType, itemId) {
+  try {
+    const masterDb = getOrCreateDatabase();
+    if (!masterDb) return;
+    let sheet = masterDb.getSheetByName("Feature_Activity_Logs");
+    if (!sheet) {
+      sheet = masterDb.insertSheet("Feature_Activity_Logs");
+      sheet.appendRow(["date", "timestamp", "userId", "featureType", "itemId"]);
+      const headerRange = sheet.getRange(1, 1, 1, 5);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#3B82F6");
+      headerRange.setFontColor("white");
+      sheet.setFrozenRows(1);
+    }
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timeStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    sheet.appendRow([dateStr, timeStr, String(userId || ""), String(featureType || ""), String(itemId || "")]);
+  } catch (err) {
+    Logger.log("⚠️ Error logging Feature_Activity_Logs: " + err.toString());
+  }
+}

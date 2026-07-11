@@ -2807,6 +2807,16 @@ function saveActivityLog(data) {
 
     invalidateDashboardCachesByEmail(userEmail, false);
 
+    try {
+      const featureMap = {
+        "Learning": "lesson",
+        "MCQ": "quiz",
+        "Matching": "matching"
+      };
+      const featureType = featureMap[data.type] || "lesson";
+      logFeatureActivityToMaster(userEmail, featureType, data.topicId || "");
+    } catch(errLog) {}
+
     Logger.log("✅ Activity saved: " + data.type + " - " + data.topicTitle);
     return { success: true };
   } catch (error) {

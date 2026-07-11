@@ -26,6 +26,7 @@
   let topTrendingChart = null;
   let hardestTopicsChart = null;
   let dailyActivityChart = null;
+  let featureEngagementChart = null;
 
   function getOnlineStatsCurrentUser() {
     try {
@@ -176,8 +177,16 @@
       setText('valActive7Days', data.overview.active7Days || 0);
       setText('valDisabled', data.overview.disabledLearners || 0);
     }
+
+    // Nhóm 2: Tương tác tính năng
+    if (data.featureEngagement && data.featureEngagement.distribution) {
+      setText('valPctLesson', `${data.featureEngagement.distribution.lesson || 0}%`);
+      setText('valPctQuiz', `${data.featureEngagement.distribution.quiz || 0}%`);
+      setText('valPctMatching', `${data.featureEngagement.distribution.matching || 0}%`);
+      setText('valPctCodeGame', `${data.featureEngagement.distribution.codeGame || 0}%`);
+    }
     
-    // Nhóm 2
+    // Nhóm 3: Tiến độ học
     if (data.progress) {
       setText('valTopicsCompleted', data.progress.topicsCompleted || 0);
       setText('valCompletionRate', `${data.progress.completionRate || 0}%`);
@@ -213,6 +222,61 @@
       primaryColor,
       secondaryColor
     ];
+
+    // 0. Biểu đồ cột chồng Tương tác tính năng (7 ngày)
+    const ctxFeature = document.getElementById('featureEngagementChart');
+    if (ctxFeature && data.featureEngagement && data.featureEngagement.timeline7Days) {
+      if (featureEngagementChart) featureEngagementChart.destroy();
+      const timeline = data.featureEngagement.timeline7Days;
+
+      featureEngagementChart = new Chart(ctxFeature, {
+        type: 'bar',
+        data: {
+          labels: timeline.labels,
+          datasets: [
+            {
+              label: '📘 Lesson',
+              data: timeline.datasets.lesson,
+              backgroundColor: '#3b82f6',
+              borderRadius: 4
+            },
+            {
+              label: '📙 Quiz',
+              data: timeline.datasets.quiz,
+              backgroundColor: '#f59e0b',
+              borderRadius: 4
+            },
+            {
+              label: '📗 Matching',
+              data: timeline.datasets.matching,
+              backgroundColor: '#10b981',
+              borderRadius: 4
+            },
+            {
+              label: '🎮 Code Game',
+              data: timeline.datasets.codeGame,
+              backgroundColor: '#8b5cf6',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: { usePointStyle: true, boxWidth: 8, padding: 16 }
+            }
+          },
+          scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } }
+          }
+        }
+      });
+    }
 
     // 1. Phân bố Level (Bar)
     const ctxLevel = document.getElementById('levelDistributionChart');

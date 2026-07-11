@@ -147,6 +147,9 @@ function saveCodeArrangementProgress(topicId, arrangementId) {
     } else {
       sheet.getRange(rowIndex, 3, 1, 2).setValues([["completed", now]]);
     }
+    try {
+      logFeatureActivityToMaster(userEmail, "code_game", arrangementId || topicId);
+    } catch (eLog) {}
     
     // Also mark challengeDone in Topic_Progress if possible
     try {
