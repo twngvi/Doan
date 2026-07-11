@@ -469,9 +469,24 @@
       });
     }
 
-    // 4. Lượt làm Quiz/Matching theo ngày (Line)
+    // 4. Hoạt động người dùng theo ngày / theo tháng (Line)
     const ctxActivity = document.getElementById('dailyActivityChart');
     if (ctxActivity && data.recentActivity && data.recentActivity.dailyTimeline) {
+      window.__chart4RecentActivity = data.recentActivity;
+
+      const monthSelect = document.getElementById('monthFilterChart4');
+      if (monthSelect) {
+        let opts = `<option value="30days">30 ngày qua</option>`;
+        if (data.recentActivity.monthlyTimelines) {
+          Object.keys(data.recentActivity.monthlyTimelines).forEach(mk => {
+            const mt = data.recentActivity.monthlyTimelines[mk];
+            opts += `<option value="${mk}">${mt.label}</option>`;
+          });
+        }
+        monthSelect.innerHTML = opts;
+        monthSelect.value = "30days";
+      }
+
       if (dailyActivityChart) dailyActivityChart.destroy();
       
       const gradient = ctxActivity.getContext('2d').createLinearGradient(0, 0, 0, 400);
@@ -483,7 +498,7 @@
         data: {
           labels: data.recentActivity.dailyTimeline.labels,
           datasets: [{
-            label: 'Tổng lượt tương tác học tập',
+            label: 'Số lượng người dùng hoạt động',
             data: data.recentActivity.dailyTimeline.data,
             borderColor: accentColor,
             backgroundColor: gradient,
@@ -508,6 +523,37 @@
       });
     }
   }
+
+  window.filterChart4ByMonth = function(monthKey) {
+    if (!window.__chart4RecentActivity || !dailyActivityChart) return;
+    const rec = window.__chart4RecentActivity;
+    let labels = [];
+    let dataArr = [];
+    let titleText = "Số lượng người dùng hoạt động từng ngày (30 ngày qua)";
+    let subText = "Biểu đồ thống kê số học viên truy cập và học tập mỗi ngày trong 30 ngày gần nhất";
+
+    if (monthKey === "30days" && rec.dailyTimeline) {
+      labels = rec.dailyTimeline.labels;
+      dataArr = rec.dailyTimeline.data;
+    } else if (rec.monthlyTimelines && rec.monthlyTimelines[monthKey]) {
+      const mt = rec.monthlyTimelines[monthKey];
+      labels = mt.labels;
+      dataArr = mt.data;
+      titleText = `Số lượng người dùng hoạt động từng ngày (${mt.label})`;
+      subText = `Biểu đồ thống kê số học viên truy cập và học tập mỗi ngày trong ${mt.label.toLowerCase()}`;
+    } else {
+      return;
+    }
+
+    const titleEl = document.getElementById('chart4Title');
+    const subEl = document.getElementById('chart4Subtitle');
+    if (titleEl) titleEl.textContent = titleText;
+    if (subEl) subEl.textContent = subText;
+
+    dailyActivityChart.data.labels = labels;
+    dailyActivityChart.data.datasets[0].data = dataArr;
+    dailyActivityChart.update();
+  };
 
 
 

@@ -392,6 +392,115 @@ function getAdminDashboardChartsData() {
     const avgMinutesPerDayVal = sumActiveUsers7Days > 0 ? Math.round(sumMinutes7Days / sumActiveUsers7Days) : 0;
     const avgMinutesPerDayLabel = `${avgMinutesPerDayVal} phút`;
 
+    // Tính toán số lượng người dùng hoạt động: 30 ngày gần nhất + 6 tháng gần nhất
+    const dateKeys30Days = [];
+    const dailyUsers30Map = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(nowTime - i * DAY_MS);
+      const dk = `${d.getDate()}/${d.getMonth() + 1}`;
+      dateKeys30Days.push(dk);
+      dailyUsers30Map[dk] = new Set();
+    }
+
+    const monthlyTimelines = {};
+    const currYear = now.getFullYear();
+    const currMonth = now.getMonth();
+    for (let m = 0; m < 6; m++) {
+      let targetMonth = currMonth - m;
+      let targetYear = currYear;
+      while (targetMonth < 0) {
+        targetMonth += 12;
+        targetYear -= 1;
+      }
+      const monthKey = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
+      const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+      const labels = [];
+      const dayUsersMap = {};
+      for (let day = 1; day <= daysInMonth; day++) {
+        labels.push(`${day}/${targetMonth + 1}`);
+        dayUsersMap[day] = new Set();
+      }
+      monthlyTimelines[monthKey] = {
+        label: `Tháng ${String(targetMonth + 1).padStart(2, '0')}/${targetYear}`,
+        labels: labels,
+        dayUsersMap: dayUsersMap
+      };
+    }
+
+    if (answerData.length > 1) {
+      const hAns = answerData[0].map(x => String(x || "").trim());
+      const cDateAns = hAns.indexOf("answeredAt");
+      const cUserAns = hAns.indexOf("userId") !== -1 ? hAns.indexOf("userId") : hAns.indexOf("userEmail");
+      if (cDateAns !== -1) {
+        for (let i = 1; i < answerData.length; i++) {
+          const val = answerData[i][cDateAns];
+          if (!val) continue;
+          const dt = val instanceof Date ? val : new Date(val);
+          if (!isNaN(dt.getTime())) {
+            if (nowTime - dt.getTime() <= THIRTY_DAYS_MS) {
+              const dk = `${dt.getDate()}/${dt.getMonth() + 1}`;
+              if (dailyUsers30Map[dk]) {
+                const uid = cUserAns !== -1 && answerData[i][cUserAns] ? String(answerData[i][cUserAns]).trim() : `ans_${i}`;
+                dailyUsers30Map[dk].add(uid);
+              }
+            }
+            const mk = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            if (monthlyTimelines[mk]) {
+              const uid = cUserAns !== -1 && answerData[i][cUserAns] ? String(answerData[i][cUserAns]).trim() : `ans_${i}`;
+              const dayNum = dt.getDate();
+              if (monthlyTimelines[mk].dayUsersMap[dayNum]) {
+                monthlyTimelines[mk].dayUsersMap[dayNum].add(uid);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (featureData.length > 1) {
+      const hFeat = featureData[0].map(x => String(x || "").trim());
+      const cDateFeat = hFeat.indexOf("timestamp") !== -1 ? hFeat.indexOf("timestamp") : (hFeat.indexOf("date") !== -1 ? hFeat.indexOf("date") : -1);
+      const cUserFeat = hFeat.indexOf("userId") !== -1 ? hFeat.indexOf("userId") : hFeat.indexOf("userEmail");
+      if (cDateFeat !== -1) {
+        for (let i = 1; i < featureData.length; i++) {
+          const val = featureData[i][cDateFeat];
+          if (!val) continue;
+          const dt = val instanceof Date ? val : new Date(val);
+          if (!isNaN(dt.getTime())) {
+            if (nowTime - dt.getTime() <= THIRTY_DAYS_MS) {
+              const dk = `${dt.getDate()}/${dt.getMonth() + 1}`;
+              if (dailyUsers30Map[dk]) {
+                const uid = cUserFeat !== -1 && featureData[i][cUserFeat] ? String(featureData[i][cUserFeat]).trim() : `feat_${i}`;
+                dailyUsers30Map[dk].add(uid);
+              }
+            }
+            const mk = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            if (monthlyTimelines[mk]) {
+              const uid = cUserFeat !== -1 && featureData[i][cUserFeat] ? String(featureData[i][cUserFeat]).trim() : `feat_${i}`;
+              const dayNum = dt.getDate();
+              if (monthlyTimelines[mk].dayUsersMap[dayNum]) {
+                monthlyTimelines[mk].dayUsersMap[dayNum].add(uid);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const monthlyTimelinesData = {};
+    Object.keys(monthlyTimelines).forEach(mk => {
+      const mt = monthlyTimelines[mk];
+      const dataArr = [];
+      for (let day = 1; day <= mt.labels.length; day++) {
+        dataArr.push((mt.dayUsersMap[day] || new Set()).size);
+      }
+      monthlyTimelinesData[mk] = {
+        label: mt.label,
+        labels: mt.labels,
+        data: dataArr
+      };
+    });
+
     return {
       success: true,
       data: {
@@ -462,18 +571,16 @@ function getAdminDashboardChartsData() {
             data: sortedHardest.map(t => t.value)
           }
         },
-        // Nhóm 5: Hoạt động gần đây
+        // Nhóm 4 (hiển thị): Hoạt động gần đây
         recentActivity: {
           newLearners: newLearners > 0 ? newLearners : Math.min(totalLearners, 2),
           returningLearners: active7Days > 0 ? active7Days : Math.min(totalLearners, Math.max(1, Math.floor(totalLearners * 0.7))),
           churnLearners: churnLearners > 0 ? churnLearners : Math.max(0, totalLearners - (active7Days > 0 ? active7Days : Math.floor(totalLearners * 0.7))),
           dailyTimeline: {
-            labels: dateKeys7Days,
-            data: dateKeys7Days.map(k => {
-              const fd = featureDaily[k] || { lesson: 0, quiz: 0, matching: 0, codeGame: 0 };
-              return fd.lesson + fd.quiz + fd.matching + fd.codeGame + (dailyActivity[k] || 0);
-            })
-          }
+            labels: dateKeys30Days,
+            data: dateKeys30Days.map(k => dailyUsers30Map[k].size)
+          },
+          monthlyTimelines: monthlyTimelinesData
         }
       }
     };
