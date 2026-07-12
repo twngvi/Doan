@@ -852,7 +852,9 @@ function previewContent() {
   document.getElementById('previewTitle').textContent = title;
 
   // Set preview body content
-  document.getElementById('previewBody').innerHTML = content;
+  const previewBody = document.getElementById('previewBody');
+  previewBody.innerHTML = content;
+  enhanceTopicEditorPreviewContent(previewBody);
 
   // Show fullscreen preview overlay
   const overlay = document.getElementById('previewModal');
@@ -861,7 +863,98 @@ function previewContent() {
 }
 
 /**
- * Cleanup visual blocks for preview (remove delete buttons, contenteditable, inline colors)
+ * Enhance Topic Editor Preview content to match exact User side formatting
+ */
+function enhanceTopicEditorPreviewContent(container) {
+  if (!container) return;
+
+  // 1. Format bullet & numbering lists
+  formatTopicEditorPreviewBullets(container);
+
+  // 2. Normalize empty paragraphs (spacers) identical to User side
+  const headingsAndParagraphs = container.querySelectorAll("h1, h2, h3, h4, h5, h6, p");
+  headingsAndParagraphs.forEach(function(el) {
+    el.innerHTML = el.innerHTML
+      .replace(/\s+/g, " ")
+      .trim();
+  });
+
+  const paragraphs = container.querySelectorAll("p");
+  paragraphs.forEach(function(p) {
+    const text = p.textContent.trim();
+    const hasOnlyBr = p.children.length === 1 && p.children[0].tagName === "BR" && text === "";
+    if (text === "" || hasOnlyBr) {
+      p.classList.add("spacer");
+      p.innerHTML = "&nbsp;";
+    }
+  });
+}
+
+function formatTopicEditorPreviewBullets(container) {
+  const BULLET_CHARS = ['•', '●', '▪', '■', '-', '–', '—', '*'];
+  const DASH_CHARS = ['-', '–', '—'];
+  const NUMBER_REGEX = /^(\d+)[\.\)]\s+(.+)$/;
+  const children = Array.from(container.children);
+  let listBuffer = [];
+  let bufferType = null;
+
+  function flushListBuffer() {
+    if (listBuffer.length === 0) return;
+    const listTag = bufferType === 'number' ? 'ol' : 'ul';
+    const listEl = document.createElement(listTag);
+    listEl.className = 'doc-formatted-list ' + (bufferType === 'number' ? 'doc-number-list' : 'doc-bullet-list');
+
+    listBuffer.forEach(function(item) {
+      const li = document.createElement('li');
+      li.innerHTML = item.content;
+      if (item.indent > 1) {
+        li.classList.add('doc-indent-' + Math.min(item.indent, 3));
+      }
+      listEl.appendChild(li);
+    });
+
+    listBuffer[0].element.parentNode.insertBefore(listEl, listBuffer[0].element);
+    listBuffer.forEach(function(item) { item.element.remove(); });
+    listBuffer = [];
+    bufferType = null;
+  }
+
+  children.forEach(function(el) {
+    if (el.tagName !== 'P') {
+      flushListBuffer();
+      return;
+    }
+    const text = el.textContent.trim();
+    if (!text) {
+      flushListBuffer();
+      return;
+    }
+
+    const numMatch = text.match(NUMBER_REGEX);
+    if (numMatch) {
+      if (bufferType && bufferType !== 'number') flushListBuffer();
+      bufferType = 'number';
+      let content = el.innerHTML.replace(/^(\d+)[\.\)]\s+/, '').trim();
+      listBuffer.push({ element: el, content: content, indent: 1 });
+      return;
+    }
+
+    const firstChar = text.charAt(0);
+    if (BULLET_CHARS.includes(firstChar)) {
+      if (bufferType && bufferType !== 'bullet') flushListBuffer();
+      bufferType = 'bullet';
+      let content = el.innerHTML.replace(/^[•●▪■\-–—*\s]+/, '').trim();
+      listBuffer.push({ element: el, content: content, indent: 1 });
+      return;
+    }
+
+    flushListBuffer();
+  });
+  flushListBuffer();
+}
+
+/**
+ * Cleanup visual blocks for preview (remove delete buttons, contenteditable, inline colors/margins)
  */
 function cleanupVisualBlocksForPreview(html) {
   const temp = document.createElement('div');
@@ -877,22 +970,28 @@ function cleanupVisualBlocksForPreview(html) {
     el.removeAttribute('contenteditable');
   });
 
-  // Strip inline color/background-color/font-family styles (editor uses black text on white bg)
-  // These would conflict with the dark-themed preview
+  // Strip inline styles that conflict with dark theme preview or paragraph spacing
   temp.querySelectorAll('[style]').forEach(function(el) {
-    let style = el.getAttribute('style');
-    if (style) {
-      // Remove color, background-color, background, font-family inline styles
-      style = style.replace(/\bcolor\s*:\s*[^;]+;?/gi, '');
-      style = style.replace(/\bbackground-color\s*:\s*[^;]+;?/gi, '');
-      style = style.replace(/\bbackground\s*:\s*[^;]+;?/gi, '');
-      style = style.replace(/\bfont-family\s*:\s*[^;]+;?/gi, '');
-      style = style.trim();
-      if (style) {
-        el.setAttribute('style', style);
-      } else {
-        el.removeAttribute('style');
-      }
+    const isListElement = el.tagName === "UL" || el.tagName === "OL" || el.tagName === "LI";
+    const style = el.getAttribute("style") || "";
+
+    const allowedProps = ["text-align", "width", "height", "max-width"];
+    if (isListElement) {
+      allowedProps.push("list-style-type", "list-style", "padding-left", "margin-left");
+    }
+
+    const newStyle = allowedProps
+      .map(function(prop) {
+        const match = style.match(new RegExp(`${prop}\\s*:\\s*[^;]+`, "i"));
+        return match ? match[0] : null;
+      })
+      .filter(Boolean)
+      .join("; ");
+
+    if (newStyle) {
+      el.setAttribute("style", newStyle);
+    } else {
+      el.removeAttribute("style");
     }
   });
 

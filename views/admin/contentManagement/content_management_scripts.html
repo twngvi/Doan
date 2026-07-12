@@ -747,7 +747,9 @@ function viewTopic(topicId) {
         // RENDER: Convert markers to high-fidelity blocks
         const finalHtml = renderBlockMarkersAsClient(cleanHtml);
         
-        document.getElementById('preview-topic-content').innerHTML = finalHtml;
+        const previewContentArea = document.getElementById('preview-topic-content');
+        previewContentArea.innerHTML = finalHtml;
+        enhanceAdminPreviewContent(previewContentArea);
       } else {
         document.getElementById('preview-topic-content').innerHTML = `
           <div class="cm-preview-empty">
@@ -796,20 +798,188 @@ function closeContentPreviewModal() {
 }
 
 /**
- * Strip inline styles from HTML (color, background, font-family)
- * Prevents light theme styles from breaking dark theme preview
+ * Strip inline styles from HTML (color, background, font-family, margins, line-height)
+ * Prevents Google Doc inline styles from overriding uniform paragraph spacing
  */
 function stripInlineStyles(html) {
   const temp = document.createElement('div');
   temp.innerHTML = html;
   const elements = temp.querySelectorAll('[style]');
   elements.forEach(el => {
-    el.style.color = '';
-    el.style.backgroundColor = '';
-    el.style.background = '';
-    el.style.fontFamily = '';
+    const isListElement = el.tagName === "UL" || el.tagName === "OL" || el.tagName === "LI";
+    const style = el.getAttribute("style") || "";
+
+    const allowedProps = ["text-align", "width", "height", "max-width"];
+    if (isListElement) {
+      allowedProps.push("list-style-type", "list-style", "padding-left", "margin-left");
+    }
+
+    const newStyle = allowedProps
+      .map(prop => {
+        const match = style.match(new RegExp(`${prop}\\s*:\\s*[^;]+`, "i"));
+        return match ? match[0] : null;
+      })
+      .filter(Boolean)
+      .join("; ");
+
+    if (newStyle) {
+      el.setAttribute("style", newStyle);
+    } else {
+      el.removeAttribute("style");
+    }
   });
   return temp.innerHTML;
+}
+
+/**
+ * Enhance Admin Preview content to match exact User side formatting
+ */
+function enhanceAdminPreviewContent(container) {
+  if (!container) return;
+
+  // 1. Format bullet & numbering lists from Google Doc paragraphs (<p> starting with •, -, 1., etc.)
+  formatAdminPreviewBullets(container);
+
+  // 1.5 Normalize empty paragraphs (spacers) identical to User side
+  const headingsAndParagraphs = container.querySelectorAll("h1, h2, h3, h4, h5, h6, p");
+  headingsAndParagraphs.forEach((el) => {
+    el.innerHTML = el.innerHTML
+      .replace(/\s+/g, " ")
+      .trim();
+  });
+
+  const paragraphs = container.querySelectorAll("p");
+  paragraphs.forEach((p) => {
+    if (!p.textContent.trim() && !p.querySelector("img")) {
+      p.classList.add("spacer");
+    }
+  });
+
+  // 2. Enhance Code Blocks (VS Code style wrapper with copy button)
+  const preElements = container.querySelectorAll('pre');
+  preElements.forEach(pre => {
+    if (pre.closest('.code-block-wrapper') || pre.closest('.terminal-block')) return;
+    const codeEl = pre.querySelector('code') || pre;
+    const codeText = codeEl.textContent || '';
+    if (!codeText.trim()) return;
+
+    let language = 'CODE';
+    const classList = (codeEl.className || '') + ' ' + (pre.className || '');
+    const match = classList.match(/language-(\w+)/i);
+    if (match && match[1]) {
+      language = match[1].toUpperCase();
+    } else if (codeText.includes('function') || codeText.includes('const ') || codeText.includes('let ')) {
+      language = 'JAVASCRIPT';
+    } else if (codeText.includes('def ') || codeText.includes('import ') || codeText.includes('print(')) {
+      language = 'PYTHON';
+    } else if (codeText.includes('<div') || codeText.includes('<html')) {
+      language = 'HTML';
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block-wrapper';
+    wrapper.innerHTML = `
+      <div class="code-block-header">
+        <span class="code-block-lang">${language}</span>
+        <button class="btn-copy-code" onclick="copyAdminPreviewCode(this)">
+          Sao chép
+        </button>
+      </div>
+      <pre><code>${escapeHtmlAdminPreview(codeText.trim())}</code></pre>
+    `;
+    pre.parentNode.replaceChild(wrapper, pre);
+  });
+
+  // 3. Enhance Blockquotes with emojis into Callouts
+  const blockquotes = container.querySelectorAll('blockquote');
+  blockquotes.forEach(bq => {
+    const text = bq.textContent || '';
+    let calloutClass = null;
+    if (text.includes('💡')) calloutClass = 'callout-tip';
+    else if (text.includes('⚠️')) calloutClass = 'callout-warning';
+    else if (text.includes('📝')) calloutClass = 'callout-note';
+    else if (text.includes('🎯')) calloutClass = 'callout-checkpoint';
+    else if (text.includes('✏️')) calloutClass = 'callout-task';
+
+    if (calloutClass) {
+      const div = document.createElement('div');
+      div.className = calloutClass;
+      div.innerHTML = bq.innerHTML;
+      bq.parentNode.replaceChild(div, bq);
+    }
+  });
+
+  // 4. Enhance Tables
+  const tables = container.querySelectorAll('table');
+  tables.forEach(tbl => {
+    tbl.style.width = '100%';
+    tbl.style.borderCollapse = 'collapse';
+    tbl.style.margin = '1.5rem 0';
+  });
+}
+
+function formatAdminPreviewBullets(container) {
+  const BULLET_CHARS = ['•', '●', '▪', '■', '-', '–', '—', '*'];
+  const children = Array.from(container.children);
+  let bulletBuffer = [];
+
+  function flushBulletBuffer() {
+    if (bulletBuffer.length === 0) return;
+    const ul = document.createElement('ul');
+    bulletBuffer.forEach(item => {
+      const li = document.createElement('li');
+      li.innerHTML = item.content;
+      ul.appendChild(li);
+    });
+    bulletBuffer[0].element.parentNode.insertBefore(ul, bulletBuffer[0].element);
+    bulletBuffer.forEach(item => item.element.remove());
+    bulletBuffer = [];
+  }
+
+  children.forEach(el => {
+    if (el.tagName !== 'P') {
+      flushBulletBuffer();
+      return;
+    }
+    const text = el.textContent.trim();
+    if (!text) {
+      flushBulletBuffer();
+      return;
+    }
+    const firstChar = text.charAt(0);
+    if (BULLET_CHARS.includes(firstChar)) {
+      let content = el.innerHTML.replace(/^[•●▪■\-–—*\s]+/, '').trim();
+      bulletBuffer.push({ element: el, content });
+    } else {
+      flushBulletBuffer();
+    }
+  });
+  flushBulletBuffer();
+}
+
+function escapeHtmlAdminPreview(str) {
+  return str.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+}
+
+function copyAdminPreviewCode(btn) {
+  const wrapper = btn.closest('.code-block-wrapper');
+  if (!wrapper) return;
+  const codeEl = wrapper.querySelector('pre code') || wrapper.querySelector('pre');
+  if (!codeEl) return;
+
+  navigator.clipboard.writeText(codeEl.textContent || '').then(() => {
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '✅ Đã chép';
+    setTimeout(() => { btn.innerHTML = oldText; }, 2000);
+  });
+}
+
+function copyPreviewCode(btn) {
+  copyAdminPreviewCode(btn);
 }
 
 /**
