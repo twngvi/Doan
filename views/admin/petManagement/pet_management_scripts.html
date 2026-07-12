@@ -519,30 +519,12 @@
     }
 
     function confirmUnsavedChangesAndContinue(sectionLabel, onSave, onDiscard) {
-      var section = String(sectionLabel || 'muc dang chinh sua');
-      requestDeleteConfirm('Ban co thay doi chua luu o ' + section + '. Ban co muon luu truoc khi tiep tuc?', {
-        title: 'Thay doi chua luu',
-        confirmText: 'Luu',
-        cancelText: 'Khong luu'
-      }).then(function (shouldSave) {
-        if (shouldSave) {
-          var didSave = typeof onSave === 'function' ? !!onSave() : true;
-          if (didSave && typeof onDiscard === 'function') {
-            onDiscard();
-          }
-          return;
-        }
-
-        requestDeleteConfirm('Ban chac chan muon bo thay doi chua luu?', {
-          title: 'Xac nhan bo thay doi',
-          confirmText: 'Bo thay doi',
-          cancelText: 'Quay lai'
-        }).then(function (shouldDiscard) {
-          if (shouldDiscard && typeof onDiscard === 'function') {
-            onDiscard();
-          }
-        });
-      });
+      if (typeof onSave === 'function') {
+        onSave();
+      }
+      if (typeof onDiscard === 'function') {
+        onDiscard();
+      }
     }
 
     function runAfterUnsavedEditorsResolved(onContinue) {
@@ -1454,7 +1436,7 @@
 
       updateCounts();
       renderAllPmItems();
-      persistPetVariantsToBackend(opts.showNotice !== false, {
+      persistPetVariantsToBackend(false, {
         onSuccess: function (result) {
           if (result && result.success) {
             rememberVariantSavedSnapshot();
@@ -1464,9 +1446,6 @@
 
       if (state.variantEditor.isNew && opts.reopenAfterSave !== false) {
         openPmVariantEditor(-1, true, currentPreviewLevel);
-        if (opts.showNotice !== false && typeof window.showNotification === 'function') {
-          window.showNotification('Da them hinh dang PET moi. San sang them tiep', 'success');
-        }
         return true;
       }
 
@@ -1605,9 +1584,7 @@
         return;
       }
 
-      if (typeof window.showNotification === 'function') {
-        window.showNotification('Đang tải ảnh lên...', 'info');
-      }
+      // Notification removed
 
       var reader = new FileReader();
       reader.onload = function (e) {
@@ -1624,9 +1601,7 @@
                 }
                 updateSelectedImageFileLabel(fileName);
                 updateEditorImagePreview();
-                if (typeof window.showNotification === 'function') {
-                  window.showNotification('Tải ảnh lên thành công', 'success');
-                }
+                // Success notification removed
               } else {
                 if (typeof window.showNotification === 'function') {
                   window.showNotification('Lỗi khi tải ảnh: ' + result.message, 'error');
@@ -2011,9 +1986,7 @@
         var fileNameEl = document.getElementById(fileNameId);
         if (fileNameEl) fileNameEl.textContent = fileName;
 
-        if (typeof window.showNotification === 'function') {
-          window.showNotification('Đang tải ảnh lên...', 'info');
-        }
+        // Notification removed
 
         var reader = new FileReader();
         reader.onload = function (e) {
@@ -2035,9 +2008,7 @@
                   }
                   syncVariantDraftFromForm();
                   updateVariantPreview();
-                  if (typeof window.showNotification === 'function') {
-                    window.showNotification('Tải ảnh lên thành công', 'success');
-                  }
+                  // Success notification removed
                 } else {
                   if (typeof window.showNotification === 'function') {
                     window.showNotification('Lỗi khi tải ảnh: ' + result.message, 'error');
@@ -2184,7 +2155,7 @@
       updateCounts();
       renderAllPmItems();
       // closePmEditor(); - Bỏ đóng sidebar khi lưu theo yêu cầu
-      persistPetItemsToBackend(opts.showNotice !== false, {
+      persistPetItemsToBackend(false, {
         onSuccess: function (result) {
           if (result && result.success) {
             rememberItemSavedSnapshot();
@@ -2194,9 +2165,6 @@
 
       if (isNew && opts.reopenAfterSave !== false) {
         startCreateNewItem(type);
-        if (opts.showNotice !== false && typeof window.showNotification === 'function') {
-          window.showNotification('Da them moi. San sang them tiep', 'success');
-        }
       }
 
       if (typeof opts.afterSave === 'function') {
