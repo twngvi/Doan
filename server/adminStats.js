@@ -283,15 +283,19 @@ function getAdminDashboardChartsData() {
     const peakHoursData = new Array(24).fill(0);
     // 2. Mức độ học theo ngày trong tuần (Thứ 2 - CN)
     const daysOfWeekData = new Array(7).fill(0);
-    // 3. Thời gian học 7 ngày gần nhất
-    const studyMinutes7Days = new Array(7).fill(0);
+    // 3. Thời gian học 7 ngày gần nhất (chuẩn theo lịch ngày calendar date)
+    const studySeconds7Days = new Array(7).fill(0);
     const activeUsers7DaysMap = [new Set(), new Set(), new Set(), new Set(), new Set(), new Set(), new Set()];
+    const dateKeyToIdx7 = {};
+    dateKeys7Days.forEach((k, idx) => {
+      dateKeyToIdx7[k] = idx;
+    });
 
     if (answerData.length > 1) {
       const h = answerData[0].map(x => String(x || "").trim());
       const dateCol = h.indexOf("answeredAt");
       const timeTakenCol = h.indexOf("timeTaken");
-      const userCol = h.indexOf("userId");
+      const userCol = h.indexOf("userId") !== -1 ? h.indexOf("userId") : h.indexOf("userEmail");
 
       if (dateCol !== -1) {
         for (let i = 1; i < answerData.length; i++) {
@@ -311,12 +315,12 @@ function getAdminDashboardChartsData() {
           const dayIdx = day === 0 ? 6 : day - 1;
           daysOfWeekData[dayIdx]++;
 
-          // 7 ngày gần nhất
-          const diffDays = Math.floor((nowTime - ansDate.getTime()) / DAY_MS);
-          if (diffDays >= 0 && diffDays < 7) {
-            const idx7 = 6 - diffDays;
-            const sec = timeTakenCol !== -1 ? Number(answerData[i][timeTakenCol]) || 30 : 30;
-            studyMinutes7Days[idx7] += Math.round(sec / 60);
+          // 7 ngày gần nhất theo đúng lịch ngày
+          const dKey = `${ansDate.getDate()}/${ansDate.getMonth() + 1}`;
+          const idx7 = dateKeyToIdx7[dKey];
+          if (idx7 !== undefined) {
+            const sec = timeTakenCol !== -1 && Number(answerData[i][timeTakenCol]) > 0 ? Number(answerData[i][timeTakenCol]) : 45;
+            studySeconds7Days[idx7] += sec;
             if (userCol !== -1 && answerData[i][userCol]) {
               activeUsers7DaysMap[idx7].add(String(answerData[i][userCol]));
             }
@@ -331,7 +335,7 @@ function getAdminDashboardChartsData() {
       const cDate = hF.indexOf("date");
       const cTime = hF.indexOf("timestamp");
       const cType = hF.indexOf("featureType");
-      const cUser = hF.indexOf("userId");
+      const cUser = hF.indexOf("userId") !== -1 ? hF.indexOf("userId") : hF.indexOf("userEmail");
 
       for (let i = 1; i < featureData.length; i++) {
         const row = featureData[i];
@@ -347,12 +351,12 @@ function getAdminDashboardChartsData() {
         const dayIdx = day === 0 ? 6 : day - 1;
         daysOfWeekData[dayIdx]++;
 
-        const diffDays = Math.floor((nowTime - fDate.getTime()) / DAY_MS);
-        if (diffDays >= 0 && diffDays < 7) {
-          const idx7 = 6 - diffDays;
+        const dKey = `${fDate.getDate()}/${fDate.getMonth() + 1}`;
+        const idx7 = dateKeyToIdx7[dKey];
+        if (idx7 !== undefined) {
           const fType = String(row[cType] || "").trim().toLowerCase();
-          const estMin = fType === "lesson" ? 5 : 3;
-          studyMinutes7Days[idx7] += estMin;
+          const estSec = fType === "lesson" ? 300 : (fType === "code_game" || fType === "codegame" ? 240 : 180);
+          studySeconds7Days[idx7] += estSec;
           if (cUser !== -1 && row[cUser]) {
             activeUsers7DaysMap[idx7].add(String(row[cUser]));
           }
@@ -360,6 +364,7 @@ function getAdminDashboardChartsData() {
       }
     }
 
+    const studyMinutes7Days = studySeconds7Days.map(sec => Math.max(0, Math.round(sec / 60)));
     const activeUsers7DaysList = activeUsers7DaysMap.map(set => set.size);
 
     let maxTwoHourSum = 0;
