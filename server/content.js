@@ -3295,7 +3295,7 @@ function getDashboardData(userContext) {
 
     if (!noCache) {
       try {
-        const cachedLeaderboard = dashboardCache.get(DASHBOARD_LEADERBOARD_CACHE_KEY);
+        const cachedLeaderboard = dashboardCache.get("DASHBOARD_LEADERBOARD_CACHE_KEY_ALL");
         if (cachedLeaderboard) {
           leaderboardEntries = JSON.parse(cachedLeaderboard);
         }
@@ -3345,11 +3345,10 @@ function getDashboardData(userContext) {
       }
 
       leaderboardEntries.sort((a, b) => b.xp - a.xp);
-      leaderboardEntries = leaderboardEntries.slice(0, 10);
 
       try {
         dashboardCache.put(
-          DASHBOARD_LEADERBOARD_CACHE_KEY,
+          "DASHBOARD_LEADERBOARD_CACHE_KEY_ALL",
           JSON.stringify(leaderboardEntries),
           DASHBOARD_LEADERBOARD_CACHE_TTL_SECONDS,
         );
