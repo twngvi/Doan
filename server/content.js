@@ -1598,7 +1598,7 @@ function getDashboardCacheKeyForEmail_(email) {
   const normalized = String(email || "").trim().toLowerCase();
   if (!normalized) return "";
   return (
-    "dashboard_data_v4_" +
+    "dashboard_data_v5_" +
     Utilities.base64EncodeWebSafe(normalized).replace(/=+$/g, "")
   );
 }
@@ -3394,7 +3394,7 @@ function getDashboardData(userContext) {
       activities: activities,
       quests: quests,
       skillProgress: skillProgress,
-      leaderboard: leaderboard.slice(0, 10),
+      leaderboard: leaderboard,
       suggestion: suggestion,
     };
 
