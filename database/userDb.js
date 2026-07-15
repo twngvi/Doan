@@ -986,3 +986,124 @@ const FlashcardProgress = {
     }
   },
 };
+
+/**
+ * Dọn dẹp các sheet trống trong database của cá nhân lẻ
+ * (Mặc định xử lý cho file USER_DB_ttvdoan112233@gmail.com làm chuẩn)
+ */
+function cleanupSpecificUserDb() {
+  try {
+    const targetFileName = "USER_DB_ttvdoan112233@gmail.com";
+    const files = DriveApp.getFilesByName(targetFileName);
+    
+    if (!files.hasNext()) {
+      Logger.log("Không tìm thấy file: " + targetFileName);
+      return { success: false, message: "Không tìm thấy file" };
+    }
+    
+    const file = files.next();
+    const ss = SpreadsheetApp.openById(file.getId());
+    const sheets = ss.getSheets();
+    
+    const chatSheetNames = [
+      "FriendRequests", 
+      "Friends", 
+      "Conversations", 
+      "Messages", 
+      "Feature_Activity_Logs",
+      "Chat_History"
+    ];
+    let deletedCount = 0;
+    
+    for (let i = sheets.length - 1; i >= 0; i--) {
+      const sheet = sheets[i];
+      const sheetName = sheet.getName();
+      const lastRow = sheet.getLastRow();
+      
+      if (ss.getSheets().length <= 1) {
+        Logger.log("Không thể xóa sheet cuối cùng: " + sheetName);
+        break;
+      }
+      
+      // Chỉ xóa nếu trống
+      if (lastRow <= 1) {
+        if (chatSheetNames.includes(sheetName)) {
+          Logger.log("Đang xóa sheet chat TRỐNG: " + sheetName);
+        } else {
+          Logger.log("Đang xóa sheet TRỐNG: " + sheetName);
+        }
+        ss.deleteSheet(sheet);
+        deletedCount++;
+      } else {
+        if (chatSheetNames.includes(sheetName)) {
+          Logger.log("Bỏ qua sheet chat CÓ NỘI DUNG: " + sheetName + " (Số dòng: " + lastRow + ")");
+        } else {
+          Logger.log("Bỏ qua sheet có nội dung: " + sheetName + " (Số dòng: " + lastRow + ")");
+        }
+      }
+    }
+    
+    Logger.log("Hoàn tất dọn dẹp. Đã xóa " + deletedCount + " sheet trống.");
+    return { success: true, message: "Đã dọn dẹp " + deletedCount + " sheet trống." };
+  } catch (error) {
+    Logger.log("Lỗi khi dọn dẹp sheets: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Dọn dẹp các sheet trống trong TẤT CẢ các database của cá nhân
+ */
+function cleanupAllUserDbs() {
+  try {
+    const prefix = "USER_DB_";
+    const files = DriveApp.searchFiles("title contains '" + prefix + "'");
+    
+    let processedCount = 0;
+    const chatSheetNames = [
+      "FriendRequests", 
+      "Friends", 
+      "Conversations", 
+      "Messages", 
+      "Feature_Activity_Logs",
+      "Chat_History"
+    ];
+    
+    while (files.hasNext()) {
+      const file = files.next();
+      if (!file.getName().startsWith(prefix)) continue;
+      
+      const ss = SpreadsheetApp.openById(file.getId());
+      const sheets = ss.getSheets();
+      let deletedCount = 0;
+      
+      Logger.log("Đang xử lý file: " + file.getName());
+      
+      for (let i = sheets.length - 1; i >= 0; i--) {
+        const sheet = sheets[i];
+        const sheetName = sheet.getName();
+        const lastRow = sheet.getLastRow();
+        
+        if (ss.getSheets().length <= 1) {
+          Logger.log("  - Không thể xóa sheet cuối cùng: " + sheetName);
+          break;
+        }
+        
+        // Chỉ xóa nếu trống
+        if (lastRow <= 1) {
+          Logger.log("  - Đang xóa sheet TRỐNG: " + sheetName);
+          ss.deleteSheet(sheet);
+          deletedCount++;
+        }
+      }
+      Logger.log("  -> Đã xóa " + deletedCount + " sheet trống trong " + file.getName());
+      processedCount++;
+    }
+    
+    Logger.log("Hoàn tất dọn dẹp tổng cộng " + processedCount + " file USER_DB.");
+    return { success: true, message: "Đã dọn dẹp " + processedCount + " file USER_DB." };
+  } catch (error) {
+    Logger.log("Lỗi khi dọn dẹp toàn bộ USER_DB: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}

@@ -17,7 +17,7 @@ function getOrCreateDatabase() {
         const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
         Logger.log("Using hard-coded database ID: " + DB_CONFIG.SPREADSHEET_ID);
         
-        ensureChatSheets(ss);
+// ensureChatSheets(ss);
         
         return ss;
       } catch (e) {
@@ -37,7 +37,7 @@ function getOrCreateDatabase() {
         ss = SpreadsheetApp.openById(cachedId);
         Logger.log("Found database from cache: " + cachedId);
         
-        ensureChatSheets(ss);
+// ensureChatSheets(ss);
         
         return ss;
       } catch (e) {
@@ -67,7 +67,7 @@ function getOrCreateDatabase() {
       createAllSheets();
     }
     
-    ensureChatSheets(ss);
+// ensureChatSheets(ss);
 
     return ss;
   } catch (error) {
@@ -158,7 +158,7 @@ function ensureChatSheets(ss) {
 function initFeatureActivityLogsSheet() {
   try {
     const ss = getOrCreateDatabase();
-    ensureChatSheets(ss);
+// ensureChatSheets(ss);
     return { success: true, message: "Đã kiểm tra và khởi tạo sheet Feature_Activity_Logs trên DB Master" };
   } catch (err) {
     Logger.log("Error in initFeatureActivityLogsSheet: " + err.toString());
@@ -628,3 +628,57 @@ function processGoogleUserLogin(googleProfile, force = false) {
     };
   }
 }
+
+/**
+ * X�a c�c sheet tr?ng kh�ng c� d? li?u (ch? c� header) kh?i MASTER_DB
+ * �?c bi?t l� c�c sheet li�n quan d?n Chat
+ */
+function cleanupEmptySheets() {
+  try {
+    const ss = getOrCreateDatabase();
+    const sheets = ss.getSheets();
+    const chatSheetNames = [
+      "FriendRequests", 
+      "Friends", 
+      "Conversations", 
+      "Messages", 
+      "Feature_Activity_Logs",
+      "Chat_History"
+    ];
+    let deletedCount = 0;
+    
+    // N?u db ch? c�n 1 sheet, Google Sheet kh�ng cho ph�p x�a
+    for (let i = 0; i < sheets.length; i++) {
+      const sheet = sheets[i];
+      const sheetName = sheet.getName();
+      const lastRow = sheet.getLastRow();
+      
+      // N?u sheet tr?ng (lastRow <= 1 v� c� header)
+      if (lastRow <= 1) {
+        if (ss.getSheets().length <= 1) {
+          Logger.log("Kh�ng th? x�a sheet cu?i c�ng: " + sheetName);
+          break;
+        }
+        
+        if (chatSheetNames.includes(sheetName)) {
+          Logger.log("�ang x�a sheet chat tr?ng: " + sheetName);
+          ss.deleteSheet(sheet);
+          deletedCount++;
+        } else {
+          Logger.log("�ang x�a sheet tr?ng: " + sheetName);
+          ss.deleteSheet(sheet);
+          deletedCount++;
+        }
+      } else {
+        Logger.log("B? qua sheet c� n?i dung: " + sheetName + " (S? d�ng: " + lastRow + ")");
+      }
+    }
+    
+    Logger.log("Ho�n t?t d?n d?p. �� x�a " + deletedCount + " sheet tr?ng.");
+    return { success: true, message: "�� d?n d?p " + deletedCount + " sheet tr?ng." };
+  } catch (error) {
+    Logger.log("L?i khi d?n d?p sheets: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
