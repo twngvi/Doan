@@ -1,3 +1,4 @@
+
 <!-- Online Statistics Page Scripts -->
 <script>
   // ========================================
@@ -619,6 +620,8 @@
 
   // Render users grid
   function renderUsers(users) {
+    closeUserActionMenu();
+
     const grid = document.getElementById('usersGrid');
     const emptyState = document.getElementById('emptyState');
     const loadingState = document.getElementById('loadingState');
@@ -638,32 +641,35 @@
     if (emptyState) emptyState.style.display = 'none';
     grid.style.display = '';
     
-    grid.innerHTML = users.map(user => `
+    const isDisabled = (s) => s === 'disabled';
+    grid.innerHTML = users.map(user => {
+      const blocked = isDisabled(user.status);
+      return `
       <div class="user-card" data-user-id="${user.id}">
-        <div class="user-card-row1">
-          <div class="user-avatar">
-            <img src="${user.avatar || ''}" alt="${user.name}">
-            <span class="status-indicator ${user.status}"></span>
+        <div class="user-card-row1" style="justify-content: space-between; overflow: visible;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; overflow: hidden;">
+            <div class="user-avatar">
+              <img src="${user.avatar || ''}" alt="${user.name}">
+              <span class="status-indicator ${user.status}"></span>
+            </div>
+            <div class="user-info-row1" style="flex-direction: column; align-items: flex-start; gap: 0.15rem; flex: 1; min-width: 0; overflow: hidden;">
+              <div style="display: flex; align-items: center; gap: 0.35rem; width: 100%;">
+                <h4 class="user-name" title="${user.name}" style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${user.name}</h4>
+                ${user.status === 'idle' ? `<span class="user-badge-idle">${user.activity}</span>` : ''}
+              </div>
+              <span class="user-time" style="font-size: 0.7rem;">${formatTimeAgoSafe(user.lastActivity)}</span>
+            </div>
           </div>
-          <div class="user-info-row1">
-            <h4 class="user-name" title="${user.name}">${user.name}</h4>
-            <span class="user-badge-${user.status || 'offline'}">${user.activity}</span>
-            <span class="user-dot">•</span>
-            <span class="user-time">${formatTimeAgoSafe(user.lastActivity)}</span>
-          </div>
-        </div>
-        <div class="user-card-row2">
-          <button class="btn-block-user ${user.status === 'disabled' ? 'unblock' : 'block'}" onclick="toggleUserBlock('${user.id}', ${user.status !== 'disabled'}, event)" title="${user.status === 'disabled' ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              ${user.status === 'disabled' ? 
-                '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>' : 
-                '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>'}
+          <button class="btn-action-dots" data-userid="${user.id}" onclick="toggleUserActionMenu('${user.id}', event)" title="Thêm hành động">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="6" r="1.5"></circle>
+              <circle cx="12" cy="12" r="1.5"></circle>
+              <circle cx="12" cy="18" r="1.5"></circle>
             </svg>
-            <span>${user.status === 'disabled' ? 'Mở khóa' : 'Khóa'}</span>
           </button>
         </div>
       </div>
-    `).join('');
+    `}).join('');
 
     if (window.innerWidth <= 600) {
       grid.scrollTop = 0;
@@ -677,6 +683,109 @@
       countElement.textContent = `${count} người dùng`;
     }
   }
+
+  // ========================================
+  // SINGLE ACTIVE DROPDOWN STATE
+  // ========================================
+  let activeUserActionUserId = null;
+  let activeUserActionButton = null;
+
+  function closeUserActionMenu() {
+    const dropdown = document.getElementById('floatingUserActionDropdown');
+    if (dropdown) {
+      dropdown.remove();
+    }
+    activeUserActionUserId = null;
+    activeUserActionButton = null;
+  }
+
+  function positionUserActionMenu() {
+    const dropdown = document.getElementById('floatingUserActionDropdown');
+    if (!dropdown || !activeUserActionButton) return;
+
+    if (!document.body.contains(activeUserActionButton)) {
+      closeUserActionMenu();
+      return;
+    }
+
+    const rect = activeUserActionButton.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.zIndex = '99999';
+    dropdown.style.top = (rect.bottom + 6) + 'px';
+    dropdown.style.left = 'auto';
+    dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+  }
+
+  window.addEventListener('scroll', positionUserActionMenu, true);
+  window.addEventListener('resize', positionUserActionMenu);
+
+  // Toggle user action menu (single active dropdown)
+  window.toggleUserActionMenu = function(userId, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const clickedButton = event.currentTarget || event.target.closest('.btn-action-dots');
+    if (!clickedButton) return;
+
+    const normalizedUserId = String(userId);
+
+    // If same user's dropdown is open, close it (toggle off)
+    if (activeUserActionUserId === normalizedUserId && document.getElementById('floatingUserActionDropdown')) {
+      closeUserActionMenu();
+      return;
+    }
+
+    // Close any existing dropdown first
+    closeUserActionMenu();
+
+    const user = onlineUsers.find(item => String(item.id) === normalizedUserId);
+    if (!user) return;
+
+    activeUserActionUserId = normalizedUserId;
+    activeUserActionButton = clickedButton;
+
+    const blocked = user.status === 'disabled';
+
+    const dropdown = document.createElement('div');
+    dropdown.id = 'floatingUserActionDropdown';
+    dropdown.className = 'user-action-dropdown';
+    dropdown.dataset.userid = normalizedUserId;
+    dropdown.innerHTML = `
+      <button type="button" class="btn-block-user ${blocked ? 'unblock' : 'block'}" onclick="toggleUserBlock('${user.id}', ${!blocked}, event)">
+        <span>${blocked ? 'Mở khóa' : 'Khóa'}</span>
+      </button>
+    `;
+
+    document.body.appendChild(dropdown);
+    positionUserActionMenu();
+  };
+
+  // Close menus when clicking outside
+  document.addEventListener('click', function(event) {
+    if (!event.target.closest('.btn-action-dots') && !event.target.closest('#floatingUserActionDropdown')) {
+      closeUserActionMenu();
+    }
+  });
+
+  // Toggle online users list display
+  window.toggleOnlineUsersList = function(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    closeUserActionMenu();
+
+    const section = document.querySelector('.online-users-section');
+    const content = document.getElementById('onlineUsersCollapsibleContent');
+    const toggleBtn = document.getElementById('toggleUsersListBtn');
+
+    if (!section || !content || !toggleBtn) return;
+
+    const collapsed = section.classList.toggle('is-collapsed');
+    content.hidden = collapsed;
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+  };
 
   // Format time ago
   function formatTimeAgo(date) {
@@ -822,6 +931,8 @@
 
   // Refresh online users
   function refreshOnlineUsers() {
+    closeUserActionMenu();
+
     const refreshBtn = document.querySelector('.refresh-btn svg');
     if (refreshBtn) {
       refreshBtn.style.transition = 'transform 0.5s ease';
