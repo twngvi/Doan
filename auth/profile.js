@@ -187,55 +187,25 @@ function changeUserPassword(passwordData) {
  */
 function saveUserTheme(userId, themeName) {
   try {
-    Logger.log("=== SAVE USER THEME ===");
-    Logger.log("User ID: " + userId);
-    Logger.log("Theme: " + themeName);
-
-    if (!userId) {
-      return { success: false, message: "User ID is required" };
-    }
-
-    var allowedThemes = ["forest"];
-    if (allowedThemes.indexOf(themeName) === -1) {
-      return { success: false, message: "Invalid theme name" };
-    }
-
-    var usersSheet = getSheet("Users");
-    if (!usersSheet) {
-      return { success: false, message: "System error" };
-    }
-
-    var data = usersSheet.getDataRange().getValues();
-    var headers = data[0];
-
-    // Find or create 'theme' column
+    if (!userId) return { success: false, message: "User ID is required" };
+    if (["forest"].indexOf(themeName) === -1) return { success: false, message: "Invalid theme name" };
+    var petsSheet = getSheet("User_Pets");
+    if (!petsSheet) return { success: false, message: "System error" };
+    var data = petsSheet.getDataRange().getValues();
+    var headers = data[0] || [];
     var themeColIndex = headers.indexOf("theme");
     if (themeColIndex === -1) {
-      // Add 'theme' column at the end
-      var lastCol = headers.length + 1;
-      usersSheet.getRange(1, lastCol).setValue("theme");
-      themeColIndex = lastCol - 1;
-      Logger.log("Created 'theme' column at index: " + themeColIndex);
+      petsSheet.getRange(1, headers.length + 1).setValue("theme");
+      themeColIndex = headers.length;
     }
-
     for (var i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
-        usersSheet.getRange(i + 1, themeColIndex + 1).setValue(themeName);
-
-        Logger.log("Theme saved successfully: " + themeName);
-        return {
-          success: true,
-          message: "Theme saved",
-          theme: themeName,
-        };
+        petsSheet.getRange(i + 1, themeColIndex + 1).setValue(themeName);
+        return { success: true, message: "Theme saved", theme: themeName };
       }
     }
-
     return { success: false, message: "User not found" };
-  } catch (error) {
-    Logger.log("Error in saveUserTheme: " + error.toString());
-    return { success: false, message: "Error: " + error.toString() };
-  }
+  } catch (error) { return { success: false, message: "Error: " + error.toString() }; }
 }
 
 /**
@@ -689,78 +659,60 @@ function buildLegacySelectedAccessoriesFromMap_(accessoryByVariantMap, activeVar
 function getUserPetName(userId) {
   const DEFAULT_NAME = "NAMEPET";
   try {
-    if (!userId) {
-      return { success: false, message: "User ID is required", petName: DEFAULT_NAME };
-    }
+    if (!userId) return { success: false, message: "User ID is required", petName: DEFAULT_NAME };
 
+    const petsSheet = getSheet("User_Pets");
     const usersSheet = getSheet("Users");
-    if (!usersSheet) {
-      return { success: false, message: "Users sheet not found", petName: DEFAULT_NAME };
-    }
+    if (!petsSheet) return { success: false, message: "User_Pets sheet not found", petName: DEFAULT_NAME };
 
-    const allData = usersSheet.getDataRange().getValues();
+    const allData = petsSheet.getDataRange().getValues();
     const headers = allData[0] || [];
     let petNameIdx = headers.indexOf("petName");
-    const progressIdx = headers.indexOf("progressSheetId");
     let userRow = -1;
     for (let i = 1; i < allData.length; i++) {
-      if (allData[i][0] === userId) {
-        userRow = i;
-        break;
-      }
+      if (allData[i][0] === userId) { userRow = i; break; }
     }
 
-    if (userRow === -1) {
-      return { success: false, message: "User not found", petName: DEFAULT_NAME };
-    }
+    if (userRow === -1) return { success: false, message: "User not found", petName: DEFAULT_NAME };
 
     if (petNameIdx === -1) {
-      usersSheet.getRange(1, headers.length + 1).setValue("petName");
+      petsSheet.getRange(1, headers.length + 1).setValue("petName");
       petNameIdx = headers.length;
     }
 
-    let petNameValue = String(
-      usersSheet.getRange(userRow + 1, petNameIdx + 1).getValue() || "",
-    ).trim();
+    let petNameValue = String(petsSheet.getRange(userRow + 1, petNameIdx + 1).getValue() || "").trim();
 
-    // Backward compatibility: migrate legacy value from personal Profile sheet once.
-    if (!petNameValue) {
+    // Legacy sync
+    if (!petNameValue && usersSheet) {
       let legacyName = "";
-      const progressSheetId =
-        progressIdx !== -1
-          ? String(allData[userRow][progressIdx] || "").trim()
-          : "";
-
-      if (progressSheetId) {
-        try {
-          const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
-          const profileSheet = userSpreadsheet.getSheetByName("Profile");
-          if (profileSheet) {
-            const profileHeaders =
-              profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
-            const profilePetIdx = profileHeaders.indexOf("petName");
-            if (profilePetIdx !== -1) {
-              legacyName = String(
-                profileSheet.getRange(2, profilePetIdx + 1).getValue() || "",
-              ).trim();
+      const uData = usersSheet.getDataRange().getValues();
+      const uHeaders = uData[0] || [];
+      const pIdx = uHeaders.indexOf("progressSheetId");
+      if (pIdx >= 0) {
+        for (let i = 1; i < uData.length; i++) {
+          if (uData[i][0] === userId) {
+            const progressSheetId = String(uData[i][pIdx] || "").trim();
+            if (progressSheetId) {
+              try {
+                const profileSheet = SpreadsheetApp.openById(progressSheetId).getSheetByName("Profile");
+                if (profileSheet) {
+                  const pHeaders2 = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
+                  const pPetIdx = pHeaders2.indexOf("petName");
+                  if (pPetIdx !== -1) legacyName = String(profileSheet.getRange(2, pPetIdx + 1).getValue() || "").trim();
+                }
+              } catch(e){}
             }
+            break;
           }
-        } catch (legacyError) {
-          Logger.log("Legacy petName read failed: " + legacyError.toString());
         }
       }
-
       petNameValue = legacyName || DEFAULT_NAME;
-      usersSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petNameValue);
+      petsSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petNameValue);
     }
 
     return { success: true, message: "OK", petName: petNameValue };
   } catch (error) {
-    return {
-      success: false,
-      message: "getUserPetName error: " + error.toString(),
-      petName: DEFAULT_NAME,
-    };
+    return { success: false, message: "getUserPetName error: " + error.toString(), petName: DEFAULT_NAME };
   }
 }
 
@@ -768,81 +720,62 @@ function saveUserPetName(payload) {
   try {
     const DEFAULT_NAME = "NAMEPET";
     const userId = payload && payload.userId ? String(payload.userId).trim() : "";
-    const incomingName = payload && payload.petName ? String(payload.petName).trim() : "";
-    const petName = (incomingName || DEFAULT_NAME).slice(0, 24);
+    const petName = (payload && payload.petName ? String(payload.petName).trim() : DEFAULT_NAME).slice(0, 24);
 
-    if (!userId) {
-      return { success: false, message: "User ID is required", petName: DEFAULT_NAME };
-    }
+    if (!userId) return { success: false, message: "User ID required", petName: DEFAULT_NAME };
 
+    const petsSheet = getSheet("User_Pets");
     const usersSheet = getSheet("Users");
-    if (!usersSheet) {
-      return { success: false, message: "Users sheet not found", petName: DEFAULT_NAME };
-    }
+    if (!petsSheet) return { success: false, message: "User_Pets sheet not found", petName: DEFAULT_NAME };
 
-    const allData = usersSheet.getDataRange().getValues();
+    const allData = petsSheet.getDataRange().getValues();
     const headers = allData[0] || [];
     let petNameIdx = headers.indexOf("petName");
-    const progressIdx = headers.indexOf("progressSheetId");
     let userRow = -1;
     for (let i = 1; i < allData.length; i++) {
-      if (allData[i][0] === userId) {
-        userRow = i;
-        break;
-      }
+      if (allData[i][0] === userId) { userRow = i; break; }
     }
 
-    if (userRow === -1) {
-      return { success: false, message: "User not found", petName: DEFAULT_NAME };
-    }
+    if (userRow === -1) return { success: false, message: "User not found", petName: DEFAULT_NAME };
 
     if (petNameIdx === -1) {
-      usersSheet.getRange(1, headers.length + 1).setValue("petName");
+      petsSheet.getRange(1, headers.length + 1).setValue("petName");
       petNameIdx = headers.length;
     }
+    petsSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petName);
 
-    usersSheet.getRange(userRow + 1, petNameIdx + 1).setValue(petName);
-
-    // Keep legacy profile column in sync if user has personal sheet.
-    const progressSheetId =
-      progressIdx !== -1
-        ? String(allData[userRow][progressIdx] || "").trim()
-        : "";
-    if (progressSheetId) {
-      try {
-        const userSpreadsheet = SpreadsheetApp.openById(progressSheetId);
-        const profileSheet = userSpreadsheet.getSheetByName("Profile");
-        if (profileSheet) {
-          const profileHeaders =
-            profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
-          let profilePetIdx = profileHeaders.indexOf("petName");
-          if (profilePetIdx === -1) {
-            profileSheet.getRange(1, profileHeaders.length + 1).setValue("petName");
-            profilePetIdx = profileHeaders.length;
+    // Sync legacy
+    if (usersSheet) {
+      const uData = usersSheet.getDataRange().getValues();
+      const uHeaders = uData[0] || [];
+      const pIdx = uHeaders.indexOf("progressSheetId");
+      if (pIdx >= 0) {
+        for (let i = 1; i < uData.length; i++) {
+          if (uData[i][0] === userId) {
+            const progressSheetId = String(uData[i][pIdx] || "").trim();
+            if (progressSheetId) {
+              try {
+                const profileSheet = SpreadsheetApp.openById(progressSheetId).getSheetByName("Profile");
+                if (profileSheet) {
+                  const pH = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0] || [];
+                  let pPetIdx = pH.indexOf("petName");
+                  if (pPetIdx === -1) {
+                    profileSheet.getRange(1, pH.length + 1).setValue("petName");
+                    pPetIdx = pH.length;
+                  }
+                  profileSheet.getRange(2, pPetIdx + 1).setValue(petName);
+                }
+              } catch(e){}
+            }
+            break;
           }
-          profileSheet.getRange(2, profilePetIdx + 1).setValue(petName);
         }
-      } catch (legacySyncError) {
-        Logger.log("Legacy petName sync failed: " + legacySyncError.toString());
       }
     }
 
-    logActivity({
-      level: "INFO",
-      category: "USER",
-      userId: userId,
-      action: "UPDATE_PET_NAME",
-      details: "Updated pet name to " + petName,
-    });
-
+    logActivity({ level: "INFO", category: "USER", userId: userId, action: "UPDATE_PET_NAME", details: "Updated pet name to " + petName });
     return { success: true, message: "Đã lưu tên PET", petName: petName };
-  } catch (error) {
-    return {
-      success: false,
-      message: "saveUserPetName error: " + error.toString(),
-      petName: "NAMEPET",
-    };
-  }
+  } catch (error) { return { success: false, message: "error", petName: "NAMEPET" }; }
 }
 
 /**

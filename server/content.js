@@ -1960,42 +1960,52 @@ function awardTopicXPByEvent(userEmail, config) {
 function syncUserPointsAcrossDBs(userEmail, xpDelta) {
   const result = { totalXP: 0, totalXQP: 0 };
   try {
-    // 1. Update MASTER DB
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
     const usersSheet = ss.getSheetByName("Users");
-    const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
-    const emailCol = headers.indexOf("email");
-    const xpCol = headers.indexOf("totalXP");
-    let xqpCol = headers.indexOf("totalXQP");
+    const statsSheet = ss.getSheetByName("User_Stats");
+    
+    if (!usersSheet || !statsSheet) return result;
 
-    if (xqpCol === -1) {
-      usersSheet.getRange(1, headers.length + 1).setValue("totalXQP");
-      xqpCol = headers.length;
-    }
+    const uData = usersSheet.getDataRange().getValues();
+    const uHeaders = uData[0];
+    const emailCol = uHeaders.indexOf("email");
+    const pCol = uHeaders.indexOf("progressSheetId");
 
+    let targetUserId = null;
     let progressSheetId = "";
-
     let userFound = false;
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][emailCol]).trim() === String(userEmail).trim()) {
-        const currentXP = parseInt(data[i][xpCol]) || 0;
-        const currentXQP = xqpCol < data[i].length ? parseInt(data[i][xqpCol]) || 0 : 0;
-        
-        result.totalXP = currentXP + xpDelta;
-        result.totalXQP = currentXQP + xpDelta;
-        progressSheetId = data[i][headers.indexOf("progressSheetId")];
-        userFound = true;
-
-        usersSheet.getRange(i + 1, xpCol + 1).setValue(result.totalXP);
-        usersSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
+    for (let i = 1; i < uData.length; i++) {
+      if (String(uData[i][emailCol]).trim() === String(userEmail).trim()) {
+        targetUserId = uData[i][0];
+        progressSheetId = pCol >= 0 ? uData[i][pCol] : "";
         break;
       }
     }
 
-    // 2. Update PERSONAL DB
+    if (targetUserId) {
+      const sData = statsSheet.getDataRange().getValues();
+      const sHeaders = sData[0];
+      const xpCol = sHeaders.indexOf("totalXP");
+      const xqpCol = sHeaders.indexOf("totalXQP");
+
+      for (let i = 1; i < sData.length; i++) {
+        if (sData[i][0] === targetUserId) {
+          const currentXP = xpCol >= 0 ? parseInt(sData[i][xpCol]) || 0 : 0;
+          const currentXQP = xqpCol >= 0 ? parseInt(sData[i][xqpCol]) || 0 : 0;
+          
+          result.totalXP = currentXP + xpDelta;
+          result.totalXQP = currentXQP + xpDelta;
+          userFound = true;
+
+          if (xpCol >= 0) statsSheet.getRange(i + 1, xpCol + 1).setValue(result.totalXP);
+          if (xqpCol >= 0) statsSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
+          break;
+        }
+      }
+    }
+
     if (progressSheetId) {
       updatePersonalProfilePoints(progressSheetId, result.totalXP, result.totalXQP);
     }

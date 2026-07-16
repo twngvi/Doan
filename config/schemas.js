@@ -117,6 +117,25 @@ const DB_CONFIG = {
         "passwordHash",
         "avatarUrl",
         "role",
+        "isActive",
+        "createdAt",
+        "lastLogin",
+        "lastActiveDate",
+        "activeSessionId",
+        "activeSessionUpdatedAt",
+        "emailVerified",
+        "verificationToken",
+        "verificationExpires",
+        "playerId",
+        "progressSheetId",
+      ],
+    },
+
+    USER_STATS: {
+      name: "User_Stats",
+      idPrefix: "UST",
+      columns: [
+        "userId",
         "level",
         "aiLevel",
         "totalPoints",
@@ -124,23 +143,23 @@ const DB_CONFIG = {
         "totalXQP",
         "currentStreak",
         "longestStreak",
-        "lastActiveDate",
-        "lastLogin",
-        "createdAt",
-        "isActive",
         "mountainPosition",
         "mountainStage",
         "mountainProgress",
         "totalQuizAnswered",
         "totalPuzzleSolved",
         "totalChallengeCompleted",
-        "progressSheetId",
-        "emailVerified",
-        "verificationToken",
-        "verificationExpires",
-        "playerId", // ID người chơi dùng để tìm kiếm (được thêm vào sau cùng)
-        "activeSessionId", // Session đăng nhập hiện tại
-        "activeSessionUpdatedAt", // Cập nhật lần cuối session
+      ],
+    },
+
+    USER_PETS: {
+      name: "User_Pets",
+      idPrefix: "UPT",
+      columns: [
+        "userId",
+        "theme",
+        "petName",
+        "petConfig",
       ],
     },
 
@@ -452,48 +471,6 @@ const DB_CONFIG = {
       columns: ["timestamp", "step", "error", "userId", "duration", "stack"],
     },
 
-    // ========== CHAT & FRIENDS SYSTEM ==========
-
-    FRIEND_REQUESTS: {
-      name: "FriendRequests",
-      idPrefix: "FRQ",
-      columns: [
-        "requestId",
-        "fromUserId",
-        "toUserId",
-        "status",
-        "createdAt",
-        "updatedAt",
-      ],
-    },
-
-    FRIENDS: {
-      name: "Friends",
-      idPrefix: "FRD",
-      columns: [
-        "friendshipId",
-        "userId1",
-        "userId2",
-        "status",
-        "createdAt",
-        "updatedAt",
-      ],
-    },
-
-    CONVERSATIONS: {
-      name: "Conversations",
-      idPrefix: "CNV",
-      columns: [
-        "conversationId",
-        "userId1",
-        "userId2",
-        "lastMessage",
-        "lastMessageAt",
-        "createdAt",
-        "updatedAt",
-      ],
-    },
-
     // ========== AI LEARNING SYSTEM TABLES ==========
 
     AI_CONTENT_CACHE: {
@@ -739,20 +716,6 @@ const USER_DB_CONFIG = {
       idPrefix: "SES",
       columns: ["sessionId", "loginAt", "logoutAt", "device", "ipAddress"],
     },
-    MESSAGES: {
-      name: "Messages",
-      idPrefix: "MSG",
-      columns: [
-        "messageId",
-        "conversationId",
-        "senderId",
-        "receiverId",
-        "messageText",
-        "isRead",
-        "createdAt",
-      ],
-    },
-
     // ========== AI LEARNING SYSTEM SHEETS ==========
 
     WRONG_ANSWER_MEMORY: {

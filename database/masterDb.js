@@ -17,7 +17,7 @@ function getOrCreateDatabase() {
         const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
         Logger.log("Using hard-coded database ID: " + DB_CONFIG.SPREADSHEET_ID);
         
-// ensureChatSheets(ss);
+// Chat sheets removed
         
         return ss;
       } catch (e) {
@@ -37,7 +37,7 @@ function getOrCreateDatabase() {
         ss = SpreadsheetApp.openById(cachedId);
         Logger.log("Found database from cache: " + cachedId);
         
-// ensureChatSheets(ss);
+// Chat sheets removed
         
         return ss;
       } catch (e) {
@@ -66,8 +66,7 @@ function getOrCreateDatabase() {
       Logger.log("Initializing database (missing core sheets)...");
       createAllSheets();
     }
-    
-// ensureChatSheets(ss);
+    // Chat sheets removed
 
     return ss;
   } catch (error) {
@@ -78,93 +77,7 @@ function getOrCreateDatabase() {
   }
 }
 
-/**
- * Đảm bảo các sheet liên quan tới Chat tồn tại
- */
-function ensureChatSheets(ss) {
-  const chatSheets = {
-    FriendRequests: [
-      "requestId",
-      "fromUserId",
-      "toUserId",
-      "status",
-      "createdAt",
-      "updatedAt",
-    ],
-    Friends: [
-      "friendshipId",
-      "userId1",
-      "userId2",
-      "status",
-      "createdAt",
-      "updatedAt",
-    ],
-    Conversations: [
-      "conversationId",
-      "userId1",
-      "userId2",
-      "lastMessage",
-      "lastMessageAt",
-      "createdAt",
-      "updatedAt",
-    ],
-    Messages: [
-      "messageId",
-      "conversationId",
-      "senderId",
-      "receiverId",
-      "messageText",
-      "isRead",
-      "createdAt",
-    ],
-    Feature_Activity_Logs: [
-      "date",
-      "timestamp",
-      "userId",
-      "featureType",
-      "itemId",
-    ],
-  };
 
-  Object.keys(chatSheets).forEach(function (sheetName) {
-    const headers = chatSheets[sheetName];
-    let sheet = ss.getSheetByName(sheetName);
-
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      const headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setFontWeight("bold");
-      if (sheetName === "Feature_Activity_Logs") {
-        headerRange.setBackground("#3B82F6");
-        headerRange.setFontColor("white");
-      }
-      sheet.setFrozenRows(1);
-      Logger.log("Created missing sheet: " + sheetName);
-      return;
-    }
-
-    if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
-      sheet.setFrozenRows(1);
-    }
-  });
-}
-
-/**
- * Tạo ngay lập tức sheet Feature_Activity_Logs nếu chưa có trên Master DB
- */
-function initFeatureActivityLogsSheet() {
-  try {
-    const ss = getOrCreateDatabase();
-// ensureChatSheets(ss);
-    return { success: true, message: "Đã kiểm tra và khởi tạo sheet Feature_Activity_Logs trên DB Master" };
-  } catch (err) {
-    Logger.log("Error in initFeatureActivityLogsSheet: " + err.toString());
-    return { success: false, message: err.toString() };
-  }
-}
 
 /**
  * Get sheet by name
@@ -343,15 +256,14 @@ function createUserPersonalSheet(email, displayName) {
 
 /**
  * Process Google OAuth User Login
- * - Tạo/Cập nhật User trong DB Users
- * - Tự động tạo Sheet cá nhân nếu chưa có
  */
 function processGoogleUserLogin(googleProfile, force = false) {
   const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
   const userSheet = ss.getSheetByName(DB_CONFIG.SHEETS.USERS.name);
-  // Lấy toàn bộ dữ liệu (cân nhắc tối ưu nếu data lớn, hiện tại dùng cách này cho đơn giản)
-  const data = userSheet.getDataRange().getValues();
+  const statsSheet = ss.getSheetByName(DB_CONFIG.SHEETS.USER_STATS.name);
+  const petsSheet = ss.getSheetByName(DB_CONFIG.SHEETS.USER_PETS.name);
 
+  const data = userSheet.getDataRange().getValues();
   const email = googleProfile.email;
   const googleId = googleProfile.id;
   const avatar = googleProfile.picture;
@@ -360,32 +272,24 @@ function processGoogleUserLogin(googleProfile, force = false) {
   let userRowIndex = -1;
   let existingUser = null;
   const headers = data[0] || [];
-  const themeColIndex = headers.indexOf("theme");
-  // Cột progressSheetId nằm ở index 25 (theo schemas.js mới sau khi thêm totalXQP)
-  const PROGRESS_SHEET_COL_INDEX = 25;
+  
+  // Cột progressSheetId nằm ở index 18 (theo schema mới: userId(0)... progressSheetId(18))
+  const PROGRESS_SHEET_COL_INDEX = headers.indexOf("progressSheetId") >= 0 ? headers.indexOf("progressSheetId") : 18;
 
-  // 1. Tìm User
   for (let i = 1; i < data.length; i++) {
-    if (data[i][2] === email) {
-      // Col 2 là email
+    if (data[i][2] === email) { // index 2 is email
       userRowIndex = i + 1;
       existingUser = data[i];
       break;
     }
   }
 
-  // 2. Chuẩn bị thông tin Sheet cá nhân (Nếu chưa có)
-  let progressSheetId = existingUser
-    ? existingUser[PROGRESS_SHEET_COL_INDEX]
-    : "";
+  let progressSheetId = existingUser ? existingUser[PROGRESS_SHEET_COL_INDEX] : "";
 
-  // Nếu chưa có sheet cá nhân, tạo mới ngay lập tức
   if (!progressSheetId) {
     try {
       progressSheetId = createUserPersonalSheet(email, name);
-      Logger.log(
-        "Created new personal sheet for " + email + ": " + progressSheetId,
-      );
+      Logger.log("Created new personal sheet for " + email + ": " + progressSheetId);
     } catch (e) {
       Logger.log("Error creating personal sheet: " + e.toString());
     }
@@ -396,23 +300,19 @@ function processGoogleUserLogin(googleProfile, force = false) {
     if (isActiveIndex >= 0) {
       const isActiveVal = existingUser[isActiveIndex];
       const isActive = isActiveVal === true || String(isActiveVal).toUpperCase() === "TRUE" || isActiveVal === 1;
-      if (!isActive) {
-        throw new Error("Tài khoản đã bị khóa. Vui lòng liên hệ admin.");
-      }
+      if (!isActive) throw new Error("Tài khoản đã bị khóa. Vui lòng liên hệ admin.");
     }
 
-    // === KIỂM TRA SESSION ĐANG HOẠT ĐỘNG ===
     const activeSessionIdIndex = headers.indexOf("activeSessionId");
     const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
     
     if (activeSessionIdIndex >= 0) {
       const currentActiveSession = existingUser[activeSessionIdIndex];
-      
       let isSessionFresh = true;
       if (activeSessionUpdatedAtIndex >= 0) {
         const lastSeenValue = existingUser[activeSessionUpdatedAtIndex];
         const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-        const SESSION_STALE_MS = 90 * 1000; // 90 giây
+        const SESSION_STALE_MS = 90 * 1000; 
         isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
       }
 
@@ -421,10 +321,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
       }
 
       if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && !force) {
-        // Lưu googleProfile vào Cache để gọi lại sau khi confirm
         const token = "G_CONFIRM_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
-        CacheService.getScriptCache().put(token, JSON.stringify(googleProfile), 300); // Lưu 5 phút
-        
+        CacheService.getScriptCache().put(token, JSON.stringify(googleProfile), 300);
         return {
           requireConfirmation: true,
           confirmToken: token,
@@ -433,10 +331,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
       }
     }
 
-    // === CẬP NHẬT USER CŨ ===
     userSheet.getRange(userRowIndex, 2).setValue(googleId); // Update Google ID
 
-    // ⭐ Save session ID with Lock
     const lock = LockService.getScriptLock();
     let sessionId = "";
     let now = new Date();
@@ -444,7 +340,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
       lock.waitLock(10000);
       sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
       now = new Date();
-      userSheet.getRange(userRowIndex, 16).setValue(now); // Last Login
+      const lastLoginCol = headers.indexOf("lastLogin");
+      if(lastLoginCol >= 0) userSheet.getRange(userRowIndex, lastLoginCol + 1).setValue(now);
       
       if (activeSessionIdIndex >= 0) {
         userSheet.getRange(userRowIndex, activeSessionIdIndex + 1).setValue(sessionId);
@@ -458,156 +355,148 @@ function processGoogleUserLogin(googleProfile, force = false) {
       lock.releaseLock();
     }
 
-    // ⭐ Save login to personal sheet & update streak
     if (progressSheetId) {
       saveLoginToPersonalSheet(progressSheetId, email, new Date());
       try {
         updateUserStreak(email);
-      } catch (e) {
-        Logger.log("Warning: Could not update streak: " + e.toString());
-      }
+      } catch (e) { }
     }
 
-    // ⭐ CHỈ cập nhật avatar nếu user chưa có avatar tùy chỉnh
-    // Cột avatarUrl là index 6 (thứ 7 trong row)
-    const existingAvatar = existingUser[6];
+    const avatarIndex = headers.indexOf("avatarUrl") >= 0 ? headers.indexOf("avatarUrl") : 6;
+    const existingAvatar = existingUser[avatarIndex];
     let finalAvatar = existingAvatar;
 
-    // Nếu chưa có avatar hoặc avatar là rỗng, mới dùng avatar từ Google
-    if (
-      !existingAvatar ||
-      existingAvatar === "" ||
-      existingAvatar === "undefined" ||
-      existingAvatar === "null"
-    ) {
-      userSheet.getRange(userRowIndex, 7).setValue(avatar); // Update Avatar
+    if (!existingAvatar || existingAvatar === "" || existingAvatar === "undefined" || existingAvatar === "null") {
+      userSheet.getRange(userRowIndex, avatarIndex + 1).setValue(avatar);
       finalAvatar = avatar;
-      Logger.log("No custom avatar, using Google avatar: " + avatar);
-    } else {
-      Logger.log("Keeping existing custom avatar: " + existingAvatar);
     }
 
-    // ⭐ Update progressSheetId nếu lúc trước chưa có mà giờ mới tạo
     if (!existingUser[PROGRESS_SHEET_COL_INDEX] && progressSheetId) {
-      userSheet
-        .getRange(userRowIndex, PROGRESS_SHEET_COL_INDEX + 1)
-        .setValue(progressSheetId);
+      userSheet.getRange(userRowIndex, PROGRESS_SHEET_COL_INDEX + 1).setValue(progressSheetId);
     }
 
-    const totalXQPCol = headers.indexOf("totalXQP");
-    const totalXPCol = headers.indexOf("totalXP");
     const playerIdCol = headers.indexOf("playerId");
-    
     let finalPlayerId = playerIdCol >= 0 ? existingUser[playerIdCol] : "";
     if (!finalPlayerId || finalPlayerId === "") {
       try {
         finalPlayerId = typeof generatePlayerId === 'function' ? generatePlayerId(userSheet) : "ID" + Math.floor(Math.random() * 9000 + 1000);
-        if (playerIdCol >= 0) {
-          userSheet.getRange(userRowIndex, playerIdCol + 1).setValue(finalPlayerId);
+        if (playerIdCol >= 0) userSheet.getRange(userRowIndex, playerIdCol + 1).setValue(finalPlayerId);
+      } catch (e) { }
+    }
+
+    // LẤY THÔNG TIN STATS & PETS TỪ SHEET TƯƠNG ỨNG
+    let level = 1, totalXP = 0, totalXQP = 0, theme = "forest";
+    const userId = existingUser[0];
+
+    if (statsSheet) {
+      const statsData = statsSheet.getDataRange().getValues();
+      const sHeaders = statsData[0] || [];
+      const sLevelIdx = sHeaders.indexOf("level");
+      const sXpIdx = sHeaders.indexOf("totalXP");
+      const sXqpIdx = sHeaders.indexOf("totalXQP");
+
+      for(let i=1; i<statsData.length; i++) {
+        if(statsData[i][0] === userId) {
+          if (sLevelIdx >= 0) level = parseInt(statsData[i][sLevelIdx]) || 1;
+          if (sXpIdx >= 0) totalXP = parseInt(statsData[i][sXpIdx]) || 0;
+          if (sXqpIdx >= 0) totalXQP = parseInt(statsData[i][sXqpIdx]) || 0;
+          break;
         }
-      } catch (e) {
-        Logger.log("Could not generate missing playerId: " + e.toString());
       }
     }
 
+    if (petsSheet) {
+      const petsData = petsSheet.getDataRange().getValues();
+      const pHeaders = petsData[0] || [];
+      const themeIdx = pHeaders.indexOf("theme");
+      
+      for(let i=1; i<petsData.length; i++) {
+        if(petsData[i][0] === userId) {
+          if (themeIdx >= 0) theme = String(petsData[i][themeIdx]) || "forest";
+          break;
+        }
+      }
+    }
+
+    const roleIndex = headers.indexOf("role") >= 0 ? headers.indexOf("role") : 7;
     return {
-      userId: existingUser[0],
-      email: existingUser[2],
-      displayName: existingUser[3],
-      avatarUrl: finalAvatar, // ⭐ Trả về avatar đúng (custom hoặc Google)
-      role: existingUser[7],
-      level: existingUser[8],
-      totalXP: totalXPCol >= 0 ? (parseInt(existingUser[totalXPCol]) || 0) : 0,
-      totalXQP: totalXQPCol >= 0 ? (parseInt(existingUser[totalXQPCol]) || 0) : 0,
-      progressSheetId: progressSheetId, // Trả về ID sheet
+      userId: userId,
+      email: email,
+      displayName: name,
+      avatarUrl: finalAvatar,
+      role: existingUser[roleIndex],
+      level: level,
+      totalXP: totalXP,
+      totalXQP: totalXQP,
+      progressSheetId: progressSheetId,
       playerId: finalPlayerId,
-      theme:
-        themeColIndex >= 0 && existingUser[themeColIndex]
-          ? String(existingUser[themeColIndex])
-          : "default",
+      theme: theme,
       status: "success",
       sessionId: sessionId,
     };
   } else {
-    // === USER MỚI: Tạo dòng mới ===
+    // === USER MỚI ===
     const newUserId = "USR_" + new Date().getTime();
     const now = new Date();
+    const finalPlayerId = typeof generatePlayerId === 'function' ? generatePlayerId(userSheet) : "ID" + Math.floor(Math.random() * 9000 + 1000);
 
-    // Mảng dữ liệu khớp 100% với thứ tự cột trong DB_CONFIG.SHEETS.USERS.columns
     const newRow = [
-      newUserId, // 0: userId
-      googleId, // 1: googleId
-      email, // 2: email
-      name, // 3: displayName
-      email.split("@")[0], // 4: username
-      "GOOGLE_OAUTH", // 5: passwordHash
-      avatar, // 6: avatarUrl
-      "USER", // 7: role
-      1, // 8: level
-      1, // 9: aiLevel
-      0, // 10: totalPoints
-      0, // 11: totalXP
-      0, // 12: totalXQP (NEW)
-      0, // 13: currentStreak
-      0, // 14: longestStreak
-      now, // 15: lastActiveDate
-      now, // 16: lastLogin
-      now, // 17: createdAt
-      true, // 18: isActive
-      0, // 19: mountainPosition
-      1, // 20: mountainStage
-      0, // 21: mountainProgress
-      0, // 22: totalQuizAnswered
-      0, // 23: totalPuzzleSolved
-      0, // 24: totalChallengeCompleted
-      progressSheetId, // 25: ⭐ LƯU ID SHEET CÁ NHÂN VỪA TẠO
-      true, // 26: emailVerified
-      "", // 27: verificationToken
-      "", // 28: verificationExpires
-      generatePlayerId(), // 29: playerId
+      newUserId,
+      googleId,
+      email,
+      name,
+      email.split("@")[0],
+      "GOOGLE_OAUTH",
+      avatar,
+      "USER",
+      true, // isActive
+      now, // createdAt
+      now, // lastLogin
+      now, // lastActiveDate
+      "", // activeSessionId
+      "", // activeSessionUpdatedAt
+      true, // emailVerified
+      "", // verificationToken
+      "", // verificationExpires
+      finalPlayerId,
+      progressSheetId,
     ];
 
     let sessionId = "";
-    const activeSessionIdIndex = headers.indexOf("activeSessionId");
-
     const lock = LockService.getScriptLock();
     try {
       lock.waitLock(10000);
       sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
       
-      // Pad newRow if needed to ensure we can set activeSessionId
+      const activeSessionIdIndex = DB_CONFIG.SHEETS.USERS.columns.indexOf("activeSessionId");
       if (activeSessionIdIndex >= 0) {
-         while (newRow.length <= activeSessionIdIndex) {
-           newRow.push("");
-         }
+         while (newRow.length <= activeSessionIdIndex) newRow.push("");
          newRow[activeSessionIdIndex] = sessionId;
       }
       
       userSheet.appendRow(newRow);
+      
+      // Tạo row cho User_Stats
+      if (statsSheet) {
+        const statsRow = [newUserId, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
+        statsSheet.appendRow(statsRow);
+      }
+      
+      // Tạo row cho User_Pets
+      if (petsSheet) {
+        const petsRow = [newUserId, "forest", "NAMEPET", ""];
+        petsSheet.appendRow(petsRow);
+      }
     } catch (e) {
       Logger.log("Lock error for new user session: " + e.toString());
-      userSheet.appendRow(newRow); // Fallback
+      userSheet.appendRow(newRow); 
     } finally {
       lock.releaseLock();
     }
 
-    // Ensure forest theme for newly created Google users if theme column exists.
-    if (themeColIndex >= 0) {
-      userSheet
-        .getRange(userSheet.getLastRow(), themeColIndex + 1)
-        .setValue("forest");
-    }
-
-    // ⭐ Save first login to personal sheet & update streak
     if (progressSheetId) {
       saveLoginToPersonalSheet(progressSheetId, email, now);
-      try {
-        updateUserStreak(email);
-      } catch (e) {
-        Logger.log(
-          "Warning: Could not update streak for new user: " + e.toString(),
-        );
-      }
+      try { updateUserStreak(email); } catch (e) { }
     }
 
     return {
@@ -620,7 +509,7 @@ function processGoogleUserLogin(googleProfile, force = false) {
       totalXP: 0,
       totalXQP: 0,
       progressSheetId: progressSheetId,
-      playerId: newRow[29],
+      playerId: finalPlayerId,
       theme: "forest",
       status: "success",
       isNewUser: true,
@@ -628,6 +517,7 @@ function processGoogleUserLogin(googleProfile, force = false) {
     };
   }
 }
+
 
 /**
  * X�a c�c sheet tr?ng kh�ng c� d? li?u (ch? c� header) kh?i MASTER_DB
@@ -642,8 +532,7 @@ function cleanupEmptySheets() {
       "Friends", 
       "Conversations", 
       "Messages", 
-      "Feature_Activity_Logs",
-      "Chat_History"
+      "Feature_Activity_Logs"
     ];
     let deletedCount = 0;
     
@@ -679,6 +568,23 @@ function cleanupEmptySheets() {
   } catch (error) {
     Logger.log("L?i khi d?n d?p sheets: " + error.toString());
     return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * HÀM CHẠY THỦ CÔNG 1 LẦN ĐỂ CẤP QUYỀN
+ * Chạy hàm này để Google Apps Script nhận diện quyền truy cập DriveApp.
+ * Sau khi chạy và bấm "Allow" (Cho phép), các file tạo ra sau này
+ * sẽ tự động được đưa vào đúng thư mục mà không cần làm gì thêm.
+ */
+function authSetup() {
+  try {
+    const TARGET_FOLDER_ID = "1dlc7DeSDw19J9_38E8cJvV5hNeopO3oS";
+    DriveApp.getFolderById(TARGET_FOLDER_ID);
+    Logger.log("✅ CẤP QUYỀN THÀNH CÔNG!");
+    Logger.log("Từ giờ mỗi khi có user mới tạo tài khoản hoặc đăng nhập, Google Sheet cá nhân sẽ TỰ ĐỘNG nằm trong thư mục USER.");
+  } catch (e) {
+    Logger.log("❌ Lỗi cấp quyền: " + e.toString());
   }
 }
 
