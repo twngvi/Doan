@@ -920,41 +920,84 @@ function enhanceAdminPreviewContent(container) {
 
 function formatAdminPreviewBullets(container) {
   const BULLET_CHARS = ['•', '●', '▪', '■', '-', '–', '—', '*'];
+  const NUMBER_REGEX = /^(\d+)[\.\)]\s+(.+)$/;
   const children = Array.from(container.children);
-  let bulletBuffer = [];
+  let listBuffer = [];
+  let bufferType = null;
 
-  function flushBulletBuffer() {
-    if (bulletBuffer.length === 0) return;
-    const ul = document.createElement('ul');
-    bulletBuffer.forEach(item => {
+  function flushListBuffer() {
+    if (listBuffer.length === 0) return;
+    const listTag = bufferType === 'number' ? 'ol' : 'ul';
+    const listEl = document.createElement(listTag);
+    listEl.className = 'doc-formatted-list ' + (bufferType === 'number' ? 'doc-number-list' : 'doc-bullet-list');
+
+    listBuffer.forEach(function(item) {
       const li = document.createElement('li');
       li.innerHTML = item.content;
-      ul.appendChild(li);
+      if (item.indent > 1) {
+        li.classList.add('doc-indent-' + Math.min(item.indent, 3));
+      }
+      listEl.appendChild(li);
     });
-    bulletBuffer[0].element.parentNode.insertBefore(ul, bulletBuffer[0].element);
-    bulletBuffer.forEach(item => item.element.remove());
-    bulletBuffer = [];
+
+    listBuffer[0].element.parentNode.insertBefore(listEl, listBuffer[0].element);
+    listBuffer.forEach(function(item) { item.element.remove(); });
+    listBuffer = [];
+    bufferType = null;
   }
 
-  children.forEach(el => {
+  children.forEach(function(el) {
     if (el.tagName !== 'P') {
-      flushBulletBuffer();
+      flushListBuffer();
       return;
     }
     const text = el.textContent.trim();
     if (!text) {
-      flushBulletBuffer();
+      flushListBuffer();
       return;
     }
+
+    const numMatch = text.match(NUMBER_REGEX);
+    if (numMatch) {
+      if (bufferType && bufferType !== 'number') flushListBuffer();
+      bufferType = 'number';
+      let content = el.innerHTML.replace(/^(\d+)[\.\)]\s+/, '').trim();
+      listBuffer.push({ element: el, content: content, indent: 1 });
+      return;
+    }
+
     const firstChar = text.charAt(0);
     if (BULLET_CHARS.includes(firstChar)) {
+      if (bufferType && bufferType !== 'bullet') flushListBuffer();
+      bufferType = 'bullet';
       let content = el.innerHTML.replace(/^[•●▪■\-–—*\s]+/, '').trim();
-      bulletBuffer.push({ element: el, content });
-    } else {
-      flushBulletBuffer();
+      listBuffer.push({ element: el, content: content, indent: 1 });
+      return;
     }
+
+    flushListBuffer();
   });
-  flushBulletBuffer();
+  flushListBuffer();
+
+  // ⭐ Normalize ANY existing or new lists in preview so bullets always display clearly
+  const allLists = container.querySelectorAll('ul, ol');
+  allLists.forEach(function(list) {
+    if (list.tagName === 'UL') {
+      list.classList.add('doc-formatted-list', 'doc-bullet-list');
+      list.style.setProperty('list-style-type', 'disc', 'important');
+    } else {
+      list.classList.add('doc-formatted-list', 'doc-number-list');
+      list.style.setProperty('list-style-type', 'decimal', 'important');
+    }
+    list.style.setProperty('padding-left', '1.5rem', 'important');
+    list.style.setProperty('margin-left', '1.5rem', 'important');
+    list.style.setProperty('margin-bottom', '1rem', 'important');
+  });
+
+  const allItems = container.querySelectorAll('li');
+  allItems.forEach(function(li) {
+    li.style.setProperty('list-style-position', 'outside', 'important');
+  });
 }
 
 function escapeHtmlAdminPreview(str) {
