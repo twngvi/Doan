@@ -131,113 +131,58 @@
     }
   }
 
+  let prefetchedFlashcards = null;
+  let flashcardsPrefetching = false;
+  let prefetchedMindmap = null;
+  let mindmapPrefetching = false;
+
   /**
    * Initialize lesson page
    */
   function initLessonPage() {
     console.log("🚀 Initializing Lesson Page");
 
-    // Initialize mini quiz questions rendering
     try {
       setupLessonHeaderMouseEffect();
-
-      // Initialize topic switcher
       initTopicSwitcher();
-
-      // Reset tabs to default (lesson tab)
       switchLessonTab("lesson");
     } catch (e) {
-      console.error(
-        "⚠️ Lesson setup failed, but content loading will continue:",
-        e,
-      );
+      console.error("⚠️ Lesson setup failed, but content loading will continue:", e);
     }
 
-    // Clear previous content
     const contentArea = document.getElementById("lesson-content-area");
     if (contentArea) {
       contentArea.innerHTML = "";
     }
 
-    // Get params from window.currentPageParams
     if (window.currentPageParams) {
       currentLessonData = window.currentPageParams;
       console.log("✅ Lesson params:", currentLessonData);
-      console.log("📄 contentDocId:", currentLessonData.contentDocId);
-      console.log("📋 topicId:", currentLessonData.topicId);
-      console.log("🏷️ topicTitle:", currentLessonData.topicTitle);
 
-      // Update header - sync title across all tab card headers
       var topicTitleText = currentLessonData.topicTitle || "Bài học";
       document.getElementById("lesson-topic-title").textContent = topicTitleText;
 
-      // Also set title on mindmap and flashcard card headers
       var mindmapTitle = document.querySelector(".mindmap-card-title");
       if (mindmapTitle) mindmapTitle.textContent = topicTitleText;
       var flashcardTitle = document.querySelector(".flashcard-card-title");
       if (flashcardTitle) flashcardTitle.textContent = topicTitleText;
 
       if (typeof window.applyHeaderTitleBounce === "function") {
-        window.applyHeaderTitleBounce(
-          document.getElementById("lesson-topic-title"),
-        );
+        window.applyHeaderTitleBounce(document.getElementById("lesson-topic-title"));
       }
 
-      // Update topic switcher current topic name
       const switcherLabel = document.getElementById("switcherCurrentTopic");
       if (switcherLabel)
-        switcherLabel.textContent = currentLessonData.topicTitle || "Chủ đề";
+        switcherLabel.textContent = topicTitleText;
 
-      // Save Learning activity to personal Google Sheet
-      google.script.run.saveActivityLog({
-        type: "Learning",
-        topicId: currentLessonData.topicId,
-        topicTitle: currentLessonData.topicTitle,
-      });
-
-      // Notify dashboard to refresh leaderboard + history
       window.dispatchEvent(new Event("dashboard-needs-refresh"));
 
-      // Check access permission before loading content
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (!result || !result.success || !result.unlocked) {
-            showLessonAccessDenied(
-              (result && (result.reason || result.message)) ||
-              'Bạn không có quyền truy cập bài học này.'
-            );
-            return;
-          }
-
-          // Load lesson content
-          if (currentLessonData.contentDocId) {
-            console.log(
-              "🚀 Calling loadLessonContent with docId:",
-              currentLessonData.contentDocId,
-            );
-            loadLessonContent(currentLessonData.contentDocId);
-          } else {
-            console.error("❌ No contentDocId found in topic data");
-            console.error("Topic data:", currentLessonData);
-            showLessonError(
-              "Lỗi: Bài học này chưa có nội dung. Vui lòng liên hệ admin để thêm Google Doc.\n\n" +
-              "Topic: " + (currentLessonData.topicTitle || "Không xác định"),
-            );
-          }
-
-          // ⭐ Load saved progress for this topic (restore sidebar/checkbox states)
-          loadSavedTopicProgress(currentLessonData.topicId);
-        })
-        .withFailureHandler(function(error) {
-          showLessonAccessDenied(error.message || error.toString());
-        })
-        .checkTopicAccess(currentLessonData.topicId);
+      loadLessonInitialBundle();
     } else {
       console.error("❌ No currentPageParams found");
       showLessonError("Thiếu thông tin bài học");
     }
 
-    // Setup scroll tracking
     setupScrollTracking();
   }
 
@@ -312,88 +257,115 @@
     }
   }
 
-  /**
-   * Load lesson content from Google Doc
-   */
-  function loadLessonContent(docId) {
-    console.log("📄 Loading lesson content from Doc ID:", docId);
-    console.log("🔍 docId type:", typeof docId);
-    console.log("🔍 docId value:", docId);
+  function loadLessonInitialBundle() {
+    const topicId = currentLessonData.topicId;
 
-    // Show loading
     document.getElementById("lesson-loading").style.display = "block";
     document.getElementById("lesson-error").style.display = "none";
     document.getElementById("lesson-content-area").style.display = "none";
     const tabActionsEl = document.getElementById("lesson-tab-actions");
     if (tabActionsEl) tabActionsEl.style.display = "none";
 
-    // ⭐ KIỂM TRA XEM HÀM google.script.run CÓ TỒN TẠI KHÔNG
     if (typeof google === "undefined" || !google.script || !google.script.run) {
-      console.error("❌ google.script.run not available!");
       showLessonError("Lỗi: Không thể kết nối với server. Vui lòng thử lại.");
       return;
     }
 
-    console.log("✅ google.script.run available");
-    console.log("🚀 Calling getTopicContentByDocId...");
-
-    // Call server function
     google.script.run
       .withSuccessHandler(function (response) {
-        console.log("✅ Lesson content response:", response);
-        console.log("📊 Response type:", typeof response);
-        console.log("📊 Response.success:", response?.success);
-        console.log("📊 Response.message:", response?.message);
-        console.log("📊 Response.content length:", response?.content?.length);
-
-        if (response && response.success) {
-          // Hide loading
-          document.getElementById("lesson-loading").style.display = "none";
-
-          // Show content - Render Google Doc then enhance
-          const contentArea = document.getElementById("lesson-content-area");
-          contentArea.innerHTML = response.content;
-          contentArea.style.display = "block";
-
-          // ⭐ ENHANCE LESSON CONTENT - Apply all enhancements
-          enhanceLessonContent();
-
-          // Show lesson completion actions
-          setTimeout(() => {
-            const tabActions = document.getElementById("lesson-tab-actions");
-            if (tabActions) tabActions.style.display = "flex";
-          }, 2000);
-
-          showToast("✅ Đã tải bài giảng", "success");
-        } else {
-          console.error("❌ Response failed:", response);
-          showLessonError(response?.message || "Lỗi không xác định");
+        if (!response || !response.success || !response.unlocked) {
+          showLessonAccessDenied(
+            response?.reason || response?.message || "Không có quyền truy cập",
+          );
+          return;
         }
+
+        renderLessonHtml(response.content);
+        
+        // Restore progress state internally if needed, but loadSavedTopicProgress handles the UI
+        loadSavedTopicProgress(topicId);
+
+        // Delay activity log to not block UI
+        setTimeout(() => {
+          google.script.run.saveActivityLog({
+            type: "Learning",
+            topicId: currentLessonData.topicId,
+            topicTitle: currentLessonData.topicTitle,
+          });
+        }, 1500);
+
+        // Prefetch extra contents
+        scheduleLessonExtrasPrefetch();
       })
       .withFailureHandler(function (error) {
-        console.error("❌ Error loading lesson:", error);
-        console.error("❌ Error type:", typeof error);
-        console.error("❌ Error message:", error?.message);
-        console.error("❌ Error toString:", error?.toString());
-        
-        // ⭐ More detailed error message
-        let errorMsg = "Lỗi không xác định";
-        if (error?.message) {
-          errorMsg = error.message;
-        } else if (error?.toString) {
-          errorMsg = error.toString();
-        }
-        
-        showLessonError(
-          "Không thể tải bài giảng.\n\n" +
-          "Lỗi: " + errorMsg + "\n\n" +
-          "Kiểm tra:\n" +
-          "1. Google Doc ID có hợp lệ không?\n" +
-          "2. Doc có được chia sẻ với Apps Script không?\n" +
-          "3. Xem Apps Script Logs để biết chi tiết: clasp logs",
-        );
+        showLessonError(error?.message || "Không thể tải bài học");
       })
-      .getTopicContentByDocId(docId);
+      .getLessonInitialBundle(topicId);
+  }
+
+  function renderLessonHtml(html) {
+    const loading = document.getElementById("lesson-loading");
+    const contentArea = document.getElementById("lesson-content-area");
+    const actions = document.getElementById("lesson-tab-actions");
+
+    if (loading) loading.style.display = "none";
+
+    contentArea.innerHTML = html || "";
+    contentArea.style.display = "block";
+
+    enhanceLessonContent();
+
+    if (actions) actions.style.display = "flex";
+    // showToast("✅ Đã tải bài giảng", "success");
+  }
+
+  function scheduleLessonExtrasPrefetch() {
+    const startPrefetch = function () {
+      prefetchFlashcards();
+      prefetchMindmap();
+    };
+
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(startPrefetch, { timeout: 1500 });
+    } else {
+      setTimeout(startPrefetch, 500);
+    }
+  }
+
+  function prefetchFlashcards() {
+    if (flashcardsPrefetching || prefetchedFlashcards || !currentLessonData?.topicId) return;
+    flashcardsPrefetching = true;
+    google.script.run
+      .withSuccessHandler(function (response) {
+        flashcardsPrefetching = false;
+        if (response?.success && response.data) {
+           let data = response.data;
+           if (typeof data === "string") {
+             try { data = JSON.parse(data); } catch(e){}
+           }
+           prefetchedFlashcards = data;
+        }
+      })
+      .withFailureHandler(function () { flashcardsPrefetching = false; })
+      .getPublishedFlashcards(currentLessonData.topicId);
+  }
+
+  function prefetchMindmap() {
+    if (mindmapPrefetching || prefetchedMindmap || !currentLessonData?.topicId) return;
+    mindmapPrefetching = true;
+    google.script.run
+      .withSuccessHandler(function (response) {
+        mindmapPrefetching = false;
+        if (response?.success && response.data) {
+           let data = response.data;
+           if (typeof data === "string") {
+             try { data = JSON.parse(data); } catch(e){}
+           }
+           prefetchedMindmap = data;
+        }
+      })
+      .withFailureHandler(function () { mindmapPrefetching = false; })
+      .getPublishedMindmap(currentLessonData.topicId);
   }
 
   // ========== AI CONTENT LOADERS ==========
@@ -409,6 +381,11 @@
       return;
     }
 
+    if (prefetchedMindmap) {
+      renderMindmapContent(prefetchedMindmap);
+      return;
+    }
+
     // Show loading
     document.getElementById("mindmap-loading").style.display = "block";
     document.getElementById("mindmap-error").style.display = "none";
@@ -416,92 +393,38 @@
 
     google.script.run
       .withSuccessHandler(function (response) {
-        console.log("✅ Mindmap response:", response);
-        console.log("Response type:", typeof response);
-        console.log("Response.success:", response?.success);
-        console.log("Response.data type:", typeof response?.data);
-        console.log("Response._isStringified:", response?._isStringified);
-
         document.getElementById("mindmap-loading").style.display = "none";
 
-        if (response === null || response === undefined) {
-          console.error("❌ Response is NULL - Server error occurred");
-          showMindmapError(
-            "Lỗi server: Không nhận được dữ liệu.\n\n" +
-              "Kiểm tra:\n" +
-              "1. Đã gắn Gemini API key cá nhân chưa?\n" +
-              "2. Google Doc có quyền truy cập?\n" +
-              "3. Xem Apps Script Logs để biết lỗi chi tiết",
-          );
-          return;
-        }
-
-        if (isMissingGeminiKeyError(response)) {
-          handleMissingGeminiKeyWarning(response?.message);
-          showMindmapError(
-            response?.message ||
-              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
-          );
-          return;
-        }
-
         if (response && response.success && response.data) {
-          // ⭐ Parse data nếu đã được stringify từ server
           let mindmapData = response.data;
           if (typeof mindmapData === "string") {
-            try {
-              mindmapData = JSON.parse(mindmapData);
-              console.log("✅ Parsed mindmap data:", mindmapData);
-            } catch (e) {
-              console.error("❌ Failed to parse mindmap data:", e);
-              showMindmapError("Lỗi parse dữ liệu mindmap");
-              return;
-            }
+            try { mindmapData = JSON.parse(mindmapData); } catch(e) {}
           }
-
-          renderMindmap(mindmapData);
-          document.getElementById("mindmap-content").style.display = "block";
-          aiContentLoaded.mindmap = true;
-
-          // ⭐ Show print button when mindmap is loaded
-          const printBtn = document.getElementById("mindmap-print-btn");
-          if (printBtn) {
-            printBtn.style.display = "flex";
-          }
-
-          // Show mindmap completion checkbox
-          const mindmapActions = document.getElementById("mindmap-tab-actions");
-          if (mindmapActions) mindmapActions.style.display = "flex";
-
-          // ⭐ Save mindmap progress when viewed
-          saveMindmapProgress();
-
-          showToast("✅ Đã tải Mindmap", "success");
+          renderMindmapContent(mindmapData);
         } else {
-          console.error("❌ Response failed:", response?.message);
-          showMindmapError(
-            response?.message ||
-              "Không thể tải Mindmap.\n\nKiểm tra Apps Script Logs.",
-          );
+          showMindmapError(response?.message || "Không thể tải Mindmap.");
         }
       })
       .withFailureHandler(function (error) {
-        console.error("❌ Mindmap error:", error);
         document.getElementById("mindmap-loading").style.display = "none";
-        if (isMissingGeminiKeyError(error)) {
-          handleMissingGeminiKeyWarning(error?.message || error?.toString());
-        }
-        showMindmapError(
-          "Lỗi kết nối server:\n" +
-            (error?.message || error?.toString() || "Unknown error"),
-        );
+        showMindmapError(error?.message || "Lỗi kết nối server");
       })
-      .getAIContentForWeb(
-        currentLessonData.topicId,
-        "mindmap",
-        forceRegenerate,
-        { userId: currentUser?.userId || window.currentUser?.userId || "" },
-      );
+      .getPublishedMindmap(currentLessonData.topicId);
+  }
+
+  function renderMindmapContent(mindmapData) {
+    document.getElementById("mindmap-loading").style.display = "none";
+    renderMindmap(mindmapData);
+    document.getElementById("mindmap-content").style.display = "block";
+    aiContentLoaded.mindmap = true;
+
+    const printBtn = document.getElementById("mindmap-print-btn");
+    if (printBtn) printBtn.style.display = "flex";
+    const mindmapActions = document.getElementById("mindmap-tab-actions");
+    if (mindmapActions) mindmapActions.style.display = "flex";
+
+    saveMindmapProgress();
+    // showToast("✅ Đã tải Mindmap", "success");
   }
 
   /**
@@ -509,10 +432,14 @@
    */
   function loadFlashcards(forceRegenerate = false) {
     console.log("🃏 Loading Flashcards...");
-    console.log("🔄 Force Regenerate: " + forceRegenerate);
 
     if (!currentLessonData?.topicId) {
       showFlashcardsError("Thiếu thông tin topic");
+      return;
+    }
+
+    if (prefetchedFlashcards) {
+      renderFlashcardsContent(prefetchedFlashcards);
       return;
     }
 
@@ -521,102 +448,51 @@
     document.getElementById("flashcards-error").style.display = "none";
     document.getElementById("flashcards-content").style.display = "none";
 
-    // Gọi backend với forceRegenerate flag
     google.script.run
       .withSuccessHandler(function (response) {
-        console.log("✅ Flashcards response:", response);
-        console.log("Response type:", typeof response);
-        console.log("Response.success:", response?.success);
-        console.log("Response.data type:", typeof response?.data);
-        console.log("Response._isStringified:", response?._isStringified);
-
         document.getElementById("flashcards-loading").style.display = "none";
 
-        if (response === null || response === undefined) {
-          console.error("❌ Response is NULL - Server error occurred");
-          showFlashcardsError(
-            "Lỗi server: Không nhận được dữ liệu.\n\n" +
-              "Kiểm tra:\n" +
-              "1. Đã gắn Gemini API key cá nhân chưa?\n" +
-              "2. Google Doc có quyền truy cập?\n" +
-              "3. Xem Apps Script Logs để biết lỗi chi tiết",
-          );
-          return;
-        }
-
-        if (isMissingGeminiKeyError(response)) {
-          handleMissingGeminiKeyWarning(response?.message);
-          showFlashcardsError(
-            response?.message ||
-              "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings.",
-          );
-          return;
-        }
-
         if (response && response.success && response.data) {
-          // ⭐ Parse data nếu đã được stringify từ server
           let flashcardsRawData = response.data;
           if (typeof flashcardsRawData === "string") {
-            try {
-              flashcardsRawData = JSON.parse(flashcardsRawData);
-              console.log("✅ Parsed flashcards data:", flashcardsRawData);
-            } catch (e) {
-              console.error("❌ Failed to parse flashcards data:", e);
-              showFlashcardsError("Lỗi parse dữ liệu flashcards");
-              return;
-            }
+            try { flashcardsRawData = JSON.parse(flashcardsRawData); } catch(e) {}
           }
-
-          const loadedCards = flashcardsRawData.cards || flashcardsRawData;
-          fullFlashcardsData = JSON.parse(JSON.stringify(loadedCards || []));
-          flashcardsData = JSON.parse(JSON.stringify(fullFlashcardsData));
-          if (flashcardsData.length > 0) {
-            currentFlashcardIndex = 0;
-            initDeckState(); // Initialize deck tracking
-
-            // Update total count
-            const totalEl = document.getElementById("flashcard-total");
-            if (totalEl) totalEl.textContent = flashcardsData.length;
-
-            // Render flashcard FIRST (while still hidden)
-            renderCurrentFlashcard();
-
-            // THEN show content after card is ready
-            const flashcardsContentEl =
-              document.getElementById("flashcards-content");
-            if (flashcardsContentEl) flashcardsContentEl.style.display = "flex";
-            aiContentLoaded.flashcards = true;
-
-            // Setup swipe gestures after content is visible
-            setTimeout(() => {
-              setupSwipeGestures();
-            }, 100);
-
-            showToast(
-              "✅ Đã tải " + flashcardsData.length + " Flashcards",
-              "success",
-            );
-          } else {
-            showFlashcardsError("Không có flashcard nào");
-          }
+          renderFlashcardsContent(flashcardsRawData);
         } else {
           showFlashcardsError(response?.message || "Không thể tải Flashcards");
         }
       })
       .withFailureHandler(function (error) {
-        console.error("❌ Flashcards error:", error);
         document.getElementById("flashcards-loading").style.display = "none";
-        if (isMissingGeminiKeyError(error)) {
-          handleMissingGeminiKeyWarning(error?.message || error?.toString());
-        }
         showFlashcardsError(error?.message || "Lỗi kết nối server");
       })
-      .getAIContentForWeb(
-        currentLessonData.topicId,
-        "flashcards",
-        forceRegenerate,
-        { userId: currentUser?.userId || window.currentUser?.userId || "" },
-      );
+      .getPublishedFlashcards(currentLessonData.topicId);
+  }
+
+  function renderFlashcardsContent(flashcardsRawData) {
+    document.getElementById("flashcards-loading").style.display = "none";
+    const loadedCards = flashcardsRawData.cards || flashcardsRawData;
+    fullFlashcardsData = JSON.parse(JSON.stringify(loadedCards || []));
+    flashcardsData = JSON.parse(JSON.stringify(fullFlashcardsData));
+    
+    if (flashcardsData.length > 0) {
+      currentFlashcardIndex = 0;
+      initDeckState(); // Initialize deck tracking
+
+      const totalEl = document.getElementById("flashcard-total");
+      if (totalEl) totalEl.textContent = flashcardsData.length;
+
+      renderCurrentFlashcard();
+
+      const flashcardsContentEl = document.getElementById("flashcards-content");
+      if (flashcardsContentEl) flashcardsContentEl.style.display = "flex";
+      aiContentLoaded.flashcards = true;
+
+      setTimeout(() => { setupSwipeGestures(); }, 100);
+      // showToast("✅ Đã tải " + flashcardsData.length + " Flashcards", "success");
+    } else {
+      showFlashcardsError("Không có flashcard nào");
+    }
   }
 
   // ========== SIMPLE TREE MINDMAP ==========
@@ -1878,7 +1754,7 @@
           // Invalidate progress cache so Topics page reloads fresh data
           invalidateProgressCache();
           if (completed) {
-            showToast("✅ Đã lưu tiến độ bài học", "success");
+            // showToast("✅ Đã lưu tiến độ bài học", "success");
           }
         } else {
           console.error("❌ Failed to save lesson progress:", response.message);
@@ -1911,7 +1787,7 @@
           progressSaved.mindmap = true;
           console.log("✅ Mindmap progress saved");
           invalidateProgressCache();
-          showToast("✅ Đã lưu tiến độ Mindmap", "success");
+          // showToast("✅ Đã lưu tiến độ Mindmap", "success");
         }
       })
       .withFailureHandler(function (error) {
@@ -1944,7 +1820,7 @@
         if (response.success) {
           if (completed) {
             progressSaved.flashcards = true;
-            showToast("✅ Đã lưu tiến độ Flashcards", "success");
+            // showToast("✅ Đã lưu tiến độ Flashcards", "success");
           }
           invalidateProgressCache();
           console.log("✅ Flashcards progress saved");
@@ -2101,7 +1977,7 @@
 
     // Show celebration if 100%
     if (overallPct >= 99) {
-      showToast("🎉 Chúc mừng! Bạn đã hoàn thành 100% bài học!", "success");
+      // showToast("🎉 Chúc mừng! Bạn đã hoàn thành 100% bài học!", "success");
       try {
         if (typeof window.notifyTopicCompleted === 'function' && currentLessonData && currentLessonData.topicId) {
           window.notifyTopicCompleted(currentLessonData.topicId);
@@ -2151,7 +2027,7 @@
 
     // Save to server with timestamp
     saveLessonProgress(true);
-    showToast("✅ Đã đánh dấu đọc xong!", "success");
+    // showToast("✅ Đã đánh dấu đọc xong!", "success");
 
     // Unlock mini quiz dropdown for this topic
     unlockMiniQuizDropdown();
@@ -2168,7 +2044,7 @@
       saveLocalProgress(currentLessonData?.topicId);
       invalidateProgressCache();
       saveMindmapProgress();
-      showToast("✅ Đã đánh dấu xem Mindmap!", "success");
+      // showToast("✅ Đã đánh dấu xem Mindmap!", "success");
     }
     updateOverallProgress();
   };

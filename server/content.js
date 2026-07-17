@@ -403,81 +403,86 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
       }
     }
 
-    // 3. Get topic info to find Google Doc ID
-    Logger.log("🔍 Getting topic info...");
-    const topicInfo = getTopicInfo(topicId);
-    Logger.log("📋 Topic info: " + JSON.stringify(topicInfo));
-
-    if (!topicInfo || !topicInfo.contentDocId) {
-      Logger.log("❌ No contentDocId found");
-      return {
-        success: false,
-        message: "Không tìm thấy Google Doc cho topic này",
-      };
-    }
-
-    Logger.log("📄 Found Doc ID: " + topicInfo.contentDocId);
-
-    // 4. Read Google Doc content
-    const docResult = GeminiService.readGoogleDoc(topicInfo.contentDocId);
-    if (!docResult.success) {
-      return {
-        success: false,
-        message: "Không thể đọc Google Doc: " + docResult.error,
-      };
-    }
-
-    Logger.log("📝 Doc content loaded: " + docResult.wordCount + " words");
-
-    // 4.5: Phải tạo Analysis trước (QUAN TRỌNG!)
-    Logger.log("🔍 Analyzing document first...");
+    // 3. Get topic info to find Google Doc ID (Skip for mini_quiz and flashcards as they don't need AI generation)
+    let docResult = { content: "" };
     let analysis = null;
+    const requiresDoc = !["mini_quiz", "flashcards"].includes(contentType);
 
-    try {
-      const cachedAnalysis = AIContentCache.get(topicId, "document_analysis");
-      if (cachedAnalysis && cachedAnalysis.content) {
-        analysis = cachedAnalysis.content;
-        Logger.log("✅ Using cached document analysis");
+    if (requiresDoc) {
+      Logger.log("🔍 Getting topic info...");
+      const topicInfo = getTopicInfo(topicId);
+      Logger.log("📋 Topic info: " + JSON.stringify(topicInfo));
+
+      if (!topicInfo || !topicInfo.contentDocId) {
+        Logger.log("❌ No contentDocId found");
+        return {
+          success: false,
+          message: "Không tìm thấy Google Doc cho topic này",
+        };
       }
-    } catch (e) {
-      Logger.log("⚠️ Failed to load analysis from cache: " + e.toString());
-    }
 
-    if (!analysis) {
-      analysis = ContentGenerator.analyzeDocument(
-        docResult.content,
-        resolvedUser,
-        { topicId: topicId },
-      );
-      
-      if (analysis && !analysis.error) {
-        try {
-          AIContentCache.save({
-            topicId: topicId,
-            contentDocId: topicInfo.contentDocId,
-            contentType: "document_analysis",
-            generatedContent: analysis,
-            docLastModified: docResult.lastModified || new Date()
-          });
-          Logger.log("✅ Document analysis cached successfully");
-        } catch (e) {
-          Logger.log("⚠️ Failed to cache document analysis: " + e.toString());
+      Logger.log("📄 Found Doc ID: " + topicInfo.contentDocId);
+
+      // 4. Read Google Doc content
+      docResult = GeminiService.readGoogleDoc(topicInfo.contentDocId);
+      if (!docResult.success) {
+        return {
+          success: false,
+          message: "Không thể đọc Google Doc: " + docResult.error,
+        };
+      }
+
+      Logger.log("📝 Doc content loaded: " + docResult.wordCount + " words");
+
+      // 4.5: Phải tạo Analysis trước (QUAN TRỌNG!)
+      Logger.log("🔍 Analyzing document first...");
+
+      try {
+        const cachedAnalysis = AIContentCache.get(topicId, "document_analysis");
+        if (cachedAnalysis && cachedAnalysis.content) {
+          analysis = cachedAnalysis.content;
+          Logger.log("✅ Using cached document analysis");
+        }
+      } catch (e) {
+        Logger.log("⚠️ Failed to load analysis from cache: " + e.toString());
+      }
+
+      if (!analysis) {
+        analysis = ContentGenerator.analyzeDocument(
+          docResult.content,
+          resolvedUser,
+          { topicId: topicId },
+        );
+        
+        if (analysis && !analysis.error) {
+          try {
+            AIContentCache.save({
+              topicId: topicId,
+              contentDocId: topicInfo.contentDocId,
+              contentType: "document_analysis",
+              generatedContent: analysis,
+              docLastModified: docResult.lastModified || new Date()
+            });
+            Logger.log("✅ Document analysis cached successfully");
+          } catch (e) {
+            Logger.log("⚠️ Failed to cache document analysis: " + e.toString());
+          }
         }
       }
-    }
 
-    if (!analysis || analysis.error) {
-      return {
-        success: false,
-        message:
-          "Không thể phân tích tài liệu: " +
-          (analysis?.error || "Unknown error"),
-      };
-    }
+      if (!analysis || analysis.error) {
+        return {
+          success: false,
+          message:
+            "Không thể phân tích tài liệu: " +
+            (analysis?.error || "Unknown error"),
+        };
+      }
 
-    Logger.log(
-      "✅ Document analyzed: " + (analysis.mainTopic || "Unknown topic"),
-    );
+      Logger.log(
+        "✅ Document analyzed: " + (analysis.mainTopic || "Unknown topic"),
+      );
+    }
 
     // 5. Generate content using AI (với đầy đủ tham số)
     let generatedContent;
@@ -546,12 +551,31 @@ function getAIContent(topicId, contentType, forceRegenerate, userContext) {
         );
         break;
       case "mini_quiz":
-        generatedContent = ContentGenerator.generateMiniQuiz(
-          docResult.content,
-          analysis,
-          resolvedUser,
-          { topicId: topicId },
-        );
+        Logger.log("📝 Getting Mini Quiz from Question Bank...");
+        try {
+          const quizResult = getApprovedQuestionsForTopic(topicId);
+          if (quizResult && quizResult.success && quizResult.data) {
+            const parsedData = JSON.parse(quizResult.data);
+            if (parsedData.questions && parsedData.questions.length > 0) {
+              generatedContent = {
+                title: "Mini Quiz",
+                questions: parsedData.questions.map(q => ({
+                  question: q.question,
+                  options: q.options,
+                  correctAnswer: q.correctAnswer,
+                  explanation: q.explanation || ""
+                }))
+              };
+            } else {
+              generatedContent = { error: "Chưa có câu hỏi nào được duyệt cho chủ đề này." };
+            }
+          } else {
+            generatedContent = { error: "Không thể lấy câu hỏi cho chủ đề này." };
+          }
+        } catch (e) {
+          Logger.log("Error getting mini quiz from question bank: " + e.toString());
+          generatedContent = { error: e.toString() };
+        }
         break;
       case "matching":
         generatedContent = ContentGenerator.generateMatchingPairs(
@@ -6198,5 +6222,228 @@ function getMatchingStatsPerTopic() {
   } catch (error) {
     Logger.log("❌ Error in getMatchingStatsPerTopic: " + error.toString());
     return { success: false, message: error.toString(), stats: {} };
+  }
+}
+
+// ========== LESSON OPTIMIZATION API ==========
+
+const LESSON_CACHE_SECONDS = 21600; // 6 hours
+const MAX_CACHE_SIZE = 90000; // 90KB safe limit for Apps Script CacheService
+
+/**
+ * Lưu trữ HTML vào CacheService, chunking nếu vượt quá giới hạn
+ */
+function putCachedHtml(topicId, html) {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cacheKey = "lesson_html_" + topicId;
+    if (html.length <= MAX_CACHE_SIZE) {
+      cache.put(cacheKey + "_count", "1", LESSON_CACHE_SECONDS);
+      cache.put(cacheKey + "_0", html, LESSON_CACHE_SECONDS);
+    } else {
+      const chunks = Math.ceil(html.length / MAX_CACHE_SIZE);
+      cache.put(cacheKey + "_count", chunks.toString(), LESSON_CACHE_SECONDS);
+      for (let i = 0; i < chunks; i++) {
+        cache.put(cacheKey + "_" + i, html.substring(i * MAX_CACHE_SIZE, (i + 1) * MAX_CACHE_SIZE), LESSON_CACHE_SECONDS);
+      }
+    }
+    Logger.log("✅ HTML Cached for topic: " + topicId);
+  } catch (e) {
+    Logger.log("⚠️ Cache save error: " + e.toString());
+  }
+}
+
+/**
+ * Lấy HTML từ CacheService
+ */
+function getCachedHtml(topicId) {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cacheKey = "lesson_html_" + topicId;
+    const countStr = cache.get(cacheKey + "_count");
+    if (!countStr) return null;
+    
+    const count = parseInt(countStr);
+    let html = "";
+    for (let i = 0; i < count; i++) {
+      const chunk = cache.get(cacheKey + "_" + i);
+      if (!chunk) return null; // Incomplete cache
+      html += chunk;
+    }
+    Logger.log("✅ HTML retrieved from Cache for topic: " + topicId);
+    return html;
+  } catch (e) {
+    Logger.log("⚠️ Cache get error: " + e.toString());
+    return null;
+  }
+}
+
+/**
+ * Xóa Cache HTML khi Admin cập nhật nội dung
+ */
+function clearLessonHtmlCache(topicId) {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cacheKey = "lesson_html_" + topicId;
+    const countStr = cache.get(cacheKey + "_count");
+    if (countStr) {
+      const count = parseInt(countStr);
+      for (let i = 0; i < count; i++) {
+        cache.remove(cacheKey + "_" + i);
+      }
+      cache.remove(cacheKey + "_count");
+    }
+  } catch (e) {
+    Logger.log("⚠️ Cache clear error: " + e.toString());
+  }
+}
+
+/**
+ * Lấy toàn bộ thông tin cần thiết khi mở bài học trong 1 lần gọi
+ * @param {string} topicId - ID của bài học
+ * @returns {object} bundle data
+ */
+function getLessonInitialBundle(topicId) {
+  try {
+    Logger.log("=== GET LESSON INITIAL BUNDLE ===");
+    Logger.log("Topic ID: " + topicId);
+
+    // 1. Check access
+    const access = checkTopicAccess(topicId);
+    if (!access || !access.success || !access.unlocked) {
+      return {
+        success: false,
+        unlocked: false,
+        message: access ? (access.reason || access.message) : "Không có quyền truy cập",
+      };
+    }
+
+    // 2. Get Topic Info
+    const topicInfo = getTopicById(topicId);
+    if (!topicInfo || !topicInfo.success || !topicInfo.topic) {
+      return {
+        success: false,
+        unlocked: true,
+        message: "Không tìm thấy thông tin bài học",
+      };
+    }
+
+    const docId = topicInfo.topic.contentDocId;
+
+    // 3. Get Content (with Cache)
+    let contentHtml = "";
+    if (docId) {
+      // Try cache first
+      contentHtml = getCachedHtml(topicId);
+      if (!contentHtml) {
+        // Fetch from Doc if not in cache
+        const contentResult = getTopicContentByDocId(docId);
+        if (contentResult && contentResult.success) {
+          contentHtml = contentResult.content;
+          putCachedHtml(topicId, contentHtml);
+        } else {
+          return {
+            success: false,
+            unlocked: true,
+            message: contentResult ? contentResult.message : "Lỗi tải nội dung",
+          };
+        }
+      }
+    } else {
+      return {
+        success: false,
+        unlocked: true,
+        message: "Bài học chưa có nội dung Google Doc",
+      };
+    }
+
+    // 4. Get Progress
+    let progressData = null;
+    const progressResult = getUserTopicProgress();
+    if (progressResult && progressResult.success && progressResult.progress) {
+      progressData = progressResult.progress[topicId] || null;
+    }
+
+    return {
+      success: true,
+      unlocked: true,
+      content: contentHtml,
+      progress: progressData,
+    };
+  } catch (error) {
+    Logger.log("❌ Error in getLessonInitialBundle: " + error.toString());
+    return {
+      success: false,
+      unlocked: false,
+      message: "Lỗi Server: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Lấy Flashcards đã được duyệt cho User (Không gọi AI/Gemini)
+ * @param {string} topicId 
+ */
+function getPublishedFlashcards(topicId) {
+  try {
+    // Chỉ lấy cards matching đã được duyệt
+    const cardsResult = getMatchingTermCardsByTopic(topicId);
+    if (cardsResult && cardsResult.success && cardsResult.cards) {
+      const validCards = cardsResult.cards.filter(c => c.term && c.definition && c.status === "approved" && c.isActive);
+      if (validCards.length > 0) {
+        const generatedContent = {
+          deckTitle: "Thuật ngữ chủ đề",
+          totalCards: validCards.length,
+          cards: validCards.map(c => ({
+            id: c.cardId,
+            term: c.term,
+            definition: c.definition,
+            difficulty: c.difficulty || "medium"
+          }))
+        };
+        return {
+          success: true,
+          data: JSON.stringify(generatedContent), // stringified to match frontend expectations
+          message: "Đã tải Flashcards",
+        };
+      }
+    }
+    return {
+      success: false,
+      message: "Chưa có Flashcard nào được duyệt cho chủ đề này."
+    };
+  } catch (error) {
+    Logger.log("❌ Error in getPublishedFlashcards: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi Server: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Lấy Mindmap từ cache (đã được admin tạo) - User không tự tạo
+ * @param {string} topicId
+ */
+function getPublishedMindmap(topicId) {
+  try {
+    const cached = AIContentCache.get(topicId, "mindmap");
+    if (cached && cached.content) {
+      return {
+        success: true,
+        data: JSON.stringify(cached.content),
+        message: "Đã tải Mindmap",
+      };
+    }
+    return {
+      success: false,
+      message: "Mindmap chưa được tạo cho bài học này. Vui lòng liên hệ Admin.",
+    };
+  } catch (error) {
+    Logger.log("❌ Error in getPublishedMindmap: " + error.toString());
+    return {
+      success: false,
+      message: "Lỗi Server: " + error.toString(),
+    };
   }
 }

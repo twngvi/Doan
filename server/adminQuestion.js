@@ -477,7 +477,7 @@ function getApprovedQuestionsForTopic(topicId) {
     shuffleArray(mediumQuestions);
     shuffleArray(hardQuestions);
     
-    // Lấy số lượng theo tỷ lệ yêu cầu: 12 Easy, 6 Medium, 2 Hard (tổng 20)
+    // Lấy số lượng theo tỷ lệ yêu cầu: 7 Easy, 2 Medium, 1 Hard (tổng 10)
     let finalQuestions = [];
     
     const takeQuestions = (sourceArray, count) => {
@@ -486,9 +486,9 @@ function getApprovedQuestionsForTopic(topicId) {
       return count - taken.length; // Trả về số lượng còn thiếu
     };
     
-    let missingEasy = takeQuestions(easyQuestions, 12);
-    let missingMedium = takeQuestions(mediumQuestions, 6);
-    let missingHard = takeQuestions(hardQuestions, 2);
+    let missingEasy = takeQuestions(easyQuestions, 7);
+    let missingMedium = takeQuestions(mediumQuestions, 2);
+    let missingHard = takeQuestions(hardQuestions, 1);
     
     // Tổng số lượng còn thiếu
     let totalMissing = missingEasy + missingMedium + missingHard;
