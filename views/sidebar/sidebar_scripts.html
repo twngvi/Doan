@@ -108,14 +108,43 @@
 
       for (let i = 0; i < candidates.length; i++) {
         if (isUsableValue(candidates[i])) {
-          return String(candidates[i]).trim();
+          return window.getCachedAvatarUrl(String(candidates[i]).trim());
         }
       }
 
-      return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      return window.getCachedAvatarUrl(`https://ui-avatars.com/api/?name=${encodeURIComponent(
         resolveDisplayName(payload)
-      )}&size=96&background=6b7280&color=fff`;
+      )}&size=96&background=6b7280&color=fff`);
     }
+
+    window.getCachedAvatarUrl = function(url) {
+      if (!url) return "";
+      const cacheKey = "avatar_cache_" + url;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) return cached;
+      } catch(e) {}
+      
+      setTimeout(function() {
+        try {
+          if (localStorage.getItem(cacheKey)) return;
+          fetch(url)
+            .then(function(r) { return r.blob(); })
+            .then(function(blob) {
+              const reader = new FileReader();
+              reader.onloadend = function() {
+                try {
+                  localStorage.setItem(cacheKey, reader.result);
+                } catch(e) {}
+              }
+              reader.readAsDataURL(blob);
+            })
+            .catch(function(e) { console.warn("Cache avatar failed", e); });
+        } catch(e) {}
+      }, 1000);
+      
+      return url;
+    };
 
     function normalizeNumber(value, fallback) {
       if (typeof value === "number" && Number.isFinite(value)) return value;
