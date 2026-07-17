@@ -3214,58 +3214,59 @@
   // ==================== Toast Notification System ====================
 
   /**
-   * Show toast notification with star effect
+   * Show toast notification with stackable support and progress bar
    * @param {string} message - Message to display
    * @param {string} type - Type: 'success', 'error', 'info', 'warning'
    */
   function showToast(message, type = "info") {
-    const toast = document.getElementById("toast");
-    const toastMessage = document.getElementById("toast-message");
+    const container = document.getElementById("toast-container");
+    if (!container) return;
 
-    if (!toast || !toastMessage) return;
-
-    // Set message
-    toastMessage.textContent = message;
-
-    // Set colors based on type
-    toast.classList.remove(
-      "bg-green-500",
-      "bg-red-500",
-      "bg-blue-500",
-      "bg-yellow-500",
-    );
-    switch (type) {
-      case "success":
-        toast.classList.add("bg-green-500");
-        break;
-      case "error":
-        toast.classList.add("bg-red-500");
-        break;
-      case "warning":
-        toast.classList.add("bg-yellow-500");
-        break;
-      default:
-        toast.classList.add("bg-blue-500");
+    const toast = document.createElement("div");
+    toast.className = "app-toast app-toast-" + type;
+    
+    let iconSvg = '';
+    switch(type) {
+      case 'success': iconSvg = '<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'; break;
+      case 'error': iconSvg = '<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>'; break;
+      case 'warning': iconSvg = '<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>'; break;
+      default: iconSvg = '<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
     }
 
-    // Show toast with animation
-    toast.classList.remove("translate-x-full");
-    toast.classList.add("translate-x-0");
+    toast.innerHTML = `
+      <div class="app-toast-content">
+        <span class="app-toast-icon">${iconSvg}</span>
+        <span class="app-toast-message">${message}</span>
+        <button class="app-toast-close" type="button" onclick="this.parentElement.parentElement.classList.remove('show'); setTimeout(() => this.parentElement.parentElement.remove(), 300)">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="app-toast-progress"></div>
+    `;
 
-    // Auto hide after 3 seconds
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        toast.classList.add("show");
+      });
+    });
+
     setTimeout(() => {
-      hideToast();
-    }, 3000);
+      if (toast.parentElement) {
+        toast.classList.remove("show");
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, 3500);
   }
 
   /**
-   * Hide toast notification
+   * Hide all toast notifications
    */
   function hideToast() {
-    const toast = document.getElementById("toast");
-    if (toast) {
-      toast.classList.remove("translate-x-0");
-      toast.classList.add("translate-x-full");
+    const container = document.getElementById("toast-container");
+    if (container) {
+      container.innerHTML = "";
     }
   }
 
@@ -3281,15 +3282,16 @@
       document.querySelector(".notification-panel");
 
     if (notificationBtn && notificationPanel) {
-      const isVisible = notificationPanel.style.display === "block";
-      notificationPanel.style.display = isVisible ? "none" : "block";
+      const isVisible = notificationPanel.style.display !== "none";
+      notificationPanel.style.display = isVisible ? "none" : "flex";
+      e.preventDefault();
       e.stopPropagation();
     } else if (closeNotifBtn && notificationPanel) {
       notificationPanel.style.display = "none";
       e.stopPropagation();
     } else if (
       notificationPanel &&
-      notificationPanel.style.display === "block"
+      notificationPanel.style.display !== "none"
     ) {
       if (!notificationPanel.contains(e.target)) {
         notificationPanel.style.display = "none";

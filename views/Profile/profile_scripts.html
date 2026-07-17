@@ -535,75 +535,37 @@
       return;
     }
 
-    // Update UI immediately
-    const profileAvatar = document.getElementById("profile-avatar");
-    const sidebarAvatar = document.getElementById("sidebar-avatar");
-    if (profileAvatar) profileAvatar.src = url;
-    if (sidebarAvatar) sidebarAvatar.src = url;
+    // Update UI immediately (Optimistic UI)
+    user.avatarUrl = url;
+    window.currentUser = user;
+    profileData = user;
+
+    try {
+      localStorage.setItem("currentUser", JSON.stringify(user));
+    } catch (e) {}
+    try {
+      sessionStorage.setItem("currentUser", JSON.stringify(user));
+    } catch (e) {}
+
+    window.dispatchEvent(
+      new CustomEvent("avatar-updated", { detail: { url } }),
+    );
+
+    setTimeout(() => {
+      updateAllAvatars(url);
+      if (typeof window.updateAllUserAvatars === "function") {
+        window.updateAllUserAvatars(url);
+      }
+    }, 100);
 
     closeAvatarModal();
-    showToast("Đang lưu avatar...", "info");
+    showToast("Đã áp dụng avatar mới!", "success"); // Notify immediately and let it run in background
 
-    // Save to server
+    // Save to server in background
     google.script.run
-      .withSuccessHandler(function (res) {
-        console.log("💾 Save avatar response:", res);
-        if (res.success) {
-          // 1. Update user object
-          user.avatarUrl = url;
-
-          // 2. Update global variables
-          window.currentUser = user;
-          profileData = user;
-
-          // 3. ⭐ LƯU VÀO CẢ localStorage VÀ sessionStorage
-          try {
-            localStorage.setItem("currentUser", JSON.stringify(user));
-            console.log("✅ Avatar saved to localStorage");
-          } catch (e) {
-            console.warn("⚠️ localStorage blocked:", e);
-          }
-
-          try {
-            sessionStorage.setItem("currentUser", JSON.stringify(user));
-            console.log("✅ Avatar saved to sessionStorage");
-          } catch (e) {
-            console.warn("⚠️ sessionStorage blocked:", e);
-          }
-
-          // 4. Update UI globally
-          showToast("Đổi avatar thành công!", "success");
-
-          // 5. Dispatch event để các component khác update
-          window.dispatchEvent(
-            new CustomEvent("avatar-updated", { detail: { url } }),
-          );
-
-          // 6. Update tất cả avatar elements trong DOM
-          setTimeout(() => {
-            updateAllAvatars(url);
-            // Gọi hàm global nếu có
-            if (typeof window.updateAllUserAvatars === "function") {
-              window.updateAllUserAvatars(url);
-            }
-          }, 100);
-
-          console.log("✅ Avatar update complete:", url);
-        } else {
-          showToast("Lỗi: " + res.message, "error");
-          // Rollback UI
-          if (profileAvatar && user.avatarUrl)
-            profileAvatar.src = user.avatarUrl;
-          if (sidebarAvatar && user.avatarUrl)
-            sidebarAvatar.src = user.avatarUrl;
-        }
-      })
       .withFailureHandler(function (err) {
         console.error("❌ Save avatar error:", err);
-        showToast("Lỗi kết nối: " + err.message, "error");
-        // Rollback UI
-        if (profileAvatar && user.avatarUrl) profileAvatar.src = user.avatarUrl;
-        if (sidebarAvatar && user.avatarUrl) sidebarAvatar.src = user.avatarUrl;
+        showToast("Có lỗi khi lưu avatar lên server", "warning");
       })
       .saveAvatarUrl(user.userId, url);
   }
@@ -1244,82 +1206,47 @@
   function handleProfileUpdate(e) {
     e.preventDefault();
 
-    console.log("💾 Saving profile...");
-
-    // Lấy giá trị từ form
-    const displayNameInput = document.getElementById("displayName");
-    const newDisplayName = displayNameInput?.value?.trim();
-
-    if (!newDisplayName) {
-      showToast("Vui lòng nhập tên hiển thị", "error");
+    let user = profileData || window.currentUser;
+    if (!user || (!user.email && !user.userId)) {
+      showToast("Vui lòng đăng nhập để cập nhật", "error");
       return;
     }
 
-    if ((profileData?.displayName || "").trim() === newDisplayName) {
-      showToast("Tên hiển thị không thay đổi", "info");
+    const displayName = document.getElementById("displayName")?.value.trim();
+    if (!displayName) {
+      showToast("Tên hiển thị không được để trống", "error");
       return;
     }
 
-    // Kiểm tra user
-    if (!profileData || !profileData.userId) {
-      showToast("Không tìm thấy thông tin người dùng", "error");
-      return;
-    }
-
-    // Hiển thị loading
-    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const submitBtn = document.getElementById("btnUpdateProfile");
     const originalText = submitBtn ? submitBtn.innerHTML : "";
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = "<span>⏳</span><span>Đang lưu...</span>";
+      submitBtn.innerHTML = "<span>⏳ Đang xử lý ngầm...</span>";
     }
 
-    // Gọi backend để cập nhật
+    // Optimistic UI updates
+    user.displayName = displayName;
+    profileData = user;
+    window.currentUser = user;
+    try {
+      localStorage.setItem("currentUser", JSON.stringify(user));
+      sessionStorage.setItem("currentUser", JSON.stringify(user));
+    } catch (err) {}
+
+    updateProfileHeader(user);
+    updateAllUserNames(displayName);
+    window.dispatchEvent(
+      new CustomEvent("profile-updated", { detail: user }),
+    );
+    showToast("Đã ghi nhận thay đổi hồ sơ!", "success");
+
+    // Server call in background
     google.script.run
       .withSuccessHandler(function (response) {
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = originalText;
-        }
-
-        if (response.success) {
-          console.log("✅ Profile updated:", response);
-
-          const updatedUser = (response && response.user) || {
-            ...(window.currentUser || profileData || {}),
-            displayName: newDisplayName,
-          };
-
-          // Cập nhật dữ liệu local state
-          profileData = { ...(profileData || {}), ...updatedUser };
-          window.currentUser = {
-            ...(window.currentUser || {}),
-            ...updatedUser,
-          };
-          if (typeof currentUser !== "undefined") {
-            currentUser = window.currentUser;
-          }
-
-          // Cập nhật sessionStorage và localStorage
-          sessionStorage.setItem(
-            "currentUser",
-            JSON.stringify(window.currentUser),
-          );
-          localStorage.setItem(
-            "currentUser",
-            JSON.stringify(window.currentUser),
-          );
-
-          // Cập nhật UI
-          updateProfileHeader(window.currentUser);
-
-          // Cập nhật tất cả nơi hiển thị tên (dashboard, sidebar, etc.)
-          updateAllUserNames(window.currentUser.displayName || newDisplayName);
-
-          showToast("Cập nhật thông tin thành công!", "success");
-        } else {
-          console.error("❌ Update failed:", response.message);
-          showToast(response.message || "Lỗi cập nhật thông tin", "error");
         }
       })
       .withFailureHandler(function (error) {
@@ -1328,14 +1255,11 @@
           submitBtn.innerHTML = originalText;
         }
         console.error("❌ Error:", error);
-        showToast(
-          "Lỗi kết nối server: " + (error?.message || "Unknown"),
-          "error",
-        );
+        showToast("Lỗi đồng bộ hồ sơ lên server", "error");
       })
       .updateProfile({
-        userId: profileData.userId,
-        displayName: newDisplayName,
+        userId: user.userId,
+        displayName: displayName,
       });
   }
 
@@ -2073,7 +1997,7 @@
 
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = "<span>⏳ Đang lưu...</span>";
+      btn.innerHTML = "<span>⏳ Đang chạy ngầm...</span>";
     }
 
     const settings = {
@@ -2086,7 +2010,6 @@
       repeatIfMissed: document.getElementById("autoRetryIfMissed")?.checked === true,
       repeatIntervalMinutes: Number(document.getElementById("retryInterval")?.value || 30),
       repeatMaxPerDay: Number(document.getElementById("maxRetries")?.value || 3),
-      // Legacy aliases for older backend readers.
       autoRetryIfMissed: document.getElementById("autoRetryIfMissed")?.checked === true,
       retryInterval: Number(document.getElementById("retryInterval")?.value || 30),
       maxRetries: Number(document.getElementById("maxRetries")?.value || 3),
@@ -2095,50 +2018,30 @@
       reminderMode: Number(document.getElementById("reminderMode")?.value || 1)
     };
 
+    // Optimistic UI updates
+    setStudySettingsToForm(settings);
+    if (profileData) profileData.studySettings = settings;
+    if (window.currentUser) {
+      window.currentUser.studySettings = settings;
+      try {
+        localStorage.setItem("currentUser", JSON.stringify(window.currentUser));
+        sessionStorage.setItem("currentUser", JSON.stringify(window.currentUser));
+      } catch (err) {}
+    }
+    try {
+      sessionStorage.removeItem("timelinePopupShown");
+    } catch (err) {}
+    window.dispatchEvent(
+      new CustomEvent("study-settings-updated", { detail: settings })
+    );
+    if (typeof loadStudyWidgetData === "function") loadStudyWidgetData();
+    showToast("Đã ghi nhận cài đặt học tập!", "success");
+
     google.script.run
       .withSuccessHandler(function (response) {
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = originalHtml;
-        }
-
-        if (response && response.success) {
-          const savedSettings = response.settings || settings;
-
-          setStudySettingsToForm(savedSettings);
-
-          if (profileData) {
-            profileData.studySettings = savedSettings;
-          }
-
-          if (window.currentUser) {
-            window.currentUser.studySettings = savedSettings;
-            try {
-              localStorage.setItem("currentUser", JSON.stringify(window.currentUser));
-              sessionStorage.setItem("currentUser", JSON.stringify(window.currentUser));
-            } catch (err) {}
-          }
-
-          try {
-            sessionStorage.removeItem("timelinePopupShown");
-          } catch (err) {}
-
-          window.dispatchEvent(
-            new CustomEvent("study-settings-updated", {
-              detail: savedSettings
-            })
-          );
-
-          if (typeof loadStudyWidgetData === "function") {
-            loadStudyWidgetData();
-          }
-
-          showToast("Đã lưu cài đặt học tập thông minh!", "success");
-        } else {
-          showToast(
-            response?.message || "Dữ liệu chưa được lưu đúng, vui lòng thử lại",
-            "error"
-          );
         }
       })
       .withFailureHandler(function (err) {
@@ -2146,8 +2049,7 @@
           btn.disabled = false;
           btn.innerHTML = originalHtml;
         }
-
-        showToast("Lỗi kết nối: " + (err.message || "Unknown"), "error");
+        showToast("Lỗi đồng bộ lên server: " + (err.message || "Unknown"), "error");
       })
       .apiUpdateStudySettings({
         userId: profileData.userId || "",
