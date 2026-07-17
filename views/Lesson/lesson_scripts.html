@@ -3672,19 +3672,21 @@
     // Google Doc adds class-based CSS that hides bullets - override via inline
     const allLists = container.querySelectorAll("ul, ol");
     allLists.forEach((list) => {
-      const computed = window.getComputedStyle(list);
-      if (computed.listStyleType === "none") {
-        // Force show bullets/numbers
-        if (list.tagName === "UL") {
-          list.style.listStyleType = "disc";
-        } else {
-          list.style.listStyleType = "decimal";
-        }
+      if (list.tagName === "UL") {
+        list.classList.add("doc-formatted-list", "doc-bullet-list");
+        list.style.setProperty("list-style-type", "disc", "important");
+      } else {
+        list.classList.add("doc-formatted-list", "doc-number-list");
+        list.style.setProperty("list-style-type", "decimal", "important");
       }
-      // Ensure proper padding for bullets to be visible
-      if (!list.style.paddingLeft || parseFloat(computed.paddingLeft) < 10) {
-        list.style.paddingLeft = "1.5rem";
-      }
+      list.style.setProperty("padding-left", "1.5rem", "important");
+      list.style.setProperty("margin-left", "1.5rem", "important");
+      list.style.setProperty("margin-bottom", "1rem", "important");
+    });
+
+    const allItems = container.querySelectorAll("ul li, ol li");
+    allItems.forEach((li) => {
+      li.style.setProperty("list-style-position", "outside", "important");
     });
 
     // === STEP 3: Fix line breaks in headings and paragraphs ===
@@ -3899,6 +3901,26 @@
     // Flush remaining buffers
     flushBulletBuffer();
     flushNumberBuffer();
+
+    // ⭐ Normalize ANY existing or new lists so bullets always display clearly
+    const allLists = container.querySelectorAll("ul, ol");
+    allLists.forEach((list) => {
+      if (list.tagName === "UL") {
+        list.classList.add("doc-formatted-list", "doc-bullet-list");
+        list.style.setProperty("list-style-type", "disc", "important");
+      } else {
+        list.classList.add("doc-formatted-list", "doc-number-list");
+        list.style.setProperty("list-style-type", "decimal", "important");
+      }
+      list.style.setProperty("padding-left", "1.5rem", "important");
+      list.style.setProperty("margin-left", "1.5rem", "important");
+      list.style.setProperty("margin-bottom", "1rem", "important");
+    });
+
+    const allItems = container.querySelectorAll("ul li, ol li");
+    allItems.forEach((li) => {
+      li.style.setProperty("list-style-position", "outside", "important");
+    });
 
     console.log("✅ Bullet & numbering formatted");
   }

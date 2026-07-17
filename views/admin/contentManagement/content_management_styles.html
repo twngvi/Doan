@@ -1263,10 +1263,11 @@
     display: none;
     position: fixed;
     top: 0;
-    left: 0;
+    left: var(--admin-sidebar-width, 260px);
+    width: calc(100vw - var(--admin-sidebar-width, 260px));
     right: 0;
     bottom: 0;
-    z-index: 9999;
+    z-index: 999;
     overflow-y: auto;
     overflow-x: hidden;
     background: var(--theme-bg, #f8fafc);
@@ -1301,8 +1302,8 @@
 
   /* Galaxy Stars Background */
   .admin-preview-bg {
-    position: fixed;
-    inset: 0;
+    position: absolute !important;
+    inset: 0 !important;
     pointer-events: none;
     z-index: 0;
   }
@@ -1686,25 +1687,47 @@
 
   /* 2. Lists (bullet / numbered) */
   .lesson-content-wrapper ul,
-  .lesson-content-wrapper ol,
   .admin-preview-body.lesson-content-wrapper ul,
-  .admin-preview-body.lesson-content-wrapper ol {
-    margin: 0 0 1rem 1.5rem;
-    padding-left: 0.5rem;
-    color: #e2e8f0;
+  .admin-preview-body ul,
+  .lesson-content-wrapper .doc-bullet-list,
+  .admin-preview-body .doc-bullet-list {
+    list-style-type: disc !important;
+    margin: 0 0 1rem 1.5rem !important;
+    padding-left: 0.5rem !important;
+    color: inherit !important;
+  }
+
+  .lesson-content-wrapper ol,
+  .admin-preview-body.lesson-content-wrapper ol,
+  .admin-preview-body ol,
+  .lesson-content-wrapper .doc-number-list,
+  .admin-preview-body .doc-number-list {
+    list-style-type: decimal !important;
+    margin: 0 0 1rem 1.5rem !important;
+    padding-left: 0.5rem !important;
+    color: inherit !important;
   }
 
   .lesson-content-wrapper li,
-  .admin-preview-body.lesson-content-wrapper li {
+  .admin-preview-body.lesson-content-wrapper li,
+  .admin-preview-body li {
     margin-bottom: 0.5rem;
     line-height: 1.7;
     padding-left: 0.25rem;
+    list-style-position: outside !important;
+    color: inherit;
   }
 
   .lesson-content-wrapper li::marker,
-  .admin-preview-body.lesson-content-wrapper li::marker {
-    color: #818cf8;
-    font-weight: 700;
+  .admin-preview-body.lesson-content-wrapper li::marker,
+  .admin-preview-body li::marker,
+  .lesson-content-wrapper .doc-bullet-list li::marker,
+  .admin-preview-body .doc-bullet-list li::marker,
+  .lesson-content-wrapper .doc-number-list li::marker,
+  .admin-preview-body .doc-number-list li::marker {
+    color: #6366f1 !important;
+    font-weight: 600 !important;
+    font-size: 1.1em !important;
   }
 
   /* Client-side formatted list styles (.doc-formatted-list) */
@@ -1712,14 +1735,6 @@
   .admin-preview-body .doc-formatted-list {
     margin: 1rem 0 1.25rem 1.5rem;
     padding-left: 0.5rem;
-  }
-  .lesson-content-wrapper .doc-bullet-list,
-  .admin-preview-body .doc-bullet-list {
-    list-style-type: disc;
-  }
-  .lesson-content-wrapper .doc-number-list,
-  .admin-preview-body .doc-number-list {
-    list-style-type: decimal;
   }
   .lesson-content-wrapper .doc-formatted-list li.doc-indent-1,
   .admin-preview-body .doc-formatted-list li.doc-indent-1 {
@@ -3246,16 +3261,24 @@
    FIX PREVIEW OVERLAY: Không cho thấy nền page-admin phía sau
 ================================================= */
 
-  body.is-content-management-page #cm-preview-overlay.admin-preview-overlay {
+  body.is-content-management-page #cm-preview-overlay.admin-preview-overlay,
+  body.is-content-management-page #cm-preview-overlay.admin-preview-overlay.active,
+  body.has-admin-sidebar #cm-preview-overlay.admin-preview-overlay,
+  body.has-admin-sidebar #cm-preview-overlay.admin-preview-overlay.active,
+  .admin-preview-overlay,
+  .admin-preview-overlay.active {
     position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: var(--admin-sidebar-width, 260px) !important;
+    width: calc(100vw - var(--admin-sidebar-width, 260px)) !important;
     height: 100vh !important;
 
     margin: 0 !important;
     padding: 0 !important;
 
-    z-index: 99999 !important;
+    z-index: 999 !important;
 
     overflow-y: auto !important;
     overflow-x: hidden !important;
@@ -3263,11 +3286,26 @@
     background: var(--theme-bg, #f8fafc) !important;
 
     transform: none !important;
-    transition: opacity 0.3s ease !important;
+    transition: left 0.2s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease !important;
+  }
+
+  body.has-admin-sidebar.admin-sidebar-collapsed #cm-preview-overlay.admin-preview-overlay,
+  body.has-admin-sidebar.admin-sidebar-collapsed #cm-preview-overlay.admin-preview-overlay.active,
+  body.admin-sidebar-collapsed .admin-preview-overlay,
+  body.admin-sidebar-collapsed .admin-preview-overlay.active {
+    left: var(--admin-sidebar-collapsed-width, 76px) !important;
+    width: calc(100vw - var(--admin-sidebar-collapsed-width, 76px)) !important;
   }
 
   @media (max-width: 768px) {
-    body.is-content-management-page #cm-preview-overlay.admin-preview-overlay {
+    body.is-content-management-page #cm-preview-overlay.admin-preview-overlay,
+    body.is-content-management-page #cm-preview-overlay.admin-preview-overlay.active,
+    body.has-admin-sidebar #cm-preview-overlay.admin-preview-overlay,
+    body.has-admin-sidebar #cm-preview-overlay.admin-preview-overlay.active,
+    body.has-admin-sidebar.admin-sidebar-collapsed #cm-preview-overlay.admin-preview-overlay,
+    body.has-admin-sidebar.admin-sidebar-collapsed #cm-preview-overlay.admin-preview-overlay.active,
+    .admin-preview-overlay,
+    .admin-preview-overlay.active {
       left: 0 !important;
       width: 100vw !important;
     }
