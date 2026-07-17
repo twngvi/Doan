@@ -43,6 +43,9 @@
   const MCQ_STATS_PERSIST_TTL = 5 * 60 * 1000; // Cache 5 phút (khớp với server cache)
   let mcqTopicsLoadTimeoutId = null;
   let mcqAllTopicsForSearch = null; // Store all topics for search
+  
+  // Quiz request ID to prevent race conditions
+  let latestQuizLoadRequestId = 0;
 
   function clearMcqTopicsLoadTimeout() {
     if (mcqTopicsLoadTimeoutId) {
@@ -1877,14 +1880,33 @@
    * Start quiz with selected mode
    */
   function startQuizWithMode(mode) {
-    console.log("🎮 Starting quiz with mode:", mode);
+    if (mode !== "instant" && mode !== "review") return;
+
+    cancelCurrentQuizLoading();
+    // resetQuizRuntimeForNewMode (which is resetting state) is handled in loadQuizQuestions
+
     quizState.quizMode = mode;
     closeGameModeModal();
+
+    // Quan trọng: thiết lập UI đúng trước khi hiện trang
+    applyQuizModeUI(mode, "loading");
+    
     showQuizView();
     loadQuizData(false);
   }
 
+  function cancelCurrentQuizLoading() {
+    latestQuizLoadRequestId++;
+    stopTimer();
+    if (quizState.autoAdvanceTimer) {
+      clearTimeout(quizState.autoAdvanceTimer);
+      quizState.autoAdvanceTimer = null;
+    }
+    quizState.loading = false;
+  }
+
   function backToQuizTopicHome() {
+    cancelCurrentQuizLoading();
     if (typeof window.confirmExitActiveSession === "function") {
       window.confirmExitActiveSession().then(function (ok) {
         if (!ok) return;
@@ -1907,7 +1929,7 @@
    * Back to topic selection
    */
   function backToTopicSelection() {
-    stopTimer();
+    cancelCurrentQuizLoading();
 
     // Stop learning tracker and save remaining time
     if (window.LearningTracker) {
@@ -2065,14 +2087,20 @@
    * Load quiz questions from server question bank
    */
   function loadQuizQuestionsFromQuestionBank(forceRegenerate = false) {
+    const requestId = ++latestQuizLoadRequestId;
+    const requestedMode = quizState.quizMode;
+    const requestedTopicId = quizState.topicId;
+
     console.log("📥 Loading quiz questions...", {
-      topicId: quizState.topicId,
+      topicId: requestedTopicId,
+      mode: requestedMode,
+      requestId,
       forceRegenerate,
     });
 
     clearMCQLocalState();
-
-    showLoading();
+    // Use the central UI function
+    applyQuizModeUI(requestedMode, "loading");
 
     // ⭐ Track loading time for user feedback
     var loadStartTime = Date.now();
@@ -2091,6 +2119,14 @@
       }
     }, 1000);
 
+    function isCurrentQuizRequest() {
+      return (
+        requestId === latestQuizLoadRequestId &&
+        requestedMode === quizState.quizMode &&
+        String(requestedTopicId) === String(quizState.topicId)
+      );
+    }
+
     // ⭐ PARALLEL LOADING: Load mastered IDs + wrong answers + questions cùng lúc
     var questionsResult = null;
     var masteredIds = [];
@@ -2098,9 +2134,13 @@
     var masteredLoaded = false;
 
     function tryProcessResults() {
+      if (!isCurrentQuizRequest()) {
+        console.log("Bỏ qua tryProcessResults của session cũ:", requestId);
+        return;
+      }
       if (!questionsLoaded || !masteredLoaded) return;
       clearInterval(loadingInterval);
-      processQuestionsWithMastered(questionsResult, masteredIds);
+      processQuestionsWithMastered(questionsResult, masteredIds, requestId, requestedMode);
     }
 
     // PARALLEL 1: Load mastered question IDs (with TIMEOUT)
@@ -2115,6 +2155,7 @@
 
     google.script.run
       .withSuccessHandler(function (ids) {
+        if (!isCurrentQuizRequest()) return;
         clearTimeout(masteredTimeout);
         if (masteredLoaded && masteredIds.length === 0) {
            return;
@@ -2125,31 +2166,39 @@
         tryProcessResults();
       })
       .withFailureHandler(function () {
+        if (!isCurrentQuizRequest()) return;
         clearTimeout(masteredTimeout);
         masteredIds = [];
         masteredLoaded = true;
         tryProcessResults();
       })
-      .getMasteredQuestionIds(quizState.topicId);
+      .getMasteredQuestionIds(requestedTopicId);
 
     // ⭐ PARALLEL 2: Load questions from DB
     google.script.run
       .withSuccessHandler(function (response) {
+        if (!isCurrentQuizRequest()) return;
         questionsResult = response;
         questionsLoaded = true;
         tryProcessResults();
       })
       .withFailureHandler(function (error) {
+        if (!isCurrentQuizRequest()) return;
         clearInterval(loadingInterval);
         handleLoadError(error);
       })
-      .getApprovedQuestionsForTopic(quizState.topicId);
+      .getApprovedQuestionsForTopic(requestedTopicId);
   }
 
   /**
    * Process questions + mastered IDs together (called when both are ready)
    */
-  function processQuestionsWithMastered(response, masteredIds) {
+  function processQuestionsWithMastered(response, masteredIds, requestId, requestedMode) {
+    if (requestId !== latestQuizLoadRequestId || requestedMode !== quizState.quizMode) {
+      console.log("Bỏ qua processQuestionsWithMastered của session cũ:", requestId);
+      return;
+    }
+
     console.log("✅ Processing questions with mastered IDs...");
     quizState.loading = false;
 
@@ -2236,7 +2285,7 @@
         // ⭐ Create quiz session with filtered questions
         var finalQuestions = filterResult.questions;
         createQuizSession(finalQuestions);
-        startQuizSession();
+        startQuizSession(requestId, requestedMode);
       }
     } catch (error) {
       console.error("❌ Error processing questions:", error);
@@ -2629,12 +2678,18 @@
   /**
    * Start quiz session
    */
-  function startQuizSession() {
+  function startQuizSession(requestId, requestedMode) {
+    if (requestId !== undefined && requestId !== latestQuizLoadRequestId) return;
+    if (requestedMode !== undefined && requestedMode !== quizState.quizMode) return;
+    
+    // In case startQuizSession is called directly without requestId/requestedMode (e.g. retry)
+    const effectiveMode = requestedMode || quizState.quizMode;
+
     console.log(
       "🎮 Starting quiz session with",
       quizState.questions.length,
       "questions, mode:",
-      quizState.quizMode,
+      effectiveMode,
     );
 
     // Update session status
@@ -2673,31 +2728,14 @@
     const mcqHeader = document.querySelector(".mcq-game-header");
     if (mcqHeader) mcqHeader.style.display = "";
     
+    applyQuizModeUI(effectiveMode, "ready");
+
     startTimer();
     document.getElementById("current-score").textContent = quizState.score || 0;
     
-    if (quizState.gameMode === "review") {
-      document.getElementById("quiz-stats").style.display = "none";
-      var progressBar = document.getElementById("quiz-progress-bar");
-      if (progressBar) progressBar.style.display = "none";
-      document.getElementById("quiz-section").style.display = "none";
-      document.getElementById("review-questions-list").style.display = "block";
+    if (effectiveMode === "review") {
       renderAllQuestionsForReview();
-      
-      // Update header subtitle
-      const subtitleEl = document.querySelector(".mcq-game-subtitle");
-      if (subtitleEl) subtitleEl.innerHTML = 'Ôn tập: Trả lời toàn bộ câu hỏi và nộp bài <span id="quiz-mode-indicator" class="quiz-mode-indicator review">REVIEW</span>';
     } else {
-      document.getElementById("quiz-stats").style.display = "flex";
-      var progressBar = document.getElementById("quiz-progress-bar");
-      if (progressBar) progressBar.style.display = "none";
-      document.getElementById("quiz-section").style.display = "block";
-      document.getElementById("review-questions-list").style.display = "none";
-      
-      // Update header subtitle
-      const subtitleEl = document.querySelector(".mcq-game-subtitle");
-      if (subtitleEl) subtitleEl.innerHTML = 'Làm quiz theo chủ đề <span id="quiz-mode-indicator" class="quiz-mode-indicator">INSTANT</span>';
-      
       displayQuestion();
     }
   }
@@ -4229,15 +4267,94 @@
   /**
    * UI State functions
    */
-  function showLoading() {
-    quizState.loading = true;
-    document.getElementById("quiz-loading").style.display = "block";
-    document.getElementById("quiz-error").style.display = "none";
+  function resetQuizModeDOM() {
+    const reviewList = document.getElementById("review-questions-list");
+    const answerOptions = document.getElementById("answer-options");
+    const feedback = document.getElementById("answer-feedback");
+    const hint = document.getElementById("question-hint");
+
+    if (reviewList) {
+      reviewList.innerHTML = "";
+      reviewList.style.display = "none";
+    }
+
+    if (answerOptions) answerOptions.innerHTML = "";
+
+    if (feedback) {
+      feedback.innerHTML = "";
+      feedback.style.display = "none";
+    }
+
+    if (hint) {
+      hint.textContent = "";
+      hint.style.display = "none";
+    }
+
     document.getElementById("quiz-section").style.display = "none";
-    document.getElementById("quiz-stats").style.display = "none";
-    var progressBar = document.getElementById("quiz-progress-bar");
-    if (progressBar) progressBar.style.display = "none";
     document.getElementById("quiz-results").style.display = "none";
+    document.getElementById("quiz-error").style.display = "none";
+  }
+
+  function applyQuizModeUI(mode, phase = "loading") {
+    const instantSection = document.getElementById("quiz-section");
+    const reviewSection = document.getElementById("review-questions-list");
+    const loading = document.getElementById("quiz-loading");
+    const error = document.getElementById("quiz-error");
+    const results = document.getElementById("quiz-results");
+    const stats = document.getElementById("quiz-stats");
+    const subtitle = document.querySelector(".mcq-game-subtitle");
+    const quizView = document.getElementById("mcq-quiz-view");
+    const progressBar = document.getElementById("quiz-progress-bar");
+
+    if (quizView) {
+      quizView.dataset.quizMode = mode;
+    }
+
+    if (phase === "loading") {
+       resetQuizModeDOM();
+    }
+
+    if (instantSection) instantSection.style.display = "none";
+    if (reviewSection) reviewSection.style.display = "none";
+    if (error) error.style.display = "none";
+    if (results) results.style.display = "none";
+    if (progressBar) progressBar.style.display = "none"; // ProgressBar typically not used now, or only for instant
+
+    if (loading) {
+      loading.style.display = phase === "loading" ? "block" : "none";
+    }
+
+    if (mode === "review") {
+      if (stats) stats.style.display = "none";
+
+      if (subtitle) {
+        subtitle.innerHTML =
+          'Ôn tập: Trả lời toàn bộ câu hỏi và nộp bài ' +
+          '<span id="quiz-mode-indicator" class="quiz-mode-indicator review">REVIEW</span>';
+      }
+
+      if (phase === "ready" && reviewSection) {
+        reviewSection.style.display = "block";
+      }
+    } else {
+      if (stats) {
+        stats.style.display = phase === "ready" ? "flex" : "none";
+      }
+
+      if (subtitle) {
+        subtitle.innerHTML =
+          'Làm quiz theo chủ đề ' +
+          '<span id="quiz-mode-indicator" class="quiz-mode-indicator instant">INSTANT</span>';
+      }
+
+      if (phase === "ready" && instantSection) {
+        instantSection.style.display = "block";
+      }
+    }
+  }
+
+  function showLoading() {
+    applyQuizModeUI(quizState.quizMode, "loading");
     const mcqHeader = document.querySelector(".mcq-game-header");
     if (mcqHeader) mcqHeader.style.display = "";
   }
