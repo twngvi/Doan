@@ -936,12 +936,25 @@
   let topicEditorLoaded = false;
 
   function inittopiceditor() {
+    const isEdit = !!localStorage.getItem("editTopicId");
+    if (typeof showUnifiedTopicEditorLoader === "function") {
+      showUnifiedTopicEditorLoader(isEdit ? "Đang tải bài học..." : "Đang tải Topic Editor...");
+    } else {
+      const loadingEl = document.getElementById("topic-editor-loading");
+      const loadingTextEl = document.getElementById("topic-editor-loading-text");
+      const containerEl = document.getElementById("topic-editor-container");
+      if (loadingTextEl) loadingTextEl.textContent = isEdit ? "Đang tải bài học..." : "Đang tải Topic Editor...";
+      if (loadingEl) loadingEl.style.display = "flex";
+      if (containerEl) containerEl.style.display = "none";
+    }
+
     if (topicEditorLoaded) {
       // Check if we need to enter edit mode first
       if (typeof initEditMode === "function") {
         initEditMode();
       } else {
         // Fallback or if edit mode not applicable
+        if (typeof hideUnifiedTopicEditorLoader === "function") hideUnifiedTopicEditorLoader();
         const editor = document.getElementById("contentEditor");
         if (editor) editor.focus();
       }
@@ -957,6 +970,9 @@
 
     // Check if google.script.run is available
     if (typeof google === "undefined" || !google.script || !google.script.run) {
+      const loadingEl = document.getElementById("topic-editor-loading");
+      if (loadingEl) loadingEl.style.display = "none";
+      container.style.display = "block";
       container.innerHTML =
         '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi: Không thể kết nối với server</div>';
       return;
@@ -982,6 +998,9 @@
         }, 100);
       })
       .withFailureHandler(function (error) {
+        const loadingEl = document.getElementById("topic-editor-loading");
+        if (loadingEl) loadingEl.style.display = "none";
+        container.style.display = "block";
         container.innerHTML =
           '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi tải Topic Editor: ' +
           error.message +
@@ -1013,6 +1032,15 @@
   }
 
   function initTopicEditorFallback() {
+    if (typeof hideUnifiedTopicEditorLoader === "function") {
+      hideUnifiedTopicEditorLoader();
+    } else {
+      const loadingEl = document.getElementById("topic-editor-loading");
+      const containerEl = document.getElementById("topic-editor-container");
+      if (loadingEl) loadingEl.style.display = "none";
+      if (containerEl) containerEl.style.display = "block";
+    }
+
     const editor = document.getElementById("contentEditor");
     if (editor) {
       editor.focus();

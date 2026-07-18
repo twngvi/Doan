@@ -1500,7 +1500,13 @@ async function publishTopic() {
     return;
   }
 
-  showTopicEditorLoading('Đang tạo và publish topic...');
+  if (typeof showUnifiedTopicEditorOverlay === 'function') {
+    showUnifiedTopicEditorOverlay('\u0110ang t\u1ea1o v\u00e0 xu\u1ea5t b\u1ea3n b\u00e0i h\u1ecdc...');
+  } else if (typeof showUnifiedTopicEditorLoader === 'function') {
+    showUnifiedTopicEditorLoader('\u0110ang t\u1ea1o v\u00e0 xu\u1ea5t b\u1ea3n b\u00e0i h\u1ecdc...');
+  } else {
+    showTopicEditorLoading('\u0110ang t\u1ea1o v\u00e0 xu\u1ea5t b\u1ea3n b\u00e0i h\u1ecdc...');
+  }
 
   const useUnlockCondition = document.getElementById('useUnlockCondition').checked;
   const prereqTopicId = document.getElementById('prerequisiteTopics').value;
@@ -1539,6 +1545,7 @@ async function publishTopic() {
 
   // Check if google.script.run is available
   if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
     hideTopicEditorLoading();
     showToast('Lỗi: Không thể kết nối với server. Vui lòng tải lại trang.', 'error');
     console.error('google.script.run not available');
@@ -1547,6 +1554,7 @@ async function publishTopic() {
 
   // Set a timeout to prevent infinite loading
   const publishTimeout = setTimeout(function() {
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
     hideTopicEditorLoading();
     showToast('⏱️ Quá thời gian chờ (60s). Vui lòng kiểm tra Apps Script Logs và thử lại.', 'error');
     console.error('Publish timeout - server took too long to respond');
@@ -1555,6 +1563,7 @@ async function publishTopic() {
   google.script.run
     .withSuccessHandler(function(result) {
       clearTimeout(publishTimeout);
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       console.log('✅ Server response:', result);
 
@@ -1616,6 +1625,7 @@ async function publishTopic() {
     })
     .withFailureHandler(function(error) {
       clearTimeout(publishTimeout);
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       console.error('❌ Server error:', error);
       var errorMsg = error && error.message ? error.message : String(error);
@@ -1666,6 +1676,7 @@ function initEditMode() {
     isEditMode = false;
     editingTopicId = null;
     updateTopicEditorHeader('create');
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
     return;
   }
 
@@ -1691,12 +1702,17 @@ function initEditMode() {
   var topicIdHint = document.getElementById('topicIdEditHint');
   if (topicIdHint) topicIdHint.style.display = 'block';
 
-  // Show loading
-  showTopicEditorLoading('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+  // Show unified loading (Hình 1) for loading topic from DB
+  if (typeof showUnifiedTopicEditorLoader === 'function') {
+    showUnifiedTopicEditorLoader('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+  } else {
+    showTopicEditorLoading('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+  }
 
   // Load topic data
   google.script.run
     .withSuccessHandler(function(result) {
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       if (result && result.success && result.data) {
         populateEditForm(result.data);
@@ -1706,6 +1722,7 @@ function initEditMode() {
       }
     })
     .withFailureHandler(function(error) {
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       showToast('L\u1ed7i: ' + (error ? error.message : error), 'error');
     })
@@ -2498,7 +2515,13 @@ async function updateTopic() {
 
   if (!shouldUpdate) return;
 
-  showTopicEditorLoading('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
+  if (typeof showUnifiedTopicEditorOverlay === 'function') {
+    showUnifiedTopicEditorOverlay('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
+  } else if (typeof showUnifiedTopicEditorLoader === 'function') {
+    showUnifiedTopicEditorLoader('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
+  } else {
+    showTopicEditorLoading('\u0110ang c\u1eadp nh\u1eadt b\u00e0i h\u1ecdc...');
+  }
 
   const useUnlockCondition = document.getElementById('useUnlockCondition').checked;
   const prereqTopicId = document.getElementById('prerequisiteTopics').value;
@@ -2536,12 +2559,14 @@ async function updateTopic() {
 
   // Check google.script.run
   if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
     hideTopicEditorLoading();
     showToast('L\u1ed7i: Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i v\u1edbi server.', 'error');
     return;
   }
 
   var updateTimeout = setTimeout(function() {
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
     hideTopicEditorLoading();
     showToast('\u23f1 Qu\u00e1 th\u1eddi gian ch\u1edd (60s). Vui l\u00f2ng ki\u1ec3m tra l\u1ea1i.', 'error');
   }, 60000);
@@ -2549,6 +2574,7 @@ async function updateTopic() {
   google.script.run
     .withSuccessHandler(function(result) {
       clearTimeout(updateTimeout);
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       console.log('\u2705 Update response:', result);
 
@@ -2592,6 +2618,7 @@ async function updateTopic() {
     })
     .withFailureHandler(function(error) {
       clearTimeout(updateTimeout);
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
       hideTopicEditorLoading();
       console.error('\u274c Update error:', error);
       var errorMsg = error && error.message ? error.message : String(error);
@@ -2759,6 +2786,53 @@ function hideTopicEditorLoading() {
     }
   } catch (e) {
     console.error('hideTopicEditorLoading error:', e);
+  }
+}
+
+function showUnifiedTopicEditorLoader(text) {
+  try {
+    var loadingEl = document.getElementById('topic-editor-loading');
+    var loadingTextEl = document.getElementById('topic-editor-loading-text');
+    var containerEl = document.getElementById('topic-editor-container');
+    if (loadingTextEl && text) loadingTextEl.textContent = text;
+    if (loadingEl) {
+      loadingEl.classList.remove('overlay-mode');
+      loadingEl.style.display = 'flex';
+    }
+    if (containerEl) containerEl.style.display = 'none';
+  } catch (e) {
+    console.error('showUnifiedTopicEditorLoader error:', e);
+  }
+}
+
+function showUnifiedTopicEditorOverlay(text) {
+  try {
+    var loadingEl = document.getElementById('topic-editor-loading');
+    var loadingTextEl = document.getElementById('topic-editor-loading-text');
+    var containerEl = document.getElementById('topic-editor-container');
+    if (loadingTextEl && text) loadingTextEl.textContent = text;
+    if (loadingEl) {
+      loadingEl.classList.add('overlay-mode');
+      loadingEl.style.display = 'flex';
+    }
+    // Do NOT hide containerEl so the form stays visible underneath the blurred overlay!
+    if (containerEl) containerEl.style.display = 'block';
+  } catch (e) {
+    console.error('showUnifiedTopicEditorOverlay error:', e);
+  }
+}
+
+function hideUnifiedTopicEditorLoader() {
+  try {
+    var loadingEl = document.getElementById('topic-editor-loading');
+    var containerEl = document.getElementById('topic-editor-container');
+    if (loadingEl) {
+      loadingEl.classList.remove('overlay-mode');
+      loadingEl.style.display = 'none';
+    }
+    if (containerEl) containerEl.style.display = 'block';
+  } catch (e) {
+    console.error('hideUnifiedTopicEditorLoader error:', e);
   }
 }
 
@@ -3146,5 +3220,8 @@ window.updateUnlockPreview = updateUnlockPreview;
 window.initTopicEditorPage = initTopicEditorPage;
 window.loadAllTopicsForPrereq = loadAllTopicsForPrereq;
 window.populatePrereqCategories = populatePrereqCategories;
+window.showUnifiedTopicEditorLoader = showUnifiedTopicEditorLoader;
+window.showUnifiedTopicEditorOverlay = showUnifiedTopicEditorOverlay;
+window.hideUnifiedTopicEditorLoader = hideUnifiedTopicEditorLoader;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
 </script>
