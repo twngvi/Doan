@@ -50,6 +50,15 @@ function adminGetCodeArrangements() {
       results.push(row);
     }
     
+    // Sort theo orderIndex nếu có
+    if (headers.indexOf("orderIndex") !== -1) {
+      results.sort((a, b) => {
+        const orderA = parseInt(a.orderIndex, 10);
+        const orderB = parseInt(b.orderIndex, 10);
+        return (isNaN(orderA) ? 999999 : orderA) - (isNaN(orderB) ? 999999 : orderB);
+      });
+    }
+    
     return { success: true, data: results };
   } catch (error) {
     Logger.log("Error in adminGetCodeArrangements: " + error.toString());
@@ -220,4 +229,58 @@ function adminToggleCodeArrangementStatus(arrangementId, targetStatus) {
     return { success: false, message: error.toString() };
   }
 }
+
+/**
+ * Sắp xếp lại thứ tự câu hỏi Code Arrangement theo danh sách ID
+ */
+function adminReorderCodeArrangements(orderedIds) {
+  try {
+    if (!orderedIds || !Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return { success: false, message: "Danh sách ID không hợp lệ" };
+    }
+    
+    const ss = getOrCreateDatabase();
+    const sheet = ss.getSheetByName("Code_Arrangement");
+    if (!sheet) return { success: false, message: "Sheet Code_Arrangement không tồn tại" };
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: true, message: "Không có dữ liệu để sắp xếp" };
+    
+    let headers = data[0];
+    let qIdCol = headers.indexOf("arrangementId");
+    if (qIdCol === -1) return { success: false, message: "Thiếu cột arrangementId" };
+    
+    // Kiểm tra hoặc bổ sung cột orderIndex
+    let orderCol = headers.indexOf("orderIndex");
+    if (orderCol === -1) {
+      orderCol = headers.length;
+      headers.push("orderIndex");
+      sheet.getRange(1, orderCol + 1).setValue("orderIndex");
+    }
+    
+    const rows = data.slice(1);
+    rows.forEach(row => {
+      // Nếu row chưa có đủ cột do mới thêm orderIndex
+      while (row.length < headers.length) row.push("");
+      const id = String(row[qIdCol]).trim();
+      const idx = orderedIds.indexOf(id);
+      row[orderCol] = idx !== -1 ? (idx + 1) : (orderedIds.length + 999);
+    });
+    
+    // Sắp xếp lại vật lý các dòng theo orderIndex mới
+    rows.sort((a, b) => {
+      return (parseInt(a[orderCol], 10) || 999999) - (parseInt(b[orderCol], 10) || 999999);
+    });
+    
+    // Ghi lại toàn bộ dữ liệu đã sắp xếp vào Sheet
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    SpreadsheetApp.flush();
+    
+    return { success: true, message: "Đã đồng bộ thứ tự sắp xếp thành công" };
+  } catch (error) {
+    Logger.log("Error in adminReorderCodeArrangements: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
 
