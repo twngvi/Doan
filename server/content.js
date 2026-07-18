@@ -1995,15 +1995,19 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
     const uHeaders = uData[0];
     const emailCol = uHeaders.indexOf("email");
     const pCol = uHeaders.indexOf("progressSheetId");
+    const uXpCol = uHeaders.indexOf("totalXP");
+    const uXqpCol = uHeaders.indexOf("totalXQP");
 
     let targetUserId = null;
     let progressSheetId = "";
     let userFound = false;
+    let userRowIndex = -1;
 
     for (let i = 1; i < uData.length; i++) {
       if (String(uData[i][emailCol]).trim() === String(userEmail).trim()) {
         targetUserId = uData[i][0];
         progressSheetId = pCol >= 0 ? uData[i][pCol] : "";
+        userRowIndex = i;
         break;
       }
     }
@@ -2027,6 +2031,12 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
           if (xqpCol >= 0) statsSheet.getRange(i + 1, xqpCol + 1).setValue(result.totalXQP);
           break;
         }
+      }
+
+      // Update Users sheet as well so that getDashboardData can fetch it correctly
+      if (userRowIndex >= 0) {
+        if (uXpCol >= 0) usersSheet.getRange(userRowIndex + 1, uXpCol + 1).setValue(result.totalXP);
+        if (uXqpCol >= 0) usersSheet.getRange(userRowIndex + 1, uXqpCol + 1).setValue(result.totalXQP);
       }
     }
 
