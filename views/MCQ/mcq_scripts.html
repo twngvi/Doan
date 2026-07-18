@@ -5,7 +5,7 @@
    * - Topic selection screen
    * - AI-generated questions
    * - Save wrong answers for review
-   * - Different question formats on retry
+   * - Different question formats on rerồi
    */
 
   // ⭐ CACHE để tránh reload không cần thiết (giống Topics page)
@@ -1970,25 +1970,7 @@
    * filterMasteredQuestions(allQuestions, masteredIds) — Lọc câu đã thuộc
    * @returns {questions: Array, allMastered: boolean}
    */
-  function filterMasteredQuestions(allQuestions, masteredIds) {
-    if (!masteredIds || masteredIds.length === 0) {
-      return { questions: allQuestions, allMastered: false };
-    }
-    var filtered = allQuestions.filter(function (q) {
-      return !masteredIds.includes(q.id);
-    });
-    console.log(
-      "✅ Filtered: " +
-        allQuestions.length +
-        " → " +
-        filtered.length +
-        " questions",
-    );
-    if (filtered.length === 0) {
-      return { questions: allQuestions, allMastered: true };
-    }
-    return { questions: filtered, allMastered: false };
-  }
+  function filterMasteredQuestions(allQuestions, masteredIds) { return { questions: allQuestions, allMastered: false }; }
 
   /**
    * createQuizSession(finalQuestions) — Tạo session quiz mới
@@ -3631,6 +3613,12 @@
       );
     }
 
+    // Set session status to completed locally immediately
+    // so we don't trigger the beforeunload/navigate warning
+    if (quizState.quizSession) {
+      quizState.quizSession.status = "completed";
+    }
+
     showResults(finalScore, totalQuestions, percentage, timeTaken);
     saveQuizResult(finalScore, totalQuestions, percentage, timeTaken);
 
@@ -3903,7 +3891,7 @@
             (response && (response.resultId || response.id || response.quizResultId)) || ""
         });
 
-        showSaveNotification(true, "Kết quả đã được lưu!");
+        // showSaveNotification(true, "Kết quả đã được lưu!");
         if (quizState.topicId) {
           loadQuizTopicHistory(quizState.topicId);
         }
@@ -4503,3 +4491,4 @@
 
   console.log("✅ MCQ scripts loaded");
 </script>
+

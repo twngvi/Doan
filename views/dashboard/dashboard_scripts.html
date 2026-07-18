@@ -1203,7 +1203,7 @@
           actionHtml =
             '<button class="quest-claim-btn" data-quest-id="' +
             safeQuestId +
-            '" onclick="claimQuestXP(this.dataset.questId, this)">Nhận +' +
+            '" onclick="claimQuestXP(this.dataset.questId, this, ' + (q.xpReward) + ')">Nhận +' +
             (q.xpReward) +
             " XP</button>";
         } else {
@@ -1239,92 +1239,111 @@
   /**
    * Claim XP for a completed quest
    */
-  window.claimQuestXP = function (questId, btnEl) {
+  window.claimQuestXP = function (questId, btnEl, expectedXp) {
+    var xpAmount = expectedXp ? parseInt(expectedXp, 10) : 0;
+    
     if (btnEl) {
       btnEl.disabled = true;
-      btnEl.textContent = "Đang nhận...";
+      
+      // OPTIMISTIC UI UPDATE
+      var questItem = btnEl.closest(".quest-item");
+      if (questItem) {
+        questItem.classList.add("quest-claimed");
+        var checkEl = questItem.querySelector(".quest-check");
+        if (checkEl) checkEl.textContent = "✓";
+      }
+      btnEl.outerHTML = '<div class="quest-xp quest-xp-claimed">✓ +' + xpAmount + ' XP</div>';
     }
 
+    if (xpAmount > 0) {
+      // Optimitistic update points
+      var topNavXpEl = document.getElementById("global-xp-value");
+      if (topNavXpEl) {
+        var currentXp = parseInt(topNavXpEl.textContent.replace(/,/g, "")) || 0;
+        topNavXpEl.textContent = (currentXp + xpAmount).toLocaleString();
+      }
+      
+      var xqpEl = document.getElementById("petXQPBalance");
+      if (xqpEl) {
+        var currentXqp = parseInt(xqpEl.textContent.replace(/,/g, "")) || 0;
+        xqpEl.textContent = (currentXqp + xpAmount).toLocaleString();
+      }
+      
+      // Optimistic update leaderboard
+      if (window.dashboardDataCache && window.dashboardDataCache.leaderboard) {
+         var currentUserEmail = window.currentUser && window.currentUser.email 
+                                ? window.currentUser.email.toLowerCase() : "";
+         if (currentUserEmail) {
+            var lb = window.dashboardDataCache.leaderboard;
+            var updated = false;
+            for (var i = 0; i < lb.length; i++) {
+               if (lb[i] && lb[i].email && lb[i].email.toLowerCase() === currentUserEmail) {
+                  lb[i].xp = (lb[i].xp || 0) + xpAmount;
+                  updated = true;
+                  break;
+               }
+            }
+            if (updated) {
+               lb.sort((a, b) => (b.xp || 0) - (a.xp || 0));
+               renderLeaderboard(lb);
+            }
+         }
+      }
+
+      showXPAnimation(xpAmount);
+
+      if (typeof showToast === "function") {
+        showToast("+" + xpAmount + " XP/XQP! 🌟", "success");
+      }
+    }
+
+    // Call server in background
     google.script.run
       .withSuccessHandler(function (result) {
         if (result && result.success) {
-          // Update button to claimed state
-          if (btnEl) {
-            var questItem = btnEl.closest(".quest-item");
-            if (questItem) {
-              questItem.classList.add("quest-claimed");
-              var checkEl = questItem.querySelector(".quest-check");
-              if (checkEl) checkEl.textContent = "✓";
-            }
-            btnEl.outerHTML = '<div class="quest-xp quest-xp-claimed">✓ +' + (result.xpAwarded) + ' XP</div>';
-          }
+           // We already did optimistic updates. 
+           // But if server returns newTotalXP, update with the exact source of truth.
+           var userPatch = {};
+           if (isDashboardUsableValue(result.newTotalXP)) {
+             userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
+             var navXp = document.getElementById("global-xp-value");
+             if (navXp) navXp.textContent = userPatch.totalXP.toLocaleString();
+           }
 
-          // Update XP/XQP display và header theo số mới từ Google Sheet/server.
-          var userPatch = {};
+           if (isDashboardUsableValue(result.newTotalXQP)) {
+             userPatch.totalXQP = dashboardNumber(result.newTotalXQP, 0);
+             var navXqp = document.getElementById("petXQPBalance");
+             if (navXqp) navXqp.textContent = userPatch.totalXQP.toLocaleString();
+           }
 
-          if (isDashboardUsableValue(result.newTotalXP)) {
-            userPatch.totalXP = dashboardNumber(result.newTotalXP, 0);
+           if (Object.keys(userPatch).length > 0) {
+             persistAndBroadcastDashboardUser(userPatch);
+           }
 
-            var topNavXpEl = document.getElementById("global-xp-value");
-            if (topNavXpEl) topNavXpEl.textContent = userPatch.totalXP.toLocaleString();
-          }
-
-          if (isDashboardUsableValue(result.newTotalXQP)) {
-            userPatch.totalXQP = dashboardNumber(result.newTotalXQP, 0);
-
-            var xqpEl = document.getElementById("petXQPBalance");
-            if (xqpEl) xqpEl.textContent = userPatch.totalXQP.toLocaleString();
-          }
-
-          if (Object.keys(userPatch).length > 0) {
-            persistAndBroadcastDashboardUser(userPatch);
-          }
-
-          // Show XP animation
-          showXPAnimation(result.xpAwarded);
-
-          if (typeof showToast === "function") {
-            showToast("+" + result.xpAwarded + " XP/XQP! 🌟", "success");
-          }
-
-          // Check if bonus quest is now claimable (refresh quests + leaderboard)
-          // Always refresh to update leaderboard with new XP
-          setTimeout(() => {
-            requestDashboardRefresh({
-              forceRefresh: true,
-              backgroundRefresh: true,
-              source: "quest-claim",
-              minGapMs: 1500,
-            });
-          }, 1500);
+           // Check if bonus quest is now claimable
+           setTimeout(() => {
+             requestDashboardRefresh({
+               forceRefresh: true,
+               backgroundRefresh: true,
+               source: "quest-claim",
+               minGapMs: 1500,
+             });
+           }, 1500);
         } else {
-          if (result && result.alreadyClaimed) {
-            if (btnEl) {
-              btnEl.outerHTML = '<div class="quest-xp quest-xp-claimed">✓ Đã nhận</div>';
-            }
-            // if (typeof showToast === "function") {
-            //   showToast("Đã nhận thưởng rồi!", "info");
-            // }
-          } else {
-            if (btnEl) {
-              btnEl.disabled = false;
-              btnEl.textContent = "Nhận XP";
-            }
-            if (typeof showToast === "function") {
-              showToast((result && result.message) || "Không thể nhận XP", "error");
-            }
-          }
+           if (result && result.alreadyClaimed) {
+              // Ignore, our UI already says claimed
+           } else {
+              if (typeof showToast === "function") {
+                showToast((result && result.message) || "Lỗi đồng bộ XP", "error");
+              }
+           }
         }
       })
       .withFailureHandler(function (error) {
-        console.error("Claim XP error:", error);
-        if (btnEl) {
-          btnEl.disabled = false;
-          btnEl.textContent = "Nhận XP";
-        }
-        if (typeof showToast === "function") {
-          showToast("Lỗi khi nhận XP", "error");
-        }
+         console.error("Claim XP error:", error);
+         if (typeof showToast === "function") {
+           showToast("Lỗi kết nối khi nhận XP", "error");
+         }
       })
       .completeQuestAndAwardXP(questId, getDashboardAuthContext());
   };

@@ -2959,11 +2959,42 @@ function getDashboardData(userContext) {
       return { success: false, message: "Authenticated user not found" };
     }
 
-    const totalXP = userRow ? parseInt(userRow[col["totalXP"]]) || 0 : 0;
-    const totalXQP = userRow ? parseInt(userRow[col["totalXQP"]]) || 0 : 0;
-    const totalQuizAnswered = userRow
-      ? parseInt(userRow[col["totalQuizAnswered"]]) || 0
-      : 0;
+    let sCol = {};
+    let userIdToXpMap = {};
+    let userIdToXqpMap = {};
+    let userIdToQuizCountMap = {};
+    let userIdToStreakMap = {};
+
+    const statsSheet = ss.getSheetByName("User_Stats");
+    if (statsSheet) {
+      const statsData = statsSheet.getDataRange().getValues();
+      if (statsData.length > 0) {
+        const sHeaders = statsData[0];
+        sHeaders.forEach((h, i) => (sCol[h] = i));
+        const idIdx = sCol["userId"];
+        const xpIdx = sCol["totalXP"];
+        const xqpIdx = sCol["totalXQP"];
+        const quizIdx = sCol["totalQuizAnswered"];
+        const streakIdx = sCol["currentStreak"];
+        
+        for (let i = 1; i < statsData.length; i++) {
+           const rowUserId = statsData[i][idIdx];
+           if (rowUserId) {
+               if (typeof xpIdx === "number") userIdToXpMap[rowUserId] = parseInt(statsData[i][xpIdx]) || 0;
+               if (typeof xqpIdx === "number") userIdToXqpMap[rowUserId] = parseInt(statsData[i][xqpIdx]) || 0;
+               if (typeof quizIdx === "number") userIdToQuizCountMap[rowUserId] = parseInt(statsData[i][quizIdx]) || 0;
+               if (typeof streakIdx === "number") userIdToStreakMap[rowUserId] = parseInt(statsData[i][streakIdx]) || 0;
+           }
+        }
+      }
+    }
+
+    const targetUserId = userRow ? userRow[col["userId"]] : null;
+    let totalXP = targetUserId ? (userIdToXpMap[targetUserId] || 0) : 0;
+    let totalXQP = targetUserId ? (userIdToXqpMap[targetUserId] || 0) : 0;
+    let totalQuizAnswered = targetUserId ? (userIdToQuizCountMap[targetUserId] || 0) : 0;
+    let userCurrentStreak = targetUserId ? (userIdToStreakMap[targetUserId] || 0) : 0;
+
     const avatarUrlColExists = typeof col["avatarUrl"] === "number";
     const avatarColExists = typeof col["avatar"] === "number";
     const userAvatarUrl = avatarUrlColExists
@@ -2976,7 +3007,6 @@ function getDashboardData(userContext) {
     const userDisplayName = String(
       userRow[col["displayName"]] || userRow[col["username"]] || "User",
     );
-    const userCurrentStreak = userRow ? parseInt(userRow[col["currentStreak"]]) || 0 : 0;
     const progressSheetId = userRow ? userRow[col["progressSheetId"]] : null;
 
     // === 2. Read personal sheet data ===
