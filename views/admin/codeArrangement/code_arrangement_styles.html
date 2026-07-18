@@ -291,15 +291,170 @@
     background: var(--theme-card-border);
   }
 
-  /* Preview Block */
-  .ca-preview-line {
-    padding: 8px 12px;
-    background: var(--theme-bg);
-    border: 1px solid var(--theme-card-border);
+  /* ========== FULLSCREEN ADMIN PREVIEW (Simulates Client Code Sort exactly like Topic Editor) ========== */
+  #caPreviewModalOverlay.admin-preview-overlay,
+  #caPreviewModalOverlay.admin-preview-overlay.active,
+  body.has-admin-sidebar #caPreviewModalOverlay.admin-preview-overlay,
+  body.has-admin-sidebar #caPreviewModalOverlay.admin-preview-overlay.active {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: var(--admin-sidebar-width, 260px) !important;
+    width: calc(100vw - var(--admin-sidebar-width, 260px)) !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 999 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    background: var(--theme-bg, #0b1120) !important;
+    transform: none !important;
+    transition: left 0.2s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease !important;
+  }
+
+  #caPreviewModalOverlay.admin-preview-overlay {
+    display: none;
+    opacity: 0;
+  }
+
+  #caPreviewModalOverlay.admin-preview-overlay.active {
+    display: block !important;
+    opacity: 1 !important;
+  }
+
+  body.has-admin-sidebar.admin-sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay,
+  body.has-admin-sidebar.admin-sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay.active,
+  body.sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay,
+  body.sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay.active {
+    left: var(--admin-sidebar-collapsed-width, 76px) !important;
+    width: calc(100vw - var(--admin-sidebar-collapsed-width, 76px)) !important;
+  }
+
+  @media (max-width: 768px) {
+    #caPreviewModalOverlay.admin-preview-overlay,
+    #caPreviewModalOverlay.admin-preview-overlay.active,
+    body.has-admin-sidebar #caPreviewModalOverlay.admin-preview-overlay,
+    body.has-admin-sidebar #caPreviewModalOverlay.admin-preview-overlay.active,
+    body.has-admin-sidebar.admin-sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay,
+    body.has-admin-sidebar.admin-sidebar-collapsed #caPreviewModalOverlay.admin-preview-overlay.active {
+      left: 0 !important;
+      width: 100vw !important;
+    }
+  }
+
+  #caPreviewModalOverlay .admin-preview-header {
+    position: relative;
+    background: linear-gradient(135deg, #0f3460 0%, #1a73e8 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 16px;
+    padding: 1.25rem 1.75rem;
+    margin: 1.25rem 1.5rem 1.5rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25) !important;
+    color: #ffffff !important;
+  }
+
+  #caPreviewModalOverlay .admin-preview-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  #caPreviewModalOverlay .admin-preview-title {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #ffffff !important;
+    margin: 0;
+    text-shadow: none !important;
+  }
+
+  #caPreviewModalOverlay .btn-back-global {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(37, 99, 235, 0.3) !important;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  #caPreviewModalOverlay .btn-back-global:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  }
+
+  /* Preview Block & Interactive Cards */
+  .ca-preview-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--theme-card, #1e293b);
+    border: 1px solid var(--theme-card-border, rgba(255,255,255,0.12));
+    border-radius: 10px;
+    cursor: grab;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    user-select: none;
+  }
+
+  .ca-preview-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+    transform: translateY(-1px);
+  }
+
+  .ca-preview-card:active {
+    cursor: grabbing;
+  }
+
+  .ca-preview-card.dragging {
+    opacity: 0.5;
+    background: rgba(59,130,246,0.1);
+    border: 2px dashed #3b82f6;
+  }
+
+  .ca-preview-card.correct {
+    border-color: #10b981 !important;
+    background: rgba(16,185,129,0.1) !important;
+  }
+
+  .ca-preview-card.incorrect {
+    border-color: #ef4444 !important;
+    background: rgba(239,68,68,0.1) !important;
+  }
+
+  .ca-preview-card-handle {
+    color: var(--theme-text-secondary, #64748b);
+    display: flex;
+    align-items: center;
+  }
+
+  .ca-preview-card-index {
+    width: 28px;
+    height: 28px;
     border-radius: 6px;
-    margin-bottom: 8px;
-    font-family: monospace;
-    color: var(--theme-text);
+    background: rgba(255,255,255,0.06);
+    color: var(--theme-text-secondary, #94a3b8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .ca-preview-card-code {
+    flex: 1;
+    font-family: 'Fira Code', 'Courier New', monospace;
+    font-size: 0.92rem;
+    color: var(--theme-text, #f8fafc);
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.5;
   }
 
   /* Editable Sliced Blocks */

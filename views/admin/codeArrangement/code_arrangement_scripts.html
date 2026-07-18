@@ -381,6 +381,11 @@
       .adminDeleteCodeArrangement(id);
   }
 
+  let caPreviewCurrentData = null;
+  let caPreviewOriginalBlocks = [];
+  let caPreviewShowingSolution = false;
+  let caPreviewDragSource = null;
+
   function previewCA(id) {
     const item = caList.find(x => x.arrangementId === id);
     if (!item) return;
@@ -398,21 +403,18 @@
       try {
         draftData = item.draftData ? JSON.parse(item.draftData) : null;
       } catch(e) {}
-      if (!draftData) draftData = {
-         title: item.title,
-         description: item.description,
-         programmingLanguage: item.programmingLanguage,
-         difficulty: item.difficulty,
-         slicedCodeBlocks: item.slicedCodeBlocks
-      };
+      if (!draftData) {
+        draftData = {
+           title: item.title,
+           description: item.description,
+           programmingLanguage: item.programmingLanguage,
+           difficulty: item.difficulty,
+           slicedCodeBlocks: item.slicedCodeBlocks
+        };
+      }
     }
 
-    if (typeof initCodeArrangementPreview === 'function') {
-      if (typeof showPage === 'function') showPage('page-code-game', {}, false);
-      initCodeArrangementPreview(draftData);
-    } else {
-      caShowToast('Lỗi xem trước', 'error', 'Không tìm thấy giao diện học viên để xem trước.');
-    }
+    openAdminCAPreview(draftData);
   }
 
   function previewCACurrentDraft() {
@@ -424,18 +426,248 @@
       slicedCodeBlocks: JSON.stringify(getCurrentBlocks())
     };
     
-    if (typeof initCodeArrangementPreview === 'function') {
-      // Close the modal just in case, but keep form data intact
-      closeCAModal(true);
-      if (typeof showPage === 'function') showPage('page-code-game', {}, false);
-      initCodeArrangementPreview(draftData);
+    openAdminCAPreview(draftData);
+  }
+
+  function openAdminCAPreview(draftData) {
+    caPreviewCurrentData = draftData;
+    caPreviewShowingSolution = false;
+
+    // Set header info
+    const titleEl = document.getElementById('caPreviewTitle');
+    const descEl = document.getElementById('caPreviewDesc');
+    const langEl = document.getElementById('caPreviewLangTag');
+    const diffEl = document.getElementById('caPreviewDiffTag');
+
+    const titleText = String(draftData.title || '').trim();
+    titleEl.innerText = titleText ? `Bài: ${titleText}` : 'Bài tập chưa đặt tiêu đề';
+    descEl.innerText = String(draftData.description || '').trim() || 'Sắp xếp các khối code theo đúng thứ tự logic để hoàn thiện chương trình.';
+    
+    const lang = (draftData.programmingLanguage || 'python').toUpperCase();
+    langEl.innerText = lang;
+
+    const diffMap = {
+      'easy': { text: 'Dễ (Easy)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' },
+      'medium': { text: 'Trung bình (Medium)', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' },
+      'hard': { text: 'Khó (Hard)', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' }
+    };
+    const diffInfo = diffMap[draftData.difficulty] || diffMap['medium'];
+    diffEl.innerText = diffInfo.text;
+    diffEl.style.color = diffInfo.color;
+    diffEl.style.background = diffInfo.bg;
+    diffEl.style.border = `1px solid ${diffInfo.color}44`;
+
+    // Parse blocks
+    let blocks = [];
+    try {
+      blocks = JSON.parse(draftData.slicedCodeBlocks || '[]');
+    } catch(e) {
+      blocks = [];
+    }
+
+    const container = document.getElementById('caPreviewBlocks');
+    const countEl = document.getElementById('caPreviewBlockCount');
+    if (!blocks || blocks.length === 0) {
+      container.innerHTML = '<div style="padding: 30px; text-align: center; color: #ef4444; background: rgba(239,68,68,0.05); border-radius: 8px;">Bài tập này hiện chưa có khối code nào được cắt. Hãy kiểm tra lại!</div>';
+      countEl.innerText = '0 khối code';
+      caPreviewOriginalBlocks = [];
     } else {
-      caShowToast('Lỗi xem trước', 'error', 'Không tìm thấy giao diện học viên để xem trước.');
+      caPreviewOriginalBlocks = blocks.map((b, idx) => ({
+        id: idx,
+        content: typeof b === 'string' ? b : (b.content || b.code || ''),
+        originalIndex: idx
+      }));
+      caPreviewShuffle();
+    }
+
+    document.getElementById('caPreviewModalOverlay').classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function caPreviewShuffle() {
+    caPreviewShowingSolution = false;
+    const feedback = document.getElementById('caPreviewFeedback');
+    if (feedback) feedback.style.display = 'none';
+
+    const btnSol = document.getElementById('caBtnShowSolution');
+    if (btnSol) {
+      btnSol.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">lightbulb</span> Xem đáp án chuẩn';
+      btnSol.style.color = '#f59e0b';
+    }
+
+    if (!caPreviewOriginalBlocks || caPreviewOriginalBlocks.length === 0) return;
+
+    // Shuffle blocks
+    let shuffled = [...caPreviewOriginalBlocks];
+    if (shuffled.length > 1) {
+      let isSame = true;
+      let attempts = 0;
+      while (isSame && attempts < 10) {
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        isSame = shuffled.every((b, idx) => b.originalIndex === idx);
+        attempts++;
+      }
+    }
+
+    renderCAPreviewBlocks(shuffled, false);
+  }
+
+  function caPreviewShowSolution() {
+    if (caPreviewShowingSolution) {
+      caPreviewShuffle();
+      return;
+    }
+
+    caPreviewShowingSolution = true;
+    const feedback = document.getElementById('caPreviewFeedback');
+    if (feedback) feedback.style.display = 'none';
+
+    const btnSol = document.getElementById('caBtnShowSolution');
+    if (btnSol) {
+      btnSol.innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">refresh</span> Quay lại chơi thử';
+      btnSol.style.color = '#3b82f6';
+    }
+
+    renderCAPreviewBlocks(caPreviewOriginalBlocks, true);
+  }
+
+  function renderCAPreviewBlocks(blocksList, isSolution) {
+    const container = document.getElementById('caPreviewBlocks');
+    const countEl = document.getElementById('caPreviewBlockCount');
+    if (!container) return;
+
+    countEl.innerText = `${blocksList.length} khối code`;
+    container.innerHTML = '';
+
+    blocksList.forEach((block, idx) => {
+      const card = document.createElement('div');
+      card.className = 'ca-preview-card' + (isSolution ? ' correct' : '');
+      card.setAttribute('draggable', !isSolution);
+      card.setAttribute('data-original-index', block.originalIndex);
+
+      card.innerHTML = `
+        <div class="ca-preview-card-handle">
+          <span class="material-symbols-sharp" style="font-size: 20px;">drag_indicator</span>
+        </div>
+        <div class="ca-preview-card-index">${idx + 1}</div>
+        <div class="ca-preview-card-code">${escapeHtml(block.content)}</div>
+      `;
+
+      if (!isSolution) {
+        card.addEventListener('dragstart', function(e) {
+          caPreviewDragSource = this;
+          this.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/html', this.innerHTML);
+        });
+
+        card.addEventListener('dragover', function(e) {
+          if (e.preventDefault) e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          return false;
+        });
+
+        card.addEventListener('dragenter', function(e) {
+          this.style.borderColor = '#3b82f6';
+        });
+
+        card.addEventListener('dragleave', function(e) {
+          this.style.borderColor = '';
+        });
+
+        card.addEventListener('drop', function(e) {
+          if (e.stopPropagation) e.stopPropagation();
+          if (caPreviewDragSource && caPreviewDragSource !== this) {
+            // Reorder cards in DOM
+            const allCards = Array.from(container.querySelectorAll('.ca-preview-card'));
+            const srcIdx = allCards.indexOf(caPreviewDragSource);
+            const targetIdx = allCards.indexOf(this);
+
+            if (srcIdx < targetIdx) {
+              container.insertBefore(caPreviewDragSource, this.nextSibling);
+            } else {
+              container.insertBefore(caPreviewDragSource, this);
+            }
+            caPreviewUpdateIndices();
+          }
+          return false;
+        });
+
+        card.addEventListener('dragend', function() {
+          this.classList.remove('dragging');
+          container.querySelectorAll('.ca-preview-card').forEach(c => c.style.borderColor = '');
+        });
+      }
+
+      container.appendChild(card);
+    });
+  }
+
+  function caPreviewUpdateIndices() {
+    const container = document.getElementById('caPreviewBlocks');
+    if (!container) return;
+    const cards = container.querySelectorAll('.ca-preview-card');
+    cards.forEach((card, idx) => {
+      const idxEl = card.querySelector('.ca-preview-card-index');
+      if (idxEl) idxEl.innerText = idx + 1;
+      card.classList.remove('correct', 'incorrect');
+    });
+    const feedback = document.getElementById('caPreviewFeedback');
+    if (feedback) feedback.style.display = 'none';
+  }
+
+  function caPreviewCheckResult() {
+    const container = document.getElementById('caPreviewBlocks');
+    const feedback = document.getElementById('caPreviewFeedback');
+    if (!container || !feedback) return;
+
+    const cards = Array.from(container.querySelectorAll('.ca-preview-card'));
+    if (cards.length === 0) return;
+
+    let allCorrect = true;
+    cards.forEach((card, idx) => {
+      const originalIdx = parseInt(card.getAttribute('data-original-index'), 10);
+      card.classList.remove('correct', 'incorrect');
+      if (originalIdx === idx) {
+        card.classList.add('correct');
+      } else {
+        card.classList.add('incorrect');
+        allCorrect = false;
+      }
+    });
+
+    feedback.style.display = 'flex';
+    if (allCorrect) {
+      feedback.style.background = 'rgba(16, 185, 129, 0.15)';
+      feedback.style.color = '#10b981';
+      feedback.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+      feedback.innerHTML = `
+        <span class="material-symbols-sharp" style="font-size: 24px;">celebration</span>
+        <div>
+          <div style="font-size: 0.98rem;">Tuyệt vời! Thứ tự các khối code hoàn toàn chính xác!</div>
+          <div style="font-size: 0.8rem; font-weight: normal; opacity: 0.9;">Bài tập hoạt động hoàn hảo và sẵn sàng xuất bản cho học viên.</div>
+        </div>
+      `;
+    } else {
+      feedback.style.background = 'rgba(239, 68, 68, 0.15)';
+      feedback.style.color = '#ef4444';
+      feedback.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      feedback.innerHTML = `
+        <span class="material-symbols-sharp" style="font-size: 24px;">error</span>
+        <div>
+          <div style="font-size: 0.98rem;">Thứ tự chưa chính xác!</div>
+          <div style="font-size: 0.8rem; font-weight: normal; opacity: 0.9;">Các khối màu xanh đã đúng vị trí, khối màu đỏ đang sai vị trí. Hãy kéo thả lại nhé!</div>
+        </div>
+      `;
     }
   }
 
   function closeCAPreview() {
     document.getElementById('caPreviewModalOverlay').classList.remove('active');
+    document.body.style.overflow = '';
   }
 
   // Block Management Functions
