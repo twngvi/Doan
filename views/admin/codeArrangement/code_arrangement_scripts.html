@@ -86,13 +86,23 @@
         statusText = "Đã xuất bản";
       }
       
+      const isHidden = item.status === 'hidden';
+      const targetStatus = isHidden ? (item.publishedData ? 'published' : 'draft') : 'hidden';
+      const badgeTitle = isHidden ? 'Đang ẩn khỏi học viên. Nhấn để mở hiển thị lại (Xuất bản)' : 'Nhấn để ẩn câu hỏi này khỏi trang học viên';
+      const badgeIcon = isHidden ? 'visibility_off' : (statusClass === 'status-published' ? 'check_circle' : 'edit_note');
+
       html += `
         <tr>
           <td><span style="font-family: monospace; background: var(--theme-bg); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${item.arrangementId}</span></td>
           <td style="font-weight: 600;">${item.title}</td>
           <td style="text-transform: capitalize;">${item.programmingLanguage}</td>
           <td style="text-transform: capitalize;">${item.difficulty}</td>
-          <td><span class="ca-status-badge ${statusClass}">${statusText}</span></td>
+          <td>
+            <span class="ca-status-badge ${statusClass}" onclick="toggleHideCA('${item.arrangementId}', '${targetStatus}')" title="${badgeTitle}">
+              <span class="material-symbols-sharp" style="font-size: 14px;">${badgeIcon}</span>
+              <span>${statusText}</span>
+            </span>
+          </td>
           <td>
             <div class="ca-action-btns">
               <button class="ca-icon-btn view" onclick="previewCA('${item.arrangementId}')" title="Xem trước">
@@ -379,6 +389,35 @@
         caShowToast("Lỗi kết nối", "error", error.message);
       })
       .adminDeleteCodeArrangement(id);
+  }
+
+  function toggleHideCA(id, targetStatus) {
+    const item = caList.find(x => x.arrangementId === id);
+    if (!item) return;
+
+    const oldStatus = item.status;
+
+    // 1. Cập nhật giao diện tức thì (Optimistic UI Update) hoàn toàn im lặng không thông báo
+    item.status = targetStatus;
+    filterCAList();
+
+    // 2. Chạy ngầm gửi dữ liệu xuống máy chủ
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (!response.success) {
+          // Khôi phục lại giao diện nếu máy chủ báo lỗi
+          item.status = oldStatus;
+          filterCAList();
+          caShowToast("Lỗi đồng bộ", "error", response.message);
+        }
+      })
+      .withFailureHandler(function(error) {
+        // Khôi phục lại giao diện nếu lỗi kết nối
+        item.status = oldStatus;
+        filterCAList();
+        caShowToast("Lỗi kết nối", "error", error.message);
+      })
+      .adminToggleCodeArrangementStatus(id, targetStatus);
   }
 
   let caPreviewCurrentData = null;

@@ -180,3 +180,44 @@ function adminDeleteCodeArrangement(arrangementId) {
     return { success: false, message: error.toString() };
   }
 }
+
+/**
+ * Ẩn / Hiện (chuyển trạng thái) câu hỏi Code Arrangement
+ */
+function adminToggleCodeArrangementStatus(arrangementId, targetStatus) {
+  try {
+    if (!arrangementId) return { success: false, message: "Thiếu ID câu hỏi" };
+    const newStatus = targetStatus || "hidden";
+    
+    const ss = getOrCreateDatabase();
+    const sheet = ss.getSheetByName("Code_Arrangement");
+    if (!sheet) return { success: false, message: "Sheet Code_Arrangement không tồn tại" };
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const qIdCol = headers.indexOf("arrangementId");
+    const statusCol = headers.indexOf("status");
+    const updatedAtCol = headers.indexOf("updatedAt");
+    
+    if (qIdCol === -1 || statusCol === -1) {
+      return { success: false, message: "Lỗi cấu trúc CSDL: thiếu arrangementId hoặc status" };
+    }
+    
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][qIdCol]).trim() === String(arrangementId).trim()) {
+        sheet.getRange(i + 1, statusCol + 1).setValue(newStatus);
+        if (updatedAtCol > -1) {
+          sheet.getRange(i + 1, updatedAtCol + 1).setValue(new Date());
+        }
+        SpreadsheetApp.flush();
+        return { success: true, message: `Đã chuyển trạng thái thành công`, newStatus: newStatus };
+      }
+    }
+    
+    return { success: false, message: "Không tìm thấy câu hỏi" };
+  } catch (error) {
+    Logger.log("Error in adminToggleCodeArrangementStatus: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
