@@ -23,6 +23,8 @@ function initMatchingCardsManager() {
     mcLoadTopics();
   }
   
+  mcCheckGeminiKeyStatus();
+  
   // Set up observer in case user navigates away and comes back
   const pageElement = document.getElementById("page-matching-cards");
   if (pageElement && !pageElement.dataset.observerSetup) {
@@ -836,5 +838,99 @@ function mcShowConfirmDeleteModal(msg, onConfirm) {
 function mcCloseConfirmDeleteModal() {
   const modal = document.getElementById("mcConfirmDeleteModal");
   if (modal) modal.style.display = "none";
+}
+
+function mcCheckGeminiKeyStatus() {
+  const btn = document.getElementById("mcGeminiKeyBtn");
+  const icon = document.getElementById("mcGeminiKeyIcon");
+  const text = document.getElementById("mcGeminiKeyText");
+  
+  if (!btn) return;
+  
+  btn.style.opacity = '0.5';
+  
+  google.script.run
+    .withSuccessHandler((res) => {
+      btn.style.opacity = '1';
+      if (res && res.success && res.hasKey && res.isValid) {
+        btn.style.background = '#dcfce7';
+        btn.style.color = '#166534';
+        btn.style.borderColor = '#bbf7d0';
+        icon.textContent = 'key';
+        text.textContent = 'Gemini Key Sẵn Sàng';
+      } else {
+        btn.style.background = '#fee2e2';
+        btn.style.color = '#b91c1c';
+        btn.style.borderColor = '#fecaca';
+        icon.textContent = 'key_off';
+        text.textContent = res ? (res.hasKey ? 'Key Lỗi/Hết Hạn' : 'Thiếu Gemini Key') : 'Thiếu Gemini Key';
+      }
+    })
+    .withFailureHandler(() => {
+      btn.style.opacity = '1';
+    })
+    .getUserGeminiKeyStatus(null);
+}
+
+function mcOpenGeminiKeyModal() {
+  document.getElementById("mcGeminiKeyModal").style.display = "flex";
+  document.getElementById("mcGeminiKeyInput").value = "";
+  document.getElementById("mcGeminiKeyFeedback").style.display = "none";
+}
+
+function mcCloseGeminiKeyModal() {
+  document.getElementById("mcGeminiKeyModal").style.display = "none";
+}
+
+function mcToggleKeyVisibility() {
+  const input = document.getElementById("mcGeminiKeyInput");
+  const icon = document.getElementById("mcKeyVisibilityIcon");
+  if (input && icon) {
+    if (input.type === "password") {
+      input.type = "text";
+      icon.textContent = "visibility";
+    } else {
+      input.type = "password";
+      icon.textContent = "visibility_off";
+    }
+  }
+}
+
+function mcSaveGeminiKey() {
+  const keyInput = document.getElementById("mcGeminiKeyInput").value.trim();
+  const feedback = document.getElementById("mcGeminiKeyFeedback");
+  const saveBtn = document.getElementById("mcSaveGeminiKeyBtn");
+  
+  if (!keyInput) {
+    feedback.textContent = "Vui lòng nhập API key";
+    feedback.style.color = "#dc2626";
+    feedback.style.display = "block";
+    return;
+  }
+  
+  feedback.textContent = "Đang kiểm tra và lưu...";
+  feedback.style.color = "#2563eb";
+  feedback.style.display = "block";
+  saveBtn.disabled = true;
+  
+  google.script.run
+    .withSuccessHandler((res) => {
+      saveBtn.disabled = false;
+      if (res && res.success) {
+        feedback.textContent = "Lưu API Key thành công!";
+        feedback.style.color = "#166534";
+        mcCheckGeminiKeyStatus();
+        setTimeout(() => mcCloseGeminiKeyModal(), 1500);
+      } else {
+        feedback.textContent = "Lỗi: " + (res?.message || "Vui lòng kiểm tra lại Key.");
+        feedback.style.color = "#dc2626";
+      }
+    })
+    .withFailureHandler((err) => {
+      saveBtn.disabled = false;
+      feedback.textContent = "Lỗi kết nối: " + err;
+      feedback.style.color = "#dc2626";
+    })
+    .upsertUserGeminiApiKey(null, keyInput);
 }
 </script>

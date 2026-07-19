@@ -844,8 +844,8 @@ Trả về CHÍNH XÁC định dạng JSON sau:
 }
 
 YÊU CẦU QUAN TRỌNG:
-- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 30 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 30 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP.
-- PHẢI phân bổ độ khó một cách đồng đều: ít nhất 10 thẻ "easy", 10 thẻ "medium", và 10 thẻ "hard". KHÔNG ĐƯỢC THIẾU.
+- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 30 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 30 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP. NỘI DUNG GIỮA CÁC THẺ CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
+- PHẢI phân bổ độ khó theo đúng tỷ lệ: 70% thẻ "easy", 20% thẻ "medium", 10% thẻ "hard". (Ví dụ: tạo 30 thẻ thì cần 21 thẻ easy, 6 thẻ medium, 3 thẻ hard).
 - term: Là cụm từ cốt lõi, không diễn giải dài dòng.
 - CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.`;
 
