@@ -28,12 +28,29 @@
     loadCAList();
   }
 
-  function loadCAList() {
+  function caShowLoading(text) {
+    const loadingText = document.getElementById("caLoadingText");
+    if (loadingText && text) loadingText.textContent = text;
+    const loadingState = document.getElementById("caLoadingState");
+    if (loadingState) loadingState.style.display = "flex";
+    const contentArea = document.getElementById("caContentArea");
+    if (contentArea) contentArea.style.display = "none";
+  }
+
+  function caHideLoading() {
+    const loadingState = document.getElementById("caLoadingState");
+    if (loadingState) loadingState.style.display = "none";
+    const contentArea = document.getElementById("caContentArea");
+    if (contentArea) contentArea.style.display = "block";
+  }
+
+  function loadCAList(isSilent = false) {
     const tbody = document.getElementById('caTableBody');
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--theme-text-secondary);"><div class="loading-spinner" style="margin: 0 auto 16px;"></div>Đang tải danh sách...</td></tr>`;
+    if (!isSilent) caShowLoading("Đang tải danh sách bài tập Code Sort...");
     
     google.script.run
       .withSuccessHandler(function(response) {
+        if (!isSilent) caHideLoading();
         if (response.success) {
           caList = response.data || [];
           renderCAList(caList);
@@ -42,6 +59,7 @@
         }
       })
       .withFailureHandler(function(error) {
+        if (!isSilent) caHideLoading();
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ea4335;">Lỗi kết nối: ${error.message}</td></tr>`;
       })
       .adminGetCodeArrangements();
