@@ -2556,9 +2556,15 @@
     var retryCount = Number(retryStep || 0);
     const loadingEl = document.getElementById("mini-quiz-loading");
     const questionsEl = document.getElementById("mini-quiz-questions");
+    const resultEl = document.getElementById("mini-quiz-result");
 
     if (loadingEl) loadingEl.style.display = "block";
     if (questionsEl) questionsEl.style.display = "none";
+    // Ẩn kết quả cũ (khồng đỏ / xanh) ngay khi bắt đầu load đợt mới
+    if (resultEl) {
+      resultEl.style.display = "none";
+      resultEl.innerHTML = "";
+    }
     
     google.script.run
       .withSuccessHandler(function (response) {
@@ -2615,6 +2621,12 @@
           miniQuizLoaded = true;
           miniQuizAnswered = 0;
           renderMiniQuizQuestions(miniQuizData);
+          // Ẩn kết quả cũ (nếu có) trước khi hiện bộ câu hỏi mới
+          const resultEl2 = document.getElementById("mini-quiz-result");
+          if (resultEl2) {
+            resultEl2.style.display = "none";
+            resultEl2.innerHTML = "";
+          }
           if (questionsEl) questionsEl.style.display = "block";
         } else {
           showMiniQuizError(response?.message || "Không thể tạo Mini Quiz");

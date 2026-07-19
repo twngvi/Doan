@@ -2235,29 +2235,33 @@
       return dayDate < today ? "status-danger" : "status-none";
     }
 
-    const status = String(dayData.status || "").toLowerCase();
+    const lessons = Number(dayData.lessonCount || dayData.lessons || 0);
+    const studyMinutes = Number(dayData.studyMinutes || 0);
+    
+    // Mặc định mục tiêu là 1 bài học nếu chưa cài đặt (giải quyết lỗi dữ liệu cũ goalLessons=0)
+    const goalLessons = Number(dayData.goalLessons || 1); 
+    const goalMinutes = Number(dayData.goalMinutes || 0);
 
+    // Tính toán lại trạng thái dựa trên dữ liệu thực tế (bỏ qua 'status' bị sai trong DB)
+    if (lessons >= goalLessons || (goalMinutes > 0 && studyMinutes >= goalMinutes)) {
+      return "status-success"; // Xanh: Đạt mục tiêu
+    }
+
+    if (lessons > 0 || studyMinutes > 0) {
+      return "status-warning"; // Vàng: Có học
+    }
+
+    // Fallback về status từ DB nếu chưa xác định được
+    const status = String(dayData.status || "").toLowerCase();
+    
     if (status === "success" || status === "met_goal" || status === "done") {
       return "status-success";
     }
-
     if (status === "warning" || status === "studied" || status === "partial") {
       return "status-warning";
     }
-
     if (status === "danger" || status === "missed") {
       return "status-danger";
-    }
-
-    const lessons = Number(dayData.lessonCount || dayData.lessons || 0);
-    const goalLessons = Number(dayData.goalLessons || 0);
-
-    if (goalLessons > 0 && lessons >= goalLessons) {
-      return "status-success";
-    }
-
-    if (lessons > 0) {
-      return "status-warning";
     }
 
     return dayDate < today ? "status-danger" : "status-none";

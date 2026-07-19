@@ -1000,6 +1000,25 @@
     // Close menu when clicking outside
     document.addEventListener('click', window.closeAllTopicMenus);
 
+    /**
+     * Kiểm tra xem lý thuyết của topic có hoàn thành 100% không.
+     * Điều kiện: lessonCompleted + mindmapViewed + flashcardsCompleted + miniQuizCompleted đều true.
+     * (4/4 mục = 100% tiến độ lý thuyết)
+     */
+    function isTopicTheoryFullyDone(progress) {
+      return !!(
+        progress.lessonCompleted &&
+        progress.mindmapViewed &&
+        progress.flashcardsCompleted &&
+        progress.miniQuizCompleted
+      );
+    }
+
+    /**
+     * Lấy % cao nhất của quiz cho topic từ localStorage cache.
+     */
+    // (hàm getTopicQuizPercent đã có bên dưới, dùng lại)
+
     function toggleTopicCardMenu(card, e) {
       if (e) e.stopPropagation();
       
@@ -1015,31 +1034,93 @@
       if (!topic) return;
 
       const progress = userProgress[topicId] || {};
-      
-      // Lesson status
-      const lessonClass = progress.lessonCompleted ? 'completed-lesson' : 'unlocked-lesson';
-      // Quiz status: luôn chơi được, quizStatus chỉ ảnh hưởng tiến độ topic
-      const quizDone = progress.quizDone === true;
-      const quizClass = quizDone ? 'completed-quiz' : 'unlocked-quiz';
-      // Matching status: luôn chơi được
-      const matchingDone = progress.matchingDone === true;
-      const matchingClass = matchingDone ? 'completed-matching' : 'unlocked-matching';
+
+      // ===== LOGIC MÀU SẮC MỚI =====
+      // Lý thuyết: đậm màu khi hoàn thành 100% (bài học + mindmap + flashcard)
+      const theoryDone = isTopicTheoryFullyDone(progress);
+      const lessonClass = theoryDone ? 'completed-lesson' : 'unlocked-lesson';
+
+      // Tooltip text cho lý thuyết
+      const theoryTooltip = theoryDone
+        ? '✅ Đã hoàn thành lý thuyết (4/4)'
+        : '📖 Cần hoàn thành: Bài học + Mini Quiz + Mindmap + Flashcard (4/4)';
+
+      // Quiz: đậm màu khi có lần chơi đạt ≥80%
+      const quizPercent = getTopicQuizPercent(topicId);
+      const quizHighScore = quizPercent >= 80;
+      const quizClass = quizHighScore ? 'completed-quiz' : 'unlocked-quiz';
+      const quizLabel = quizPercent > 0 ? `Chơi Quiz <span class="menu-score-tag">${quizPercent}%</span>` : 'Chơi Quiz';
+
+      // Tooltip text cho quiz
+      const quizTooltip = quizHighScore
+        ? `✅ Điểm cao nhất: ${quizPercent}% (≥80%)`
+        : quizPercent > 0
+          ? `📊 Điểm cao nhất: ${quizPercent}% (cần ≥80%)`
+          : '🎯 Chơi và đạt ≥80% để đổi màu';
+
+      // Matching: đậm màu khi có lần chơi đạt ≥80%
+      const matchingPercent = getTopicMatchingPercent(topicId);
+      const matchingHighScore = matchingPercent >= 80;
+      const matchingClass = matchingHighScore ? 'completed-matching' : 'unlocked-matching';
+      const matchingLabel = matchingPercent > 0 ? `Matching <span class="menu-score-tag">${matchingPercent}%</span>` : 'Matching';
+
+      // Tooltip text cho matching
+      const matchingTooltip = matchingHighScore
+        ? `✅ Điểm cao nhất: ${matchingPercent}% (≥80%)`
+        : matchingPercent > 0
+          ? `📊 Điểm cao nhất: ${matchingPercent}% (cần ≥80%)`
+          : '🎯 Chơi và đạt ≥80% để đổi màu';
 
       const menu = document.createElement('div');
       menu.className = 'topic-action-menu menu-right';
       
       menu.innerHTML = `
-        <div class="action-btn-item ${lessonClass}" onclick="window.startTopicDirect('${topicId}', 'lesson')">
+        <div class="topic-menu-header">
+          <span class="topic-menu-title">${escapeHtml(topic.title)}</span>
+          <button class="topic-menu-info-btn" id="topic-info-btn-${escapeHtml(topicId)}"
+            aria-label="Ghi chú điều kiện"
+            onclick="event.stopPropagation(); window.toggleTopicMenuInfo('${escapeHtml(topicId)}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="8.01"/>
+              <line x1="12" y1="12" x2="12" y2="16"/>
+            </svg>
+          </button>
+        </div>
+        <div class="topic-menu-info-panel" id="topic-info-panel-${escapeHtml(topicId)}" style="display:none">
+          <div class="topic-menu-info-row">
+            <span class="info-icon">📖</span>
+            <div>
+              <b>Lý thuyết đậm màu khi:</b><br>
+              Hoàn thành đủ 4 mục: Bài học + Mini Quiz + Mindmap + Flashcard (100%)
+            </div>
+          </div>
+          <div class="topic-menu-info-row">
+            <span class="info-icon">🎯</span>
+            <div>
+              <b>Quiz / Matching đậm màu khi:</b><br>
+              Có lần chơi đạt ≥ 80% điểm
+            </div>
+          </div>
+          <div class="topic-menu-info-row">
+            <span class="info-icon">📅</span>
+            <div>
+              <b>Tính 1 bài học hoàn thành:</b><br>
+              Cộng dồn bất kỳ 3 hoạt động khác loại (Lý thuyết + Quiz + Matching) trong ngày
+            </div>
+          </div>
+        </div>
+        <div class="action-btn-item ${lessonClass}" title="${theoryTooltip}" onclick="window.startTopicDirect('${topicId}', 'lesson')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
           Lý thuyết
         </div>
-        <div class="action-btn-item ${quizClass}" onclick="window.startTopicDirect('${topicId}', 'quiz')">
+        <div class="action-btn-item ${quizClass}" title="${quizTooltip}" onclick="window.startTopicDirect('${topicId}', 'quiz')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Chơi Quiz
+          ${quizLabel}
         </div>
-        <div class="action-btn-item ${matchingClass}" onclick="window.startTopicDirect('${topicId}', 'matching')">
+        <div class="action-btn-item ${matchingClass}" title="${matchingTooltip}" onclick="window.startTopicDirect('${topicId}', 'matching')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          Matching
+          ${matchingLabel}
         </div>
       `;
 
@@ -1057,6 +1138,16 @@
         }
       }, 0);
     }
+
+    // Toggle info panel trong menu topic
+    window.toggleTopicMenuInfo = function(topicId) {
+      const panel = document.getElementById('topic-info-panel-' + topicId);
+      const btn = document.getElementById('topic-info-btn-' + topicId);
+      if (!panel) return;
+      const isOpen = panel.style.display !== 'none';
+      panel.style.display = isOpen ? 'none' : 'block';
+      if (btn) btn.classList.toggle('active', !isOpen);
+    };
 
     // ========================================
     // NAVIGATION LOCK HELPERS

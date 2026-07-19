@@ -20,7 +20,10 @@ function getStudyCalendarSheet_() {
     "lastActivityAt",
     "createdAt",
     "updatedAt",
-    "source"
+    "source",
+    "theoryCount",
+    "quizCount",
+    "matchingCount"
   ];
 
   if (!sheet) {
@@ -81,6 +84,11 @@ function getStudyCalendarStatus_(studyMinutes, lessonCount, goalMinutes, goalLes
   goalMinutes = Number(goalMinutes || 0);
   goalLessons = Number(goalLessons || 0);
 
+  // Nếu mục tiêu bài học là 0 (chưa cài đặt), mặc định là 1 bài học để tính toán đúng
+  if (goalLessons === 0) {
+    goalLessons = 1;
+  }
+
   if (
     (goalMinutes > 0 && studyMinutes >= goalMinutes) ||
     (goalLessons > 0 && lessonCount >= goalLessons)
@@ -93,6 +101,40 @@ function getStudyCalendarStatus_(studyMinutes, lessonCount, goalMinutes, goalLes
   }
 
   return "none";
+}
+
+/**
+ * Tính số bài học hoàn thành được thêm vào từ lần ghi nhận này.
+ * Mỗi khi tổng đủ bộ 3 loại (lý thuyết + quiz + matching) thì tính +1 bài.
+ * Không yêu cầu chung topic, chỉ cần đủ 3 loại cộng dồn trong ngày.
+ *
+ * @param {number} oldTheory   - số lần lý thuyết trước đó trong ngày
+ * @param {number} oldQuiz     - số lần quiz trước đó trong ngày
+ * @param {number} oldMatching - số lần matching trước đó trong ngày
+ * @param {number} addTheory   - lần lý thuyết thêm mới
+ * @param {number} addQuiz     - lần quiz thêm mới
+ * @param {number} addMatching - lần matching thêm mới
+ * @returns {{newTheory, newQuiz, newMatching, completedLessons}}
+ */
+function calcLessonCompletions_(oldTheory, oldQuiz, oldMatching, addTheory, addQuiz, addMatching) {
+  var theory   = (Number(oldTheory)   || 0) + (Number(addTheory)   || 0);
+  var quiz     = (Number(oldQuiz)     || 0) + (Number(addQuiz)     || 0);
+  var matching = (Number(oldMatching) || 0) + (Number(addMatching) || 0);
+
+  // Mỗi bộ đầy đủ 3 loại = 1 bài học hoàn thành
+  var completedLessons = Math.min(theory, quiz, matching);
+
+  // Trừ đi số bộ đã hoàn thành khỏi từng counter
+  theory   -= completedLessons;
+  quiz     -= completedLessons;
+  matching -= completedLessons;
+
+  return {
+    newTheory: theory,
+    newQuiz: quiz,
+    newMatching: matching,
+    completedLessons: completedLessons
+  };
 }
 
 function apiRecordStudyCalendarDay(payload) {
@@ -113,12 +155,16 @@ function apiRecordStudyCalendarDay(payload) {
   const month = Number(date.slice(5, 7));
 
   const addMinutes = Math.max(0, Number(payload.studyMinutes || payload.minutes || 0));
-  const addLessons = Math.max(0, Number(payload.lessonCount || payload.lessons || 0));
   const addActivities = Math.max(1, Number(payload.activityCount || 1));
 
   const goalMinutes = Math.max(0, Number(payload.goalMinutes || 0));
   const goalLessons = Math.max(0, Number(payload.goalLessons || 0));
   const source = String(payload.source || "learning").trim();
+
+  // Xác định loại hoạt động từ source
+  const addTheory   = (source === "lesson" || source === "flashcard" || source === "mindmap") ? 1 : 0;
+  const addQuiz     = (source === "quiz")     ? 1 : 0;
+  const addMatching = (source === "matching") ? 1 : 0;
 
   const sheet = getStudyCalendarSheet_();
   const map = getStudyCalendarHeaderMap_(sheet);
@@ -149,28 +195,26 @@ function apiRecordStudyCalendarDay(payload) {
   }
 
   if (targetRow === -1) {
-    const id =
-      "SC_" +
-      Utilities.getUuid()
-        .replace(/-/g, "")
-        .slice(0, 18);
+    // Hàng mới — tính bộ hoàn thành từ các counter bắt đầu từ 0
+    const calc = calcLessonCompletions_(0, 0, 0, addTheory, addQuiz, addMatching);
+    const completedLessons = calc.completedLessons;
 
     const status = getStudyCalendarStatus_(
       addMinutes,
-      addLessons,
+      completedLessons,
       goalMinutes,
       goalLessons
     );
 
     const row = [];
-    row[map.id] = id;
+    row[map.id] = "SC_" + Utilities.getUuid().replace(/-/g, "").slice(0, 18);
     row[map.userId] = userId;
     row[map.email] = email;
     row[map.date] = date;
     row[map.year] = year;
     row[map.month] = month;
     row[map.studyMinutes] = addMinutes;
-    row[map.lessonCount] = addLessons;
+    row[map.lessonCount] = completedLessons;
     row[map.activityCount] = addActivities;
     row[map.goalMinutes] = goalMinutes;
     row[map.goalLessons] = goalLessons;
@@ -179,6 +223,10 @@ function apiRecordStudyCalendarDay(payload) {
     row[map.createdAt] = now;
     row[map.updatedAt] = now;
     row[map.source] = source;
+    // Lưu counter còn dư sau khi tính bộ hoàn thành
+    if (map.theoryCount !== undefined)   row[map.theoryCount]   = calc.newTheory;
+    if (map.quizCount !== undefined)     row[map.quizCount]     = calc.newQuiz;
+    if (map.matchingCount !== undefined) row[map.matchingCount] = calc.newMatching;
 
     sheet.appendRow(row);
 
@@ -186,20 +234,28 @@ function apiRecordStudyCalendarDay(payload) {
       success: true,
       created: true,
       date: date,
-      status: status
+      status: status,
+      completedLessons: completedLessons
     };
   }
 
+  // Cập nhật hàng hiện có
   const rowValues = sheet
     .getRange(targetRow, 1, 1, sheet.getLastColumn())
     .getValues()[0];
 
-  const oldMinutes = Number(rowValues[map.studyMinutes] || 0);
-  const oldLessons = Number(rowValues[map.lessonCount] || 0);
+  const oldMinutes    = Number(rowValues[map.studyMinutes]  || 0);
+  const oldLessons    = Number(rowValues[map.lessonCount]   || 0);
   const oldActivities = Number(rowValues[map.activityCount] || 0);
+  const oldTheory     = map.theoryCount   !== undefined ? Number(rowValues[map.theoryCount]   || 0) : 0;
+  const oldQuiz       = map.quizCount     !== undefined ? Number(rowValues[map.quizCount]     || 0) : 0;
+  const oldMatching   = map.matchingCount !== undefined ? Number(rowValues[map.matchingCount] || 0) : 0;
 
-  const newMinutes = oldMinutes + addMinutes;
-  const newLessons = oldLessons + addLessons;
+  const calc = calcLessonCompletions_(oldTheory, oldQuiz, oldMatching, addTheory, addQuiz, addMatching);
+  const completedLessons = calc.completedLessons;
+
+  const newMinutes    = oldMinutes + addMinutes;
+  const newLessons    = oldLessons + completedLessons;
   const newActivities = oldActivities + addActivities;
 
   const finalGoalMinutes = goalMinutes || Number(rowValues[map.goalMinutes] || 0);
@@ -212,23 +268,31 @@ function apiRecordStudyCalendarDay(payload) {
     finalGoalLessons
   );
 
-  sheet.getRange(targetRow, map.studyMinutes + 1).setValue(newMinutes);
-  sheet.getRange(targetRow, map.lessonCount + 1).setValue(newLessons);
+  sheet.getRange(targetRow, map.studyMinutes  + 1).setValue(newMinutes);
+  sheet.getRange(targetRow, map.lessonCount   + 1).setValue(newLessons);
   sheet.getRange(targetRow, map.activityCount + 1).setValue(newActivities);
-  sheet.getRange(targetRow, map.goalMinutes + 1).setValue(finalGoalMinutes);
-  sheet.getRange(targetRow, map.goalLessons + 1).setValue(finalGoalLessons);
-  sheet.getRange(targetRow, map.status + 1).setValue(status);
+  sheet.getRange(targetRow, map.goalMinutes   + 1).setValue(finalGoalMinutes);
+  sheet.getRange(targetRow, map.goalLessons   + 1).setValue(finalGoalLessons);
+  sheet.getRange(targetRow, map.status        + 1).setValue(status);
   sheet.getRange(targetRow, map.lastActivityAt + 1).setValue(now);
-  sheet.getRange(targetRow, map.updatedAt + 1).setValue(now);
-  sheet.getRange(targetRow, map.source + 1).setValue(source);
+  sheet.getRange(targetRow, map.updatedAt     + 1).setValue(now);
+  sheet.getRange(targetRow, map.source        + 1).setValue(source);
+
+  // Cập nhật counter từng loại (phần dư)
+  if (map.theoryCount   !== undefined) sheet.getRange(targetRow, map.theoryCount   + 1).setValue(calc.newTheory);
+  if (map.quizCount     !== undefined) sheet.getRange(targetRow, map.quizCount     + 1).setValue(calc.newQuiz);
+  if (map.matchingCount !== undefined) sheet.getRange(targetRow, map.matchingCount + 1).setValue(calc.newMatching);
 
   return {
     success: true,
     created: false,
     date: date,
-    status: status
+    status: status,
+    completedLessons: completedLessons
   };
 }
+
+
 
 function apiGetStudyCalendarMonth(payload) {
   payload = payload || {};
