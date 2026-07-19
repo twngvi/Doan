@@ -23,8 +23,6 @@ function getDefaultStudyReminderTemplate_() {
       '<li>Mục tiêu bài học: <b>{{dailyGoal}}</b> bài</li>' +
       '<li>Đã hoàn thành: <b>{{completedLessons}}</b> bài</li>' +
       '<li>Còn lại: <b>{{remainingLessons}}</b> bài</li>' +
-      '<li>Mục tiêu thời gian: <b>{{dailyTimeGoal}}</b> phút</li>' +
-      '<li>Đã học: <b>{{studiedMinutes}}</b> phút</li>' +
       '<li>Chuỗi hiện tại: <b>{{streak}}</b> ngày</li>' +
       '</ul>' +
       '<p><a href="{{learningUrl}}" style="display:inline-block;background:#2f6b3f;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Vào học ngay</a></p>' +
@@ -448,11 +446,10 @@ function getTodayStudyReminderStats_(email, settings) {
   let streak = 0;
 
   try {
-    if (typeof getTodayLearningStats === "function") {
-      const res = getTodayLearningStats({ email: email });
+    if (typeof getUserStreakData === "function") {
+      const res = getUserStreakData({ email: email });
       if (res && res.success) {
-        studiedMinutes = Number(res.dailyTotal || res.studiedMinutesToday || 0);
-        streak = Number(res.currentStreak || res.streak || 0);
+        streak = Number(res.currentStreak || 0);
       }
     }
   } catch (e) {}
@@ -472,22 +469,18 @@ function getTodayStudyReminderStats_(email, settings) {
   } catch (e) {}
 
   const dailyGoal = Number(settings.dailyGoal || 5);
-  const dailyTimeGoal = Number(settings.dailyTimeGoal || 15);
 
   return {
-    studiedMinutes: studiedMinutes,
     completedLessons: completedLessons,
     remainingLessons: Math.max(0, dailyGoal - completedLessons),
     dailyGoal: dailyGoal,
-    dailyTimeGoal: dailyTimeGoal,
     streak: streak
   };
 }
 
 function isStudyGoalCompleted_(stats) {
   return (
-    Number(stats.completedLessons || 0) >= Number(stats.dailyGoal || 5) ||
-    Number(stats.studiedMinutes || 0) >= Number(stats.dailyTimeGoal || 15)
+    Number(stats.completedLessons || 0) >= Number(stats.dailyGoal || 5)
   );
 }
 
@@ -524,7 +517,6 @@ function getAllStudyReminderUsers_() {
   const fullNameCol = col("fullName");
   const usernameCol = col("username");
   const dailyGoalCol = col("dailyGoal");
-  const dailyTimeGoalCol = col("dailyTimeGoal");
   const emailReminderEnabledCol = col("emailReminderEnabled");
   const reminderTimesCol = col("reminderTimes");
   const reminderDaysCol = col("reminderDays");
@@ -607,8 +599,6 @@ function getAllStudyReminderUsers_() {
       settings: {
         dailyGoal:
           dailyGoalCol !== -1 ? parseStudyNumber_(row[dailyGoalCol], 5) : 5,
-        dailyTimeGoal:
-          dailyTimeGoalCol !== -1 ? parseStudyNumber_(row[dailyTimeGoalCol], 15) : 15,
         emailReminderEnabled: enabled,
         reminderTimes: reminderTimes,
         reminderDays: reminderDays,
@@ -755,8 +745,6 @@ function processStudyReminderEmails() {
           dailyGoal: stats.dailyGoal,
           completedLessons: stats.completedLessons,
           remainingLessons: stats.remainingLessons,
-          dailyTimeGoal: stats.dailyTimeGoal,
-          studiedMinutes: stats.studiedMinutes,
           streak: stats.streak,
           todayDate: Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy"),
           learningUrl: buildLearningUrl_()
@@ -850,8 +838,6 @@ function testSendStudyReminderEmailToMe() {
       dailyGoal: 10,
       completedLessons: 0,
       remainingLessons: 10,
-      dailyTimeGoal: 55,
-      studiedMinutes: 0,
       streak: 1,
       todayDate: Utilities.formatDate(new Date(), STUDY_REMINDER_TIMEZONE, "dd/MM/yyyy"),
       learningUrl: buildLearningUrl_()

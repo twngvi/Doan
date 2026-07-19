@@ -39,9 +39,7 @@ const EMAIL_TYPE_CONFIG = {
       "{{dailyGoal}}": "5",
       "{{completedLessons}}": "3",
       "{{remainingLessons}}": "2",
-      "{{dailyTimeGoal}}": "30",
-      "{{studiedMinutes}}": "15",
-      "{{streak}}": "7",
+      "{{streak}}": "5",
       "{{todayDate}}": "24/06/2026",
       "{{learningUrl}}": "https://example.com/learning"
     }
@@ -327,12 +325,10 @@ function sendStudyReminder(email, info) {
       "{{userName}}": info.fullName || "bạn",
       "{{displayName}}": info.fullName || "bạn",
       "{{email}}": email,
-      "{{dailyGoal}}": info.totalLessons,
-      "{{completedLessons}}": info.completedLessons,
-      "{{remainingLessons}}": info.remainingLessons,
-      "{{dailyTimeGoal}}": info.dailyTimeGoal || 30,
-      "{{studiedMinutes}}": info.studiedMinutes || 0,
-      "{{streak}}": info.streak,
+      "{{dailyGoal}}": info.dailyGoal || 5,
+      "{{completedLessons}}": info.completedLessons || 0,
+      "{{remainingLessons}}": info.remainingLessons || 5,
+      "{{streak}}": info.streak || 0,
       "{{todayDate}}": Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"),
       "{{learningUrl}}": "https://script.google.com/.../exec"
     });

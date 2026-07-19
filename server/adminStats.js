@@ -546,13 +546,7 @@ function getAdminDashboardChartsData() {
             data: daysOfWeekData,
             topDayLabel: topDayLabel
           },
-          last7DaysDuration: {
-            labels: dateKeys7Days,
-            studyMinutes: studyMinutes7Days,
-            activeUsers: activeUsers7DaysList,
-            totalStudyHoursLabel: totalStudyHoursLabel,
-            avgMinutesPerDayLabel: avgMinutesPerDayLabel
-          }
+
         },
         // Tiến độ học (dự phòng)
         progress: {

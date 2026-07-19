@@ -112,7 +112,6 @@ function getStudyColumnInfo_(usersSheet) {
 
   const requiredCols = [
     "dailyGoal",
-    "dailyTimeGoal",
     "emailReminderEnabled",
     "reminderTimes",
     "reminderDays",
@@ -182,7 +181,6 @@ function writeStudyValueToAllCols_(row, colList, value) {
 
 function parseStudySettingsFromRow_(row, colMap) {
   const dailyGoalRaw = readFirstStudyValue_(row, colMap.dailyGoal);
-  const dailyTimeGoalRaw = readFirstStudyValue_(row, colMap.dailyTimeGoal);
   const emailReminderRaw = readFirstStudyValue_(row, colMap.emailReminderEnabled);
   const reminderTimesRaw = readFirstStudyValue_(row, colMap.reminderTimes);
   const reminderDaysRaw = readFirstStudyValue_(row, colMap.reminderDays);
@@ -222,7 +220,6 @@ function parseStudySettingsFromRow_(row, colMap) {
 
   return {
     dailyGoal: parseStudyNumber_(dailyGoalRaw, 5),
-    dailyTimeGoal: parseStudyNumber_(dailyTimeGoalRaw, 15),
     emailReminderEnabled: parseStudyBoolean_(emailReminderRaw, false),
     reminderTimes: normalizeReminderTimesForSettings_(reminderTimesRaw),
     reminderDays: normalizeReminderDaysForSettings_(reminderDaysRaw),
@@ -390,7 +387,6 @@ function updateStudySettings(userContext, settings) {
 
     const normalizedSettings = {
       dailyGoal: Number(settings.dailyGoal),
-      dailyTimeGoal: Number(settings.dailyTimeGoal),
       emailReminderEnabled: settings.emailReminderEnabled === true,
       reminderTimes: normalizeReminderTimesForSettings_(settings.reminderTimes),
       reminderDays: normalizeReminderDaysForSettings_(settings.reminderDays),
@@ -423,16 +419,7 @@ function updateStudySettings(userContext, settings) {
       };
     }
 
-    if (
-      !Number.isInteger(normalizedSettings.dailyTimeGoal) ||
-      normalizedSettings.dailyTimeGoal < 1 ||
-      normalizedSettings.dailyTimeGoal > 300
-    ) {
-      return {
-        success: false,
-        message: "Thời gian học phải từ 1 đến 300 phút"
-      };
-    }
+
 
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
@@ -465,7 +452,6 @@ function updateStudySettings(userContext, settings) {
     const row = usersSheet.getRange(targetRow, 1, 1, colInfo.lastCol).getValues()[0];
 
     writeStudyValueToAllCols_(row, colInfo.map.dailyGoal, normalizedSettings.dailyGoal);
-    writeStudyValueToAllCols_(row, colInfo.map.dailyTimeGoal, normalizedSettings.dailyTimeGoal);
     writeStudyValueToAllCols_(row, colInfo.map.emailReminderEnabled, normalizedSettings.emailReminderEnabled);
     writeStudyValueToAllCols_(row, colInfo.map.reminderTimes, JSON.stringify(normalizedSettings.reminderTimes));
     writeStudyValueToAllCols_(row, colInfo.map.reminderDays, JSON.stringify(normalizedSettings.reminderDays));
@@ -480,9 +466,6 @@ function updateStudySettings(userContext, settings) {
 
     // Force format columns to number format to overwrite previous date formatting
     colInfo.map.dailyGoal.forEach(function (idx) {
-      usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
-    });
-    colInfo.map.dailyTimeGoal.forEach(function (idx) {
       usersSheet.getRange(targetRow, idx + 1).setNumberFormat("0");
     });
     colInfo.map.reminderLeadMinutes.forEach(function (idx) {
@@ -505,8 +488,7 @@ function updateStudySettings(userContext, settings) {
     const verifiedSettings = parseStudySettingsFromRow_(verifiedRow, colInfo.map);
 
     if (
-      Number(verifiedSettings.dailyGoal) !== Number(normalizedSettings.dailyGoal) ||
-      Number(verifiedSettings.dailyTimeGoal) !== Number(normalizedSettings.dailyTimeGoal)
+      Number(verifiedSettings.dailyGoal) !== Number(normalizedSettings.dailyGoal)
     ) {
       return {
         success: false,
@@ -661,34 +643,9 @@ function generateTimeline(userContext) {
  * Get daily quests (generates random ones if not exist for today)
  */
 function getDailyQuests(userContext) {
-   const settingsRes = getStudySettings(userContext);
-   const target = settingsRes.success && settingsRes.settings.dailyTimeGoal ? settingsRes.settings.dailyTimeGoal : 15;
-
-   let current = 0;
-   try {
-     const userEmail = resolveAuthenticatedEmailFromContext(userContext);
-     const progressSheetId = getUserProgressSheetIdByEmail(userEmail);
-     if (progressSheetId) {
-        const spreadsheet = SpreadsheetApp.openById(progressSheetId);
-        let sheet = spreadsheet.getSheetByName("Daily_Learning");
-        if (sheet) {
-           const today = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
-           const dataRange = sheet.getDataRange().getValues();
-           for (let i = 1; i < dataRange.length; i++) {
-             if (dataRange[i][0] === today) {
-                current = parseInt(dataRange[i][1]) || 0;
-                break;
-             }
-           }
-        }
-     }
-   } catch (e) {}
-
    return {
      success: true,
-     quests: [
-       { id: 3, title: `Học liên tục ${target} phút`, current: current, target: target, rewardXP: 30, rewardCoin: 5, isCompleted: current >= target }
-     ]
+     quests: []
    };
 }
 

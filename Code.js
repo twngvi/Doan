@@ -336,9 +336,8 @@ function testUpdateStudySettings_ID04() {
       userId: "",
       email: "EMAIL_CUA_USER_ID04", // Thay bằng email thật để test nếu cần
       settings: {
-        dailyGoal: 13,
-        dailyTimeGoal: 22,
-        emailReminderEnabled: false,
+        dailyGoal: 5,
+        emailReminderEnabled: true,
         reminderTimes: ["20:00"],
         reminderMode: 1
       }
@@ -368,8 +367,8 @@ function testInspectStudySettings() {
   const data = usersSheet.getDataRange().getValues();
   const headers = data[0];
   
-  const colsNeeded = ["dailyGoal", "dailyTimeGoal", "emailReminderEnabled", "reminderTimes", "reminderMode"];
-  let colIndexes = {};
+  const colsNeeded = ["dailyGoal", "emailReminderEnabled", "reminderTimes", "reminderMode"];
+  let headerChanged = false;
   colsNeeded.forEach(col => {
     colIndexes[col] = headers.indexOf(col);
   });

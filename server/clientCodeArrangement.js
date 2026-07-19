@@ -181,7 +181,6 @@ function saveCodeArrangementProgress(topicId, arrangementId) {
           studyMinutes: 0,
           lessonCount: 1,
           activityCount: 1,
-          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
           goalLessons: Number(userSettings?.dailyGoal || 0),
           source: "code_arrangement"
         });
@@ -270,7 +269,6 @@ function syncBulkCodeArrangementProgress(games) {
           studyMinutes: 0,
           lessonCount: games.length,
           activityCount: games.length,
-          goalMinutes: Number(userSettings?.dailyTimeGoal || 0),
           goalLessons: Number(userSettings?.dailyGoal || 0),
           source: "code_arrangement"
         });
