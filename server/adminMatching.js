@@ -895,7 +895,10 @@ YÊU CẦU QUAN TRỌNG:
         if (h === "shortDefinition") return c.shortDefinition || "";
         if (h === "example") return c.example || "";
         if (h === "hint") return c.hint || "";
-        if (h === "difficulty") return c.difficulty || "medium";
+        if (h === "difficulty") {
+          let diff = c.difficulty || c.Difficulty || c.DIFFICULTY || "medium";
+          return typeof diff === 'string' ? diff.toLowerCase() : "medium";
+        }
         if (h === "tags") return c.tags || "";
         if (h === "status") return "draft";
         if (h === "isActive") return false;
