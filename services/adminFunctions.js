@@ -3873,6 +3873,14 @@ function saveTopicToMasterDB(topicData) {
       sheet.getRange(1, newColIndex).setValue("contentDocUrl");
       headers = headers.concat(["contentDocUrl"]);
     }
+    // Ensure columns for XP rewards exist
+    ["xpReward", "quizXpReward", "matchingXpReward"].forEach(colName => {
+      if (headers.indexOf(colName) === -1) {
+        const newColIndex = headers.length + 1;
+        sheet.getRange(1, newColIndex).setValue(colName);
+        headers.push(colName);
+      }
+    });
     
     // Prepare row data based on schema
     const rowData = [];
@@ -3926,6 +3934,15 @@ function saveTopicToMasterDB(topicData) {
           rowData.push(
             typeof topicData.isLocked === "boolean" ? topicData.isLocked : false,
           );
+          break;
+        case 'xpReward':
+          rowData.push(topicData.xpReward !== undefined && topicData.xpReward !== "" ? Number(topicData.xpReward) : 100);
+          break;
+        case 'quizXpReward':
+          rowData.push(topicData.quizXpReward !== undefined && topicData.quizXpReward !== "" ? Number(topicData.quizXpReward) : 100);
+          break;
+        case 'matchingXpReward':
+          rowData.push(topicData.matchingXpReward !== undefined && topicData.matchingXpReward !== "" ? Number(topicData.matchingXpReward) : 100);
           break;
         default:
           rowData.push('');
@@ -4203,7 +4220,20 @@ function getTopicForEdit(topicId) {
       
       isLocked:
         topicRow[headers.indexOf("isLocked")] === true ||
-        String(topicRow[headers.indexOf("isLocked")]).toLowerCase() === "true"
+        String(topicRow[headers.indexOf("isLocked")]).toLowerCase() === "true",
+
+      xpReward:
+        headers.indexOf("xpReward") >= 0 && topicRow[headers.indexOf("xpReward")] !== undefined && topicRow[headers.indexOf("xpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("xpReward")]) || 100
+          : 100,
+      quizXpReward:
+        headers.indexOf("quizXpReward") >= 0 && topicRow[headers.indexOf("quizXpReward")] !== undefined && topicRow[headers.indexOf("quizXpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("quizXpReward")]) || 100
+          : 100,
+      matchingXpReward:
+        headers.indexOf("matchingXpReward") >= 0 && topicRow[headers.indexOf("matchingXpReward")] !== undefined && topicRow[headers.indexOf("matchingXpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("matchingXpReward")]) || 100
+          : 100
     };
 
     // Lấy nội dung doc HTML
@@ -4419,6 +4449,19 @@ function updateTopicWithContent(topicId, topicData) {
     if (updatedAtCol >= 0) {
       sheet.getRange(rowNum, updatedAtCol + 1).setValue(now);
     }
+
+    // Cập nhật điểm thưởng XP nếu có
+    ["xpReward", "quizXpReward", "matchingXpReward"].forEach(function(colName) {
+      if (topicData[colName] !== undefined && topicData[colName] !== "") {
+        var colIndex = headers.indexOf(colName);
+        if (colIndex === -1) {
+          colIndex = headers.length;
+          sheet.getRange(1, colIndex + 1).setValue(colName);
+          headers.push(colName);
+        }
+        sheet.getRange(rowNum, colIndex + 1).setValue(Number(topicData[colName]) || 100);
+      }
+    });
 
     Logger.log("✅ Metadata updated in MasterDB");
 

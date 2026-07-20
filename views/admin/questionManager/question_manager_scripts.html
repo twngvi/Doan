@@ -207,6 +207,9 @@ function qmLoadTopicQuestions(topicIdParam, isSilent = false) {
       document.getElementById("qmPublishBtn").innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">publish</span> Công bố Topic';
       document.getElementById("qmPublishBtn").classList.replace("qm-btn-danger", "qm-btn-success");
     }
+    
+    const quizXpInput = document.getElementById("qmTopicQuizXpInput");
+    if (quizXpInput) quizXpInput.value = topic.quizXpReward !== undefined ? topic.quizXpReward : 100;
   }
 
   if (!isSilent) qmShowLoading("Đang tải danh sách câu hỏi...");
@@ -916,5 +919,31 @@ function qmSaveGeminiKey() {
       feedback.style.color = "#dc2626";
     })
     .upsertUserGeminiApiKey(null, keyInput);
+}
+
+function qmSaveTopicQuizXp() {
+  const topicId = qmGetSelectedTopicId();
+  if (!topicId) return;
+  const input = document.getElementById("qmTopicQuizXpInput");
+  if (!input) return;
+  const newReward = parseInt(input.value) || 0;
+  
+  qmShowLoading("Đang lưu điểm thưởng XP...");
+  google.script.run
+    .withSuccessHandler((res) => {
+      qmHideLoading();
+      if (res && res.success) {
+        showToast("✅ Đã lưu điểm thưởng XP Quiz: " + newReward + " XP", "success");
+        const topic = qmTopics.find(t => t.topicId === topicId);
+        if (topic) topic.quizXpReward = newReward;
+      } else {
+        showToast("❌ Lỗi: " + (res ? res.message : "Không thể lưu"), "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      qmHideLoading();
+      showToast("❌ Lỗi kết nối: " + err, "error");
+    })
+    .adminUpdateTopicReward(topicId, 'quizXpReward', newReward);
 }
 </script>

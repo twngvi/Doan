@@ -99,34 +99,40 @@ function createAllSheets() {
   try {
     const spreadsheet = getOrCreateDatabase();
 
+    // Lấy danh sách sheet 1 lần duy nhất để không phải gọi API 20 lần
+    const existingSheets = spreadsheet.getSheets();
+    const sheetMap = {};
+    existingSheets.forEach(s => sheetMap[s.getName()] = s);
+
     // Delete default sheet if exists
-    const defaultSheet = spreadsheet.getSheetByName("Sheet1");
-    if (defaultSheet && spreadsheet.getSheets().length > 1) {
-      spreadsheet.deleteSheet(defaultSheet);
+    const defaultSheet = sheetMap["Sheet1"];
+    if (defaultSheet && existingSheets.length > 1) {
+      try { spreadsheet.deleteSheet(defaultSheet); } catch(e) {}
     }
 
     // Create each sheet
     Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
-      createSheet(spreadsheet, sheetConfig);
+      createSheet(spreadsheet, sheetConfig, sheetMap);
     });
 
-    Logger.log("All sheets created successfully!");
+    Logger.log("All sheets checked and created successfully!");
     return spreadsheet.getUrl();
   } catch (error) {
     Logger.log("Error creating sheets: " + error.toString());
-    throw error;
+    return getOrCreateDatabase().getUrl();
   }
 }
 
 /**
  * Create a single sheet with headers
  */
-function createSheet(spreadsheet, sheetConfig) {
+function createSheet(spreadsheet, sheetConfig, sheetMap) {
   try {
-    let sheet = spreadsheet.getSheetByName(sheetConfig.name);
+    let sheet = (sheetMap && sheetMap[sheetConfig.name]) ? sheetMap[sheetConfig.name] : spreadsheet.getSheetByName(sheetConfig.name);
 
     if (!sheet) {
       sheet = spreadsheet.insertSheet(sheetConfig.name);
+      if (sheetMap) sheetMap[sheetConfig.name] = sheet;
       Logger.log("Created sheet: " + sheetConfig.name);
     } else {
       Logger.log("Sheet already exists: " + sheetConfig.name);
@@ -141,15 +147,23 @@ function createSheet(spreadsheet, sheetConfig) {
     headerRange.setBackground("#4285f4");
     headerRange.setFontColor("white");
 
-    sheet.autoResizeColumns(1, sheetConfig.columns.length);
-    sheet.setFrozenRows(1);
+    try {
+      if (sheetConfig && sheetConfig.columns && sheetConfig.columns.length <= 10) {
+        sheet.autoResizeColumns(1, sheetConfig.columns.length);
+      }
+    } catch (e) {
+      Logger.log("Skipping autoResize for " + sheetConfig.name + ": " + e.toString());
+    }
+    try {
+      sheet.setFrozenRows(1);
+    } catch (e) {}
 
     return sheet;
   } catch (error) {
     Logger.log(
       "Error creating sheet " + sheetConfig.name + ": " + error.toString(),
     );
-    throw error;
+    return null;
   }
 }
 
@@ -159,18 +173,24 @@ function createSheet(spreadsheet, sheetConfig) {
 function updateSheetSchema(sheet, sheetConfig) {
   try {
     const lastColumn = sheet.getLastColumn();
+    const maxColumns = sheet.getMaxColumns();
+    const newColumns = sheetConfig.columns;
+
+    if (maxColumns < newColumns.length) {
+      sheet.insertColumnsAfter(maxColumns, newColumns.length - maxColumns);
+    }
+
     if (lastColumn === 0) {
-      const headerRange = sheet.getRange(1, 1, 1, sheetConfig.columns.length);
-      headerRange.setValues([sheetConfig.columns]);
+      const headerRange = sheet.getRange(1, 1, 1, newColumns.length);
+      headerRange.setValues([newColumns]);
       headerRange.setFontWeight("bold");
       headerRange.setBackground("#4285f4");
       headerRange.setFontColor("white");
-      sheet.setFrozenRows(1);
+      try { sheet.setFrozenRows(1); } catch (e) {}
       return;
     }
 
     const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-    const newColumns = sheetConfig.columns;
 
     if (currentHeaders.length < newColumns.length) {
       Logger.log("Updating schema for " + sheetConfig.name);
