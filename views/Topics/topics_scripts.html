@@ -760,31 +760,46 @@
         tab.classList.toggle('active', tab.dataset.filter === currentFilter);
       });
 
-      if (currentFilter === 'all') {
-        filteredTopics = [...allTopics];
-      } else {
-        filteredTopics = allTopics.filter(function(topic) {
-          return getCategoryName(topic) === currentFilter;
-        });
-      }
-
       const searchValue = document.getElementById('searchTopics').value;
-      if (searchValue) {
-        searchTopics(searchValue);
-      } else {
-        renderTopics();
-      }
+      searchTopics(searchValue);
+    }
+
+    let currentStatusFilter = 'all';
+
+    function setTopicStatusFilter(status) {
+      currentStatusFilter = status;
+      const group = document.querySelector('.topics-header .segmented-filter');
+      if (group) group.setAttribute('data-active', status);
+      
+      document.querySelectorAll('.topics-header .segmented-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === status);
+      });
+      const searchValue = document.getElementById('searchTopics').value;
+      searchTopics(searchValue);
     }
 
     function searchTopics(query) {
       const searchValue = String(query || '').trim().toLowerCase();
 
-      const baseTopics =
+      let baseTopics =
         currentFilter === 'all'
           ? allTopics
           : allTopics.filter(function(topic) {
               return getCategoryName(topic) === currentFilter;
             });
+
+      if (currentStatusFilter !== 'all') {
+        baseTopics = baseTopics.filter(function(topic) {
+          const progressData = userProgress[topic.topicId] || {};
+          const isCompleted = progressData.completed === true;
+          const progressPercent = progressData.progress || 0;
+          
+          if (currentStatusFilter === 'played') return isCompleted;
+          if (currentStatusFilter === 'in_progress') return !isCompleted && progressPercent > 0;
+          if (currentStatusFilter === 'unplayed') return !isCompleted && progressPercent === 0;
+          return true;
+        });
+      }
 
       if (!searchValue) {
         filteredTopics = [...baseTopics];

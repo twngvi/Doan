@@ -106,26 +106,62 @@
     }
   }
 
+  let caStatusFilter = 'all';
+
+  function caSetStatusFilter(status) {
+    caStatusFilter = status;
+    const group = document.querySelector('.ca-list-container .segmented-filter');
+    if (group) group.setAttribute('data-active', status);
+    
+    document.querySelectorAll('.ca-list-container .segmented-filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === status);
+    });
+    const searchValue = document.getElementById('caSearchInput').value;
+    caSearchGames(searchValue);
+  }
+
   function caSearchGames(query) {
     query = (query || '').trim().toLowerCase();
     const listBody = document.getElementById('caListBody');
     if (!listBody) return;
 
-    if (!query) {
-      // No query: re-render all games
-      if (allAvailableGames.length > 0) {
-        renderCodeArrangementList(allAvailableGames);
-      }
-      return;
+    let filtered = allAvailableGames;
+
+    if (caStatusFilter !== 'all') {
+      filtered = filtered.filter(function(game) {
+        // 1. Check server data
+        let isCompleted = allCompletedArrangements.includes(game.arrangementId);
+        let isInProgress = false;
+        
+        // 2. Check local storage
+        if (!isCompleted) {
+          const savedProgressStr = localStorage.getItem(getCaProgressKey(game.arrangementId));
+          if (savedProgressStr) {
+            try {
+              const progress = JSON.parse(savedProgressStr);
+              isCompleted = progress.status === 'completed';
+              isInProgress = progress.status === 'in_progress';
+            } catch(e) {}
+          } else {
+            isCompleted = localStorage.getItem(getCaCompletedKey(game.arrangementId)) === 'true';
+          }
+        }
+        
+        if (caStatusFilter === 'played') return isCompleted;
+        if (caStatusFilter === 'in_progress') return isInProgress && !isCompleted;
+        if (caStatusFilter === 'unplayed') return !isCompleted && !isInProgress;
+        return true;
+      });
     }
 
-    // Filter games by title, description, and programming language
-    const filtered = allAvailableGames.filter(function(game) {
-      const title = (game.title || '').toLowerCase();
-      const desc = (game.description || '').toLowerCase();
-      const lang = (game.programmingLanguage || '').toLowerCase();
-      return title.indexOf(query) !== -1 || desc.indexOf(query) !== -1 || lang.indexOf(query) !== -1;
-    });
+    if (query) {
+      filtered = filtered.filter(function(game) {
+        const title = (game.title || '').toLowerCase();
+        const desc = (game.description || '').toLowerCase();
+        const lang = (game.programmingLanguage || '').toLowerCase();
+        return title.indexOf(query) !== -1 || desc.indexOf(query) !== -1 || lang.indexOf(query) !== -1;
+      });
+    }
 
     if (filtered.length === 0) {
       listBody.innerHTML = `
@@ -167,10 +203,12 @@
     let hasRenderedFromCache = false;
     let localStoreCACache = readCALocalCache();
 
-    // ƯU TIÊN: Nếu có CA List từ LS -> Render ngay
     if (localStoreCACache && localStoreCACache.data) {
         console.log("✅ Using LOCAL STORAGE cached CA List, rendering instantly...");
-        renderCodeArrangementList(localStoreCACache.data.data, localStoreCACache.data.completed || []);
+        allAvailableGames = localStoreCACache.data.data;
+        allCompletedArrangements = localStoreCACache.data.completed || [];
+        const searchValue = document.getElementById('caSearchInput') ? document.getElementById('caSearchInput').value : '';
+        caSearchGames(searchValue);
         hasRenderedFromCache = true;
     }
 
@@ -189,7 +227,10 @@
       .withSuccessHandler(function(response) {
         if (response.success && response.data) {
           saveCALocalCache(response);
-          renderCodeArrangementList(response.data, response.completed || []);
+          allAvailableGames = response.data;
+          allCompletedArrangements = response.completed || [];
+          const searchValue = document.getElementById('caSearchInput') ? document.getElementById('caSearchInput').value : '';
+          caSearchGames(searchValue);
         } else {
           if (!isBackgroundRefresh) {
               document.getElementById('caListBody').innerHTML = `

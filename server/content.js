@@ -1872,6 +1872,24 @@ function deductXQPFromUserTotalByEmail(userEmail, amountToDeduct) {
       const newTotalXQP = currentXQP - amount;
       usersSheet.getRange(i + 1, xqpCol + 1).setValue(newTotalXQP);
 
+      const userId = data[i][0];
+      if (userId) {
+        const statsSheet = ss.getSheetByName("User_Stats");
+        if (statsSheet) {
+          const sData = statsSheet.getDataRange().getValues();
+          const sHeaders = sData[0];
+          const sXqpCol = sHeaders.indexOf("totalXQP");
+          if (sXqpCol >= 0) {
+            for (let j = 1; j < sData.length; j++) {
+              if (sData[j][0] === userId) {
+                statsSheet.getRange(j + 1, sXqpCol + 1).setValue(newTotalXQP);
+                break;
+              }
+            }
+          }
+        }
+      }
+
       // Sync to Personal DB
       const progressSheetId = data[i][headers.indexOf("progressSheetId")];
       if (progressSheetId) {
@@ -1879,6 +1897,12 @@ function deductXQPFromUserTotalByEmail(userEmail, amountToDeduct) {
         const currentXP = parseInt(data[i][headers.indexOf("totalXP")]) || 0;
         updatePersonalProfilePoints(progressSheetId, currentXP, newTotalXQP);
       }
+
+      try {
+        if (typeof invalidateDashboardCachesByEmail === "function") {
+          invalidateDashboardCachesByEmail(userEmail, true);
+        }
+      } catch(e) {}
 
       return { success: true, newTotalXQP: newTotalXQP };
     }

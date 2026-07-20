@@ -1282,7 +1282,22 @@ function purchaseUserPetVariant(payload) {
     }
 
     var newTotalXQP = currentXQP - priceXqp;
-    usersSheet.getRange(userRow + 1, xqpIdx + 1).setValue(newTotalXQP);
+    var userEmail = headers.indexOf("email") !== -1 ? data[userRow][headers.indexOf("email")] : "";
+    if (userEmail && typeof deductXQPFromUserTotalByEmail === "function") {
+      var deductResult = deductXQPFromUserTotalByEmail(userEmail, priceXqp);
+      if (deductResult && deductResult.success) {
+        newTotalXQP = deductResult.newTotalXQP;
+        try {
+          if (typeof logXQPTransaction === "function") {
+            logXQPTransaction(userEmail, 0, -priceXqp, "purchase_pet");
+          }
+        } catch(e) {}
+      } else {
+         usersSheet.getRange(userRow + 1, xqpIdx + 1).setValue(newTotalXQP);
+      }
+    } else {
+      usersSheet.getRange(userRow + 1, xqpIdx + 1).setValue(newTotalXQP);
+    }
 
     ownedVariantIds.push(variantId);
     ownedVariantIds = normalizeOwnedVariantIds_(ownedVariantIds, variantId);
