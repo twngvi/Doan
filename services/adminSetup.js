@@ -18,10 +18,102 @@ function onOpen() {
     .addItem("🗑️ Clear Cache", "ADMIN_clearCache")
     .addSeparator()
     .addItem("🎮 Generate Player IDs", "ADMIN_generatePlayerIds")
+    .addItem("🔄 Cập nhật cột mới (Schemas)", "ADMIN_upgradeSchema")
     .addToUi();
 
   Logger.log("✅ Admin menu created");
 }
+
+/**
+ * [ADMIN] Tự động cập nhật Schemas (thêm các cột mới vào Spreadsheet) và điền mặc định 100 XP cho các chủ đề hiện có
+ */
+function ADMIN_upgradeSchema() {
+  try {
+    Logger.log("=== BẮT ĐẦU CẬP NHẬT SCHEMAS & CỘT ĐIỂM THƯỞNG ===");
+    const ss = typeof getOrCreateDatabase === "function" ? getOrCreateDatabase() : SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      throw new Error("Không thể kết nối đến Spreadsheet");
+    }
+
+    // 1. Cập nhật trực tiếp header và mở rộng cột cho bảng Topics
+    const topicsSheet = ss.getSheetByName("Topics");
+    if (topicsSheet) {
+      const targetColumns = [
+        "topicId", "title", "description", "category", "order", "iconUrl",
+        "estimatedTime", "prerequisiteTopics", "isLocked", "unlockCondition",
+        "createdBy", "createdAt", "updatedAt", "contentDocId", "contentDocUrl",
+        "quizStatus", "xpReward", "quizXpReward", "matchingXpReward"
+      ];
+      
+      const maxCols = topicsSheet.getMaxColumns();
+      if (maxCols < targetColumns.length) {
+        topicsSheet.insertColumnsAfter(maxCols, targetColumns.length - maxCols);
+      }
+
+      const headerRange = topicsSheet.getRange(1, 1, 1, targetColumns.length);
+      headerRange.setValues([targetColumns]);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#4285f4");
+      headerRange.setFontColor("white");
+      Logger.log("✅ Đã cập nhật header cho bảng Topics.");
+
+      // Điền giá trị 100 XP cho các dòng chủ đề cũ
+      const data = topicsSheet.getDataRange().getValues();
+      if (data.length > 1) {
+        const headers = data[0];
+        const xpCol = headers.indexOf("xpReward");
+        const quizCol = headers.indexOf("quizXpReward");
+        const matchingCol = headers.indexOf("matchingXpReward");
+
+        let updatedCount = 0;
+        for (let i = 1; i < data.length; i++) {
+          if (xpCol >= 0 && (data[i][xpCol] === "" || data[i][xpCol] === undefined)) {
+            topicsSheet.getRange(i + 1, xpCol + 1).setValue(100);
+            updatedCount++;
+          }
+          if (quizCol >= 0 && (data[i][quizCol] === "" || data[i][quizCol] === undefined)) {
+            topicsSheet.getRange(i + 1, quizCol + 1).setValue(100);
+            updatedCount++;
+          }
+          if (matchingCol >= 0 && (data[i][matchingCol] === "" || data[i][matchingCol] === undefined)) {
+            topicsSheet.getRange(i + 1, matchingCol + 1).setValue(100);
+            updatedCount++;
+          }
+        }
+        Logger.log("✅ Đã điền 100 XP cho " + updatedCount + " ô trống.");
+      }
+    }
+
+    // 2. Cập nhật header cho các bảng hiện có khác
+    if (typeof DB_CONFIG !== "undefined" && DB_CONFIG.SHEETS) {
+      Object.values(DB_CONFIG.SHEETS).forEach(sheetConfig => {
+        if (sheetConfig.name !== "Topics") {
+          const sheet = ss.getSheetByName(sheetConfig.name);
+          if (sheet && typeof updateSheetSchema === "function") {
+            updateSheetSchema(sheet, sheetConfig);
+          }
+        }
+      });
+    }
+
+    try {
+      if (SpreadsheetApp.getActiveSpreadsheet()) {
+        SpreadsheetApp.getUi().alert("✅ Cập nhật cột mới (xpReward, quizXpReward, matchingXpReward) và điền mặc định 100 XP thành công!");
+      }
+    } catch (e) {}
+    Logger.log("=== CẬP NHẬT SCHEMAS THÀNH CÔNG ===");
+    return { success: true, message: "Cập nhật Schemas thành công!" };
+  } catch (error) {
+    Logger.log("❌ Lỗi cập nhật schema: " + error.toString());
+    try {
+      if (SpreadsheetApp.getActiveSpreadsheet()) {
+        SpreadsheetApp.getUi().alert("❌ Lỗi cập nhật schema: " + error.toString());
+      }
+    } catch (e) {}
+    return { success: false, message: error.toString() };
+  }
+}
+
 
 /**
  * [ADMIN] Generate Player IDs cho user cũ

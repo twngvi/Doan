@@ -113,6 +113,53 @@ function adminUpdateTopicQuizStatus(topicId, newStatus) {
 }
 
 /**
+ * Cập nhật điểm thưởng XP cho Topic (xpReward, quizXpReward, matchingXpReward)
+ */
+function adminUpdateTopicReward(topicId, rewardType, newReward) {
+  try {
+    if (rewardType !== 'xpReward' && rewardType !== 'quizXpReward' && rewardType !== 'matchingXpReward') {
+      return { success: false, message: "Loại điểm thưởng không hợp lệ" };
+    }
+    const ss = getOrCreateDatabase();
+    const topicSheet = ss.getSheetByName("Topics");
+    if (!topicSheet) return { success: false, message: "Không tìm thấy sheet Topics" };
+    
+    let headers = topicSheet.getRange(1, 1, 1, topicSheet.getLastColumn()).getValues()[0];
+    let colIndex = headers.indexOf(rewardType);
+    
+    // Nếu cột chưa có, tự động thêm vào cuối
+    if (colIndex === -1) {
+      colIndex = headers.length;
+      topicSheet.getRange(1, colIndex + 1).setValue(rewardType);
+      headers.push(rewardType);
+    }
+    
+    const topicIdCol = headers.indexOf("topicId");
+    if (topicIdCol === -1) return { success: false, message: "Cột topicId không tồn tại" };
+    
+    const data = topicSheet.getDataRange().getValues();
+    let updated = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][topicIdCol]).trim() === String(topicId).trim()) {
+        topicSheet.getRange(i + 1, colIndex + 1).setValue(Number(newReward) || 0);
+        updated = true;
+        break;
+      }
+    }
+    
+    if (updated) {
+      if (typeof clearTopicsCache === 'function') clearTopicsCache();
+      return { success: true, message: "Cập nhật điểm thưởng thành công!" };
+    } else {
+      return { success: false, message: "Không tìm thấy Topic với ID: " + topicId };
+    }
+  } catch (error) {
+    Logger.log("Error in adminUpdateTopicReward: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * Generate Questions via AI for Admin
  */
 function adminGenerateQuestionsByAI(topicId) {

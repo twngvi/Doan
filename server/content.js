@@ -1899,8 +1899,32 @@ function awardTopicXPByEvent(userEmail, config) {
       return { success: false, message: "User not logged in" };
     }
 
-    const xpAmount = parseInt(config && config.xpAmount, 10) || 0;
+    let xpAmount = parseInt(config && config.xpAmount, 10) || 0;
     const eventId = String((config && config.eventId) || "").trim();
+    const topicId = String((config && config.topicId) || "").trim();
+    const source = String((config && config.source) || "topic_completion").trim();
+
+    // ⭐ Lấy điểm thưởng thực từ cấu hình Topic do Admin thiết lập
+    if (topicId) {
+      try {
+        const allTopicsRes = typeof getAllTopicsIncludingHidden === 'function' ? getAllTopicsIncludingHidden() : null;
+        if (allTopicsRes && allTopicsRes.success && Array.isArray(allTopicsRes.topics)) {
+          const t = allTopicsRes.topics.find(item => String(item.topicId).trim() === topicId);
+          if (t) {
+            if (source === "topic_learning_completion" || config.rewardType === "xpReward") {
+              xpAmount = Number(t.xpReward) || Number(config.xpAmount) || 100;
+            } else if (source === "topic_quiz_completion" || config.rewardType === "quizXpReward") {
+              xpAmount = Number(t.quizXpReward) || Number(config.xpAmount) || 100;
+            } else if (source === "topic_matching_completion" || config.rewardType === "matchingXpReward") {
+              xpAmount = Number(t.matchingXpReward) || Number(config.xpAmount) || 100;
+            }
+          }
+        }
+      } catch (e) {
+        Logger.log("⚠️ Không thể đọc điểm động từ Topic, dùng giá trị mặc định: " + e.toString());
+      }
+    }
+
     if (!eventId || xpAmount <= 0) {
       return { success: false, message: "Invalid XP event config" };
     }
@@ -1939,11 +1963,7 @@ function awardTopicXPByEvent(userEmail, config) {
       "yyyy-MM-dd",
     );
     const nowIso = new Date().toISOString();
-    const topicId = String((config && config.topicId) || "").trim();
     const title = String((config && config.title) || eventId).trim();
-    const source = String(
-      (config && config.source) || "topic_completion",
-    ).trim();
     const metaRaw = config && config.meta != null ? config.meta : "";
     const meta =
       typeof metaRaw === "string" ? metaRaw : JSON.stringify(metaRaw || {});
@@ -2281,15 +2301,17 @@ function saveQuizResult(resultData) {
 
     // Award topic completion XP for completed quiz attempts (not partial autosave).
     const quizStatus = String(resultData.status || "complete").toLowerCase();
+    let quizXPResult = null;
     if (resultData.topicId && quizStatus !== "partial") {
-      const quizXPResult = awardTopicXPByEvent(userEmail, {
+      quizXPResult = awardTopicXPByEvent(userEmail, {
         topicId: resultData.topicId,
         eventId: "quiz_topic_completed:" + String(resultData.topicId).trim(),
         title:
           "Hoan thanh Quiz chu de: " +
           String(resultData.topicTitle || resultData.topicId),
-        xpAmount: 200,
+        xpAmount: 100,
         source: "topic_quiz_completion",
+        rewardType: "quizXpReward",
         meta: {
           percentage: resultData.percentage,
           score: resultData.score,
@@ -2344,12 +2366,14 @@ function saveQuizResult(resultData) {
     return {
       success: true,
       message: "Quiz result saved to personal sheet",
+      xpResult: quizXPResult || null,
     };
   } catch (error) {
     Logger.log("❌ Error saving quiz result: " + error.toString());
     return {
       success: false,
       message: error.toString(),
+      xpResult: null,
     };
   }
 }
@@ -2617,16 +2641,18 @@ function saveMatchingResult(resultData) {
     Logger.log("✅ Matching result saved to personal sheet");
 
     // Award topic completion XP for completed matching attempts.
+    let matchingXPResult = null;
     if (resultData.topicId && resultData.completed !== false) {
-      const matchingXPResult = awardTopicXPByEvent(userEmail, {
+      matchingXPResult = awardTopicXPByEvent(userEmail, {
         topicId: resultData.topicId,
         eventId:
           "matching_topic_completed:" + String(resultData.topicId).trim(),
         title:
           "Hoan thanh Matching chu de: " +
           String(resultData.topicTitle || resultData.topicId),
-        xpAmount: 200,
+        xpAmount: 100,
         source: "topic_matching_completion",
+        rewardType: "matchingXpReward",
         meta: {
           accuracy: resultData.accuracy,
           score: resultData.score,
@@ -5491,7 +5517,7 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
     AILearningSessions.update(userId, sessionId, updateData);
 
     // Cập nhật Topic_Progress
-    updateTopicProgress(userId, topicId, progressType, progressData);
+    const xpResult = updateTopicProgress(userId, topicId, progressType, progressData);
 
     try {
       let userSettings = null;
@@ -5516,6 +5542,7 @@ function saveLearningProgressForWeb(topicId, progressType, progressData) {
       success: true,
       message: "Progress saved",
       sessionId: sessionId,
+      xpResult: xpResult || null,
     };
   } catch (error) {
     Logger.log("❌ Error saving learning progress: " + error.toString());
@@ -5705,17 +5732,25 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       }
       var quizRequired = topic && topic.quizStatus === "active";
 
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
+      // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards, và miniquiz nếu có)
+      const theoryCompleted = lessonDone && mindmapDone && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
+
+      // Cập nhật status thành completed nếu lý thuyết 100% và (!quizRequired || quizDone)
+      if (theoryCompleted && (!quizRequired || quizDone)) {
         const statusCol = headers.indexOf("status");
         const completedAtCol = headers.indexOf("completedAt");
         if (statusCol >= 0)
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
           sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+      }
 
+      // ⭐ Trả thưởng XP Lý thuyết khi học xong lý thuyết đạt 100%
+      let learningXPResult = null;
+      if (theoryCompleted) {
         const userEmail = getUserEmailById(userId);
         if (userEmail) {
-          const learningXPResult = awardTopicXPByEvent(userEmail, {
+          learningXPResult = awardTopicXPByEvent(userEmail, {
             topicId: topicId,
             eventId: "learning_topic_completed:" + String(topicId || "").trim(),
             title:
@@ -5723,6 +5758,7 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
               String(progressData.topicTitle || topicId || ""),
             xpAmount: 100,
             source: "topic_learning_completion",
+            rewardType: "xpReward",
             meta: {
               progressType: progressType,
             },
@@ -5739,11 +5775,14 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
           }
         }
       }
+      return learningXPResult;
     }
 
     Logger.log("✅ Topic progress updated for: " + topicId);
+    return null;
   } catch (error) {
     Logger.log("❌ Error updating topic progress: " + error.toString());
+    return null;
   }
 }
 

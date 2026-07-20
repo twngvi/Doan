@@ -89,6 +89,9 @@ function getAllTopicsIncludingHidden() {
       contentDocId: headers.indexOf("contentDocId"),
       contentDocUrl: headers.indexOf("contentDocUrl"),
       quizStatus: headers.indexOf("quizStatus"),
+      xpReward: headers.indexOf("xpReward"),
+      quizXpReward: headers.indexOf("quizXpReward"),
+      matchingXpReward: headers.indexOf("matchingXpReward"),
     };
 
     const topics = [];
@@ -176,6 +179,20 @@ function getAllTopicsIncludingHidden() {
           col.quizStatus >= 0 && row[col.quizStatus] !== undefined
             ? String(row[col.quizStatus] || "need_questions")
             : "need_questions",
+
+        // ⭐ THÊM CỘT XP REWARD
+        xpReward:
+          col.xpReward >= 0 && row[col.xpReward] !== undefined && row[col.xpReward] !== ""
+            ? Number(row[col.xpReward]) || 100
+            : 100,
+        quizXpReward:
+          col.quizXpReward >= 0 && row[col.quizXpReward] !== undefined && row[col.quizXpReward] !== ""
+            ? Number(row[col.quizXpReward]) || 100
+            : 100,
+        matchingXpReward:
+          col.matchingXpReward >= 0 && row[col.matchingXpReward] !== undefined && row[col.matchingXpReward] !== ""
+            ? Number(row[col.matchingXpReward]) || 100
+            : 100,
 
         // Map thêm trường cho Frontend hiển thị
         journey: mapCategoryToJourney(

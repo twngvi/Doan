@@ -183,6 +183,9 @@ const DB_CONFIG = {
         "contentDocId", // ⭐ THÊM CỘT MỚI
         "contentDocUrl",
         "quizStatus",
+        "xpReward",
+        "quizXpReward",
+        "matchingXpReward",
       ],
     },
 

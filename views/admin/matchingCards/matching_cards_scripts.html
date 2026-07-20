@@ -157,6 +157,8 @@ function mcLoadTopicCards(topicIdParam, isSilent = false) {
   if (topic) {
     document.getElementById("mcTopicStats").style.display = "flex";
     document.getElementById("mcSearchTermWrapper").style.display = "block";
+    const matchingXpInput = document.getElementById("mcTopicMatchingXpInput");
+    if (matchingXpInput) matchingXpInput.value = topic.matchingXpReward !== undefined ? topic.matchingXpReward : 100;
   }
 
   if (!isSilent) mcShowLoading("Đang tải danh sách thẻ thuật ngữ...");
@@ -932,5 +934,31 @@ function mcSaveGeminiKey() {
       feedback.style.color = "#dc2626";
     })
     .upsertUserGeminiApiKey(null, keyInput);
+}
+
+function mcSaveTopicMatchingXp() {
+  const topicId = mcGetSelectedTopicId();
+  if (!topicId) return;
+  const input = document.getElementById("mcTopicMatchingXpInput");
+  if (!input) return;
+  const newReward = parseInt(input.value) || 0;
+  
+  mcShowLoading("Đang lưu điểm thưởng XP...");
+  google.script.run
+    .withSuccessHandler((res) => {
+      mcHideLoading();
+      if (res && res.success) {
+        if (typeof showToast === 'function') showToast("✅ Đã lưu điểm thưởng XP Matching: " + newReward + " XP", "success");
+        const topic = mcTopics.find(t => t.topicId === topicId);
+        if (topic) topic.matchingXpReward = newReward;
+      } else {
+        if (typeof showToast === 'function') showToast("❌ Lỗi: " + (res ? res.message : "Không thể lưu"), "error");
+      }
+    })
+    .withFailureHandler((err) => {
+      mcHideLoading();
+      if (typeof showToast === 'function') showToast("❌ Lỗi kết nối: " + err, "error");
+    })
+    .adminUpdateTopicReward(topicId, 'matchingXpReward', newReward);
 }
 </script>
