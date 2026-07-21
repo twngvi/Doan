@@ -1179,8 +1179,15 @@
     });
 
     if (text) {
-      text.textContent = pwd.length > 0 ? label : "";
-      text.style.color = color;
+      const curInput = document.getElementById("currentPassword");
+      const curPwd = (curInput && typeof curInput.value === "string") ? curInput.value.trim() : "";
+      if (pwd.length > 0 && curPwd.length > 0 && pwd === curPwd) {
+        text.textContent = "Trùng mật khẩu hiện tại!";
+        text.style.color = "#ef4444";
+      } else {
+        text.textContent = pwd.length > 0 ? label : "";
+        text.style.color = color;
+      }
     }
   }
 
@@ -1218,7 +1225,12 @@
       return;
     }
 
-    const submitBtn = document.getElementById("btnUpdateProfile");
+    const phone = document.getElementById("phone")?.value.trim();
+    const birthdate = document.getElementById("birthdate")?.value.trim();
+    const gender = document.getElementById("gender")?.value.trim();
+    const bio = document.getElementById("bio")?.value.trim();
+
+    const submitBtn = document.getElementById("btnUpdateProfile") || e.target.querySelector('button[type="submit"]');
     const originalText = submitBtn ? submitBtn.innerHTML : "";
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -1227,6 +1239,10 @@
 
     // Optimistic UI updates
     user.displayName = displayName;
+    user.phone = phone;
+    user.birthdate = birthdate;
+    user.gender = gender;
+    user.bio = bio;
     profileData = user;
     window.currentUser = user;
     try {
@@ -1248,6 +1264,9 @@
           submitBtn.disabled = false;
           submitBtn.innerHTML = originalText;
         }
+        if (response && !response.success) {
+          showToast(response.message || "Không thể cập nhật thông tin", "error");
+        }
       })
       .withFailureHandler(function (error) {
         if (submitBtn) {
@@ -1259,7 +1278,12 @@
       })
       .updateProfile({
         userId: user.userId,
+        email: user.email,
         displayName: displayName,
+        phone: phone,
+        birthdate: birthdate,
+        gender: gender,
+        bio: bio,
       });
   }
 
@@ -1297,6 +1321,11 @@
 
     if (!currentPassword || !newPassword || !confirmPassword) {
       showToast("Vui lòng nhập đầy đủ thông tin mật khẩu", "error");
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      showToast("Mật khẩu mới không được trùng với mật khẩu hiện tại!", "error");
       return;
     }
 

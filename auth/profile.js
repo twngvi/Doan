@@ -102,6 +102,13 @@ function changeUserPassword(passwordData) {
       };
     }
 
+    if (String(passwordData.currentPassword).trim() === String(passwordData.newPassword).trim()) {
+      return {
+        success: false,
+        message: "Mật khẩu mới không được trùng với mật khẩu hiện tại!",
+      };
+    }
+
     if (passwordData.newPassword.length < 6) {
       return {
         success: false,
