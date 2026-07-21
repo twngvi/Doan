@@ -1253,6 +1253,41 @@
         if (checkEl) checkEl.textContent = "✓";
       }
       btnEl.outerHTML = '<div class="quest-xp quest-xp-claimed">✓ +' + xpAmount + ' XP</div>';
+
+      // Optimistic update cache data so re-renders don't flash back
+      if (window.dashboardDataCache && window.dashboardDataCache.quests) {
+        var qs = window.dashboardDataCache.quests;
+        var allMainClaimed = true;
+        for (var i = 0; i < qs.length; i++) {
+          if (qs[i] && String(qs[i].questId) === String(questId)) {
+            qs[i].claimed = true;
+          }
+          if (qs[i] && qs[i].questId !== "daily_all_bonus" && !qs[i].claimed) {
+            allMainClaimed = false;
+          }
+        }
+        // Nếu tất cả nhiệm vụ chính đã được nhận, lập tức mở khóa nút Nhận của nhiệm vụ thưởng (daily_all_bonus)
+        if (allMainClaimed) {
+          for (var j = 0; j < qs.length; j++) {
+            if (qs[j] && qs[j].questId === "daily_all_bonus" && !qs[j].claimed) {
+              qs[j].done = true;
+              var bonusItem = document.querySelector('.quest-item[data-quest-id="daily_all_bonus"]');
+              if (bonusItem && !bonusItem.classList.contains('quest-claimed')) {
+                var btnOrDiv = bonusItem.querySelector('.quest-xp, .quest-claim-btn');
+                if (btnOrDiv) {
+                  btnOrDiv.outerHTML = '<button class="quest-claim-btn" data-quest-id="daily_all_bonus" onclick="claimQuestXP(\'daily_all_bonus\', this, ' + (qs[j].xpReward || 50) + ')">Nhận +' + (qs[j].xpReward || 50) + ' XP</button>';
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      if (window.dashboardDataCache && window.dashboardDataCache.quickStats) {
+        window.dashboardDataCache.quickStats.totalXP = (parseInt(window.dashboardDataCache.quickStats.totalXP, 10) || 0) + xpAmount;
+        window.dashboardDataCache.quickStats.totalXQP = (parseInt(window.dashboardDataCache.quickStats.totalXQP, 10) || 0) + xpAmount;
+      }
     }
 
     if (xpAmount > 0) {
@@ -1320,7 +1355,7 @@
              persistAndBroadcastDashboardUser(userPatch);
            }
 
-           // Check if bonus quest is now claimable
+           // Background sync without visual interruption
            setTimeout(() => {
              requestDashboardRefresh({
                forceRefresh: true,
@@ -1336,6 +1371,8 @@
               if (typeof showToast === "function") {
                 showToast((result && result.message) || "Lỗi đồng bộ XP", "error");
               }
+              // Rollback if failed
+              requestDashboardRefresh({ forceRefresh: true, source: "quest-claim-error" });
            }
         }
       })
@@ -1344,6 +1381,7 @@
          if (typeof showToast === "function") {
            showToast("Lỗi kết nối khi nhận XP", "error");
          }
+         requestDashboardRefresh({ forceRefresh: true, source: "quest-claim-failure" });
       })
       .completeQuestAndAwardXP(questId, getDashboardAuthContext());
   };
