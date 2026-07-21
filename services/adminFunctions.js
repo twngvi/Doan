@@ -1479,49 +1479,11 @@ function updateUserStatus(userId, isActive) {
  */
 function getAllTopicsForAdmin() {
   try {
-    const sheet = getSheet("Topics");
-    if (!sheet) {
-      return [];
+    const res = typeof getAllTopicsIncludingHidden === "function" ? getAllTopicsIncludingHidden() : null;
+    if (res && res.success && Array.isArray(res.topics)) {
+      return res.topics;
     }
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      return [];
-    }
-
-    const headers = data[0];
-    const topics = [];
-
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const topicId = row[headers.indexOf("topicId")];
-
-      // Skip empty rows
-      if (!topicId) continue;
-
-      topics.push({
-        topicId: topicId,
-        title: row[headers.indexOf("title")] || '',
-        description: row[headers.indexOf("description")] || '',
-        category: row[headers.indexOf("category")] || '',
-        order: row[headers.indexOf("order")] || i,
-        iconUrl: row[headers.indexOf("iconUrl")] || '',
-        estimatedTime: row[headers.indexOf("estimatedTime")] || '',
-        prerequisiteTopics: row[headers.indexOf("prerequisiteTopics")] || '',
-        isLocked: row[headers.indexOf("isLocked")] === true || row[headers.indexOf("isLocked")] === 'TRUE',
-        unlockCondition: row[headers.indexOf("unlockCondition")] || '',
-        createdBy: row[headers.indexOf("createdBy")] || '',
-        createdAt: row[headers.indexOf("createdAt")] || '',
-        updatedAt: row[headers.indexOf("updatedAt")] || '',
-        contentDocId: row[headers.indexOf("contentDocId")] || '',
-        contentDocUrl: row[headers.indexOf("contentDocUrl")] || ''
-      });
-    }
-
-    // Sort by order
-    topics.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    return topics;
+    return [];
   } catch (error) {
     Logger.log("Error getting topics for admin: " + error.toString());
     return [];
@@ -3968,11 +3930,11 @@ function saveTopicToMasterDB(topicData) {
 }
 
 /**
- * Cập nhật nhanh trạng thái khóa của bài học
+ * Cập nhật trạng thái hiển thị của bài học
  * @param {string} topicId 
- * @param {boolean} isLocked 
+ * @param {boolean} isHiddenVal 
  */
-function updateTopicLockStatus(topicId, isLocked) {
+function updateTopicLockStatus(topicId, isHiddenVal) {
   try {
     const adminContext = getCurrentAdminContext();
     if (!adminContext || !adminContext.success) {
@@ -3985,10 +3947,15 @@ function updateTopicLockStatus(topicId, isLocked) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const topicIdIdx = headers.indexOf("topicId");
-    const isLockedIdx = headers.indexOf("isLocked");
+    let isHiddenIdx = headers.indexOf("isHidden");
 
-    if (topicIdIdx === -1 || isLockedIdx === -1) {
-      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ" };
+    if (topicIdIdx === -1) {
+      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ (thiếu topicId)" };
+    }
+
+    if (isHiddenIdx === -1) {
+      isHiddenIdx = headers.length;
+      sheet.getRange(1, isHiddenIdx + 1).setValue("isHidden");
     }
 
     let foundRow = -1;
@@ -4003,7 +3970,7 @@ function updateTopicLockStatus(topicId, isLocked) {
       return { success: false, message: "Không tìm thấy bài học có ID: " + topicId };
     }
 
-    sheet.getRange(foundRow, isLockedIdx + 1).setValue(isLocked);
+    sheet.getRange(foundRow, isHiddenIdx + 1).setValue(Boolean(isHiddenVal));
     
     try {
       if (typeof clearTopicsCache === 'function') {
@@ -4013,9 +3980,9 @@ function updateTopicLockStatus(topicId, isLocked) {
       Logger.log("Could not clear cache: " + e.toString());
     }
 
-    return { success: true, message: "Cập nhật trạng thái thành công" };
+    return { success: true, message: isHiddenVal ? "Đã ẩn chủ đề khỏi học viên" : "Đã bật hiển thị chủ đề" };
   } catch (error) {
-    Logger.log("Error updating topic lock status: " + error.toString());
+    Logger.log("Error updating topic visibility status: " + error.toString());
     return { success: false, message: error.toString() };
   }
 }

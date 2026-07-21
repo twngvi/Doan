@@ -92,7 +92,68 @@ function getAllTopicsIncludingHidden() {
       xpReward: headers.indexOf("xpReward"),
       quizXpReward: headers.indexOf("quizXpReward"),
       matchingXpReward: headers.indexOf("matchingXpReward"),
+      mindmapStatus: headers.indexOf("mindmapStatus"),
+      matchingStatus: headers.indexOf("matchingStatus"),
+      isHidden: headers.indexOf("isHidden"),
+      status: headers.indexOf("status")
     };
+
+    const aiCacheMap = {};
+    try {
+      const aiSheet = ss.getSheetByName("AI_Content_Cache");
+      if (aiSheet && aiSheet.getLastRow() > 1) {
+        const aiData = aiSheet.getRange(2, 1, aiSheet.getLastRow() - 1, 4).getValues();
+        for (let k = 0; k < aiData.length; k++) {
+          if (aiData[k][1] && aiData[k][3]) {
+            aiCacheMap[String(aiData[k][1]).trim() + "_" + String(aiData[k][3]).trim()] = true;
+          }
+        }
+      }
+    } catch (e) {}
+
+    const quizCountMap = {};
+    try {
+      const qSheet = ss.getSheetByName("MCQ_Questions") || ss.getSheetByName("Questions");
+      if (qSheet && qSheet.getLastRow() > 1) {
+        const qData = qSheet.getDataRange().getValues();
+        const headers = qData[0] || [];
+        let tidCol = headers.indexOf("topicId");
+        let statusCol = headers.indexOf("status");
+        if (tidCol < 0) tidCol = 1;
+
+        for (let k = 1; k < qData.length; k++) {
+          const qStatus = statusCol >= 0 ? String(qData[k][statusCol] || "").trim().toLowerCase() : "approved";
+          if (qStatus !== "deleted") {
+            const qTid = String(qData[k][tidCol] || "").trim();
+            if (qTid) {
+              quizCountMap[qTid] = (quizCountMap[qTid] || 0) + 1;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    const matchingCountMap = {};
+    try {
+      const mSheet = ss.getSheetByName("Matching_Term_Cards");
+      if (mSheet && mSheet.getLastRow() > 1) {
+        const mData = mSheet.getDataRange().getValues();
+        const headers = mData[0] || [];
+        let tidCol = headers.indexOf("topicId");
+        let statusCol = headers.indexOf("status");
+        if (tidCol < 0) tidCol = 1;
+
+        for (let k = 1; k < mData.length; k++) {
+          const mStatus = statusCol >= 0 ? String(mData[k][statusCol] || "").trim().toLowerCase() : "approved";
+          if (mStatus !== "deleted") {
+            const mTid = String(mData[k][tidCol] || "").trim();
+            if (mTid) {
+              matchingCountMap[mTid] = (matchingCountMap[mTid] || 0) + 1;
+            }
+          }
+        }
+      }
+    } catch (e) {}
 
     const topics = [];
 
@@ -104,6 +165,43 @@ function getAllTopicsIncludingHidden() {
 
       if (!topicId) {
         continue; // Skip empty rows silently for performance
+      }
+
+      const contentDocIdVal =
+        col.contentDocId >= 0 && row[col.contentDocId] !== undefined
+          ? String(row[col.contentDocId] || "").trim()
+          : "";
+      const quizStatusVal =
+        col.quizStatus >= 0 && row[col.quizStatus] !== undefined
+          ? String(row[col.quizStatus] || "need_questions").trim()
+          : "need_questions";
+      const mindmapStatusVal =
+        col.mindmapStatus >= 0 && row[col.mindmapStatus] !== undefined
+          ? String(row[col.mindmapStatus] || "").trim()
+          : "";
+      const matchingStatusVal =
+        col.matchingStatus >= 0 && row[col.matchingStatus] !== undefined
+          ? String(row[col.matchingStatus] || "").trim()
+          : "";
+      const isHiddenVal =
+        col.isHidden >= 0 && row[col.isHidden] !== undefined
+          ? (row[col.isHidden] === true || String(row[col.isHidden]).toLowerCase() === "true" || row[col.isHidden] === 1)
+          : false;
+      const statusColVal =
+        col.status >= 0 && row[col.status] !== undefined
+          ? String(row[col.status] || "").toLowerCase()
+          : "";
+
+      const hasTheory = Boolean(contentDocIdVal && contentDocIdVal.length > 5);
+      const hasMindmap = Boolean(mindmapStatusVal === "ready" || mindmapStatusVal === "active" || aiCacheMap[topicId + "_mindmap"]);
+      const hasQuiz = Boolean(quizStatusVal === "active" || quizStatusVal === "ready" || quizCountMap[topicId] >= 1);
+      const hasMatching = Boolean(matchingStatusVal === "ready" || matchingStatusVal === "active" || aiCacheMap[topicId + "_matching"] || matchingCountMap[topicId] >= 1);
+
+      let publishStatus = "draft";
+      if (isHiddenVal || statusColVal === "hidden") {
+        publishStatus = "hidden";
+      } else if (hasTheory && hasMindmap && hasQuiz && hasMatching) {
+        publishStatus = "published";
       }
 
       topics.push({
@@ -153,34 +251,32 @@ function getAllTopicsIncludingHidden() {
             : "",
         createdAt:
           col.createdAt >= 0 && row[col.createdAt] instanceof Date
-            ? row[col.createdAt].toISOString()
-            : col.createdAt >= 0
-              ? String(row[col.createdAt] || "")
-              : "",
+          ? row[col.createdAt].toISOString()
+          : col.createdAt >= 0
+            ? String(row[col.createdAt] || "")
+            : "",
         updatedAt:
           col.updatedAt >= 0 && row[col.updatedAt] instanceof Date
-            ? row[col.updatedAt].toISOString()
-            : col.updatedAt >= 0
-              ? String(row[col.updatedAt] || "")
-              : "",
-
-        // ⭐ THÊM CỘT CONTENT DOC ID + URL
-        contentDocId:
-          col.contentDocId >= 0 && row[col.contentDocId] !== undefined
-            ? String(row[col.contentDocId] || "")
+          ? row[col.updatedAt].toISOString()
+          : col.updatedAt >= 0
+            ? String(row[col.updatedAt] || "")
             : "",
+
+        contentDocId: contentDocIdVal,
         contentDocUrl:
           col.contentDocUrl >= 0 && row[col.contentDocUrl] !== undefined
             ? String(row[col.contentDocUrl] || "")
             : "",
+        quizStatus: quizStatusVal,
+        mindmapStatus: hasMindmap ? "ready" : "draft",
+        matchingStatus: hasMatching ? "ready" : "draft",
+        isHidden: isHiddenVal || statusColVal === "hidden",
+        publishStatus: publishStatus,
+        hasTheory: hasTheory,
+        hasMindmap: hasMindmap,
+        hasQuiz: hasQuiz,
+        hasMatching: hasMatching,
 
-        // ⭐ THÊM CỘT QUIZ STATUS
-        quizStatus:
-          col.quizStatus >= 0 && row[col.quizStatus] !== undefined
-            ? String(row[col.quizStatus] || "need_questions")
-            : "need_questions",
-
-        // ⭐ THÊM CỘT XP REWARD
         xpReward:
           col.xpReward >= 0 && row[col.xpReward] !== undefined && row[col.xpReward] !== ""
             ? Number(row[col.xpReward]) || 100
@@ -194,7 +290,6 @@ function getAllTopicsIncludingHidden() {
             ? Number(row[col.matchingXpReward]) || 100
             : 100,
 
-        // Map thêm trường cho Frontend hiển thị
         journey: mapCategoryToJourney(
           col.category >= 0 && row[col.category] !== undefined
             ? row[col.category]
@@ -267,10 +362,10 @@ function isTopicHidden(topic) {
   if (!topic) return false;
 
   return (
-    topic.isLocked === true ||
-    topic.isLocked === 'TRUE' ||
-    topic.isLocked === 'true' ||
-    String(topic.isLocked || '').trim().toLowerCase() === 'true'
+    topic.publishStatus !== "published" ||
+    topic.isHidden === true ||
+    topic.publishStatus === "hidden" ||
+    topic.publishStatus === "draft"
   );
 }
 

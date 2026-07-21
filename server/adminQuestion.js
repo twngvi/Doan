@@ -10,7 +10,7 @@
  */
 function adminGetTopicsWithQuizStatus() {
   try {
-    const topicsResult = getAllTopics();
+    const topicsResult = typeof getAllTopicsIncludingHidden === 'function' ? getAllTopicsIncludingHidden() : getAllTopics();
     if (!topicsResult.success) {
       return topicsResult;
     }
@@ -35,11 +35,13 @@ function adminGetTopicsWithQuizStatus() {
       let totalCount = 0;
       
       if (mcqData.length > 1 && topicIdCol >= 0) {
+        const targetTopicId = String(topic.topicId).trim();
         for (let i = 1; i < mcqData.length; i++) {
-          if (mcqData[i][topicIdCol] === topic.topicId) {
+          const rowTopicId = String(mcqData[i][topicIdCol]).trim();
+          if (rowTopicId === targetTopicId && rowTopicId !== "") {
             totalCount++;
             if (statusCol >= 0) {
-              const qStatus = mcqData[i][statusCol];
+              const qStatus = String(mcqData[i][statusCol]).trim().toLowerCase();
               if (qStatus === "approved") approvedCount++;
               else if (qStatus === "draft") draftCount++;
             } else {
@@ -265,9 +267,12 @@ function adminGetQuestionsForTopic(topicId) {
     const headers = data[0];
     const topicIdCol = headers.indexOf("topicId");
     
+    const targetId = String(topicId || "").trim();
+    const isAll = (targetId === "" || targetId.toUpperCase() === "ALL");
     const questions = [];
     for (let i = 1; i < data.length; i++) {
-      if (data[i][topicIdCol] === topicId) {
+      const rowTopicId = String(data[i][topicIdCol]).trim();
+      if (isAll || (rowTopicId === targetId && rowTopicId !== "")) {
         const q = {};
         headers.forEach((h, idx) => {
           let val = data[i][idx];

@@ -40,6 +40,15 @@ function initQuestionManager() {
   }
 }
 
+// Global click listener to close custom dropdown only when clicking outside
+document.addEventListener("click", function(e) {
+  const input = document.getElementById("qmTopicSelectInput");
+  const dropdown = document.getElementById("qmTopicCustomDropdown");
+  if (input && dropdown && !input.contains(e.target) && !dropdown.contains(e.target)) {
+    dropdown.style.display = "none";
+  }
+});
+
 // Fallback for static load (if any)
 document.addEventListener("DOMContentLoaded", () => {
   if (document.getElementById("page-question-manager")) {
@@ -61,9 +70,19 @@ function qmHideLoading() {
 function qmLoadTopics() {
   google.script.run
     .withSuccessHandler((response) => {
-      if (response.success) {
+      if (response && response.success && Array.isArray(response.topics)) {
         qmTopics = response.topics;
         qmRenderTopicDropdown(qmTopics);
+        
+        // Tự động chọn topic đầu tiên CÓ CÂU HỎI (hoặc topic đầu tiên) nếu chưa có topic nào được chọn
+        if (!qmSelectedTopicIdStr && qmTopics.length > 0) {
+          const topicWithQuestions = qmTopics.find(t => t.questionStats && t.questionStats.total > 0) || qmTopics[0];
+          qmSelectTopicObj(topicWithQuestions);
+        } else if (qmTopics.length === 0) {
+          document.getElementById("qmEmptyState").style.display = "flex";
+          document.getElementById("qmQuestionsArea").style.display = "none";
+          document.getElementById("qmTopicStats").style.display = "none";
+        }
       }
     })
     .withFailureHandler((err) => {
@@ -73,13 +92,57 @@ function qmLoadTopics() {
     .adminGetTopicsWithQuizStatus();
 }
 
+function qmSelectTopicObj(t) {
+  if (!t) return;
+  const input = document.getElementById("qmTopicSelectInput");
+  const statsText = t.questionStats ? ` (${t.questionStats.total} câu)` : '';
+  if (input) input.value = `${t.title}${statsText}`;
+  qmSelectedTopicIdStr = t.topicId;
+  
+  const dropdown = document.getElementById("qmTopicCustomDropdown");
+  if (dropdown) dropdown.style.display = "none";
+  
+  const clearBtn = document.getElementById("qmClearSearchBtn");
+  if (clearBtn) clearBtn.style.display = "block";
+  
+  const searchGroup = document.getElementById("qmQuestionSearchGroup");
+  if (searchGroup) searchGroup.style.display = "block";
+  
+  qmLoadTopicQuestions(t.topicId);
+}
+
 function qmRenderTopicDropdown(topicsList) {
   const dropdown = document.getElementById("qmTopicCustomDropdown");
   if (!dropdown) return;
   
   dropdown.innerHTML = '';
-  if (topicsList.length === 0) {
-    dropdown.innerHTML = '<div class="qm-custom-dropdown-empty">Không tìm thấy chủ đề</div>';
+  
+  // Thêm tùy chọn Global Search lên đầu danh sách dropdown
+  const globalItem = document.createElement("div");
+  globalItem.className = "qm-custom-dropdown-item";
+  globalItem.style.fontWeight = "bold";
+  globalItem.style.color = "#2563eb";
+  globalItem.style.backgroundColor = "#eff6ff";
+  globalItem.innerHTML = '🌐 Tất cả chủ đề (Tìm kiếm câu hỏi toàn cục)';
+  const globalObj = { topicId: 'ALL', title: '🌐 Tất cả chủ đề', quizStatus: 'ready' };
+  globalItem.onmousedown = function(e) {
+    e.preventDefault(); 
+    qmSelectTopicObj(globalObj);
+  };
+  globalItem.onclick = function(e) {
+    e.preventDefault(); 
+    qmSelectTopicObj(globalObj);
+  };
+  dropdown.appendChild(globalItem);
+
+  if (!topicsList || topicsList.length === 0) {
+    const emptyDiv = document.createElement("div");
+    emptyDiv.className = "qm-custom-dropdown-empty";
+    emptyDiv.style.padding = "12px";
+    emptyDiv.style.textAlign = "center";
+    emptyDiv.style.color = "#64748b";
+    emptyDiv.textContent = "Không tìm thấy chủ đề phù hợp";
+    dropdown.appendChild(emptyDiv);
     return;
   }
   
@@ -91,17 +154,11 @@ function qmRenderTopicDropdown(topicsList) {
     item.textContent = text;
     item.onmousedown = function(e) {
       e.preventDefault(); 
-      document.getElementById("qmTopicSelectInput").value = text;
-      qmSelectedTopicIdStr = t.topicId;
-      dropdown.style.display = "none";
-      
-      const clearBtn = document.getElementById("qmClearSearchBtn");
-      if (clearBtn) clearBtn.style.display = "block";
-      
-      const searchGroup = document.getElementById("qmQuestionSearchGroup");
-      if (searchGroup) searchGroup.style.display = "block";
-      
-      qmLoadTopicQuestions(t.topicId);
+      qmSelectTopicObj(t);
+    };
+    item.onclick = function(e) {
+      e.preventDefault(); 
+      qmSelectTopicObj(t);
     };
     dropdown.appendChild(item);
   });
@@ -114,24 +171,29 @@ function qmGetSelectedTopicId() {
 
 function qmOnTopicSearch() {
   const input = document.getElementById("qmTopicSelectInput");
-  const val = input.value.toLowerCase();
+  if (!input) return;
+  const val = input.value.trim().toLowerCase();
   
   const clearBtn = document.getElementById("qmClearSearchBtn");
   if (clearBtn) {
     clearBtn.style.display = val.length > 0 ? "block" : "none";
   }
   
-  if (val.length === 0 && qmSelectedTopicIdStr !== "") {
-    qmSelectedTopicIdStr = "";
-    qmLoadTopicQuestions(''); // Trigger empty state
-    const searchGroup = document.getElementById("qmQuestionSearchGroup");
-    if (searchGroup) searchGroup.style.display = "none";
-    qmClearQuestionSearch();
-  } else {
-    qmSelectedTopicIdStr = "";
+  if (val.length === 0) {
+    // Nếu xóa trắng thì hiển thị lại toàn bộ dropdown
+    qmRenderTopicDropdown(qmTopics);
+    qmShowTopicDropdown();
+    return;
   }
   
-  const filtered = qmTopics.filter(t => t.title.toLowerCase().includes(val));
+  const filtered = qmTopics.filter(t => {
+    const title = (t.title || "").toLowerCase();
+    const id = String(t.topicId || "").toLowerCase();
+    const desc = (t.description || "").toLowerCase();
+    const cat = (t.category || "").toLowerCase();
+    return title.includes(val) || id.includes(val) || desc.includes(val) || cat.includes(val);
+  });
+  
   qmRenderTopicDropdown(filtered);
   qmShowTopicDropdown();
 }

@@ -140,8 +140,8 @@ function updateStats() {
   const categoriesEl = document.getElementById('stat-categories');
 
   const total = allTopics.length;
-  const active = allTopics.filter(t => !(t.isLocked === true || t.isLocked === 'TRUE')).length;
-  const locked = allTopics.filter(t => t.isLocked === true || t.isLocked === 'TRUE').length;
+  const active = allTopics.filter(t => t.publishStatus === 'published').length;
+  const locked = allTopics.filter(t => t.publishStatus !== 'published').length;
   const uniqueCategories = [...new Set(allTopics.map(t => t.category).filter(Boolean))];
 
   // Animate numbers
@@ -149,6 +149,32 @@ function updateStats() {
   animateValue(activeEl, 0, active, 500);
   animateValue(lockedEl, 0, locked, 500);
   animateValue(categoriesEl, 0, uniqueCategories.length, 500);
+}
+
+function renderTopicStatusBadgeHtml(topic) {
+  const isHidden = topic.isHidden === true || topic.publishStatus === 'hidden';
+  const isPublished = topic.publishStatus === 'published';
+  let statusClass = isPublished ? 'active' : (isHidden ? 'locked' : 'draft');
+  let statusText = isPublished ? 'Hiển thị' : (isHidden ? 'Đang ẩn' : 'Nháp');
+  let badgeStyle = (!isPublished && !isHidden) ? 'background:#fef3c7;color:#b45309;border:1px solid #fde68a;' : '';
+
+  const checklistHtml = `
+    <div style="display:flex;gap:5px;margin-top:4px;font-size:10px;line-height:1;" title="Kiểm tra 4 điều kiện hiển thị">
+      <span title="Lý thuyết: ${topic.hasTheory ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasTheory ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasTheory ? '✓' : '✗'}LT</span>
+      <span title="Mindmap: ${topic.hasMindmap ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasMindmap ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasMindmap ? '✓' : '✗'}MM</span>
+      <span title="Quiz: ${topic.hasQuiz ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasQuiz ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasQuiz ? '✓' : '✗'}QZ</span>
+      <span title="Matching: ${topic.hasMatching ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasMatching ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasMatching ? '✓' : '✗'}MC</span>
+    </div>
+  `;
+
+  return `
+    <div>
+      <span class="status-badge ${statusClass} interactive" style="${badgeStyle}" onclick="toggleTopicStatus('${topic.topicId}', ${isHidden}, event)" title="Nhấn để bật/tắt hiển thị">
+        ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
+      </span>
+      ${checklistHtml}
+    </div>
+  `;
 }
 
 function animateValue(element, start, end, duration) {
@@ -236,9 +262,6 @@ function renderTopicsTable() {
   tbody.innerHTML = pageTopics.map(function(topic, index) {
     const rowNum = startIndex + index + 1;
     const categoryClass = getCategoryClass(topic.category);
-    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
-    const statusClass = isLocked ? 'locked' : 'active';
-    const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
     const updatedAt = formatDate(topic.updatedAt);
 
     return `
@@ -265,9 +288,7 @@ function renderTopicsTable() {
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
         </td>
         <td>
-          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái">
-            ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
-          </span>
+          ${renderTopicStatusBadgeHtml(topic)}
         </td>
         <td>${updatedAt}</td>
         <td>
@@ -335,9 +356,6 @@ function renderTopicsCards() {
   // Render cards
   grid.innerHTML = pageTopics.map(function(topic, index) {
     const categoryClass = getCategoryClass(topic.category);
-    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
-    const statusClass = isLocked ? 'locked' : 'active';
-    const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
     const updatedAt = formatDate(topic.updatedAt);
 
     return `
@@ -358,9 +376,7 @@ function renderTopicsCards() {
 
         <div class="cm-card-meta">
           <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
-          <span class="status-badge ${statusClass} interactive" onclick="toggleTopicStatus('${topic.topicId}', ${isLocked}, event)" title="Nhấn để đổi trạng thái">
-            ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
-          </span>
+          ${renderTopicStatusBadgeHtml(topic)}
         </div>
 
         <div class="cm-card-footer">
@@ -517,8 +533,8 @@ function isTopicLockedValue(value) {
   return value === true || value === 'TRUE' || value === 'true';
 }
 
-function getStatusInfo(isLocked) {
-  if (isLocked) {
+function getStatusInfo(isHidden) {
+  if (isHidden) {
     return {
       key: 'locked',
       text: 'Đang ẩn',
@@ -529,14 +545,14 @@ function getStatusInfo(isLocked) {
 
   return {
     key: 'active',
-    text: 'Đang hiển thị',
+    text: 'Bật hiển thị',
     icon: 'visibility',
-    note: 'Bài học sẽ được hiển thị cho học viên nếu thỏa điều kiện mở khóa.'
+    note: 'Bài học sẽ hiển thị cho học viên nếu đã đạt đủ 4 điều kiện (Lý thuyết, Mindmap, Quiz, Matching).'
   };
 }
 
-function renderStatusPreviewBadge(isLocked) {
-  const info = getStatusInfo(isLocked);
+function renderStatusPreviewBadge(isHidden) {
+  const info = getStatusInfo(isHidden);
 
   return `
     <span class="status-badge ${info.key} cm-status-preview-badge">
@@ -546,7 +562,7 @@ function renderStatusPreviewBadge(isLocked) {
   `;
 }
 
-function toggleTopicStatus(topicId, currentIsLocked, event) {
+function toggleTopicStatus(topicId, currentIsHidden, event) {
   if (event) {
     event.stopPropagation();
   }
@@ -555,13 +571,13 @@ function toggleTopicStatus(topicId, currentIsLocked, event) {
     return t.topicId === topicId;
   });
 
-  const currentLocked = isTopicLockedValue(currentIsLocked);
-  const newLocked = !currentLocked;
-  const newInfo = getStatusInfo(newLocked);
+  const currentHidden = isTopicLockedValue(currentIsHidden) || (topic && topic.publishStatus === 'hidden');
+  const newHidden = !currentHidden;
+  const newInfo = getStatusInfo(newHidden);
 
   statusToggleTopicId = topicId;
-  statusToggleCurrentStatus = currentLocked;
-  statusToggleNewStatus = newLocked;
+  statusToggleCurrentStatus = currentHidden;
+  statusToggleNewStatus = newHidden;
 
   const modal = document.getElementById('cm-status-modal');
   const titleEl = document.getElementById('status-topic-title');
@@ -576,11 +592,11 @@ function toggleTopicStatus(topicId, currentIsLocked, event) {
   }
 
   if (currentBadgeEl) {
-    currentBadgeEl.innerHTML = renderStatusPreviewBadge(currentLocked);
+    currentBadgeEl.innerHTML = renderStatusPreviewBadge(currentHidden);
   }
 
   if (newBadgeEl) {
-    newBadgeEl.innerHTML = renderStatusPreviewBadge(newLocked);
+    newBadgeEl.innerHTML = renderStatusPreviewBadge(newHidden);
   }
 
   if (iconEl) {
@@ -588,14 +604,14 @@ function toggleTopicStatus(topicId, currentIsLocked, event) {
   }
 
   if (iconWrapEl) {
-    iconWrapEl.classList.toggle('is-locking', newLocked);
-    iconWrapEl.classList.toggle('is-unlocking', !newLocked);
+    iconWrapEl.classList.toggle('is-locking', newHidden);
+    iconWrapEl.classList.toggle('is-unlocking', !newHidden);
   }
 
   if (noteEl) {
     noteEl.textContent = newInfo.note;
-    noteEl.classList.toggle('danger', newLocked);
-    noteEl.classList.toggle('success', !newLocked);
+    noteEl.classList.toggle('danger', newHidden);
+    noteEl.classList.toggle('success', !newHidden);
   }
 
   setStatusConfirmLoading(false);
@@ -647,7 +663,16 @@ function confirmToggleStatus() {
         });
 
         if (topic) {
-          topic.isLocked = newStatus;
+          topic.isHidden = newStatus;
+          if (newStatus) {
+            topic.publishStatus = 'hidden';
+          } else {
+            if (topic.hasTheory && topic.hasMindmap && topic.hasQuiz && topic.hasMatching) {
+              topic.publishStatus = 'published';
+            } else {
+              topic.publishStatus = 'draft';
+            }
+          }
         }
 
         handleFilterChange();
@@ -655,11 +680,7 @@ function confirmToggleStatus() {
         closeStatusModal();
 
         if (typeof showNotification === 'function') {
-          const message = newStatus
-            ? 'Đã ẩn bài học khỏi học viên'
-            : 'Đã hiển thị bài học cho học viên';
-
-          showNotification(message, 'success');
+          showNotification(response.message || 'Cập nhật trạng thái thành công', 'success');
         }
       } else {
         setStatusConfirmLoading(false);

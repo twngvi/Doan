@@ -49,7 +49,7 @@ function ensureMatchingCardsSheet(ss) {
  */
 function adminGetMatchingTopicsWithStats() {
   try {
-    const topicsResult = getAllTopics();
+    const topicsResult = typeof getAllTopicsIncludingHidden === 'function' ? getAllTopicsIncludingHidden() : getAllTopics();
     if (!topicsResult.success) {
       return topicsResult;
     }
@@ -74,8 +74,10 @@ function adminGetMatchingTopicsWithStats() {
       let totalCount = 0;
       
       if (mcData.length > 1 && topicIdCol >= 0) {
+        const targetTopicId = String(topic.topicId).trim();
         for (let i = 1; i < mcData.length; i++) {
-          if (mcData[i][topicIdCol] === topic.topicId) {
+          const rowTopicId = String(mcData[i][topicIdCol]).trim();
+          if (rowTopicId === targetTopicId && rowTopicId !== "") {
             const cStatus = (statusCol >= 0) ? mcData[i][statusCol] : "draft";
             // Bỏ qua thẻ đã xóa
             if (cStatus !== "deleted") {
@@ -402,6 +404,7 @@ function createMatchingTermCard(data) {
     
     mcSheet.appendRow(rowData);
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     
     return { success: true, message: "Thêm thẻ thành công", cardId: cardId };
   } catch (error) {
@@ -480,6 +483,7 @@ function updateMatchingTermCard(cardId, data) {
     
     mcSheet.getRange(rowIndex, 1, 1, headers.length).setValues([rowData]);
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     
     return { success: true, message: "Cập nhật thẻ thành công" };
   } catch (error) {
@@ -606,6 +610,7 @@ function bulkSaveMatchingTermCards(cards) {
     }
     
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     
     return { success: true, message: `Đã lưu \${createdCount} thẻ mới và cập nhật \${updatedCount} thẻ.`, createdCount, updatedCount };
   } catch (error) {
@@ -663,6 +668,7 @@ function deleteMatchingTermCard(cardIds) {
     }
     
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     return { success: true, message: `Đã xóa ${updatedCount} thẻ`, updatedCount: updatedCount };
   } catch (error) {
     Logger.log("Error in deleteMatchingTermCard: " + error.toString());
@@ -717,6 +723,7 @@ function hideMatchingTermCard(cardIds) {
     }
     
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     return { success: true, message: `Đã ẩn ${updatedCount} thẻ`, updatedCount: updatedCount };
   } catch (error) {
     Logger.log("Error in hideMatchingTermCard: " + error.toString());
@@ -776,6 +783,7 @@ function approveMatchingTermCards(cardIds) {
     }
     
     SpreadsheetApp.flush();
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
     return { success: true, message: `Đã duyệt ${updatedCount} thẻ`, updatedCount: updatedCount };
   } catch (error) {
     Logger.log("Error in approveMatchingTermCards: " + error.toString());
@@ -921,6 +929,7 @@ YÊU CẦU QUAN TRỌNG:
       // Thực ra gọi setValues sẽ nhanh hơn rất nhiều
       mcSheet.getRange(mcSheet.getLastRow() + 1, 1, rowsToAppend.length, headers.length).setValues(rowsToAppend);
       SpreadsheetApp.flush();
+      if (typeof clearTopicsCache === 'function') clearTopicsCache();
     }
     
     return { success: true, message: `Đã tạo ${rowsToAppend.length} thẻ bằng AI.`, count: rowsToAppend.length };

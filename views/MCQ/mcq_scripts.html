@@ -343,16 +343,17 @@
   // Search function for MCQ topics
   function searchMcqTopics(query) {
     if (!mcqAllTopicsForSearch) return;
-    if (!query.trim()) {
+    if (!query || !query.trim()) {
       renderTopicsGrid(mcqAllTopicsForSearch);
       return;
     }
-    const searchLower = query.toLowerCase();
-    const filtered = mcqAllTopicsForSearch.filter((topic) =>
-      String((topic && topic.title) || "")
-        .toLowerCase()
-        .includes(searchLower),
-    );
+    const searchLower = query.toLowerCase().trim();
+    const filtered = mcqAllTopicsForSearch.filter((topic) => {
+      const title = String((topic && topic.title) || "").toLowerCase();
+      const desc = String((topic && topic.description) || "").toLowerCase();
+      const cat = String((topic && topic.category) || "").toLowerCase();
+      return title.includes(searchLower) || desc.includes(searchLower) || cat.includes(searchLower);
+    });
     renderTopicsGrid(filtered);
   }
   window.searchMcqTopics = searchMcqTopics;
@@ -1021,6 +1022,9 @@
       showEmptyTopicsState();
       return;
     }
+
+    const emptyStateEl = document.getElementById("topics-empty");
+    if (emptyStateEl) emptyStateEl.style.display = "none";
 
     container.innerHTML = "";
     container.style.display = "flex";
