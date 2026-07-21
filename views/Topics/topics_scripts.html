@@ -790,13 +790,20 @@
 
       if (currentStatusFilter !== 'all') {
         baseTopics = baseTopics.filter(function(topic) {
+          const status = typeof getTopicStatus === 'function' ? getTopicStatus(topic, window.currentPageParams) : 'available';
           const progressData = userProgress[topic.topicId] || {};
-          const isCompleted = progressData.completed === true;
-          const progressPercent = progressData.progress || 0;
+          const isCompleted = status === 'completed' || progressData.completed === true;
+          const progressPercent = Number(progressData.progress || 0);
           
-          if (currentStatusFilter === 'played') return isCompleted;
-          if (currentStatusFilter === 'in_progress') return !isCompleted && progressPercent > 0;
-          if (currentStatusFilter === 'unplayed') return !isCompleted && progressPercent === 0;
+          if (currentStatusFilter === 'played') {
+            return isCompleted;
+          }
+          if (currentStatusFilter === 'in_progress') {
+            return !isCompleted && status !== 'locked' && (progressPercent > 0 || status === 'current');
+          }
+          if (currentStatusFilter === 'unplayed') {
+            return !isCompleted && status !== 'locked' && progressPercent === 0 && status !== 'current';
+          }
           return true;
         });
       }
@@ -1863,6 +1870,11 @@
     window.navigateToLesson = navigateToLesson;
     window.navigateToQuiz = navigateToQuiz;
     window.getTopicStatus = getTopicStatus;
+    window.setTopicStatusFilter = setTopicStatusFilter;
+    window.searchTopics = searchTopics;
+    window.filterTopics = filterTopics;
+    window.toggleView = toggleView;
+    window.loadTopics = loadTopics;
     
 
 
