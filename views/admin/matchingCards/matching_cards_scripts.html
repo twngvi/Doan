@@ -4,6 +4,18 @@
   let mcFilterStatus = 'all';
   let mcSearchTerm = '';
   let mcSelectedTopicIdStr = "";
+  
+  let mcCardLoadSequence = 0;
+  let mcCardLoadingTopicId = "";
+
+  function mcNormalizeTopicId(value) {
+    return String(value ?? "").trim();
+  }
+
+  function mcFindTopicById(topicId) {
+    const normalizedId = mcNormalizeTopicId(topicId);
+    return mcTopics.find(topic => mcNormalizeTopicId(topic.topicId) === normalizedId);
+  }
 
   // Khởi tạo
   function initMatchingCardsManager() {
@@ -107,10 +119,10 @@
 
     if (!Array.isArray(topicsList) || topicsList.length === 0) {
       grid.innerHTML = `
-        <div class="mc-topic-list-empty">
+        <div class="mc-topic-grid-empty">
           <span class="material-symbols-sharp">style</span>
-          <h3>Chưa có Topic nào</h3>
-          <p>Hãy tạo Topic trước khi quản lý thẻ Matching.</p>
+          <strong>Không tìm thấy Topic</strong>
+          <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
         </div>
       `;
       return;
@@ -118,57 +130,133 @@
 
     const fragment = document.createDocumentFragment();
 
-    topicsList.forEach(function (topic) {
-      const stats = topic.matchingStats || {};
-      const topicId = String(topic.topicId || "");
+    topicsList.forEach((topic, index) => {
+      const total = Number(topic.matchingStats?.total) || 0;
+      const approved = Number(topic.matchingStats?.approved) || 0;
+      const draft = Number(topic.matchingStats?.draft) || 0;
+      const hidden = Number(topic.matchingStats?.hidden) || 0;
 
-      const card = document.createElement("button");
-      card.type = "button";
-      card.className = "mc-topic-card";
+      const themeIndex = index % 6;
+      const statusClass =
+        total === 0
+          ? "is-empty"
+          : draft > 0
+            ? "has-draft"
+            : "is-ready";
+
+      const statusText =
+        total === 0
+          ? "Chưa có thẻ"
+          : draft > 0
+            ? "Có bản nháp"
+            : "Sẵn sàng";
+
+      const card = document.createElement("article");
+
+      card.className = `
+        mc-topic-card
+        mc-topic-theme-${themeIndex}
+        ${statusClass}
+      `;
+
+      const delay = Math.min(index, 8) * 35;
+      card.style.setProperty("--mc-card-delay", `${delay}ms`);
+
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute(
+        "aria-label",
+        `Quản lý thẻ Topic ${topic.title || "Topic"}`
+      );
 
       card.innerHTML = `
-        <div class="mc-topic-card-header">
+        <div class="mc-topic-card-decoration"></div>
+
+        <div class="mc-topic-card-top">
           <div class="mc-topic-card-icon">
             <span class="material-symbols-sharp">style</span>
           </div>
 
+          <span class="mc-topic-status ${statusClass}">
+            ${statusText}
+          </span>
+        </div>
+
+        <div class="mc-topic-card-content">
+          <span class="mc-topic-card-eyebrow">MATCHING TOPIC</span>
+
+          <h3 class="mc-topic-card-title">
+            ${escapeHtml(topic.title || "Topic")}
+          </h3>
+
           <div class="mc-topic-card-count">
-            ${Number(stats.total || 0)} thẻ
+            <strong>${total}</strong>
+            <span>thẻ</span>
           </div>
         </div>
 
-        <h3>${escapeHtml(topic.title || "Topic chưa có tên")}</h3>
-
         <div class="mc-topic-card-stats">
-          <span>Đã duyệt: <strong>${Number(stats.approved || 0)}</strong></span>
-          <span>Bản nháp: <strong>${Number(stats.draft || 0)}</strong></span>
-          <span>Đang ẩn: <strong>${Number(stats.hidden || 0)}</strong></span>
+          <div>
+            <span>Đã duyệt</span>
+            <strong class="is-approved">${approved}</strong>
+          </div>
+
+          <div>
+            <span>Bản nháp</span>
+            <strong class="is-draft">${draft}</strong>
+          </div>
+
+          <div>
+            <span>Đang ẩn</span>
+            <strong class="is-hidden">${hidden}</strong>
+          </div>
+        </div>
+
+        <div class="mc-topic-card-footer">
+          <span>Quản lý thẻ thuật ngữ</span>
+
+          <span class="mc-topic-card-arrow material-symbols-sharp">
+            arrow_forward
+          </span>
         </div>
       `;
 
-      card.addEventListener("click", function () {
-        mcOpenTopicCard(topicId);
+      const openTopic = () => {
+        if (card.classList.contains("is-opening")) return;
+        card.classList.add("is-opening");
+        requestAnimationFrame(() => {
+          mcOpenTopicCard(topic.topicId);
+          card.classList.remove("is-opening");
+        });
+      };
+
+      card.addEventListener("click", openTopic);
+
+      card.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openTopic();
+        }
       });
 
       fragment.appendChild(card);
     });
 
-    grid.appendChild(fragment);
+    grid.replaceChildren(fragment);
   }
 
   function mcOpenTopicCard(topicId) {
-    const normalizedTopicId = String(topicId || "").trim();
-
-    const topic = mcTopics.find(function (item) {
-      return String(item.topicId || "").trim() === normalizedTopicId;
-    });
+    const topic = mcFindTopicById(topicId);
 
     if (!topic) {
-      if (typeof showToast === 'function') showToast("Không tìm thấy Topic đã chọn", "error");
+      if (typeof showToast === 'function') showToast("Không tìm thấy Topic cần quản lý", "error");
       return;
     }
 
+    const normalizedTopicId = mcNormalizeTopicId(topic.topicId);
+
     mcSelectedTopicIdStr = normalizedTopicId;
+    mcCardLoadingTopicId = normalizedTopicId;
 
     const title = document.getElementById("mcCurrentTopicTitle");
     if (title) title.textContent = topic.title || "Topic";
@@ -176,28 +264,56 @@
     document.getElementById("mcTopicListView").style.display = "none";
     document.getElementById("mcCardManagerView").style.display = "block";
 
+    const searchInput = document.getElementById("mcSearchTermInput");
+    const clearSearchBtn = document.getElementById("mcClearSearchBtn");
+
+    if (searchInput) searchInput.value = "";
+    if (clearSearchBtn) clearSearchBtn.style.display = "none";
+
+    mcFilterStatus = "all";
+    mcCurrentCards = [];
+    mcUpdateStats();
+
+    mcLoadTopicCards(topic.topicId, false);
+
     window.scrollTo({
       top: 0,
+      left: 0,
       behavior: "smooth"
     });
-
-    mcLoadTopicCards(normalizedTopicId);
   }
 
   function mcBackToTopicList() {
+    ++mcCardLoadSequence;
+    mcCardLoadingTopicId = "";
+
     mcSelectedTopicIdStr = "";
     mcCurrentCards = [];
     mcFilterStatus = "all";
     mcSearchTerm = "";
 
-    document.getElementById("mcCardManagerView").style.display = "none";
-    document.getElementById("mcTopicListView").style.display = "block";
+    mcHideLoading();
+
+    const managerView = document.getElementById("mcCardManagerView");
+    const listView = document.getElementById("mcTopicListView");
+
+    if (managerView) managerView.style.display = "none";
+    if (listView) listView.style.display = "block";
 
     const search = document.getElementById("mcSearchTermInput");
+    const clearSearchBtn = document.getElementById("mcClearSearchBtn");
     if (search) search.value = "";
+    if (clearSearchBtn) clearSearchBtn.style.display = "none";
+
+    if (mcTopics.length > 0) {
+      mcRenderTopicCards(mcTopics);
+    } else {
+      mcLoadTopics(true);
+    }
 
     window.scrollTo({
       top: 0,
+      left: 0,
       behavior: "smooth"
     });
   }
@@ -405,10 +521,10 @@
             <input type="checkbox" class="mc-checkbox mc-c-select" data-index="${index}" ${isChecked ? 'checked' : ''} onchange="mcToggleSelect(${index}, this)">
             <strong>Thẻ ${index + 1}</strong>
             <div class="mc-meta-tags">
-              <span class="mc-tag mc-tag-source">${c.source || 'manual'}</span>
-              <span class="mc-tag mc-tag-${c.difficulty || 'medium'}">${c.difficulty || 'Medium'}</span>
-              <span class="mc-tag" style="background:${statusBg}; color:${statusColor}">${statusText}</span>
-              ${c.isActive ? '<span class="mc-tag" style="background:#dbeafe; color:#1e40af">Active</span>' : '<span class="mc-tag" style="background:#f1f5f9; color:#64748b">Inactive</span>'}
+              <span class="mc-meta-tag mc-tag-source">${c.source || 'manual'}</span>
+              <span class="mc-meta-tag mc-tag-${c.difficulty || 'medium'}">${c.difficulty || 'Medium'}</span>
+              <span class="mc-meta-tag" style="background:${statusBg}; color:${statusColor}">${statusText}</span>
+              ${c.isActive ? '<span class="mc-meta-tag" style="background:#dbeafe; color:#1e40af">Active</span>' : '<span class="mc-meta-tag" style="background:#f1f5f9; color:#64748b">Inactive</span>'}
             </div>
           </div>
           <div>
