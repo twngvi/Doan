@@ -97,14 +97,43 @@ function loadTopicsList() {
       // Bỏ qua response cũ để không ghi đè data mới hơn
       if (requestId !== latestTopicsLoadRequestId) return;
 
-      allTopics = topics || [];
-      filteredTopics = [...allTopics];
+      const rawTopics = Array.isArray(topics) ? topics : [];
+      const topicMap = new Map();
+
+      rawTopics.forEach(function(topic) {
+        if (!topic) return;
+
+        const topicId = String(topic.topicId || '').trim();
+
+        // Không tính các dòng không có topicId
+        if (!topicId) return;
+
+        // Nếu server trả trùng topicId, chỉ giữ bản ghi cuối cùng
+        topicMap.set(topicId, topic);
+      });
+
+      allTopics = Array.from(topicMap.values());
+
       currentPage = 1;
       isDataLoaded = true;
+
       updateStats();
-      renderContent();
+
+      const searchInput = document.getElementById('cm-search-input');
+      const searchTerm = searchInput
+        ? searchInput.value.toLowerCase().trim()
+        : '';
+
+      applyFilters(searchTerm);
+
       showLoading(false);
-      console.log('[ContentManagement] Loaded', allTopics.length, 'lessons');
+
+      console.log(
+        '[ContentManagement] Raw topics:',
+        rawTopics.length,
+        '- Valid unique topics:',
+        allTopics.length
+      );
     })
     .withFailureHandler(function(error) {
       // Bỏ qua lỗi của request cũ
@@ -132,6 +161,79 @@ function loadTopicsList() {
     .getAllTopicsForAdmin();
 }
 
+// ===== Chuẩn hóa trạng thái bài học =====
+
+function cmToBoolean(value) {
+  if (value === true || value === 1) return true;
+
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+  return normalized === 'true' ||
+    normalized === '1' ||
+    normalized === 'yes';
+}
+
+function isTopicComplete(topic) {
+  return (
+    cmToBoolean(topic.hasTheory) &&
+    cmToBoolean(topic.hasMindmap) &&
+    cmToBoolean(topic.hasQuiz) &&
+    cmToBoolean(topic.hasMatching)
+  );
+}
+
+function getTopicUiStatus(topic) {
+  topic = topic || {};
+
+  const publishStatus = String(topic.publishStatus || '')
+    .trim()
+    .toLowerCase();
+
+  const hasLegacyLockField =
+    Object.prototype.hasOwnProperty.call(topic, 'isHidden') ||
+    Object.prototype.hasOwnProperty.call(topic, 'isLocked');
+
+  const isHidden =
+    cmToBoolean(topic.isHidden) ||
+    cmToBoolean(topic.isLocked) ||
+    publishStatus === 'hidden' ||
+    publishStatus === 'locked';
+
+  if (isHidden) {
+    return {
+      key: 'locked',
+      publishStatus: 'hidden',
+      text: 'Đang ẩn',
+      icon: 'visibility_off',
+      visibleToStudent: false
+    };
+  }
+
+  if (
+    publishStatus === 'published' ||
+    publishStatus === 'active' ||
+    (!publishStatus && hasLegacyLockField)
+  ) {
+    return {
+      key: 'active',
+      publishStatus: 'published',
+      text: 'Đang hiển thị',
+      icon: 'visibility',
+      visibleToStudent: true
+    };
+  }
+
+  return {
+    key: 'draft',
+    publishStatus: 'draft',
+    text: 'Bản nháp',
+    icon: 'edit_note',
+    visibleToStudent: false
+  };
+}
+
 // ===== Update Statistics =====
 function updateStats() {
   const totalEl = document.getElementById('stat-total-topics');
@@ -139,39 +241,103 @@ function updateStats() {
   const lockedEl = document.getElementById('stat-locked-topics');
   const categoriesEl = document.getElementById('stat-categories');
 
-  const total = allTopics.length;
-  const active = allTopics.filter(t => t.publishStatus === 'published').length;
-  const locked = allTopics.filter(t => t.publishStatus !== 'published').length;
-  const uniqueCategories = [...new Set(allTopics.map(t => t.category).filter(Boolean))];
+  let activeCount = 0;
+  let lockedCount = 0;
 
-  // Animate numbers
-  animateValue(totalEl, 0, total, 500);
-  animateValue(activeEl, 0, active, 500);
-  animateValue(lockedEl, 0, locked, 500);
-  animateValue(categoriesEl, 0, uniqueCategories.length, 500);
+  allTopics.forEach(function(topic) {
+    const status = getTopicUiStatus(topic);
+
+    if (status.key === 'active') {
+      activeCount++;
+    }
+
+    if (status.key === 'locked') {
+      lockedCount++;
+    }
+  });
+
+  const categorySource = categoriesList.length > 0
+    ? categoriesList
+    : allTopics.map(function(topic) {
+        return topic.category;
+      });
+
+  const normalizedCategories = categorySource
+    .map(function(category) {
+      return String(category || '').trim().toLowerCase();
+    })
+    .filter(Boolean);
+
+  const categoryCount = new Set(normalizedCategories).size;
+
+  if (totalEl) totalEl.textContent = allTopics.length;
+  if (activeEl) activeEl.textContent = activeCount;
+  if (lockedEl) lockedEl.textContent = lockedCount;
+  if (categoriesEl) categoriesEl.textContent = categoryCount;
 }
 
 function renderTopicStatusBadgeHtml(topic) {
-  const isHidden = topic.isHidden === true || topic.publishStatus === 'hidden';
-  const isPublished = topic.publishStatus === 'published';
-  let statusClass = isPublished ? 'active' : (isHidden ? 'locked' : 'draft');
-  let statusText = isPublished ? 'Hiển thị' : (isHidden ? 'Đang ẩn' : 'Nháp');
-  let badgeStyle = (!isPublished && !isHidden) ? 'background:#fef3c7;color:#b45309;border:1px solid #fde68a;' : '';
+  const status = getTopicUiStatus(topic);
+
+  const hasTheory = cmToBoolean(topic.hasTheory);
+  const hasMindmap = cmToBoolean(topic.hasMindmap);
+  const hasQuiz = cmToBoolean(topic.hasQuiz);
+  const hasMatching = cmToBoolean(topic.hasMatching);
+
+  const nextActionText =
+    status.key === 'locked'
+      ? 'Bỏ trạng thái ẩn'
+      : 'Ẩn bài học';
 
   const checklistHtml = `
-    <div style="display:flex;gap:5px;margin-top:4px;font-size:10px;line-height:1;" title="Kiểm tra 4 điều kiện hiển thị">
-      <span title="Lý thuyết: ${topic.hasTheory ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasTheory ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasTheory ? '✓' : '✗'}LT</span>
-      <span title="Mindmap: ${topic.hasMindmap ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasMindmap ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasMindmap ? '✓' : '✗'}MM</span>
-      <span title="Quiz: ${topic.hasQuiz ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasQuiz ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasQuiz ? '✓' : '✗'}QZ</span>
-      <span title="Matching: ${topic.hasMatching ? 'Đã có' : 'Chưa có'}" style="color:${topic.hasMatching ? '#16a34a' : '#dc2626'};font-weight:700;">${topic.hasMatching ? '✓' : '✗'}MC</span>
+    <div
+      style="display:flex;gap:5px;margin-top:5px;font-size:10px;line-height:1;"
+      title="Kiểm tra 4 điều kiện hiển thị"
+    >
+      <span
+        title="Lý thuyết: ${hasTheory ? 'Đã có' : 'Chưa có'}"
+        style="color:${hasTheory ? '#16a34a' : '#dc2626'};font-weight:700;"
+      >
+        ${hasTheory ? '✓' : '✗'}LT
+      </span>
+
+      <span
+        title="Mindmap: ${hasMindmap ? 'Đã có' : 'Chưa có'}"
+        style="color:${hasMindmap ? '#16a34a' : '#dc2626'};font-weight:700;"
+      >
+        ${hasMindmap ? '✓' : '✗'}MM
+      </span>
+
+      <span
+        title="Quiz: ${hasQuiz ? 'Đã có' : 'Chưa có'}"
+        style="color:${hasQuiz ? '#16a34a' : '#dc2626'};font-weight:700;"
+      >
+        ${hasQuiz ? '✓' : '✗'}QZ
+      </span>
+
+      <span
+        title="Matching: ${hasMatching ? 'Đã có' : 'Chưa có'}"
+        style="color:${hasMatching ? '#16a34a' : '#dc2626'};font-weight:700;"
+      >
+        ${hasMatching ? '✓' : '✗'}MC
+      </span>
     </div>
   `;
 
   return `
     <div>
-      <span class="status-badge ${statusClass} interactive" style="${badgeStyle}" onclick="toggleTopicStatus('${topic.topicId}', ${isHidden}, event)" title="Nhấn để bật/tắt hiển thị">
-        ${statusText} <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
+      <span
+        class="status-badge ${status.key} interactive"
+        onclick="toggleTopicStatus('${topic.topicId}', event)"
+        title="${nextActionText}"
+      >
+        ${status.text}
+
+        <span class="material-symbols-sharp status-swap-icon">
+          swap_horiz
+        </span>
       </span>
+
       ${checklistHtml}
     </div>
   `;
@@ -498,24 +664,32 @@ function clearSearch() {
 }
 
 function applyFilters(searchTerm) {
-  const categoryFilter = document.getElementById('cm-category-filter').value;
-  const statusFilter = document.getElementById('cm-status-filter').value;
+  const categoryEl = document.getElementById('cm-category-filter');
+  const statusEl = document.getElementById('cm-status-filter');
+
+  const categoryFilter = categoryEl ? categoryEl.value : '';
+  const statusFilter = statusEl ? statusEl.value : '';
 
   filteredTopics = allTopics.filter(function(topic) {
-    // Search filter
-    const matchesSearch = !searchTerm ||
-      (topic.title && topic.title.toLowerCase().includes(searchTerm)) ||
-      (topic.topicId && topic.topicId.toLowerCase().includes(searchTerm)) ||
-      (topic.description && topic.description.toLowerCase().includes(searchTerm));
+    const title = String(topic.title || '').toLowerCase();
+    const topicId = String(topic.topicId || '').toLowerCase();
+    const description = String(topic.description || '').toLowerCase();
 
-    // Category filter
-    const matchesCategory = !categoryFilter || topic.category === categoryFilter;
+    const matchesSearch =
+      !searchTerm ||
+      title.includes(searchTerm) ||
+      topicId.includes(searchTerm) ||
+      description.includes(searchTerm);
 
-    // Status filter
-    const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
-    const matchesStatus = !statusFilter ||
-      (statusFilter === 'active' && !isLocked) ||
-      (statusFilter === 'locked' && isLocked);
+    const matchesCategory =
+      !categoryFilter ||
+      String(topic.category || '').trim() === categoryFilter;
+
+    const topicStatus = getTopicUiStatus(topic);
+
+    const matchesStatus =
+      !statusFilter ||
+      topicStatus.key === statusFilter;
 
     return matchesSearch && matchesCategory && matchesStatus;
   });
@@ -526,60 +700,87 @@ function applyFilters(searchTerm) {
 
 // ===== Toggle Topic Status Modal =====
 let statusToggleTopicId = null;
+
+// Giá trị gửi về updateTopicLockStatus:
+// true = ẩn, false = bỏ ẩn
 let statusToggleNewStatus = null;
-let statusToggleCurrentStatus = null;
 
-function isTopicLockedValue(value) {
-  return value === true || value === 'TRUE' || value === 'true';
-}
+let statusToggleNextKey = null;
+let statusToggleConfirmLabel = 'Xác nhận';
 
-function getStatusInfo(isHidden) {
-  if (isHidden) {
-    return {
-      key: 'locked',
-      text: 'Đang ẩn',
-      icon: 'visibility_off',
-      note: 'Bài học sẽ bị ẩn khỏi học viên. Admin vẫn có thể quản lý và chỉnh sửa.'
-    };
-  }
-
-  return {
-    key: 'active',
-    text: 'Bật hiển thị',
-    icon: 'visibility',
-    note: 'Bài học sẽ hiển thị cho học viên nếu đã đạt đủ 4 điều kiện (Lý thuyết, Mindmap, Quiz, Matching).'
-  };
-}
-
-function renderStatusPreviewBadge(isHidden) {
-  const info = getStatusInfo(isHidden);
-
+function renderStatusPreviewBadge(status) {
   return `
-    <span class="status-badge ${info.key} cm-status-preview-badge">
-      <span class="material-symbols-sharp">${info.icon}</span>
-      ${info.text}
+    <span class="status-badge ${status.key} cm-status-preview-badge">
+      <span class="material-symbols-sharp">${status.icon}</span>
+      ${status.text}
     </span>
   `;
 }
 
-function toggleTopicStatus(topicId, currentIsHidden, event) {
+function toggleTopicStatus(topicId, event) {
   if (event) {
     event.stopPropagation();
   }
 
-  const topic = allTopics.find(function(t) {
-    return t.topicId === topicId;
+  const topic = allTopics.find(function(item) {
+    return String(item.topicId) === String(topicId);
   });
 
-  const currentHidden = isTopicLockedValue(currentIsHidden) || (topic && topic.publishStatus === 'hidden');
-  const newHidden = !currentHidden;
-  const newInfo = getStatusInfo(newHidden);
+  if (!topic) {
+    if (typeof showNotification === 'function') {
+      showNotification('Không tìm thấy thông tin bài học', 'error');
+    }
+    return;
+  }
+
+  const currentStatus = getTopicUiStatus(topic);
+
+  /*
+   * Nếu đang ẩn thì bỏ ẩn.
+   * Nếu đang hiển thị hoặc đang nháp thì chuyển sang ẩn.
+   */
+  const newHidden = currentStatus.key !== 'locked';
+
+  let nextStatus;
+
+  if (newHidden) {
+    nextStatus = {
+      key: 'locked',
+      publishStatus: 'hidden',
+      text: 'Đang ẩn',
+      icon: 'visibility_off'
+    };
+  } else if (isTopicComplete(topic)) {
+    nextStatus = {
+      key: 'active',
+      publishStatus: 'published',
+      text: 'Đang hiển thị',
+      icon: 'visibility'
+    };
+  } else {
+    nextStatus = {
+      key: 'draft',
+      publishStatus: 'draft',
+      text: 'Bản nháp',
+      icon: 'edit_note'
+    };
+  }
 
   statusToggleTopicId = topicId;
-  statusToggleCurrentStatus = currentHidden;
   statusToggleNewStatus = newHidden;
+  statusToggleNextKey = nextStatus.key;
+
+  if (newHidden) {
+    statusToggleConfirmLabel = 'Ẩn bài học';
+  } else if (nextStatus.key === 'active') {
+    statusToggleConfirmLabel = 'Bật hiển thị';
+  } else {
+    statusToggleConfirmLabel = 'Bỏ trạng thái ẩn';
+  }
 
   const modal = document.getElementById('cm-status-modal');
+  const headingEl = document.getElementById('status-modal-heading');
+  const descEl = document.getElementById('status-modal-desc');
   const titleEl = document.getElementById('status-topic-title');
   const currentBadgeEl = document.getElementById('status-current-badge');
   const newBadgeEl = document.getElementById('status-new-badge');
@@ -587,31 +788,72 @@ function toggleTopicStatus(topicId, currentIsHidden, event) {
   const iconWrapEl = document.getElementById('status-modal-icon-wrap');
   const noteEl = document.getElementById('status-modal-note');
 
+  if (headingEl) {
+    if (newHidden) {
+      headingEl.textContent = 'Ẩn bài học khỏi học viên';
+    } else if (nextStatus.key === 'active') {
+      headingEl.textContent = 'Bật hiển thị bài học';
+    } else {
+      headingEl.textContent = 'Bỏ trạng thái ẩn';
+    }
+  }
+
+  if (descEl) {
+    descEl.textContent =
+      'Kiểm tra thay đổi bên dưới trước khi xác nhận. Nội dung bài học sẽ không bị xóa.';
+  }
+
   if (titleEl) {
-    titleEl.textContent = topic && topic.title ? topic.title : 'Bài học chưa xác định';
+    titleEl.textContent = topic.title || 'Bài học chưa xác định';
   }
 
   if (currentBadgeEl) {
-    currentBadgeEl.innerHTML = renderStatusPreviewBadge(currentHidden);
+    currentBadgeEl.innerHTML =
+      renderStatusPreviewBadge(currentStatus);
   }
 
   if (newBadgeEl) {
-    newBadgeEl.innerHTML = renderStatusPreviewBadge(newHidden);
+    newBadgeEl.innerHTML =
+      renderStatusPreviewBadge(nextStatus);
   }
 
   if (iconEl) {
-    iconEl.textContent = newInfo.icon;
+    iconEl.textContent = nextStatus.icon;
   }
 
   if (iconWrapEl) {
-    iconWrapEl.classList.toggle('is-locking', newHidden);
-    iconWrapEl.classList.toggle('is-unlocking', !newHidden);
+    iconWrapEl.classList.toggle(
+      'is-locking',
+      nextStatus.key === 'locked'
+    );
+
+    iconWrapEl.classList.toggle(
+      'is-unlocking',
+      nextStatus.key !== 'locked'
+    );
   }
 
   if (noteEl) {
-    noteEl.textContent = newInfo.note;
-    noteEl.classList.toggle('danger', newHidden);
-    noteEl.classList.toggle('success', !newHidden);
+    if (nextStatus.key === 'locked') {
+      noteEl.textContent =
+        'Sau khi xác nhận, học viên sẽ không còn nhìn thấy bài học này. Admin vẫn có thể xem, chỉnh sửa và bật lại bất cứ lúc nào.';
+    } else if (nextStatus.key === 'active') {
+      noteEl.textContent =
+        'Bài học đã đủ Lý thuyết, Mindmap, Quiz và Matching nên sẽ hiển thị ngay cho học viên.';
+    } else {
+      noteEl.textContent =
+        'Bài học sẽ được bỏ trạng thái ẩn nhưng vẫn ở Bản nháp vì chưa đủ 4 nội dung bắt buộc. Học viên chưa thể nhìn thấy bài học.';
+    }
+
+    noteEl.classList.toggle(
+      'danger',
+      nextStatus.key === 'locked'
+    );
+
+    noteEl.classList.toggle(
+      'success',
+      nextStatus.key !== 'locked'
+    );
   }
 
   setStatusConfirmLoading(false);
@@ -630,21 +872,39 @@ function closeStatusModal() {
 
   statusToggleTopicId = null;
   statusToggleNewStatus = null;
-  statusToggleCurrentStatus = null;
+  statusToggleNextKey = null;
+  statusToggleConfirmLabel = 'Xác nhận';
 
   setStatusConfirmLoading(false);
 }
 
 function setStatusConfirmLoading(isLoading) {
   const btn = document.getElementById('status-confirm-btn');
+
   if (!btn) return;
 
   btn.disabled = isLoading;
   btn.classList.toggle('is-loading', isLoading);
 
-  btn.innerHTML = isLoading
-    ? `<span class="material-symbols-sharp cm-spin">progress_activity</span> Đang cập nhật...`
-    : `<span class="material-symbols-sharp">check_circle</span> Xác nhận`;
+  if (isLoading) {
+    btn.innerHTML = `
+      <span class="material-symbols-sharp cm-spin">
+        progress_activity
+      </span>
+      Đang cập nhật...
+    `;
+    return;
+  }
+
+  const icon =
+    statusToggleNewStatus === true
+      ? 'visibility_off'
+      : 'check_circle';
+
+  btn.innerHTML = `
+    <span class="material-symbols-sharp">${icon}</span>
+    ${statusToggleConfirmLabel}
+  `;
 }
 
 function confirmToggleStatus() {
@@ -652,6 +912,7 @@ function confirmToggleStatus() {
 
   const topicId = statusToggleTopicId;
   const newStatus = statusToggleNewStatus;
+  const nextKey = statusToggleNextKey;
 
   setStatusConfirmLoading(true);
 
@@ -663,15 +924,16 @@ function confirmToggleStatus() {
         });
 
         if (topic) {
+          // Đồng bộ cả tên cũ và tên mới
           topic.isHidden = newStatus;
-          if (newStatus) {
+          topic.isLocked = newStatus;
+
+          if (nextKey === 'active') {
+            topic.publishStatus = 'published';
+          } else if (nextKey === 'locked') {
             topic.publishStatus = 'hidden';
           } else {
-            if (topic.hasTheory && topic.hasMindmap && topic.hasQuiz && topic.hasMatching) {
-              topic.publishStatus = 'published';
-            } else {
-              topic.publishStatus = 'draft';
-            }
+            topic.publishStatus = 'draft';
           }
         }
 
@@ -679,8 +941,22 @@ function confirmToggleStatus() {
         updateStats();
         closeStatusModal();
 
+        let successMessage = 'Cập nhật trạng thái thành công';
+
+        if (nextKey === 'active') {
+          successMessage = 'Bài học đã được hiển thị cho học viên';
+        } else if (nextKey === 'locked') {
+          successMessage = 'Bài học đã được ẩn khỏi học viên';
+        } else if (nextKey === 'draft') {
+          successMessage =
+            'Đã bỏ trạng thái ẩn. Bài học vẫn ở Bản nháp vì chưa đủ nội dung';
+        }
+
         if (typeof showNotification === 'function') {
-          showNotification(response.message || 'Cập nhật trạng thái thành công', 'success');
+          showNotification(
+            response.message || successMessage,
+            'success'
+          );
         }
       } else {
         setStatusConfirmLoading(false);
@@ -1250,9 +1526,9 @@ function openMobileActionModal(topicId, event) {
   const topic = allTopics.find(function(t) { return t.topicId === topicId; });
   if (!topic) return;
 
-  const isLocked = topic.isLocked === true || topic.isLocked === 'TRUE';
-  const statusClass = isLocked ? 'locked' : 'active';
-  const statusText = isLocked ? 'Đang ẩn' : 'Đang hiển thị';
+  const status = getTopicUiStatus(topic);
+  const statusClass = status.key;
+  const statusText = status.text;
   
   document.getElementById('mobile-action-category').textContent = topic.category || 'Chưa phân loại';
   document.getElementById('mobile-action-status').innerHTML = `<span class="status-badge ${statusClass}" style="margin:0; padding:4px 8px; font-size:11px;">${statusText}</span>`;
