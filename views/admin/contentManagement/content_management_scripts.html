@@ -289,43 +289,65 @@ function renderTopicStatusBadgeHtml(topic) {
       ? 'Bỏ trạng thái ẩn'
       : 'Ẩn bài học';
 
+  const contentChecks = [
+    {
+      key: 'LT',
+      name: 'Lý thuyết',
+      completed: hasTheory
+    },
+    {
+      key: 'MM',
+      name: 'Mindmap',
+      completed: hasMindmap
+    },
+    {
+      key: 'QZ',
+      name: 'Quiz',
+      completed: hasQuiz
+    },
+    {
+      key: 'MC',
+      name: 'Matching',
+      completed: hasMatching
+    }
+  ];
+
   const checklistHtml = `
     <div
-      style="display:flex;gap:5px;margin-top:5px;font-size:10px;line-height:1;"
-      title="Kiểm tra 4 điều kiện hiển thị"
+      class="cm-content-checklist"
+      title="Tình trạng nội dung bài học"
+      aria-label="Tình trạng nội dung bài học"
     >
-      <span
-        title="Lý thuyết: ${hasTheory ? 'Đã có' : 'Chưa có'}"
-        style="color:${hasTheory ? '#16a34a' : '#dc2626'};font-weight:700;"
-      >
-        ${hasTheory ? '✓' : '✗'}LT
-      </span>
+      ${contentChecks.map(function(item) {
+        const stateClass = item.completed
+          ? 'is-complete'
+          : 'is-missing';
 
-      <span
-        title="Mindmap: ${hasMindmap ? 'Đã có' : 'Chưa có'}"
-        style="color:${hasMindmap ? '#16a34a' : '#dc2626'};font-weight:700;"
-      >
-        ${hasMindmap ? '✓' : '✗'}MM
-      </span>
+        const stateText = item.completed
+          ? 'Đã có'
+          : 'Chưa có';
 
-      <span
-        title="Quiz: ${hasQuiz ? 'Đã có' : 'Chưa có'}"
-        style="color:${hasQuiz ? '#16a34a' : '#dc2626'};font-weight:700;"
-      >
-        ${hasQuiz ? '✓' : '✗'}QZ
-      </span>
+        return `
+          <span
+            class="cm-content-check-item ${stateClass}"
+            title="${item.name}: ${stateText}"
+            aria-label="${item.name}: ${stateText}"
+          >
+            <span class="cm-content-check-icon">
+              ${item.completed ? '✓' : '×'}
+            </span>
 
-      <span
-        title="Matching: ${hasMatching ? 'Đã có' : 'Chưa có'}"
-        style="color:${hasMatching ? '#16a34a' : '#dc2626'};font-weight:700;"
-      >
-        ${hasMatching ? '✓' : '✗'}MC
-      </span>
+            <span class="cm-content-check-label">
+              ${item.key}
+            </span>
+          </span>
+        `;
+      }).join('')}
     </div>
   `;
 
   return `
-    <div>
+    <div class="cm-topic-status-stack">
       <span
         class="status-badge ${status.key} interactive"
         onclick="toggleTopicStatus('${topic.topicId}', event)"
@@ -451,7 +473,9 @@ function renderTopicsTable() {
           </div>
         </td>
         <td>
-          <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
+          <span class="category-badge ${categoryClass}" title="${escapeHtml(topic.category || 'Chưa phân loại')}">
+            ${escapeHtml(topic.category || 'Chưa phân loại')}
+          </span>
         </td>
         <td>
           ${renderTopicStatusBadgeHtml(topic)}
@@ -541,7 +565,9 @@ function renderTopicsCards() {
         </div>
 
         <div class="cm-card-meta">
-          <span class="category-badge ${categoryClass}">${escapeHtml(topic.category || 'Chưa phân loại')}</span>
+          <span class="category-badge ${categoryClass}" title="${escapeHtml(topic.category || 'Chưa phân loại')}">
+            ${escapeHtml(topic.category || 'Chưa phân loại')}
+          </span>
           ${renderTopicStatusBadgeHtml(topic)}
         </div>
 
