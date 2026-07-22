@@ -238,21 +238,21 @@ function getTopicUiStatus(topic) {
 function updateStats() {
   const totalEl = document.getElementById('stat-total-topics');
   const activeEl = document.getElementById('stat-active-topics');
+  const draftEl = document.getElementById('stat-draft-topics');
   const lockedEl = document.getElementById('stat-locked-topics');
   const categoriesEl = document.getElementById('stat-categories');
 
-  let activeCount = 0;
-  let lockedCount = 0;
+  const statusCounts = {
+    active: 0,
+    draft: 0,
+    locked: 0
+  };
 
   allTopics.forEach(function(topic) {
     const status = getTopicUiStatus(topic);
 
-    if (status.key === 'active') {
-      activeCount++;
-    }
-
-    if (status.key === 'locked') {
-      lockedCount++;
+    if (Object.prototype.hasOwnProperty.call(statusCounts, status.key)) {
+      statusCounts[status.key]++;
     }
   });
 
@@ -270,10 +270,26 @@ function updateStats() {
 
   const categoryCount = new Set(normalizedCategories).size;
 
-  if (totalEl) totalEl.textContent = allTopics.length;
-  if (activeEl) activeEl.textContent = activeCount;
-  if (lockedEl) lockedEl.textContent = lockedCount;
-  if (categoriesEl) categoriesEl.textContent = categoryCount;
+  cmSetStatNumber(totalEl, allTopics.length);
+  cmSetStatNumber(activeEl, statusCounts.active);
+  cmSetStatNumber(draftEl, statusCounts.draft);
+  cmSetStatNumber(lockedEl, statusCounts.locked);
+  cmSetStatNumber(categoriesEl, categoryCount);
+}
+
+function cmSetStatNumber(element, nextValue) {
+  if (!element) return;
+
+  const currentValue = Number(element.textContent) || 0;
+  const safeNextValue = Number(nextValue) || 0;
+
+  if (currentValue === safeNextValue) {
+    element.textContent = safeNextValue;
+    return;
+  }
+
+  // Tận dụng hàm animateValue đang có sẵn trong file
+  animateValue(element, currentValue, safeNextValue, 450);
 }
 
 function renderTopicStatusBadgeHtml(topic) {
@@ -547,9 +563,14 @@ function renderTopicsCards() {
   grid.innerHTML = pageTopics.map(function(topic, index) {
     const categoryClass = getCategoryClass(topic.category);
     const updatedAt = formatDate(topic.updatedAt);
+    const status = getTopicUiStatus(topic);
 
     return `
-      <div class="cm-topic-card" data-topic-id="${topic.topicId}">
+      <div
+        class="cm-topic-card is-${status.key}"
+        data-topic-id="${topic.topicId}"
+        style="--cm-card-delay: ${index * 55}ms"
+      >
         <div class="cm-card-header">
           <div class="cm-card-icon">
             ${topic.iconUrl

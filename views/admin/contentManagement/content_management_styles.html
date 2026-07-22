@@ -3558,4 +3558,603 @@
     background: #e2e8f0;
     color: #0f172a;
   }
+
+/* =====================================================
+   CONTENT MANAGEMENT - STATS & TOPIC CARD REFRESH
+   Đặt cuối file để ghi đè CSS cũ
+===================================================== */
+
+/* ==================== STATS ==================== */
+
+.cm-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.cm-stat-card {
+  --stat-from: #6366f1;
+  --stat-to: #8b5cf6;
+  --stat-rgb: 99, 102, 241;
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+
+  min-width: 0;
+  min-height: 96px;
+
+  display: flex;
+  align-items: center;
+  gap: 13px;
+
+  padding: 16px !important;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(248, 250, 252, 0.96)
+    );
+
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.05),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.28s ease,
+    border-color 0.28s ease;
+
+  animation: cmStatCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Vạch màu nhỏ bên trái */
+.cm-stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 4px;
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(180deg, var(--stat-from), var(--stat-to));
+}
+
+/* Ánh sáng trang trí */
+.cm-stat-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -35px;
+  right: -30px;
+
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+
+  background: rgba(var(--stat-rgb), 0.1);
+  filter: blur(4px);
+
+  transition:
+    transform 0.35s ease,
+    opacity 0.35s ease;
+}
+
+.cm-stat-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(var(--stat-rgb), 0.3);
+
+  box-shadow:
+    0 14px 30px rgba(15, 23, 42, 0.1),
+    0 4px 10px rgba(var(--stat-rgb), 0.08);
+}
+
+.cm-stat-card:hover::after {
+  transform: scale(1.18);
+  opacity: 0.9;
+}
+
+/* Màu từng loại thống kê */
+.cm-stat-card--total {
+  --stat-from: #6366f1;
+  --stat-to: #8b5cf6;
+  --stat-rgb: 99, 102, 241;
+}
+
+.cm-stat-card--active {
+  --stat-from: #10b981;
+  --stat-to: #34d399;
+  --stat-rgb: 16, 185, 129;
+}
+
+.cm-stat-card--draft {
+  --stat-from: #f59e0b;
+  --stat-to: #fbbf24;
+  --stat-rgb: 245, 158, 11;
+}
+
+.cm-stat-card--locked {
+  --stat-from: #ef4444;
+  --stat-to: #f87171;
+  --stat-rgb: 239, 68, 68;
+}
+
+.cm-stat-card--categories {
+  --stat-from: #3b82f6;
+  --stat-to: #60a5fa;
+  --stat-rgb: 59, 130, 246;
+}
+
+.cm-stat-card .cm-stat-icon {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 14px;
+  color: #ffffff;
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--stat-from),
+      var(--stat-to)
+    ) !important;
+
+  box-shadow:
+    0 7px 16px rgba(var(--stat-rgb), 0.25);
+
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.3s ease;
+}
+
+.cm-stat-card:hover .cm-stat-icon {
+  transform: scale(1.06) rotate(-3deg);
+  box-shadow: 0 10px 22px rgba(var(--stat-rgb), 0.34);
+}
+
+.cm-stat-card .cm-stat-icon .material-symbols-sharp {
+  font-size: 24px;
+}
+
+.cm-stat-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cm-stat-value {
+  font-size: clamp(23px, 2vw, 28px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--theme-text, #0f172a);
+}
+
+.cm-stat-label {
+  margin-top: 7px;
+
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--theme-text-muted, #64748b);
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-stat-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.cm-stat-card:nth-child(2) {
+  animation-delay: 55ms;
+}
+
+.cm-stat-card:nth-child(3) {
+  animation-delay: 110ms;
+}
+
+.cm-stat-card:nth-child(4) {
+  animation-delay: 165ms;
+}
+
+.cm-stat-card:nth-child(5) {
+  animation-delay: 220ms;
+}
+
+@keyframes cmStatCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* ==================== TOPIC CARDS ==================== */
+
+.cm-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.cm-topic-card {
+  --card-accent: #3b82f6;
+  --card-accent-rgb: 59, 130, 246;
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+
+  min-width: 0;
+  min-height: 230px;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 17px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+
+  background:
+    linear-gradient(
+      155deg,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(248, 250, 252, 0.97) 100%
+    );
+
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.055),
+    0 1px 3px rgba(15, 23, 42, 0.04);
+
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.28s ease,
+    box-shadow 0.32s ease;
+
+  animation: cmTopicCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--cm-card-delay, 0ms);
+}
+
+/* Màu card theo trạng thái */
+.cm-topic-card.is-active {
+  --card-accent: #10b981;
+  --card-accent-rgb: 16, 185, 129;
+}
+
+.cm-topic-card.is-draft {
+  --card-accent: #f59e0b;
+  --card-accent-rgb: 245, 158, 11;
+}
+
+.cm-topic-card.is-locked {
+  --card-accent: #ef4444;
+  --card-accent-rgb: 239, 68, 68;
+}
+
+/* Thanh trạng thái trên đầu */
+.cm-topic-card::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0 16px auto 16px;
+
+  height: 3px;
+  border-radius: 0 0 6px 6px;
+
+  background: var(--card-accent);
+  opacity: 1;
+}
+
+/* Vệt sáng nhẹ ở góc */
+.cm-topic-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -60px;
+  right: -55px;
+
+  width: 145px;
+  height: 145px;
+  border-radius: 50%;
+
+  background: rgba(var(--card-accent-rgb), 0.08);
+
+  transition:
+    transform 0.4s ease,
+    opacity 0.4s ease;
+}
+
+.cm-topic-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(var(--card-accent-rgb), 0.3);
+
+  box-shadow:
+    0 18px 38px rgba(15, 23, 42, 0.11),
+    0 6px 16px rgba(var(--card-accent-rgb), 0.09);
+}
+
+.cm-topic-card:hover::after {
+  transform: scale(1.18);
+  opacity: 1;
+}
+
+.cm-topic-card .cm-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.cm-topic-card .cm-card-icon {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+
+  border: 1px solid rgba(var(--card-accent-rgb), 0.17);
+  border-radius: 14px;
+
+  background: rgba(var(--card-accent-rgb), 0.09);
+
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.3s ease;
+}
+
+.cm-topic-card:hover .cm-card-icon {
+  transform: translateY(-2px) scale(1.05);
+  background: rgba(var(--card-accent-rgb), 0.14);
+}
+
+.cm-topic-card .cm-card-icon .material-symbols-sharp {
+  font-size: 24px;
+  color: var(--card-accent);
+}
+
+.cm-topic-card .cm-card-icon img {
+  width: 27px;
+  height: 27px;
+  object-fit: contain;
+}
+
+.cm-topic-card .cm-card-title {
+  margin: 1px 0 5px;
+
+  font-size: 15.5px;
+  font-weight: 750;
+  line-height: 1.3;
+  color: var(--theme-text, #0f172a);
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-topic-card .cm-card-desc {
+  min-height: 39px;
+  margin: 0;
+
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--theme-text-muted, #64748b);
+
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Metadata chia thành hai hàng để không bị chật */
+.cm-topic-card .cm-card-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+
+  margin-bottom: 13px;
+}
+
+.cm-topic-card .category-badge {
+  align-self: flex-start;
+  max-width: 100%;
+
+  padding: 5px 10px;
+  border-radius: 999px;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Trạng thái và LT/MM/QZ/MC cùng một hàng */
+.cm-topic-card .cm-topic-status-stack {
+  width: 100%;
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.cm-topic-card .status-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.cm-topic-card .status-badge.draft {
+  color: #b45309;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.cm-topic-card .cm-content-checklist {
+  flex: 0 0 auto;
+
+  gap: 3px;
+  padding: 3px;
+
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.cm-topic-card .cm-content-check-item {
+  min-width: 29px;
+  height: 23px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 9px;
+}
+
+/* Footer luôn nằm sát đáy */
+.cm-topic-card .cm-card-footer {
+  margin-top: auto;
+  padding-top: 12px;
+
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.cm-topic-card .cm-card-date {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--theme-text-muted, #64748b);
+}
+
+.cm-topic-card .action-buttons {
+  gap: 6px;
+}
+
+.cm-topic-card .action-btn {
+  width: 34px;
+  height: 34px;
+
+  border-radius: 10px;
+  box-shadow: none;
+
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.cm-topic-card .action-btn.view {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.cm-topic-card .action-btn.edit {
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.cm-topic-card .action-btn.delete {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.cm-topic-card .action-btn.view:hover {
+  color: #ffffff;
+  background: #2563eb;
+  box-shadow: 0 7px 15px rgba(37, 99, 235, 0.25);
+}
+
+.cm-topic-card .action-btn.edit:hover {
+  color: #ffffff;
+  background: #d97706;
+  box-shadow: 0 7px 15px rgba(217, 119, 6, 0.25);
+}
+
+.cm-topic-card .action-btn.delete:hover {
+  color: #ffffff;
+  background: #dc2626;
+  box-shadow: 0 7px 15px rgba(220, 38, 38, 0.25);
+}
+
+.cm-topic-card .action-btn:hover {
+  transform: translateY(-2px) scale(1.04);
+}
+
+@keyframes cmTopicCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* ==================== RESPONSIVE ==================== */
+
+/* Desktop: luôn đủ 5 card thống kê trên một hàng */
+@media (min-width: 1025px) {
+  .cm-stats-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .cm-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Mobile ngang và tablet nhỏ */
+@media (max-width: 720px) {
+  .cm-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+  }
+
+  .cm-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile nhỏ */
+@media (max-width: 480px) {
+  .cm-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cm-topic-card .cm-topic-status-stack {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Tôn trọng thiết lập giảm chuyển động của người dùng */
+@media (prefers-reduced-motion: reduce) {
+  .cm-stat-card,
+  .cm-topic-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 </style>
