@@ -1,6 +1,25 @@
 <script>
 let qmTopics = [];
 let qmCurrentQuestions = [];
+let qmQuestionLoadSequence = 0;
+let qmQuestionLoadingTopicId = "";
+
+let qmTopicsLoading = false;
+let qmTopicsLoadedAt = 0;
+let qmTopicsLoadRequestId = 0;
+const QM_TOPICS_CACHE_TIME = 60000;
+
+function qmNormalizeTopicId(value) {
+  return String(value ?? "").trim();
+}
+
+function qmFindTopicById(topicId) {
+  const normalizedId = qmNormalizeTopicId(topicId);
+
+  return qmTopics.find(topic =>
+    qmNormalizeTopicId(topic.topicId) === normalizedId
+  );
+}
 
 // Khởi tạo
 function initQuestionManager() {
@@ -40,14 +59,7 @@ function initQuestionManager() {
   }
 }
 
-// Global click listener to close custom dropdown only when clicking outside
-document.addEventListener("click", function(e) {
-  const input = document.getElementById("qmTopicSelectInput");
-  const dropdown = document.getElementById("qmTopicCustomDropdown");
-  if (input && dropdown && !input.contains(e.target) && !dropdown.contains(e.target)) {
-    dropdown.style.display = "none";
-  }
-});
+
 
 // Fallback for static load (if any)
 document.addEventListener("DOMContentLoaded", () => {
@@ -67,101 +79,252 @@ function qmHideLoading() {
   document.getElementById("qmLoadingState").style.display = "none";
 }
 
-function qmLoadTopics() {
+function qmShowTopicListLoading(text) {
+  const loading = document.getElementById("qmTopicListLoadingState");
+  const loadingText = document.getElementById("qmTopicListLoadingText");
+  const grid = document.getElementById("qmTopicGrid");
+
+  if (loadingText) {
+    loadingText.textContent = text || "Đang tải danh sách Quiz...";
+  }
+
+  if (loading) loading.style.display = "flex";
+  if (grid) grid.style.display = "none";
+}
+
+function qmHideTopicListLoading() {
+  const loading = document.getElementById("qmTopicListLoadingState");
+  const grid = document.getElementById("qmTopicGrid");
+
+  if (loading) loading.style.display = "none";
+  if (grid) grid.style.display = "grid";
+}
+
+function qmLoadTopics(showTopicList = true, forceReload = false) {
+  if (qmTopicsLoading) {
+    return;
+  }
+
+  const cacheStillValid =
+    qmTopics.length > 0 &&
+    Date.now() - qmTopicsLoadedAt < QM_TOPICS_CACHE_TIME;
+
+  if (!forceReload && cacheStillValid) {
+    if (showTopicList) {
+      qmRenderTopicCards(qmTopics);
+      qmShowTopicListView();
+    }
+    return;
+  }
+
+  qmTopicsLoading = true;
+  const requestId = ++qmTopicsLoadRequestId;
+
+  if (showTopicList) {
+    qmShowTopicListLoading("Đang tải danh sách Quiz...");
+  }
+  
   google.script.run
     .withSuccessHandler((response) => {
-      if (response && response.success && Array.isArray(response.topics)) {
+      qmTopicsLoading = false;
+      if (requestId !== qmTopicsLoadRequestId) return;
+
+      if (showTopicList) {
+        qmHideTopicListLoading();
+      }
+
+      if (response && response.success === true && Array.isArray(response.topics)) {
+        qmTopicsLoadedAt = Date.now();
         qmTopics = response.topics;
-        qmRenderTopicDropdown(qmTopics);
-        
-        // Tự động chọn topic đầu tiên CÓ CÂU HỎI (hoặc topic đầu tiên) nếu chưa có topic nào được chọn
-        if (!qmSelectedTopicIdStr && qmTopics.length > 0) {
-          const topicWithQuestions = qmTopics.find(t => t.questionStats && t.questionStats.total > 0) || qmTopics[0];
-          qmSelectTopicObj(topicWithQuestions);
-        } else if (qmTopics.length === 0) {
-          document.getElementById("qmEmptyState").style.display = "flex";
-          document.getElementById("qmQuestionsArea").style.display = "none";
-          document.getElementById("qmTopicStats").style.display = "none";
+        if (showTopicList) {
+          qmRenderTopicCards(qmTopics);
+          qmShowTopicListView();
         }
+        return;
+      }
+
+      console.error("adminGetTopicsWithQuizStatus response:", response);
+      if (showTopicList) {
+        qmRenderTopicLoadError(response?.message || "Server không trả về danh sách Topic hợp lệ.");
       }
     })
     .withFailureHandler((err) => {
-      console.error(err);
-      showToast("Lỗi tải danh sách Topic", "error");
+      qmTopicsLoading = false;
+      if (requestId !== qmTopicsLoadRequestId) return;
+
+      if (showTopicList) {
+        qmHideTopicListLoading();
+      }
+      console.error("adminGetTopicsWithQuizStatus failed:", err);
+      if (showTopicList) {
+        qmRenderTopicLoadError(err?.message || "Không thể kết nối đến máy chủ.");
+      }
     })
     .adminGetTopicsWithQuizStatus();
 }
 
-function qmSelectTopicObj(t) {
-  if (!t) return;
-  const input = document.getElementById("qmTopicSelectInput");
-  const statsText = t.questionStats ? ` (${t.questionStats.total} câu)` : '';
-  if (input) input.value = `${t.title}${statsText}`;
-  qmSelectedTopicIdStr = t.topicId;
-  
-  const dropdown = document.getElementById("qmTopicCustomDropdown");
-  if (dropdown) dropdown.style.display = "none";
-  
-  const clearBtn = document.getElementById("qmClearSearchBtn");
-  if (clearBtn) clearBtn.style.display = "block";
-  
-  const searchGroup = document.getElementById("qmQuestionSearchGroup");
-  if (searchGroup) searchGroup.style.display = "block";
-  
-  qmLoadTopicQuestions(t.topicId);
+function qmRenderTopicLoadError(message) {
+  const grid = document.getElementById("qmTopicGrid");
+  if (!grid) return;
+
+  grid.style.display = "grid";
+
+  grid.innerHTML = `
+    <div class="qm-topic-grid-empty">
+      <span class="material-symbols-sharp">cloud_off</span>
+      <strong>Không thể tải danh sách Quiz</strong>
+      <p>${qmEscapeHtml(message)}</p>
+      <button
+        type="button"
+        class="qm-btn qm-btn-primary"
+        onclick="qmLoadTopics(true, true)"
+        style="margin-top: 16px"
+      >
+        <span class="material-symbols-sharp">refresh</span>
+        Thử tải lại
+      </button>
+    </div>
+  `;
 }
 
-function qmRenderTopicDropdown(topicsList) {
-  const dropdown = document.getElementById("qmTopicCustomDropdown");
-  if (!dropdown) return;
-  
-  dropdown.innerHTML = '';
-  
-  // Thêm tùy chọn Global Search lên đầu danh sách dropdown
-  const globalItem = document.createElement("div");
-  globalItem.className = "qm-custom-dropdown-item";
-  globalItem.style.fontWeight = "bold";
-  globalItem.style.color = "#2563eb";
-  globalItem.style.backgroundColor = "#eff6ff";
-  globalItem.innerHTML = '🌐 Tất cả chủ đề (Tìm kiếm câu hỏi toàn cục)';
-  const globalObj = { topicId: 'ALL', title: '🌐 Tất cả chủ đề', quizStatus: 'ready' };
-  globalItem.onmousedown = function(e) {
-    e.preventDefault(); 
-    qmSelectTopicObj(globalObj);
-  };
-  globalItem.onclick = function(e) {
-    e.preventDefault(); 
-    qmSelectTopicObj(globalObj);
-  };
-  dropdown.appendChild(globalItem);
+function qmRenderTopicCards(topicsList) {
+  const grid = document.getElementById("qmTopicGrid");
+  if (!grid) return;
 
-  if (!topicsList || topicsList.length === 0) {
-    const emptyDiv = document.createElement("div");
-    emptyDiv.className = "qm-custom-dropdown-empty";
-    emptyDiv.style.padding = "12px";
-    emptyDiv.style.textAlign = "center";
-    emptyDiv.style.color = "#64748b";
-    emptyDiv.textContent = "Không tìm thấy chủ đề phù hợp";
-    dropdown.appendChild(emptyDiv);
+  grid.innerHTML = "";
+
+  if (!Array.isArray(topicsList) || topicsList.length === 0) {
+    grid.innerHTML = `
+      <div class="qm-topic-grid-empty">
+        <span class="material-symbols-sharp">search_off</span>
+        <strong>Không tìm thấy Topic</strong>
+        <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
+      </div>
+    `;
     return;
   }
-  
-  topicsList.forEach(t => {
-    const stats = t.questionStats ? ` (${t.questionStats.total} câu)` : '';
-    const text = `${t.title}${stats}`;
-    const item = document.createElement("div");
-    item.className = "qm-custom-dropdown-item";
-    item.textContent = text;
-    item.onmousedown = function(e) {
-      e.preventDefault(); 
-      qmSelectTopicObj(t);
+
+  const fragment = document.createDocumentFragment();
+
+  topicsList.forEach((topic, index) => {
+    const total = Number(topic.questionStats?.total) || 0;
+    const approved = Number(topic.questionStats?.approved) || 0;
+    const draft = Number(topic.questionStats?.draft) || 0;
+    const hidden = Number(topic.questionStats?.hidden) || 0;
+
+    const themeIndex = index % 6;
+    const statusClass =
+      total === 0
+        ? "is-empty"
+        : draft > 0
+          ? "has-draft"
+          : "is-ready";
+
+    const statusText =
+      total === 0
+        ? "Chưa có câu hỏi"
+        : draft > 0
+          ? "Có bản nháp"
+          : "Sẵn sàng";
+
+    const card = document.createElement("article");
+
+    card.className = `
+      qm-topic-card
+      qm-topic-theme-${themeIndex}
+      ${statusClass}
+    `;
+
+    const delay = Math.min(index, 8) * 35;
+    card.style.setProperty("--qm-card-delay", `${delay}ms`);
+
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute(
+      "aria-label",
+      `Quản lý câu hỏi Topic ${topic.title || "Topic"}`
+    );
+
+    card.innerHTML = `
+      <div class="qm-topic-card-decoration"></div>
+
+      <div class="qm-topic-card-top">
+        <div class="qm-topic-card-icon">
+          <span class="material-symbols-sharp">quiz</span>
+        </div>
+
+        <span class="qm-topic-status ${statusClass}">
+          ${statusText}
+        </span>
+      </div>
+
+      <div class="qm-topic-card-content">
+        <span class="qm-topic-card-eyebrow">QUIZ TOPIC</span>
+
+        <h3 class="qm-topic-card-title">
+          ${qmEscapeHtml(topic.title || "Topic")}
+        </h3>
+
+        <div class="qm-topic-card-count">
+          <strong>${total}</strong>
+          <span>câu hỏi</span>
+        </div>
+      </div>
+
+      <div class="qm-topic-card-stats">
+        <div>
+          <span>Đã duyệt</span>
+          <strong class="is-approved">${approved}</strong>
+        </div>
+
+        <div>
+          <span>Bản nháp</span>
+          <strong class="is-draft">${draft}</strong>
+        </div>
+
+        <div>
+          <span>Đang ẩn</span>
+          <strong class="is-hidden">${hidden}</strong>
+        </div>
+      </div>
+
+      <div class="qm-topic-card-footer">
+        <span>Quản lý câu hỏi</span>
+
+        <span class="qm-topic-card-arrow material-symbols-sharp">
+          arrow_forward
+        </span>
+      </div>
+    `;
+
+    const openTopic = () => {
+      if (card.classList.contains("is-opening")) return;
+      card.classList.add("is-opening");
+      requestAnimationFrame(() => {
+        qmOpenTopicQuestions(topic.topicId);
+        card.classList.remove("is-opening");
+      });
     };
-    item.onclick = function(e) {
-      e.preventDefault(); 
-      qmSelectTopicObj(t);
-    };
-    dropdown.appendChild(item);
+
+    card.addEventListener("click", openTopic);
+
+    card.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openTopic();
+      }
+    });
+
+    fragment.appendChild(card);
   });
+
+  grid.replaceChildren(fragment);
+}
+
+function qmEscapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = String(value ?? "");
+  return div.innerHTML;
 }
 
 let qmSelectedTopicIdStr = "";
@@ -169,42 +332,115 @@ function qmGetSelectedTopicId() {
   return qmSelectedTopicIdStr;
 }
 
-function qmOnTopicSearch() {
-  const input = document.getElementById("qmTopicSelectInput");
+function qmOnTopicCardSearch() {
+  const input = document.getElementById("qmTopicCardSearchInput");
   if (!input) return;
-  const val = input.value.trim().toLowerCase();
+  const keyword = input.value.trim().toLowerCase();
   
-  const clearBtn = document.getElementById("qmClearSearchBtn");
-  if (clearBtn) {
-    clearBtn.style.display = val.length > 0 ? "block" : "none";
-  }
-  
-  if (val.length === 0) {
-    // Nếu xóa trắng thì hiển thị lại toàn bộ dropdown
-    qmRenderTopicDropdown(qmTopics);
-    qmShowTopicDropdown();
-    return;
-  }
-  
-  const filtered = qmTopics.filter(t => {
-    const title = (t.title || "").toLowerCase();
-    const id = String(t.topicId || "").toLowerCase();
-    const desc = (t.description || "").toLowerCase();
-    const cat = (t.category || "").toLowerCase();
-    return title.includes(val) || id.includes(val) || desc.includes(val) || cat.includes(val);
+  const filteredTopics = qmTopics.filter(topic => {
+    return (
+      String(topic.title || "").toLowerCase().includes(keyword) ||
+      String(topic.description || "").toLowerCase().includes(keyword) ||
+      String(topic.category || "").toLowerCase().includes(keyword)
+    );
   });
-  
-  qmRenderTopicDropdown(filtered);
-  qmShowTopicDropdown();
+
+  qmRenderTopicCards(filteredTopics);
 }
 
-function qmClearSearch() {
-  const input = document.getElementById("qmTopicSelectInput");
-  if (input) {
-    input.value = "";
-    qmOnTopicSearch();
-    input.focus();
+function qmShowTopicListView() {
+  document.getElementById("qmTopicListView").style.display = "block";
+  document.getElementById("qmQuestionManagerView").style.display = "none";
+}
+
+function qmOpenTopicQuestions(topicId) {
+  const topic = qmFindTopicById(topicId);
+
+  if (!topic) {
+    showToast("Không tìm thấy Topic cần quản lý", "error");
+    return;
   }
+
+  const normalizedTopicId = qmNormalizeTopicId(topic.topicId);
+
+  qmSelectedTopicIdStr = normalizedTopicId;
+  qmQuestionLoadingTopicId = normalizedTopicId;
+
+  const listView = document.getElementById("qmTopicListView");
+  const managerView = document.getElementById("qmQuestionManagerView");
+
+  if (listView) listView.style.display = "none";
+  if (managerView) managerView.style.display = "block";
+
+  const titleEl = document.getElementById("qmCurrentTopicTitle");
+  if (titleEl) {
+    titleEl.textContent = topic.title || "Topic";
+  }
+
+  const searchInput = document.getElementById("qmQuestionSearchInput");
+  const clearSearchBtn = document.getElementById(
+    "qmClearQuestionSearchBtn"
+  );
+
+  if (searchInput) searchInput.value = "";
+  if (clearSearchBtn) clearSearchBtn.style.display = "none";
+
+  qmFilterStatus = "all";
+  qmCurrentQuestions = [];
+  qmUpdateStats();
+
+  /*
+   * Gửi topic.topicId gốc về Apps Script.
+   * Không gửi lại giá trị đã ép String nếu backend đang dùng số.
+   */
+  qmLoadTopicQuestions(topic.topicId, false);
+
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "smooth"
+  });
+}
+
+function qmBackToTopicList() {
+  ++qmQuestionLoadSequence;
+  qmQuestionLoadingTopicId = "";
+
+  qmSelectedTopicIdStr = "";
+  qmCurrentQuestions = [];
+  qmFilterStatus = "all";
+
+  qmHideLoading();
+
+  const questionSearch =
+    document.getElementById("qmQuestionSearchInput");
+
+  const clearSearchBtn =
+    document.getElementById("qmClearQuestionSearchBtn");
+
+  if (questionSearch) questionSearch.value = "";
+  if (clearSearchBtn) clearSearchBtn.style.display = "none";
+
+  const managerView =
+    document.getElementById("qmQuestionManagerView");
+
+  const listView =
+    document.getElementById("qmTopicListView");
+
+  if (managerView) managerView.style.display = "none";
+  if (listView) listView.style.display = "block";
+
+  if (qmTopics.length > 0) {
+    qmRenderTopicCards(qmTopics);
+  } else {
+    qmLoadTopics(true);
+  }
+
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "smooth"
+  });
 }
 
 function qmOnQuestionSearch() {
@@ -224,74 +460,194 @@ function qmClearQuestionSearch() {
   }
 }
 
-function qmShowTopicDropdown() {
-  const dropdown = document.getElementById("qmTopicCustomDropdown");
-  if (dropdown) dropdown.style.display = "block";
-}
 
-function qmHideTopicDropdown() {
-  const dropdown = document.getElementById("qmTopicCustomDropdown");
-  if (dropdown) dropdown.style.display = "none";
-}
 
 function qmLoadTopicQuestions(topicIdParam, isSilent = false) {
-  const topicId = topicIdParam !== undefined ? topicIdParam : qmGetSelectedTopicId();
-  if (!topicId) {
-    document.getElementById("qmTopicStats").style.display = "none";
-    document.getElementById("qmQuestionsArea").style.display = "none";
-    document.getElementById("qmEmptyState").style.display = "flex";
+  const rawTopicId =
+    topicIdParam !== undefined && topicIdParam !== null
+      ? topicIdParam
+      : qmGetSelectedTopicId();
+
+  const normalizedTopicId = qmNormalizeTopicId(rawTopicId);
+
+  if (!normalizedTopicId) {
+    const stats = document.getElementById("qmTopicStats");
+    const area = document.getElementById("qmQuestionsArea");
+    const empty = document.getElementById("qmEmptyState");
+
+    if (stats) stats.style.display = "none";
+    if (area) area.style.display = "none";
+    if (empty) empty.style.display = "flex";
+
     return;
   }
-  
-  const topic = qmTopics.find(t => t.topicId === topicId);
+
+  const topic = qmFindTopicById(normalizedTopicId);
+  const requestSequence = ++qmQuestionLoadSequence;
+
+  qmQuestionLoadingTopicId = normalizedTopicId;
+
   if (topic) {
-    document.getElementById("qmTopicStats").style.display = "flex";
-    
-    // Update Badge
-    const badge = document.getElementById("qmTopicStatusBadge");
+    const stats = document.getElementById("qmTopicStats");
+    if (stats) stats.style.display = "flex";
+
+    const status = topic.quizStatus || "need_questions";
     const statusMap = {
-      'need_questions': 'Chưa có câu hỏi',
-      'ai_generated': 'AI vừa tạo (Nháp)',
-      'ready': 'Đã có câu hỏi (Ready)',
-      'published': 'Đã công bố'
+      need_questions: "Chưa có câu hỏi",
+      ai_generated: "AI vừa tạo (Nháp)",
+      ready: "Đã có câu hỏi",
+      published: "Đã công bố"
     };
-    const s = topic.quizStatus || 'need_questions';
+
+    const badge = document.getElementById("qmTopicStatusBadge");
+
     if (badge) {
-      badge.textContent = statusMap[s] || s;
-      badge.className = "qm-badge " + s;
+      badge.textContent = statusMap[status] || status;
+      badge.className = `qm-badge ${status}`;
     }
-    
-    document.getElementById("qmPublishBtn").style.display = (s === 'ready' || s === 'published') ? 'inline-flex' : 'none';
-    if (s === 'published') {
-      document.getElementById("qmPublishBtn").innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">block</span> Hủy công bố';
-      document.getElementById("qmPublishBtn").classList.replace("qm-btn-success", "qm-btn-danger");
-    } else {
-      document.getElementById("qmPublishBtn").innerHTML = '<span class="material-symbols-sharp" style="font-size: 18px;">publish</span> Công bố Topic';
-      document.getElementById("qmPublishBtn").classList.replace("qm-btn-danger", "qm-btn-success");
+
+    const publishBtn = document.getElementById("qmPublishBtn");
+
+    if (publishBtn) {
+      publishBtn.style.display =
+        status === "ready" || status === "published"
+          ? "inline-flex"
+          : "none";
+
+      if (status === "published") {
+        publishBtn.innerHTML = `
+          <span class="material-symbols-sharp">block</span>
+          Hủy công bố
+        `;
+
+        publishBtn.classList.remove("qm-btn-success");
+        publishBtn.classList.add("qm-btn-danger");
+      } else {
+        publishBtn.innerHTML = `
+          <span class="material-symbols-sharp">publish</span>
+          Công bố Topic
+        `;
+
+        publishBtn.classList.remove("qm-btn-danger");
+        publishBtn.classList.add("qm-btn-success");
+      }
     }
-    
-    const quizXpInput = document.getElementById("qmTopicQuizXpInput");
-    if (quizXpInput) quizXpInput.value = topic.quizXpReward !== undefined ? topic.quizXpReward : 100;
+
+    const quizXpInput = document.getElementById(
+      "qmTopicQuizXpInput"
+    );
+
+    if (quizXpInput) {
+      quizXpInput.value =
+        topic.quizXpReward !== undefined &&
+        topic.quizXpReward !== null &&
+        topic.quizXpReward !== ""
+          ? topic.quizXpReward
+          : 100;
+    }
   }
 
-  if (!isSilent) qmShowLoading("Đang tải danh sách câu hỏi...");
-  
+  if (!isSilent) {
+    qmShowLoading("Đang tải danh sách câu hỏi...");
+  }
+
+  /*
+   * Ưu tiên gửi ID gốc trong qmTopics để giữ đúng kiểu dữ liệu.
+   */
+  const apiTopicId = topic ? topic.topicId : rawTopicId;
+
   google.script.run
-    .withSuccessHandler((response) => {
-      if (!isSilent) qmHideLoading();
-      if (response.success) {
-        qmCurrentQuestions = response.questions || [];
+    .withSuccessHandler(response => {
+      /*
+       * Bỏ qua response cũ khi người dùng đã chọn Topic khác.
+       */
+      const currentSelectedId = qmNormalizeTopicId(
+        qmGetSelectedTopicId()
+      );
+
+      if (
+        requestSequence !== qmQuestionLoadSequence ||
+        currentSelectedId !== normalizedTopicId
+      ) {
+        return;
+      }
+
+      if (!isSilent) {
+        qmHideLoading();
+      }
+
+      if (!response || response.success !== true) {
+        qmCurrentQuestions = [];
         qmUpdateStats();
-        qmSetFilter(isSilent ? qmFilterStatus : 'all');
-      } else {
-        showToast("Lỗi: " + response.message, "error");
+        qmRenderQuestions();
+
+        showToast(
+          "Không thể tải câu hỏi: " +
+            (response?.message || "Dữ liệu phản hồi không hợp lệ"),
+          "error"
+        );
+
+        return;
+      }
+
+      qmCurrentQuestions = Array.isArray(response.questions)
+        ? response.questions
+        : [];
+
+      qmUpdateStats();
+      qmSetFilter(isSilent ? qmFilterStatus : "all");
+
+      const expectedCount =
+        Number(topic?.questionStats?.total) || 0;
+
+      /*
+       * Đây là cảnh báo quan trọng để nhận ra lỗi ID từ backend.
+       */
+      if (
+        expectedCount > 0 &&
+        qmCurrentQuestions.length === 0
+      ) {
+        console.warn("Quiz Topic count mismatch", {
+          topicIdSent: apiTopicId,
+          normalizedTopicId,
+          expectedCount,
+          response
+        });
+
+        showToast(
+          `Topic đang báo có ${expectedCount} câu hỏi nhưng API không trả về dữ liệu. Hãy kiểm tra việc so sánh Topic ID ở Apps Script.`,
+          "warning"
+        );
       }
     })
-    .withFailureHandler((err) => {
-      if (!isSilent) qmHideLoading();
-      showToast("Lỗi mạng: " + err, "error");
+    .withFailureHandler(error => {
+      const currentSelectedId = qmNormalizeTopicId(
+        qmGetSelectedTopicId()
+      );
+
+      if (
+        requestSequence !== qmQuestionLoadSequence ||
+        currentSelectedId !== normalizedTopicId
+      ) {
+        return;
+      }
+
+      if (!isSilent) {
+        qmHideLoading();
+      }
+
+      qmCurrentQuestions = [];
+      qmUpdateStats();
+      qmRenderQuestions();
+
+      console.error("adminGetQuestionsForTopic failed:", error);
+
+      showToast(
+        "Không thể tải danh sách câu hỏi. Vui lòng thử lại.",
+        "error"
+      );
     })
-    .adminGetQuestionsForTopic(topicId);
+    .adminGetQuestionsForTopic(apiTopicId);
 }
 
 let qmFilterStatus = 'all';
@@ -370,7 +726,7 @@ function qmDoGenerateAIQuestions(topicId) {
         
         showToast("Đã tạo và lưu nháp 30 câu hỏi mới!", "success");
         // Cập nhật lại list topic để có trạng thái mới
-        qmLoadTopics();
+        qmLoadTopics(false);
       } else {
         showToast("Lỗi tạo AI: " + response.message, "error");
       }
@@ -869,7 +1225,7 @@ function qmSaveApprovedQuestions() {
       if (response.success) {
         showToast("Lưu thành công " + response.approvedCount + " câu hỏi đã duyệt!", "success");
         qmLoadTopicQuestions(topicId, true); // Reload ngầm
-        qmLoadTopics(); // Update badge in topic list
+        qmLoadTopics(false); // Update badge in topic list
       } else {
         showToast("Lỗi lưu: " + response.message, "error");
       }
@@ -894,8 +1250,8 @@ function qmPublishTopicQuiz() {
   google.script.run
     .withSuccessHandler((response) => {
       if (response.success) {
-        qmLoadTopics();
-        qmLoadTopicQuestions();
+        qmLoadTopics(false);
+        qmLoadTopicQuestions(topicId, true);
         showToast("Đã cập nhật trạng thái Topic", "success");
       } else {
         showToast(response.message, "error");
@@ -915,7 +1271,7 @@ function qmCheckGeminiKeyStatus() {
   google.script.run
     .withSuccessHandler((res) => {
       btn.style.opacity = '1';
-      if (res && res.success && res.hasKey && res.isValid) {
+      if (res && res.success && res.hasKey) {
         btn.style.background = '#dcfce7';
         btn.style.color = '#166534';
         btn.style.borderColor = '#bbf7d0';
@@ -932,7 +1288,7 @@ function qmCheckGeminiKeyStatus() {
     .withFailureHandler(() => {
       btn.style.opacity = '1';
     })
-    .getUserGeminiKeyStatus(null);
+    .adminGetGeminiKeyStatus();
 }
 
 function qmOpenGeminiKeyModal() {
@@ -980,7 +1336,7 @@ function qmSaveGeminiKey() {
       feedback.textContent = "Lỗi kết nối: " + err;
       feedback.style.color = "#dc2626";
     })
-    .upsertUserGeminiApiKey(null, keyInput);
+    .adminSaveGeminiApiKey(keyInput);
 }
 
 function qmSaveTopicQuizXp() {

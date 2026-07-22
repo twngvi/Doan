@@ -1043,6 +1043,10 @@ function viewTopic(topicId) {
   if (!topic) return;
 
   document.getElementById('preview-topic-title').textContent = topic.title;
+
+  if (typeof renderCMPreviewTopicSwitcherList === 'function') {
+    renderCMPreviewTopicSwitcherList(topic);
+  }
   document.getElementById('preview-topic-content').innerHTML = `
     <div class="cm-loading">
       <div class="cm-loading-spinner">
@@ -1771,6 +1775,68 @@ function parseContentMarkersForPreview(container) {
   const html = container.innerHTML;
   container.innerHTML = renderBlockMarkersAsClient(html);
 }
+
+// ===== CM Preview Topic Switcher Logic =====
+function toggleCMPreviewTopicSwitcher() {
+  const bar = document.querySelector("#cm-preview-overlay .topic-switcher-bar");
+  if (bar) {
+    bar.classList.toggle("open");
+  }
+}
+
+function switchToCMPreviewTopic(topicId) {
+  closeContentPreviewModal();
+  viewTopic(topicId);
+}
+
+function renderCMPreviewTopicSwitcherList(currentTopic) {
+  const listEl = document.getElementById("cmPreviewTopicSwitcherList");
+  if (!listEl) return;
+  
+  const currentCategory = currentTopic.category || 'Chưa phân loại';
+  const currentTopicId = currentTopic.topicId;
+  const currentTopicTitle = currentTopic.title || 'Chưa có tiêu đề';
+  
+  const currentTopicSpan = document.getElementById("cmPreviewSwitcherCurrentTopic");
+  if (currentTopicSpan) currentTopicSpan.textContent = currentTopicTitle;
+
+  // Filter topics for current category
+  let topics = (allTopics || []).filter(t => (t.category || 'Chưa phân loại') === currentCategory);
+
+  // Sort by order
+  topics = topics.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  let html = "";
+  topics.forEach((topic, index) => {
+    const isActive = topic.topicId === currentTopicId;
+    const contentDocId = topic.contentDocId || "";
+    const hasContent = contentDocId.trim().length > 10; 
+    const canSwitch = hasContent;
+
+    let statusIcon = "";
+    if (isActive) {
+      statusIcon = "▶";
+    } else if (!hasContent) {
+      statusIcon = "🔒";
+    }
+    
+    const itemClass = "topic-switcher-item" + (isActive ? " active" : "") + (!hasContent ? " no-content locked" : "");
+    const safeTopicId = String(topic.topicId || "").replace(/"/g, '&quot;');
+    const safeTopicTitle = String(topic.title || "Chủ đề").replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    html += `<div class="${itemClass}" data-topic-id="${safeTopicId}" ${canSwitch && !isActive ? `onclick="switchToCMPreviewTopic('${safeTopicId}')"` : ''} style="${canSwitch && !isActive ? 'cursor: pointer;' : ''}">`;
+    html += `<span class="topic-item-order">${index + 1}</span>`;
+    html += `<span class="topic-item-title">${safeTopicTitle}</span>`;
+    html += `<span class="topic-item-status">${statusIcon}</span>`;
+    html += `</div>`;
+  });
+  
+  listEl.innerHTML = html;
+}
+
+window.toggleCMPreviewTopicSwitcher = toggleCMPreviewTopicSwitcher;
+window.switchToCMPreviewTopic = switchToCMPreviewTopic;
+window.renderCMPreviewTopicSwitcherList = renderCMPreviewTopicSwitcherList;
 
 // ===== Auto-init when page shown =====
 window.initcontentmanagement = initContentManagement;

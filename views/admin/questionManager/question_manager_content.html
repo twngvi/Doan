@@ -53,91 +53,93 @@
     </div>
   </div>
 
-  <!-- Topic Selection & Controls -->
-  <div class="qm-card qm-controls-card">
-    <div class="qm-card-body">
-      <div class="qm-form-row">
-        <div
-          class="qm-form-group qm-topic-select-group"
-          style="flex: 2; position: relative"
-        >
-          <div style="position: relative; display: flex; align-items: center">
-            <input
-              type="text"
-              id="qmTopicSelectInput"
-              class="qm-input"
-              style="width: 100%; padding-right: 32px"
-              placeholder="-- Tìm kiếm hoặc Chọn Topic --"
-              oninput="qmOnTopicSearch()"
-              onfocus="qmShowTopicDropdown()"
-              autocomplete="off"
-            />
-            <span
-              class="material-symbols-sharp"
-              id="qmClearSearchBtn"
-              onclick="qmClearSearch()"
-              style="
-                position: absolute;
-                right: 8px;
-                cursor: pointer;
-                color: #94a3b8;
-                font-size: 18px;
-                display: none;
-              "
-              onmousedown="event.preventDefault()"
-              >close</span
-            >
+  <!-- Màn hình 1: Danh sách Topic -->
+  <div id="qmTopicListView" class="qm-topic-list-view">
+    <div class="qm-topic-list-toolbar">
+      <div style="position: relative; flex: 1; display: flex; align-items: center">
+        <span class="material-symbols-sharp" style="position: absolute; left: 16px; color: #94a3b8; pointer-events: none;">search</span>
+        <input
+          type="text"
+          id="qmTopicCardSearchInput"
+          class="qm-input"
+          style="width: 100%; padding-left: 48px; padding-right: 16px; height: 48px; border-radius: 24px;"
+          placeholder="Tìm kiếm Topic..."
+          oninput="qmOnTopicCardSearch()"
+          autocomplete="off"
+        />
+      </div>
+    </div>
+
+    <div
+      id="qmTopicListLoadingState"
+      class="admin-loading-container qm-topic-list-loading"
+      style="display: none"
+    >
+      <div class="admin-loading-popup">
+        <div class="admin-loading-logo">
+          <span class="logo-o">O</span>
+
+          <div class="logo-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
           </div>
-          <div
-            id="qmTopicCustomDropdown"
-            class="qm-custom-dropdown"
-            style="display: none"
-          ></div>
         </div>
 
         <div
-          class="qm-form-group qm-question-search-group"
-          id="qmQuestionSearchGroup"
-          style="flex: 1; display: block; position: relative"
+          class="admin-loading-text"
+          id="qmTopicListLoadingText"
         >
-          <div style="position: relative; display: flex; align-items: center">
-            <span
-              class="material-symbols-sharp"
-              style="
-                position: absolute;
-                left: 10px;
-                color: #94a3b8;
-                font-size: 18px;
-                pointer-events: none;
-              "
-              >search</span
-            >
-            <input
-              type="text"
-              id="qmQuestionSearchInput"
-              class="qm-input"
-              style="width: 100%; padding-left: 36px; padding-right: 32px"
-              placeholder="Tìm kiếm câu hỏi..."
-              oninput="qmOnQuestionSearch()"
-              autocomplete="off"
-            />
-            <span
-              class="material-symbols-sharp"
-              id="qmClearQuestionSearchBtn"
-              onclick="qmClearQuestionSearch()"
-              style="
-                position: absolute;
-                right: 8px;
-                cursor: pointer;
-                color: #94a3b8;
-                font-size: 18px;
-                display: none;
-              "
-              >close</span
-            >
-          </div>
+          Đang tải danh sách Quiz...
+        </div>
+
+        <div class="admin-loading-hint">
+          Đang chuẩn bị các Topic, vui lòng chờ trong giây lát
         </div>
       </div>
+    </div>
+
+    <div id="qmTopicGrid" class="qm-topic-grid">
+      <!-- Cards rendered here -->
+    </div>
+  </div>
+
+  <!-- Màn hình 2: Quản lý câu hỏi -->
+  <div id="qmQuestionManagerView" style="display:none">
+    <div class="qm-topic-detail-header">
+      <div class="qm-topic-detail-main">
+        <div class="qm-topic-detail-icon">
+          <span class="material-symbols-sharp">quiz</span>
+        </div>
+
+        <div class="qm-topic-detail-text">
+          <h2 id="qmCurrentTopicTitle">Tên Topic</h2>
+          <p>Quản lý và cập nhật bộ câu hỏi Quiz</p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="qm-topic-back-btn"
+        onclick="qmBackToTopicList()"
+      >
+        <span class="material-symbols-sharp">arrow_back</span>
+        <span>Quay lại</span>
+      </button>
+    </div>
+
+    <!-- Question Search & Controls -->
+    <div class="qm-card qm-controls-card">
+      <div class="qm-card-body">
+        <div class="qm-form-row">
+          <div class="qm-form-group qm-question-search-group" id="qmQuestionSearchGroup" style="flex: 1; display: block; position: relative">
+            <div style="position: relative; display: flex; align-items: center">
+              <span class="material-symbols-sharp" style="position: absolute; left: 10px; color: #94a3b8; font-size: 18px; pointer-events: none;">search</span>
+              <input type="text" id="qmQuestionSearchInput" class="qm-input" style="width: 100%; padding-left: 36px; padding-right: 32px" placeholder="Tìm kiếm câu hỏi..." oninput="qmOnQuestionSearch()" autocomplete="off" />
+              <span class="material-symbols-sharp" id="qmClearQuestionSearchBtn" onclick="qmClearQuestionSearch()" style="position: absolute; right: 8px; cursor: pointer; color: #94a3b8; font-size: 18px; display: none;">close</span>
+            </div>
+          </div>
+        </div>
 
       <!-- Topic Stats -->
       <div class="qm-stats-banner">
@@ -188,10 +190,31 @@
             >
           </div>
 
-          <div class="qm-stat-item" style="cursor: default; display: flex; align-items: center; gap: 6px;">
-            <span class="qm-stat-label">🧩 XP khi hoàn thành Quiz:</span>
-            <input type="number" id="qmTopicQuizXpInput" value="100" min="0" style="width: 70px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: bold; color: #3b82f6; text-align: center;" />
-            <button class="qm-btn qm-btn-outline" style="padding: 2px 8px; font-size: 12px;" onclick="qmSaveTopicQuizXp()" title="Lưu điểm thưởng XP">💾 Lưu</button>
+          <div class="qm-xp-control">
+            <div class="qm-xp-control-label">
+              <span>XP hoàn thành Quiz</span>
+              <small>Điểm thưởng khi học viên hoàn thành bài</small>
+            </div>
+
+            <div class="qm-xp-control-action">
+              <input
+                type="number"
+                id="qmTopicQuizXpInput"
+                value="100"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                aria-label="Điểm XP khi hoàn thành Quiz"
+              />
+
+              <button
+                type="button"
+                class="qm-xp-save-btn"
+                onclick="qmSaveTopicQuizXp()"
+              >
+                Lưu XP
+              </button>
+            </div>
           </div>
 
           <div class="qm-stats-actions">
@@ -320,6 +343,7 @@
       Hãy chọn Topic và bấm "Tạo bằng AI" hoặc "Thêm thủ công" để bắt đầu xây
       dựng kho câu hỏi.
     </p>
+  </div>
   </div>
 
   <!-- Gemini Key Modal -->

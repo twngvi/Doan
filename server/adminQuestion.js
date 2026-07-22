@@ -10,6 +10,13 @@
  */
 function adminGetTopicsWithQuizStatus() {
   try {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "ADMIN_QUIZ_TOPIC_CARDS_V3";
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const topicsResult = typeof getAllTopicsIncludingHidden === 'function' ? getAllTopicsIncludingHidden() : getAllTopics();
     if (!topicsResult.success) {
       return topicsResult;
@@ -18,54 +25,70 @@ function adminGetTopicsWithQuizStatus() {
     const ss = getOrCreateDatabase();
     const mcqSheet = ss.getSheetByName("MCQ_Questions");
     
-    // Default to empty array if sheet doesn't exist
-    let mcqData = [];
+    const statsMap = {};
+    
     if (mcqSheet) {
-      mcqData = mcqSheet.getDataRange().getValues();
-    }
-    
-    const headers = mcqData.length > 0 ? mcqData[0] : [];
-    const topicIdCol = headers.indexOf("topicId");
-    const statusCol = headers.indexOf("status");
-    
-    const topics = topicsResult.topics.map(topic => {
-      // Calculate question stats for this topic
-      let approvedCount = 0;
-      let draftCount = 0;
-      let totalCount = 0;
+      const lastRow = mcqSheet.getLastRow();
+      const lastCol = mcqSheet.getLastColumn();
       
-      if (mcqData.length > 1 && topicIdCol >= 0) {
-        const targetTopicId = String(topic.topicId).trim();
-        for (let i = 1; i < mcqData.length; i++) {
-          const rowTopicId = String(mcqData[i][topicIdCol]).trim();
-          if (rowTopicId === targetTopicId && rowTopicId !== "") {
-            totalCount++;
-            if (statusCol >= 0) {
-              const qStatus = String(mcqData[i][statusCol]).trim().toLowerCase();
-              if (qStatus === "approved") approvedCount++;
-              else if (qStatus === "draft") draftCount++;
+      if (lastRow > 1 && lastCol > 0) {
+        const headers = mcqSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const topicIdCol = headers.indexOf("topicId") + 1;
+        const statusCol = headers.indexOf("status") + 1;
+        
+        if (topicIdCol > 0) {
+          const topicIds = mcqSheet.getRange(2, topicIdCol, lastRow - 1, 1).getValues();
+          const statuses = statusCol > 0 ? mcqSheet.getRange(2, statusCol, lastRow - 1, 1).getValues() : [];
+          
+          for (let i = 0; i < topicIds.length; i++) {
+            const rowTopicId = String(topicIds[i][0]).trim();
+            if (rowTopicId === "") continue;
+            
+            if (!statsMap[rowTopicId]) {
+              statsMap[rowTopicId] = { total: 0, approved: 0, draft: 0, hidden: 0 };
+            }
+            
+            statsMap[rowTopicId].total++;
+            
+            if (statusCol > 0) {
+              const qStatus = String(statuses[i][0]).trim().toLowerCase();
+              if (qStatus === "approved") {
+                statsMap[rowTopicId].approved++;
+              } else if (qStatus === "draft") {
+                statsMap[rowTopicId].draft++;
+              } else if (qStatus === "hidden") {
+                statsMap[rowTopicId].hidden++;
+              }
             } else {
-              // If status column doesn't exist yet, consider them approved for backward compatibility
-              approvedCount++;
+              statsMap[rowTopicId].approved++;
             }
           }
         }
       }
+    }
+    
+    const topics = topicsResult.topics.map(topic => {
+      const targetTopicId = String(topic.topicId).trim();
+      const stats = statsMap[targetTopicId] || { total: 0, approved: 0, draft: 0, hidden: 0 };
       
       return {
-        ...topic,
-        questionStats: {
-          total: totalCount,
-          approved: approvedCount,
-          draft: draftCount
-        }
+        topicId: topic.topicId,
+        title: topic.title,
+        description: topic.description,
+        category: topic.category,
+        quizStatus: topic.quizStatus,
+        quizXpReward: topic.quizXpReward,
+        questionStats: stats
       };
     });
     
-    return {
+    const response = {
       success: true,
       topics: topics
     };
+    
+    cache.put(cacheKey, JSON.stringify(response), 60);
+    return response;
   } catch (error) {
     Logger.log("Error in adminGetTopicsWithQuizStatus: " + error.toString());
     return { success: false, message: error.toString() };
@@ -104,7 +127,9 @@ function adminUpdateTopicQuizStatus(topicId, newStatus) {
     }
     
     if (updated) {
-      clearTopicsCache();
+      const cache = CacheService.getScriptCache();
+      cache.remove("ADMIN_QUIZ_TOPIC_CARDS_V3");
+      if (typeof clearTopicsCache === 'function') clearTopicsCache();
       return { success: true, message: "Cập nhật trạng thái thành công" };
     } else {
       return { success: false, message: "Không tìm thấy Topic" };
@@ -150,6 +175,8 @@ function adminUpdateTopicReward(topicId, rewardType, newReward) {
     }
     
     if (updated) {
+      const cache = CacheService.getScriptCache();
+      cache.remove("ADMIN_QUIZ_TOPIC_CARDS_V3");
       if (typeof clearTopicsCache === 'function') clearTopicsCache();
       return { success: true, message: "Cập nhật điểm thưởng thành công!" };
     } else {
@@ -235,6 +262,9 @@ function adminGenerateQuestionsByAI(topicId) {
       
       // Tự động lưu các câu hỏi nháp này vào Database
       adminSaveQuestions(topicId, formattedQuestions);
+      
+      const cache = CacheService.getScriptCache();
+      cache.remove("ADMIN_QUIZ_TOPIC_CARDS_V3");
 
       // Trả về danh sách câu hỏi mới nhất từ Database (bao gồm cả cũ và mới)
       const latestQuestionsResult = adminGetQuestionsForTopic(topicId);
@@ -391,6 +421,9 @@ function adminSaveQuestions(topicId, questions) {
       adminUpdateTopicQuizStatus(topicId, "need_questions");
     }
     
+    const cache = CacheService.getScriptCache();
+    cache.remove("ADMIN_QUIZ_TOPIC_CARDS_V3");
+    
     SpreadsheetApp.flush(); // Đảm bảo ghi dữ liệu thành công trước khi trả về
     
     return { success: true, message: "Lưu câu hỏi thành công", approvedCount: approvedCount };
@@ -443,6 +476,9 @@ function adminDeleteQuestions(questionIds) {
     if (deletedCount === 0) {
       return { success: false, message: "Không tìm thấy câu hỏi để xóa", deletedCount: 0 };
     }
+
+    const cache = CacheService.getScriptCache();
+    cache.remove("ADMIN_QUIZ_TOPIC_CARDS_V3");
 
     return { success: true, message: `Đã xóa ${deletedCount} câu hỏi`, deletedCount: deletedCount };
   } catch (error) {
@@ -585,5 +621,37 @@ function getQuestionManagerHtml() {
       <h3>Lỗi tải trang Quản lý Câu hỏi</h3>
       <p>${error.toString()}</p>
     </div>`;
+  }
+}
+
+/**
+ * Lấy trạng thái Gemini Key của Admin
+ */
+function adminGetGeminiKeyStatus() {
+  try {
+    const key = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+    if (!key) {
+      return { success: true, hasKey: false, isValid: false };
+    }
+    // Không check từ xa, mặc định true nếu có key.
+    return { success: true, hasKey: true, isValid: true };
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Lưu Gemini Key của Admin
+ */
+function adminSaveGeminiApiKey(apiKey) {
+  try {
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+      return { success: false, message: "API Key không hợp lệ" };
+    }
+    
+    PropertiesService.getScriptProperties().setProperty("GEMINI_API_KEY", apiKey.trim());
+    return { success: true, message: "Lưu API Key thành công" };
+  } catch (error) {
+    return { success: false, message: error.toString() };
   }
 }
