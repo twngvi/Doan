@@ -181,6 +181,30 @@ function initializeTopicEditor() {
   // Check edit mode
   initEditMode();
 
+  // Bind order preview events
+  const catInput = document.getElementById('topicCategory');
+  const orderInput = document.getElementById('topicOrder');
+  const titleInput = document.getElementById('topicTitle');
+  if (catInput) catInput.addEventListener('input', function() {
+    // If we are in create mode, suggest the next order number
+    if (!isEditMode && catInput.value && !orderInput.value) {
+      if (allTopicsForPrereq && allTopicsForPrereq.length > 0) {
+        const catTopics = allTopicsForPrereq.filter(t => t.category === catInput.value);
+        if (catTopics.length > 0) {
+          const maxOrder = Math.max(...catTopics.map(t => parseInt(t.order) || 0));
+          if (!isNaN(maxOrder) && maxOrder < 999) {
+            orderInput.value = maxOrder + 1;
+          }
+        } else {
+          orderInput.value = 1;
+        }
+      }
+    }
+    renderTopicOrderPreview();
+  });
+  if (orderInput) orderInput.addEventListener('input', renderTopicOrderPreview);
+  if (titleInput) titleInput.addEventListener('input', renderTopicOrderPreview);
+
   // Focus editor after init (delay to allow edit mode to load)
   if (!isEditMode) {
     editor.focus();
@@ -1813,6 +1837,8 @@ function populateEditForm(data) {
 
   editor.focus();
   console.log('[TopicEditor] Edit form populated successfully');
+  
+  renderTopicOrderPreview();
 }
 
 /**
@@ -2665,6 +2691,128 @@ async function updateTopic() {
     .updateTopicWithContent(topicId, topicData);
 }
 
+function toggleTopicOrderPreview() {
+  const container = document.getElementById('topicOrderPreviewContainer');
+  if (container && !container.classList.contains('is-empty') && !container.classList.contains('is-loading')) {
+    container.classList.toggle('is-collapsed');
+  }
+}
+
+function renderTopicOrderPreview() {
+  const categoryInput = document.getElementById('topicCategory').value.trim();
+  const orderInput = document.getElementById('topicOrder').value;
+  const titleInput = document.getElementById('topicTitle').value.trim() || 'Bài đang tạo';
+  const container = document.getElementById('topicOrderPreviewContainer');
+  const titleEl = document.getElementById('topicOrderPreviewTitle');
+  const countEl = document.getElementById('topicOrderPreviewCount');
+  const listEl = document.getElementById('topicOrderPreviewList');
+  
+  if (!container || !titleEl || !countEl || !listEl) return;
+  
+  // Preserve collapsed state
+  const isCollapsed = container.classList.contains('is-collapsed');
+  
+  if (!categoryInput) {
+    container.className = 'topic-order-preview is-empty' + (isCollapsed ? ' is-collapsed' : '');
+    titleEl.textContent = 'Chọn danh mục để xem thứ tự bài học';
+    countEl.textContent = '';
+    listEl.innerHTML = '';
+    return;
+  }
+  
+  if (!allTopicsForPrereq || allTopicsForPrereq.length === 0) {
+    container.className = 'topic-order-preview is-loading' + (isCollapsed ? ' is-collapsed' : '');
+    titleEl.textContent = 'Đang tải danh sách bài học...';
+    countEl.textContent = '';
+    listEl.innerHTML = '';
+    return;
+  }
+  
+  container.className = 'topic-order-preview' + (isCollapsed ? ' is-collapsed' : '');
+  
+  // Lọc theo danh mục
+  let categoryTopics = allTopicsForPrereq.filter(t => t.category === categoryInput);
+  
+  // Loại bỏ bài đang chỉnh sửa khỏi danh sách (để ghép nó vào vị trí mới)
+  if (isEditMode && editingTopicId) {
+    categoryTopics = categoryTopics.filter(t => t.topicId !== editingTopicId);
+  }
+  
+  let previewList = categoryTopics.map(t => {
+     return {
+       ...t,
+       parsedOrder: parseInt(t.order) || 999
+     };
+  });
+  
+  const newOrder = parseInt(orderInput);
+  const hasNewOrder = !isNaN(newOrder) && newOrder > 0;
+  const currentTopicOrder = hasNewOrder ? newOrder : 999;
+  
+  let originalOldOrder = null;
+  if (isEditMode && editingTopicId) {
+    const origTopic = allTopicsForPrereq.find(t => t.topicId === editingTopicId);
+    if (origTopic) {
+       originalOldOrder = parseInt(origTopic.order) || null;
+    }
+  }
+  
+  // Simulate shifting logic
+  if (hasNewOrder) {
+    previewList.forEach(t => {
+      if (originalOldOrder && originalOldOrder < 999 && originalOldOrder !== currentTopicOrder) {
+        if (currentTopicOrder < originalOldOrder) {
+          if (t.parsedOrder >= currentTopicOrder && t.parsedOrder < originalOldOrder) {
+            t.parsedOrder++;
+          }
+        } else {
+          if (t.parsedOrder > originalOldOrder && t.parsedOrder <= currentTopicOrder) {
+            t.parsedOrder--;
+          }
+        }
+      } else {
+        if (t.parsedOrder >= currentTopicOrder) {
+          t.parsedOrder++;
+        }
+      }
+    });
+  }
+  
+  previewList.push({
+    title: titleInput,
+    isCurrent: true,
+    parsedOrder: currentTopicOrder,
+    topicId: isEditMode ? editingTopicId : 'new'
+  });
+  
+  previewList.sort((a, b) => a.parsedOrder - b.parsedOrder);
+  
+  titleEl.textContent = `THỨ TỰ BÀI HỌC — ${categoryInput.toUpperCase()}`;
+  countEl.textContent = `${previewList.length} bài`;
+  
+  let html = '';
+  previewList.forEach(t => {
+    const isCurrent = t.isCurrent;
+    const orderDisplay = t.parsedOrder >= 999 ? '—' : (t.parsedOrder < 10 ? '0' + t.parsedOrder : t.parsedOrder);
+    const label = isCurrent ? (isEditMode ? 'Đang chỉnh sửa' : 'Bài đang tạo') : '';
+    const hasConflict = !isCurrent && t.parsedOrder === currentTopicOrder && t.parsedOrder < 999;
+    
+    html += `
+      <div class="topic-order-preview-item ${isCurrent ? 'is-current' : ''}">
+        <div class="topic-order-number">${orderDisplay}</div>
+        <div class="topic-order-title">
+          ${escapeHtml(t.title)}
+          ${t.topicId && t.topicId !== 'new' && !isCurrent ? `<small style="color:#999; margin-left: 5px;">(${t.topicId})</small>` : ''}
+        </div>
+        ${hasConflict ? `<div class="topic-order-label" style="background:#ffedd5; color:#ea580c;">Trùng thứ tự</div>` : ''}
+        ${label ? `<div class="topic-order-label">${label}</div>` : ''}
+      </div>
+    `;
+  });
+  
+  listEl.innerHTML = html;
+}
+
 function resetForm() {
   document.getElementById('topicId').value = '';
   document.getElementById('topicTitle').value = '';
@@ -2701,6 +2849,8 @@ function resetForm() {
   }
   var topicIdHint = document.getElementById('topicIdEditHint');
   if (topicIdHint) topicIdHint.style.display = 'none';
+  
+  renderTopicOrderPreview();
 }
 
 // ========================================
@@ -3049,6 +3199,7 @@ function loadAllTopicsForPrereq() {
       topicsForPrereqLoaded = true;
       checkAndPopulatePrereqCategories();
       handlePrereqCategoryChange();
+      renderTopicOrderPreview();
     })
     .withFailureHandler(function(error) {
       console.error('[TopicEditor] Failed to load topics:', error);

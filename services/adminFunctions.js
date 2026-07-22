@@ -3911,6 +3911,11 @@ function saveTopicToMasterDB(topicData) {
       }
     }
     
+    // Shift other topics' orders if a specific order was set
+    if (topicData.order && topicData.order < 999) {
+      shiftTopicOrdersInCategory(sheet, headers, sheet.getDataRange().getValues(), topicData.category, parseInt(topicData.order), null, topicData.topicId);
+    }
+    
     // Append new row
     sheet.appendRow(rowData);
     
@@ -3926,6 +3931,53 @@ function saveTopicToMasterDB(topicData) {
       success: false,
       message: "Lỗi lưu topic: " + error.toString()
     };
+  }
+}
+
+/**
+ * Adjust topic orders to make room for an inserted/moved topic
+ */
+function shiftTopicOrdersInCategory(sheet, headers, data, category, newOrder, oldOrder, excludeTopicId) {
+  if (!newOrder || newOrder >= 999) return;
+  const categoryIdx = headers.indexOf("category");
+  const orderIdx = headers.indexOf("order");
+  const topicIdIdx = headers.indexOf("topicId");
+  
+  if (categoryIdx === -1 || orderIdx === -1) return;
+  
+  for (let i = 1; i < data.length; i++) {
+    const rowCategory = data[i][categoryIdx];
+    const rowTopicId = data[i][topicIdIdx];
+    let rowOrder = parseInt(data[i][orderIdx]);
+    
+    if (rowCategory !== category || rowTopicId === excludeTopicId || isNaN(rowOrder) || rowOrder >= 999) {
+      continue;
+    }
+    
+    let shouldUpdate = false;
+    
+    if (oldOrder && oldOrder < 999 && oldOrder !== newOrder) {
+      if (newOrder < oldOrder) {
+        if (rowOrder >= newOrder && rowOrder < oldOrder) {
+          rowOrder++;
+          shouldUpdate = true;
+        }
+      } else {
+        if (rowOrder > oldOrder && rowOrder <= newOrder) {
+          rowOrder--;
+          shouldUpdate = true;
+        }
+      }
+    } else {
+      if (rowOrder >= newOrder) {
+        rowOrder++;
+        shouldUpdate = true;
+      }
+    }
+    
+    if (shouldUpdate) {
+      sheet.getRange(i + 1, orderIdx + 1).setValue(rowOrder);
+    }
   }
 }
 
@@ -4396,7 +4448,15 @@ function updateTopicWithContent(topicId, topicData) {
       sheet.getRange(rowNum, categoryCol + 1).setValue(topicData.category);
     }
     if (orderCol >= 0 && topicData.order !== undefined) {
-      sheet.getRange(rowNum, orderCol + 1).setValue(parseInt(topicData.order) || 999);
+      var oldOrderValue = parseInt(data[topicRowIndex][orderCol]);
+      if (isNaN(oldOrderValue)) oldOrderValue = null;
+      var newOrderValue = parseInt(topicData.order) || 999;
+      
+      if (newOrderValue < 999 && newOrderValue !== oldOrderValue) {
+        shiftTopicOrdersInCategory(sheet, headers, data, topicData.category, newOrderValue, oldOrderValue, topicData.topicId);
+      }
+      
+      sheet.getRange(rowNum, orderCol + 1).setValue(newOrderValue);
     }
     
     var prereqCol = headers.indexOf("prerequisiteTopics");
