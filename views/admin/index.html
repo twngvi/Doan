@@ -598,6 +598,10 @@
       </div>
     </div>
   </main>
+  <!-- Global Admin Back to Top Button -->
+  <button id="adminBackToTop" class="app-back-to-top admin-back-to-top" title="Cuộn lên đầu trang" aria-label="Cuộn lên đầu trang">
+    <span class="material-symbols-sharp">keyboard_arrow_up</span>
+  </button>
 </div>
 
 <!-- Admin Panel Base Styles -->
@@ -847,6 +851,101 @@
     flex-wrap: wrap;
   }
 
+  /* ========================================
+     UNIFIED PREVIEW & BACK TO TOP STYLES
+     ======================================== */
+  .preview-container {
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* Admin Preview Header Redesign */
+  .admin-preview-header {
+    background: #ffffff;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 16px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.08);
+    position: relative;
+    z-index: 10;
+    margin-bottom: 20px;
+  }
+
+  .admin-preview-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .admin-preview-title {
+    font-size: 1.25rem !important;
+    font-weight: 700;
+    color: #1e3a8a !important; /* Dark blue */
+    margin: 0;
+  }
+
+  /* Square Back Button for Preview */
+  .btn-back-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e8f0eb;
+    color: #2d5a3d;
+    border: 1px solid rgba(45, 90, 61, 0.15);
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .btn-back-preview:hover {
+    background: #d1e2d8;
+    color: #1e3f2a;
+    border-color: rgba(45, 90, 61, 0.3);
+    box-shadow: 0 4px 12px rgba(45, 90, 61, 0.1);
+    transform: translateX(-2px);
+  }
+
+  /* Admin Back to Top */
+  .admin-back-to-top {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3) !important;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .admin-back-to-top.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  .admin-back-to-top:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+    box-shadow: 0 6px 16px rgba(29, 78, 216, 0.4) !important;
+    transform: translateY(-2px);
+  }
+
   @media (max-width: 768px) {
     .admin-main-content {
       margin-left: 0;
@@ -863,6 +962,13 @@
 
     .admin-unified-header-actions {
       justify-content: flex-end;
+    }
+    
+    .admin-back-to-top {
+      bottom: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
     }
   }
 </style>
@@ -1039,4 +1145,74 @@
       }
     }
   }
+  /* ========================================
+     ADMIN BACK TO TOP LOGIC
+     ======================================== */
+  document.addEventListener('DOMContentLoaded', function() {
+    const backToTopBtn = document.getElementById('adminBackToTop');
+    if (!backToTopBtn) return;
+
+    // Detect which container is scrolling
+    const getScrollContainer = () => {
+      // If modal overlay is active and scrolling
+      const overlays = document.querySelectorAll('.admin-preview-overlay');
+      for (const overlay of overlays) {
+        if (window.getComputedStyle(overlay).display !== 'none' && window.getComputedStyle(overlay).overflowY === 'auto') {
+          return overlay;
+        }
+      }
+      const pageLesson = document.getElementById('page-lesson');
+      if (pageLesson && window.getComputedStyle(pageLesson).overflowY === 'auto') {
+        return pageLesson;
+      }
+      const adminMain = document.querySelector('.admin-main-content');
+      if (adminMain && window.getComputedStyle(adminMain).overflowY === 'auto') {
+        return adminMain;
+      }
+      const adminPanel = document.getElementById('admin-panel');
+      if (adminPanel && window.getComputedStyle(adminPanel).overflowY === 'auto') {
+        return adminPanel;
+      }
+      return window;
+    };
+
+    let activeScrollTop = 0;
+
+    // Capture scroll events from any scrollable element inside document
+    document.addEventListener('scroll', function(e) {
+      if (e.target.nodeType === 1) { // Element node
+        const scrollTop = e.target.scrollTop;
+        if (scrollTop !== undefined) {
+           activeScrollTop = Math.max(activeScrollTop, scrollTop);
+           if (scrollTop > 300) {
+             backToTopBtn.classList.add('show');
+           } else {
+             // Try to be smart: if this container is at top, maybe hide it
+             const winScroll = window.scrollY || document.documentElement.scrollTop;
+             if (winScroll <= 300 && scrollTop <= 300) {
+               backToTopBtn.classList.remove('show');
+             }
+           }
+        }
+      }
+    }, true);
+
+    window.addEventListener('scroll', function() {
+      const winScroll = window.scrollY || document.documentElement.scrollTop;
+      if (winScroll > 300) {
+        backToTopBtn.classList.add('show');
+      } else {
+        backToTopBtn.classList.remove('show');
+      }
+    }, { passive: true });
+
+    backToTopBtn.addEventListener('click', () => {
+      const container = getScrollContainer();
+      if (container === window) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        container.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+  });
 </script>
