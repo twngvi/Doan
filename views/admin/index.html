@@ -1176,14 +1176,16 @@
       return window;
     };
 
-    let activeScrollTop = 0;
+    let lastKnownScrollContainer = null;
 
     // Capture scroll events from any scrollable element inside document
     document.addEventListener('scroll', function(e) {
       if (e.target.nodeType === 1) { // Element node
         const scrollTop = e.target.scrollTop;
         if (scrollTop !== undefined) {
-           activeScrollTop = Math.max(activeScrollTop, scrollTop);
+           if (scrollTop > 0) {
+             lastKnownScrollContainer = e.target;
+           }
            if (scrollTop > 300) {
              backToTopBtn.classList.add('show');
            } else {
@@ -1207,11 +1209,24 @@
     }, { passive: true });
 
     backToTopBtn.addEventListener('click', () => {
+      // 1. Try explicitly known containers first (like preview overlay)
       const container = getScrollContainer();
-      if (container === window) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
+      if (container && container !== window) {
         container.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      // 2. Try the dynamically captured scroll container
+      if (lastKnownScrollContainer) {
+        try { lastKnownScrollContainer.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
+      }
+      
+      // 3. Fallback to standard window and document root scrolls
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
+      if (document.documentElement) {
+        try { document.documentElement.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
+      }
+      if (document.body) {
+        try { document.body.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
       }
     });
   });
