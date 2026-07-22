@@ -1,32 +1,17 @@
 <div class="mc-manager-page">
-  <div
-    class="admin-unified-header"
-    style="margin-bottom: 24px; position: relative"
-  >
-    <div
-      class="admin-unified-header-main"
-      style="display: flex; justify-content: space-between; align-items: center"
-    >
+  <div class="admin-unified-header" style="margin-bottom: 24px; position: relative">
+    <div class="admin-unified-header-main" style="display: flex; justify-content: space-between; align-items: center">
       <div style="display: flex; align-items: center; gap: 16px">
-        <div
-          class="admin-unified-header-icon"
-          style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
-        >
-          <span class="material-symbols-sharp" style="font-size: 28px"
-            >style</span
-          >
+        <div class="admin-unified-header-icon" style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)">
+          <span class="material-symbols-sharp" style="font-size: 28px">style</span>
         </div>
         <div class="admin-unified-header-text">
           <h1 class="admin-unified-header-title">Matching</h1>
         </div>
       </div>
 
-      <!-- Gemini Key Status Button (Nếu muốn hỗ trợ AI sau này) -->
-      <div
-        class="mc-gemini-key-btn"
-        id="mcGeminiKeyBtn"
-        onclick="mcOpenGeminiKeyModal()"
-        style="
+      <!-- Gemini Key Status Button -->
+      <div class="mc-gemini-key-btn" id="mcGeminiKeyBtn" onclick="mcOpenGeminiKeyModal()" style="
           display: flex;
           align-items: center;
           gap: 8px;
@@ -38,421 +23,379 @@
           color: #b91c1c;
           border: 1px solid #fecaca;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        "
-      >
-        <span
-          class="material-symbols-sharp"
-          id="mcGeminiKeyIcon"
-          style="font-size: 20px"
-          >key_off</span
-        >
-        <span style="font-weight: 600; font-size: 14px" id="mcGeminiKeyText"
-          >Thiếu Gemini Key</span
-        >
+        ">
+        <span class="material-symbols-sharp" id="mcGeminiKeyIcon" style="font-size: 20px">key_off</span>
+        <span style="font-weight: 600; font-size: 14px" id="mcGeminiKeyText">Thiếu Gemini Key</span>
       </div>
     </div>
   </div>
 
-  <!-- Topic Selection & Controls -->
-  <div class="mc-card mc-controls-card">
-    <div class="mc-card-body">
-      <div class="mc-form-row">
-        <div class="mc-form-group" style="flex: 2; position: relative">
-          <div style="position: relative; display: flex; align-items: center">
-            <input
-              type="text"
-              id="mcTopicSelectInput"
-              class="mc-input"
-              style="width: 100%; padding-right: 32px"
-              placeholder="-- Tìm kiếm hoặc Chọn Topic --"
-              oninput="mcOnTopicSearch()"
-              onfocus="mcShowTopicDropdown()"
-              onblur="mcHideTopicDropdown()"
-              autocomplete="off"
-            />
-            <span
-              class="material-symbols-sharp"
-              id="mcClearSearchBtn"
-              onclick="mcClearSearch()"
-              style="
-                position: absolute;
-                right: 8px;
-                cursor: pointer;
-                color: #94a3b8;
-                font-size: 18px;
-                display: none;
-              "
-              onmousedown="event.preventDefault()"
-              >close</span
-            >
-          </div>
-          <div
-            id="mcTopicCustomDropdown"
-            class="mc-custom-dropdown"
-            style="display: none"
-          ></div>
-        </div>
-
-        <div
-          class="mc-form-group search-term-wrapper"
-          style="flex: 1; display: none"
-          id="mcSearchTermWrapper"
-        >
-          <div style="position: relative; display: flex; align-items: center">
-            <span
-              class="material-symbols-sharp"
-              style="
-                position: absolute;
-                left: 8px;
-                color: #94a3b8;
-                font-size: 18px;
-              "
-              >search</span
-            >
-            <input
-              type="text"
-              id="mcSearchTermInput"
-              class="mc-input"
-              style="width: 100%; padding-left: 32px"
-              placeholder="Tìm thuật ngữ..."
-              oninput="mcFilterCardsList()"
-            />
-          </div>
-        </div>
-      </div>
-
-      <!-- Topic Stats -->
-      <div class="mc-stats-banner">
-        <div class="mc-topic-stats" id="mcTopicStats" style="display: none">
-          <div
-            class="mc-stat-item active-filter"
-            id="mcStatAll"
-            onclick="mcSetFilter('all')"
-          >
-            <span class="mc-stat-label">Tổng thẻ:</span>
-            <strong
-              class="mc-text-primary"
-              id="mcTotalCount"
-              style="color: #3b82f6"
-              >0</strong
-            >
-          </div>
-          <div
-            class="mc-stat-item"
-            id="mcStatApproved"
-            onclick="mcSetFilter('approved')"
-          >
-            <span class="mc-stat-label">Đã duyệt:</span>
-            <strong class="mc-text-success" id="mcApprovedCount">0</strong>
-          </div>
-          <div
-            class="mc-stat-item"
-            id="mcStatDraft"
-            onclick="mcSetFilter('draft')"
-          >
-            <span class="mc-stat-label">Bản nháp:</span>
-            <strong class="mc-text-warning" id="mcDraftCount">0</strong>
-          </div>
-          <div
-            class="mc-stat-item"
-            id="mcStatHidden"
-            onclick="mcSetFilter('hidden')"
-          >
-            <span class="mc-stat-label">Đang ẩn:</span>
-            <strong
-              class="mc-text-hidden"
-              id="mcHiddenCount"
-              style="color: #64748b"
-              >0</strong
-            >
-          </div>
-
-          <div class="mc-stat-item" style="cursor: default; display: flex; align-items: center; gap: 6px;">
-            <span class="mc-stat-label">🎴 XP khi hoàn thành Matching:</span>
-            <input type="number" id="mcTopicMatchingXpInput" value="100" min="0" style="width: 70px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: bold; color: #8b5cf6; text-align: center;" />
-            <button class="mc-btn mc-btn-outline" style="padding: 2px 8px; font-size: 12px;" onclick="mcSaveTopicMatchingXp()" title="Lưu điểm thưởng XP">💾 Lưu</button>
-          </div>
-
-          <div style="flex: 1; text-align: right">
-            <button
-              class="mc-btn mc-btn-primary"
-              onclick="mcGenerateAICards()"
-              style="
-                margin-right: 8px;
-                background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-                border: none;
-              "
-            >
-              <span class="material-symbols-sharp" style="font-size: 18px"
-                >auto_awesome</span
-              >
-              Tạo bằng AI
-            </button>
-            <button
-              class="mc-btn mc-btn-outline"
-              onclick="mcAddNewManualCard()"
-            >
-              <span class="material-symbols-sharp" style="font-size: 18px"
-                >add</span
-              >
-              Thêm thẻ
-            </button>
-          </div>
-        </div>
+  <!-- Màn hình 1: Danh sách Topic -->
+  <div id="mcTopicListView" class="mc-topic-list-view">
+    <div class="mc-topic-list-toolbar">
+      <div style="position: relative; flex: 1; display: flex; align-items: center">
+        <span class="material-symbols-sharp" style="position: absolute; left: 16px; color: #94a3b8; pointer-events: none;">search</span>
+        <input
+          type="text"
+          id="mcTopicCardSearchInput"
+          class="mc-input"
+          style="width: 100%; padding-left: 48px; padding-right: 16px; height: 48px; border-radius: 24px;"
+          placeholder="Tìm kiếm Topic..."
+          oninput="mcOnTopicCardSearch()"
+          autocomplete="off"
+        />
       </div>
     </div>
-  </div>
 
-  <!-- Loading State -->
-  <div
-    id="mcLoadingState"
-    class="admin-loading-container"
-    style="display: none"
-  >
-    <div class="admin-loading-popup">
-      <div class="admin-loading-logo">
-        <span class="logo-o">O</span>
-        <div class="logo-dots">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
-      </div>
-      <div class="admin-loading-text" id="mcLoadingText">Đang xử lý...</div>
-      <div class="admin-loading-hint">Vui lòng chờ trong giây lát</div>
-    </div>
-  </div>
-
-  <!-- Cards List Area -->
-  <div id="mcCardsArea" class="mc-card" style="display: none">
-    <div class="mc-card-body">
-      <div class="mc-action-bar">
-        <div
-          class="mc-actions"
-          style="
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            width: 100%;
-            justify-content: space-between;
-          "
-        >
-          <label class="mc-checkbox-label" style="margin-bottom: 0">
-            <input
-              type="checkbox"
-              id="mcSelectAll"
-              onchange="mcToggleSelectAll(this)"
-            />
-            Chọn tất cả
-          </label>
-          <div style="display: flex; gap: 12px; align-items: center">
-            <button
-              class="mc-btn mc-btn-outline"
-              id="mcBulkDeleteBtn"
-              onclick="mcDeleteSelectedCards()"
-              style="color: #ef4444; border-color: #fca5a5; display: none"
-            >
-              <span class="material-symbols-sharp" style="font-size: 18px"
-                >delete_sweep</span
-              >
-              Xóa
-            </button>
-            <button
-              class="mc-btn mc-btn-outline"
-              id="mcBulkHideBtn"
-              onclick="mcHideSelectedCards()"
-              style="color: #f59e0b; border-color: #fcd34d; display: none"
-            >
-              <span class="material-symbols-sharp" style="font-size: 18px"
-                >visibility_off</span
-              >
-              Ẩn
-            </button>
-            <button
-              class="mc-btn mc-btn-primary"
-              id="mcBulkSaveBtn"
-              onclick="mcSaveCards()"
-              style="display: none"
-            >
-              <span class="material-symbols-sharp" style="font-size: 18px"
-                >save</span
-              >
-              Lưu thẻ
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div id="mcCardsList" class="mc-cards-list">
-        <!-- Cards will be rendered here -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Empty State -->
-  <div id="mcEmptyState" class="mc-empty-state" style="display: none">
-    <span
-      class="material-symbols-sharp"
-      style="font-size: 64px; color: #cbd5e1; margin-bottom: 16px"
-      >style</span
-    >
-    <h3 style="color: #64748b">Chưa có thẻ nào</h3>
-    <p style="color: #94a3b8; max-width: 400px; margin: 8px auto 0">
-      Hãy chọn Topic và bấm "Thêm thẻ" để bắt đầu xây dựng kho thuật ngữ.
-    </p>
-  </div>
-
-  <!-- Gemini Key Modal -->
-  <!-- Gemini Key Modal -->
-  <div
-    id="mcGeminiKeyModal"
-    class="mc-modal"
-    style="
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 2000;
-      justify-content: center;
-      align-items: center;
-    "
-  >
     <div
-      class="mc-modal-content"
-      style="
-        background: white;
-        border-radius: 12px;
-        padding: 24px;
-        width: 90%;
-        max-width: 500px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-      "
+      id="mcTopicListLoadingState"
+      class="admin-loading-container mc-topic-list-loading"
+      style="display: none"
     >
-      <h3
-        style="
-          margin-top: 0;
-          margin-bottom: 16px;
-          font-size: 18px;
-          color: #1e293b;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        "
-      >
-        <span class="material-symbols-sharp" style="color: #3b82f6"
-          >vpn_key</span
-        >
-        Cấu hình Gemini API Key
-      </h3>
-      <p style="font-size: 14px; color: #475569; margin-bottom: 16px">
-        Để tạo thẻ ghép tự động bằng AI, bạn cần cung cấp Gemini API Key.
-      </p>
-      <div style="margin-bottom: 24px">
-        <label
-          style="
-            display: block;
-            font-size: 13px;
-            font-weight: 600;
-            color: #475569;
-            margin-bottom: 8px;
-          "
-          >Gemini API Key</label
-        >
-        <div style="position: relative; display: flex; align-items: center">
-          <input
-            type="password"
-            id="mcGeminiKeyInput"
-            class="mc-input"
-            style="width: 100%; box-sizing: border-box; padding-right: 40px; padding-left: 12px; padding-top: 8px; padding-bottom: 8px; border: 1px solid #cbd5e1; border-radius: 6px;"
-            placeholder="Nhập API Key bắt đầu bằng AIza..."
-          />
-          <button
-            type="button"
-            onclick="mcToggleKeyVisibility()"
-            style="
-              position: absolute;
-              right: 8px;
-              background: none;
-              border: none;
-              cursor: pointer;
-              color: #64748b;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 4px;
-            "
-          >
-            <span
-              class="material-symbols-sharp"
-              id="mcKeyVisibilityIcon"
-              style="font-size: 20px"
-              >visibility_off</span
-            >
-          </button>
+      <div class="admin-loading-popup">
+        <div class="admin-loading-logo">
+          <span class="logo-o">O</span>
+
+          <div class="logo-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+          </div>
         </div>
-        <p style="font-size: 12px; color: #64748b; margin-top: 8px">
-          Key được lưu trữ an toàn trong Properties của Google Apps Script.
-        </p>
+
+        <div class="admin-loading-text" id="mcTopicListLoadingText">
+          Đang tải danh sách Topic...
+        </div>
+
+        <div class="admin-loading-hint">
+          Đang chuẩn bị các Topic, vui lòng chờ trong giây lát
+        </div>
       </div>
-      <div
-        id="mcGeminiKeyFeedback"
-        style="font-size: 13px; margin-bottom: 16px; display: none"
-      ></div>
-      <div
-        style="
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          margin-top: 24px;
-        "
-      >
-        <button class="mc-btn mc-btn-outline" onclick="mcCloseGeminiKeyModal()">
-          Hủy
-        </button>
-        <button
-          class="mc-btn mc-btn-primary"
-          id="mcSaveGeminiKeyBtn"
-          onclick="mcSaveGeminiKey()"
-        >
-          <span class="material-symbols-sharp" style="font-size: 18px; margin-right: 4px;"
-            >save</span
-          >
-          Lưu Key
-        </button>
-      </div>
+    </div>
+
+    <div id="mcTopicGrid" class="mc-topic-grid">
+      <!-- Cards rendered here -->
     </div>
   </div>
 
-  <!-- Confirm Delete Modal -->
-  <div
-    id="mcConfirmDeleteModal"
-    class="sc-modal-overlay"
-    style="display: none; z-index: 2000"
-  >
-    <div class="sc-modal sc-modal-sm" style="display: block">
-      <div class="sc-modal-header">
-        <h3 class="sc-modal-title">Xác nhận xóa</h3>
-        <button class="sc-modal-close" onclick="mcCloseConfirmDeleteModal()">
-          <span class="material-symbols-sharp">close</span>
+  <!-- Màn hình 2: Quản lý thẻ thuật ngữ -->
+  <div id="mcCardManagerView" style="display:none">
+    <div class="mc-topic-detail-header">
+      <div class="mc-topic-detail-main">
+        <div class="mc-topic-detail-icon">
+          <span class="material-symbols-sharp">style</span>
+        </div>
+
+        <div class="mc-topic-detail-text">
+          <h2 id="mcCurrentTopicTitle">Tên Topic</h2>
+          <p>Quản lý và cập nhật bộ thẻ thuật ngữ Matching</p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="mc-topic-back-btn"
+        onclick="mcBackToTopicList()"
+      >
+        <span class="material-symbols-sharp">arrow_back</span>
+        <span>Quay lại</span>
+      </button>
+    </div>
+
+    <!-- Search & Controls -->
+    <div class="mc-card mc-controls-card">
+      <div class="mc-card-body">
+        <div class="mc-form-row">
+          <div class="mc-form-group mc-term-search-group" id="mcSearchTermWrapper" style="flex: 1; display: block; position: relative">
+            <div style="position: relative; display: flex; align-items: center">
+              <span class="material-symbols-sharp" style="position: absolute; left: 10px; color: #94a3b8; font-size: 18px; pointer-events: none;">search</span>
+              <input type="text" id="mcSearchTermInput" class="mc-input" style="width: 100%; padding-left: 36px; padding-right: 32px" placeholder="Tìm thuật ngữ..." oninput="mcOnSearchTerm()" autocomplete="off" />
+              <span class="material-symbols-sharp" id="mcClearSearchBtn" onclick="mcClearSearchTerm()" style="position: absolute; right: 8px; cursor: pointer; color: #94a3b8; font-size: 18px; display: none;">close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Topic Stats -->
+        <div class="mc-stats-banner">
+          <div class="mc-topic-stats" id="mcTopicStats" style="display: none">
+            <div
+              class="mc-stat-item active-filter"
+              id="mcStatAll"
+              onclick="mcSetFilter('all')"
+            >
+              <span class="mc-stat-label">Tổng thẻ:</span>
+              <strong
+                class="mc-text-primary"
+                id="mcTotalCount"
+                style="color: #3b82f6"
+                >0</strong
+              >
+            </div>
+
+            <div
+              class="mc-stat-item"
+              id="mcStatApproved"
+              onclick="mcSetFilter('approved')"
+            >
+              <span class="mc-stat-label">Đã duyệt:</span>
+              <strong class="mc-text-success" id="mcApprovedCount">0</strong>
+            </div>
+
+            <div
+              class="mc-stat-item"
+              id="mcStatDraft"
+              onclick="mcSetFilter('draft')"
+            >
+              <span class="mc-stat-label">Bản nháp:</span>
+              <strong class="mc-text-warning" id="mcDraftCount">0</strong>
+            </div>
+
+            <div
+              class="mc-stat-item"
+              id="mcStatHidden"
+              onclick="mcSetFilter('hidden')"
+            >
+              <span class="mc-stat-label">Đang ẩn:</span>
+              <strong
+                class="mc-text-hidden"
+                id="mcHiddenCount"
+                style="color: #64748b"
+                >0</strong
+              >
+            </div>
+
+            <div class="mc-xp-control" style="display: flex; align-items: center; gap: 8px; margin-left: 16px;">
+              <div class="mc-xp-control-label" style="display: flex; flex-direction: column;">
+                <span style="font-size: 12px; font-weight: 600; color: #475569;">XP Matching</span>
+              </div>
+              <div class="mc-xp-control-action" style="display: flex; align-items: center; gap: 4px;">
+                <input
+                  type="number"
+                  id="mcTopicMatchingXpInput"
+                  value="100"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  style="width: 60px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: bold; color: #8b5cf6; text-align: center;"
+                />
+                <button
+                  type="button"
+                  class="mc-btn mc-btn-outline"
+                  onclick="mcSaveTopicMatchingXp()"
+                  style="padding: 4px 8px; font-size: 12px;"
+                >
+                  Lưu
+                </button>
+              </div>
+            </div>
+
+            <div class="mc-stats-actions" style="display: flex; gap: 8px; margin-left: auto;">
+              <button
+                class="mc-btn mc-btn-primary"
+                id="mcGenerateBtn"
+                onclick="mcGenerateAICards()"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">auto_awesome</span>
+                Tạo bằng AI
+              </button>
+
+              <button
+                class="mc-btn mc-btn-outline"
+                onclick="mcAddNewManualCard()"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">add</span>
+                Thêm thẻ
+              </button>
+
+              <button
+                class="mc-btn mc-btn-success"
+                id="mcPublishBtn"
+                onclick="mcPublishTopic()"
+                style="display: none"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">publish</span>
+                Công bố Topic
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="mcLoadingState" class="admin-loading-container" style="display: none">
+      <div class="admin-loading-popup">
+        <div class="admin-loading-logo">
+          <span class="logo-o">O</span>
+          <div class="logo-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+          </div>
+        </div>
+        <div class="admin-loading-text" id="mcLoadingText">Đang xử lý...</div>
+        <div class="admin-loading-hint">Vui lòng chờ trong giây lát</div>
+      </div>
+    </div>
+
+    <!-- Cards List Area -->
+    <div id="mcCardsArea" class="mc-card" style="display: none">
+      <div class="mc-card-body">
+        <div class="mc-action-bar">
+          <div class="mc-actions" style="display: flex; gap: 12px; align-items: center; width: 100%; justify-content: space-between;">
+            <label class="mc-checkbox-label" style="margin-bottom: 0">
+              <input type="checkbox" id="mcSelectAll" onchange="mcToggleSelectAll(this)" />
+              Chọn tất cả
+            </label>
+            <div style="display: flex; gap: 12px; align-items: center">
+              <button
+                class="mc-btn mc-btn-outline"
+                id="mcBulkDeleteBtn"
+                onclick="mcDeleteSelectedCards()"
+                style="color: #ef4444; border-color: #fca5a5; display: none"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">delete_sweep</span>
+                Xóa
+              </button>
+              <button
+                class="mc-btn mc-btn-outline"
+                id="mcBulkHideBtn"
+                onclick="mcHideSelectedCards()"
+                style="color: #f59e0b; border-color: #fcd34d; display: none"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">visibility_off</span>
+                Ẩn
+              </button>
+              <button
+                class="mc-btn mc-btn-outline"
+                id="mcBulkApproveBtn"
+                onclick="mcApproveSelectedCards()"
+                style="color: #10b981; border-color: #6ee7b7; display: none"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">visibility</span>
+                Duyệt
+              </button>
+              <button
+                class="mc-btn mc-btn-primary"
+                id="mcBulkSaveBtn"
+                onclick="mcSaveCards()"
+                style="display: none"
+              >
+                <span class="material-symbols-sharp" style="font-size: 18px">save</span>
+                Lưu thẻ đã chọn
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="mcCardsList" class="mc-cards-list">
+          <!-- Cards will be rendered here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="mcEmptyState" class="mc-empty-state" style="display: none">
+      <span class="material-symbols-sharp" style="font-size: 64px; color: #cbd5e1; margin-bottom: 16px">style</span>
+      <h3 style="color: #64748b">Chưa có thẻ thuật ngữ nào</h3>
+      <p style="color: #94a3b8; max-width: 400px; margin: 8px auto 0">
+        Hãy chọn Topic và bấm "Tạo bằng AI" hoặc "Thêm thẻ" để bắt đầu xây dựng kho thẻ Matching.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Gemini Key Modal -->
+<div id="mcGeminiKeyModal" class="mc-modal" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+  ">
+  <div class="mc-modal-content" style="
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    ">
+    <h3 style="
+        margin-top: 0;
+        margin-bottom: 16px;
+        font-size: 18px;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      ">
+      <span class="material-symbols-sharp" style="color: #8b5cf6">vpn_key</span>
+      Cấu hình Gemini API Key
+    </h3>
+    <p style="font-size: 14px; color: #475569; margin-bottom: 16px">
+      Để tạo thẻ tự động bằng AI, bạn cần cung cấp Gemini API Key.
+    </p>
+    <div style="margin-bottom: 24px">
+      <label style="
+          display: block;
+          font-size: 13px;
+          font-weight: 600;
+          color: #475569;
+          margin-bottom: 8px;
+        ">Gemini API Key</label>
+      <div style="position: relative; display: flex; align-items: center">
+        <input type="password" id="mcGeminiKeyInput" class="mc-input" style="width: 100%; box-sizing: border-box; padding-right: 40px" placeholder="Nhập API Key bắt đầu bằng AIza..." />
+        <button type="button" onclick="mcToggleKeyVisibility()" style="
+            position: absolute;
+            right: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+          ">
+          <span class="material-symbols-sharp" id="mcKeyVisibilityIcon" style="font-size: 20px">visibility_off</span>
         </button>
       </div>
-      <div class="sc-modal-body" style="padding-top: 16px">
-        <p id="mcConfirmDeleteMsg">Bạn có chắc chắn muốn xóa thẻ này?</p>
-      </div>
-      <div class="sc-modal-footer">
-        <button
-          class="mc-btn mc-btn-outline"
-          onclick="mcCloseConfirmDeleteModal()"
-        >
-          Hủy
-        </button>
-        <button class="mc-btn mc-btn-danger" id="mcConfirmDeleteBtn">
-          Xóa
-        </button>
-      </div>
+      <p style="font-size: 12px; color: #64748b; margin-top: 8px">
+        Key được lưu trữ an toàn trong Properties của Google Apps Script.
+      </p>
+    </div>
+    <div id="mcGeminiKeyFeedback" style="font-size: 13px; margin-bottom: 16px; display: none"></div>
+    <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+      <button class="mc-btn mc-btn-outline" onclick="mcCloseGeminiKeyModal()">Hủy</button>
+      <button class="mc-btn mc-btn-primary" id="mcSaveGeminiKeyBtn" onclick="mcSaveGeminiKey()">
+        <span class="material-symbols-sharp" style="font-size: 18px">save</span>
+        Lưu Key
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div id="mcConfirmDeleteModal" class="sc-modal-overlay" style="display: none; z-index: 2000">
+  <div class="sc-modal sc-modal-sm" style="display: block">
+    <div class="sc-modal-header">
+      <h3 class="sc-modal-title">Xác nhận xóa</h3>
+      <button class="sc-modal-close" onclick="mcCloseConfirmDeleteModal()">
+        <span class="material-symbols-sharp">close</span>
+      </button>
+    </div>
+    <div class="sc-modal-body" style="padding-top: 16px">
+      <p id="mcConfirmDeleteMsg">Bạn có chắc chắn muốn xóa thẻ này?</p>
+    </div>
+    <div class="sc-modal-footer">
+      <button class="mc-btn mc-btn-outline" onclick="mcCloseConfirmDeleteModal()">Hủy</button>
+      <button class="mc-btn mc-btn-danger" id="mcConfirmDeleteBtn">Xóa</button>
     </div>
   </div>
 </div>

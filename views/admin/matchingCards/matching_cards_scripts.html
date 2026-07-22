@@ -1,294 +1,404 @@
 <script>
-let mcTopics = [];
-let mcCurrentCards = [];
-let mcFilterStatus = 'all';
-let mcSearchTerm = '';
-let mcSelectedTopicIdStr = "";
+  let mcTopics = [];
+  let mcCurrentCards = [];
+  let mcFilterStatus = 'all';
+  let mcSearchTerm = '';
+  let mcSelectedTopicIdStr = "";
 
-// Khởi tạo
-function initMatchingCardsManager() {
+  // Khởi tạo
+  function initMatchingCardsManager() {
 
-  try {
-    const oldClasses = Array.from(document.documentElement.classList).filter(c => c.startsWith('is-') && c.endsWith('-page'));
-    if (oldClasses.length > 0) {
-      document.documentElement.classList.remove(...oldClasses);
-      document.body.classList.remove(...oldClasses);
+    try {
+      const oldClasses = Array.from(document.documentElement.classList).filter(c => c.startsWith('is-') && c.endsWith('-page'));
+      if (oldClasses.length > 0) {
+        document.documentElement.classList.remove(...oldClasses);
+        document.body.classList.remove(...oldClasses);
+      }
+      document.documentElement.classList.add('is-matching-cards-page');
+      document.body.classList.add('is-matching-cards-page');
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    } catch (e) { console.error(e); }
+
+    if (mcTopics.length === 0) {
+      mcLoadTopics();
     }
-    document.documentElement.classList.add('is-matching-cards-page');
-    document.body.classList.add('is-matching-cards-page');
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  } catch(e) { console.error(e); }
 
-  if (mcTopics.length === 0) {
-    mcLoadTopics();
-  }
-  
-  mcCheckGeminiKeyStatus();
-  
-  // Set up observer in case user navigates away and comes back
-  const pageElement = document.getElementById("page-matching-cards");
-  if (pageElement && !pageElement.dataset.observerSetup) {
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.target.id === "page-matching-cards" && mutation.target.classList.contains("active")) {
-          if (mcTopics.length === 0) {
-            mcLoadTopics();
+    mcCheckGeminiKeyStatus();
+
+    // Set up observer in case user navigates away and comes back
+    const pageElement = document.getElementById("page-matching-cards");
+    if (pageElement && !pageElement.dataset.observerSetup) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.target.id === "page-matching-cards" && mutation.target.classList.contains("active")) {
+            if (mcTopics.length === 0) {
+              mcLoadTopics();
+            }
           }
-        }
+        });
       });
+      observer.observe(pageElement, { attributes: true, attributeFilter: ["class"] });
+      pageElement.dataset.observerSetup = "true";
+    }
+  }
+
+  function mcShowLoading(text) {
+    document.getElementById("mcLoadingText").textContent = text;
+    document.getElementById("mcLoadingState").style.display = "flex";
+    document.getElementById("mcCardsArea").style.display = "none";
+    document.getElementById("mcEmptyState").style.display = "none";
+  }
+
+  function mcHideLoading() {
+    document.getElementById("mcLoadingState").style.display = "none";
+  }
+
+  function mcShowTopicListLoading(text) {
+    const loading = document.getElementById("mcTopicListLoadingState");
+    const loadingText = document.getElementById("mcTopicListLoadingText");
+    const grid = document.getElementById("mcTopicGrid");
+
+    if (loadingText) {
+      loadingText.textContent = text || "Đang tải danh sách Topic...";
+    }
+
+    if (loading) loading.style.display = "flex";
+    if (grid) grid.style.display = "none";
+  }
+
+  function mcHideTopicListLoading() {
+    const loading = document.getElementById("mcTopicListLoadingState");
+    const grid = document.getElementById("mcTopicGrid");
+
+    if (loading) loading.style.display = "none";
+    if (grid) grid.style.display = "grid";
+  }
+
+  function mcLoadTopics(forceReload = false) {
+    mcShowTopicListLoading("Đang tải danh sách Topic Matching...");
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        mcHideTopicListLoading();
+
+        if (!response || !response.success) {
+          if (typeof showToast === 'function') showToast(response?.message || "Không thể tải danh sách Topic.", "error");
+          return;
+        }
+
+        mcTopics = Array.isArray(response.topics)
+          ? response.topics
+          : [];
+
+        mcRenderTopicCards(mcTopics);
+      })
+      .withFailureHandler(function (error) {
+        mcHideTopicListLoading();
+        if (typeof showToast === 'function') showToast(error?.message || String(error), "error");
+      })
+      .adminGetMatchingTopicsWithStats();
+  }
+
+  function mcRenderTopicCards(topicsList) {
+    const grid = document.getElementById("mcTopicGrid");
+    if (!grid) return;
+
+    grid.innerHTML = "";
+
+    if (!Array.isArray(topicsList) || topicsList.length === 0) {
+      grid.innerHTML = `
+        <div class="mc-topic-list-empty">
+          <span class="material-symbols-sharp">style</span>
+          <h3>Chưa có Topic nào</h3>
+          <p>Hãy tạo Topic trước khi quản lý thẻ Matching.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    topicsList.forEach(function (topic) {
+      const stats = topic.matchingStats || {};
+      const topicId = String(topic.topicId || "");
+
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "mc-topic-card";
+
+      card.innerHTML = `
+        <div class="mc-topic-card-header">
+          <div class="mc-topic-card-icon">
+            <span class="material-symbols-sharp">style</span>
+          </div>
+
+          <div class="mc-topic-card-count">
+            ${Number(stats.total || 0)} thẻ
+          </div>
+        </div>
+
+        <h3>${escapeHtml(topic.title || "Topic chưa có tên")}</h3>
+
+        <div class="mc-topic-card-stats">
+          <span>Đã duyệt: <strong>${Number(stats.approved || 0)}</strong></span>
+          <span>Bản nháp: <strong>${Number(stats.draft || 0)}</strong></span>
+          <span>Đang ẩn: <strong>${Number(stats.hidden || 0)}</strong></span>
+        </div>
+      `;
+
+      card.addEventListener("click", function () {
+        mcOpenTopicCard(topicId);
+      });
+
+      fragment.appendChild(card);
     });
-    observer.observe(pageElement, { attributes: true, attributeFilter: ["class"] });
-    pageElement.dataset.observerSetup = "true";
-  }
-}
 
-function mcShowLoading(text) {
-  document.getElementById("mcLoadingText").textContent = text;
-  document.getElementById("mcLoadingState").style.display = "flex";
-  document.getElementById("mcCardsArea").style.display = "none";
-  document.getElementById("mcEmptyState").style.display = "none";
-}
-
-function mcHideLoading() {
-  document.getElementById("mcLoadingState").style.display = "none";
-}
-
-function mcLoadTopics() {
-  google.script.run
-    .withSuccessHandler((response) => {
-      if (response.success) {
-        mcTopics = response.topics;
-        mcRenderTopicDropdown(mcTopics);
-      }
-    })
-    .withFailureHandler((err) => {
-      console.error(err);
-      if (typeof showToast === 'function') showToast("Lỗi tải danh sách Topic", "error");
-    })
-    .adminGetMatchingTopicsWithStats();
-}
-
-function mcRenderTopicDropdown(topicsList) {
-  const dropdown = document.getElementById("mcTopicCustomDropdown");
-  if (!dropdown) return;
-  
-  dropdown.innerHTML = '';
-  if (topicsList.length === 0) {
-    dropdown.innerHTML = '<div class="mc-custom-dropdown-empty">Không tìm thấy chủ đề</div>';
-    return;
-  }
-  
-  topicsList.forEach(t => {
-    const stats = t.matchingStats ? ` (${t.matchingStats.total} thẻ)` : '';
-    const text = `${t.title}${stats}`;
-    const item = document.createElement("div");
-    item.className = "mc-custom-dropdown-item";
-    item.textContent = text;
-    item.onmousedown = function(e) {
-      e.preventDefault(); 
-      document.getElementById("mcTopicSelectInput").value = text;
-      mcSelectedTopicIdStr = t.topicId;
-      dropdown.style.display = "none";
-      
-      const clearBtn = document.getElementById("mcClearSearchBtn");
-      if (clearBtn) clearBtn.style.display = "block";
-      
-      mcLoadTopicCards(t.topicId);
-    };
-    dropdown.appendChild(item);
-  });
-}
-
-function mcGetSelectedTopicId() {
-  return mcSelectedTopicIdStr;
-}
-
-function mcOnTopicSearch() {
-  const input = document.getElementById("mcTopicSelectInput");
-  const val = input.value.toLowerCase();
-  
-  const clearBtn = document.getElementById("mcClearSearchBtn");
-  if (clearBtn) {
-    clearBtn.style.display = val.length > 0 ? "block" : "none";
-  }
-  
-  if (val.length === 0 && mcSelectedTopicIdStr !== "") {
-    mcSelectedTopicIdStr = "";
-    mcLoadTopicCards(''); // Trigger empty state
-  } else {
-    mcSelectedTopicIdStr = "";
-  }
-  
-  const filtered = mcTopics.filter(t => t.title.toLowerCase().includes(val));
-  mcRenderTopicDropdown(filtered);
-  mcShowTopicDropdown();
-}
-
-function mcClearSearch() {
-  const input = document.getElementById("mcTopicSelectInput");
-  if (input) {
-    input.value = "";
-    mcOnTopicSearch();
-    input.focus();
-  }
-}
-
-function mcShowTopicDropdown() {
-  const dropdown = document.getElementById("mcTopicCustomDropdown");
-  if (dropdown) dropdown.style.display = "block";
-}
-
-function mcHideTopicDropdown() {
-  const dropdown = document.getElementById("mcTopicCustomDropdown");
-  if (dropdown) dropdown.style.display = "none";
-}
-
-function mcLoadTopicCards(topicIdParam, isSilent = false) {
-  const topicId = topicIdParam !== undefined ? topicIdParam : mcGetSelectedTopicId();
-  if (!topicId) {
-    document.getElementById("mcTopicStats").style.display = "none";
-    document.getElementById("mcSearchTermWrapper").style.display = "none";
-    document.getElementById("mcCardsArea").style.display = "none";
-    document.getElementById("mcEmptyState").style.display = "flex";
-    return;
-  }
-  
-  const topic = mcTopics.find(t => t.topicId === topicId);
-  if (topic) {
-    document.getElementById("mcTopicStats").style.display = "flex";
-    document.getElementById("mcSearchTermWrapper").style.display = "block";
-    const matchingXpInput = document.getElementById("mcTopicMatchingXpInput");
-    if (matchingXpInput) matchingXpInput.value = topic.matchingXpReward !== undefined ? topic.matchingXpReward : 100;
+    grid.appendChild(fragment);
   }
 
-  if (!isSilent) mcShowLoading("Đang tải danh sách thẻ thuật ngữ...");
-  
-  google.script.run
-    .withSuccessHandler((response) => {
-      if (!isSilent) mcHideLoading();
-      if (response.success) {
-        mcCurrentCards = response.cards || [];
-        mcUpdateStats();
-        mcSetFilter(isSilent ? mcFilterStatus : 'all');
-      } else {
-        if (typeof showToast === 'function') showToast("Lỗi: " + response.message, "error");
-      }
-    })
-    .withFailureHandler((err) => {
-      if (!isSilent) mcHideLoading();
-      if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
-    })
-    .getMatchingTermCardsByTopic(topicId);
-}
+  function mcOpenTopicCard(topicId) {
+    const normalizedTopicId = String(topicId || "").trim();
 
-function mcUpdateStats() {
-  let approved = 0;
-  let draft = 0;
-  let hidden = 0;
-  let validForGame = 0;
-  
-  mcCurrentCards.forEach(c => {
-    const s = (c.status || "").trim().toLowerCase();
-    if (s === 'approved') approved++;
-    else if (s === 'draft') draft++;
-    else if (s === 'hidden') hidden++;
-    
-    if (s === 'approved' && c.isActive === true && 
-        c.term && String(c.term).trim() !== "" && 
-        c.definition && String(c.definition).trim() !== "") {
-      validForGame++;
+    const topic = mcTopics.find(function (item) {
+      return String(item.topicId || "").trim() === normalizedTopicId;
+    });
+
+    if (!topic) {
+      if (typeof showToast === 'function') showToast("Không tìm thấy Topic đã chọn", "error");
+      return;
     }
-  });
-  
-  const approvedEl = document.getElementById("mcApprovedCount");
-  const draftEl = document.getElementById("mcDraftCount");
-  const hiddenEl = document.getElementById("mcHiddenCount");
-  const totalEl = document.getElementById("mcTotalCount");
-  
-  if (approvedEl) approvedEl.textContent = approved;
-  if (draftEl) draftEl.textContent = draft;
-  if (hiddenEl) hiddenEl.textContent = hidden;
-  if (totalEl) totalEl.textContent = mcCurrentCards.length;
-  
 
-}
+    mcSelectedTopicIdStr = normalizedTopicId;
 
-function mcSetFilter(status) {
-  mcFilterStatus = status;
-  mcFilterCardsList();
-  
-  // Cập nhật UI filter
-  document.querySelectorAll('.mc-stat-item').forEach(el => el.classList.remove('active-filter'));
-  if (status === 'approved') {
-    const el = document.getElementById("mcStatApproved");
-    if (el) el.classList.add('active-filter');
-  } else if (status === 'draft') {
-    const el = document.getElementById("mcStatDraft");
-    if (el) el.classList.add('active-filter');
-  } else if (status === 'hidden') {
-    const el = document.getElementById("mcStatHidden");
-    if (el) el.classList.add('active-filter');
-  } else {
-    const el = document.getElementById("mcStatAll");
-    if (el) el.classList.add('active-filter');
+    const title = document.getElementById("mcCurrentTopicTitle");
+    if (title) title.textContent = topic.title || "Topic";
+
+    document.getElementById("mcTopicListView").style.display = "none";
+    document.getElementById("mcCardManagerView").style.display = "block";
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
+
+    mcLoadTopicCards(normalizedTopicId);
   }
-}
 
-function mcFilterCardsList() {
-  const searchInput = document.getElementById("mcSearchTermInput");
-  mcSearchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
-  mcRenderCards();
-}
+  function mcBackToTopicList() {
+    mcSelectedTopicIdStr = "";
+    mcCurrentCards = [];
+    mcFilterStatus = "all";
+    mcSearchTerm = "";
 
-function mcRenderCards() {
-  const listEl = document.getElementById("mcCardsList");
-  
-  if (mcCurrentCards.length === 0) {
-    document.getElementById("mcCardsArea").style.display = "none";
-    document.getElementById("mcEmptyState").style.display = "flex";
-    return;
+    document.getElementById("mcCardManagerView").style.display = "none";
+    document.getElementById("mcTopicListView").style.display = "block";
+
+    const search = document.getElementById("mcSearchTermInput");
+    if (search) search.value = "";
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
   }
-  
-  document.getElementById("mcCardsArea").style.display = "block";
-  document.getElementById("mcEmptyState").style.display = "none";
-  
-  let html = '';
-  
-  const filteredCards = mcCurrentCards.filter(c => {
-    if (mcFilterStatus !== 'all') {
+
+  let mcTopicSearchTimer = null;
+
+  function mcOnTopicCardSearch() {
+    clearTimeout(mcTopicSearchTimer);
+
+    mcTopicSearchTimer = setTimeout(function () {
+      const input = document.getElementById("mcTopicCardSearchInput");
+      const keyword = String(input?.value || "")
+        .trim()
+        .toLowerCase();
+
+      if (!keyword) {
+        mcRenderTopicCards(mcTopics);
+        return;
+      }
+
+      const filtered = mcTopics.filter(function (topic) {
+        return String(topic.title || "")
+          .toLowerCase()
+          .includes(keyword);
+      });
+
+      mcRenderTopicCards(filtered);
+    }, 150);
+  }
+
+  function mcGetSelectedTopicId() {
+    return mcSelectedTopicIdStr;
+  }
+
+  function mcLoadTopicCards(topicIdParam, isSilent = false) {
+    const topicId = topicIdParam !== undefined ? topicIdParam : mcGetSelectedTopicId();
+    if (!topicId) {
+      document.getElementById("mcTopicStats").style.display = "none";
+      document.getElementById("mcSearchTermWrapper").style.display = "none";
+      document.getElementById("mcCardsArea").style.display = "none";
+      document.getElementById("mcEmptyState").style.display = "flex";
+      return;
+    }
+
+    const topic = mcTopics.find(t => t.topicId === topicId);
+    if (topic) {
+      document.getElementById("mcTopicStats").style.display = "flex";
+      document.getElementById("mcSearchTermWrapper").style.display = "block";
+      const matchingXpInput = document.getElementById("mcTopicMatchingXpInput");
+      if (matchingXpInput) matchingXpInput.value = topic.matchingXpReward !== undefined ? topic.matchingXpReward : 100;
+    }
+
+    if (!isSilent) mcShowLoading("Đang tải danh sách thẻ thuật ngữ...");
+
+    google.script.run
+      .withSuccessHandler((response) => {
+        if (!isSilent) mcHideLoading();
+        if (response.success) {
+          mcCurrentCards = response.cards || [];
+          mcUpdateStats();
+          mcSetFilter(isSilent ? mcFilterStatus : 'all');
+        } else {
+          if (typeof showToast === 'function') showToast("Lỗi: " + response.message, "error");
+        }
+      })
+      .withFailureHandler((err) => {
+        if (!isSilent) mcHideLoading();
+        if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+      })
+      .getMatchingTermCardsByTopic(topicId);
+  }
+
+  function mcUpdateStats() {
+    let approved = 0;
+    let draft = 0;
+    let hidden = 0;
+    let validForGame = 0;
+
+    mcCurrentCards.forEach(c => {
       const s = (c.status || "").trim().toLowerCase();
-      if (mcFilterStatus === 'approved' && s !== 'approved') return false;
-      if (mcFilterStatus === 'draft' && s === 'approved') return false;
-    }
-    
-    if (mcSearchTerm !== '') {
-      const term = (c.term || "").toLowerCase();
-      const def = (c.definition || "").toLowerCase();
-      if (!term.includes(mcSearchTerm) && !def.includes(mcSearchTerm)) return false;
-    }
-    
-    return true;
-  });
-  
-  if (filteredCards.length === 0) {
-    html = '<div style="text-align:center; padding: 20px; color: #64748b;">Không có thẻ nào phù hợp với bộ lọc.</div>';
+      if (s === 'approved') approved++;
+      else if (s === 'draft') draft++;
+      else if (s === 'hidden') hidden++;
+
+      if (s === 'approved' && c.isActive === true &&
+        c.term && String(c.term).trim() !== "" &&
+        c.definition && String(c.definition).trim() !== "") {
+        validForGame++;
+      }
+    });
+
+    const approvedEl = document.getElementById("mcApprovedCount");
+    const draftEl = document.getElementById("mcDraftCount");
+    const hiddenEl = document.getElementById("mcHiddenCount");
+    const totalEl = document.getElementById("mcTotalCount");
+
+    if (approvedEl) approvedEl.textContent = approved;
+    if (draftEl) draftEl.textContent = draft;
+    if (hiddenEl) hiddenEl.textContent = hidden;
+    if (totalEl) totalEl.textContent = mcCurrentCards.length;
+
+
   }
-  
-  filteredCards.forEach((c) => {
-    const index = mcCurrentCards.indexOf(c);
-    const s = (c.status || "").trim().toLowerCase();
-    const isChecked = false;
-    
-    let statusBg = '#fef08a';
-    let statusColor = '#854d0e';
-    let statusText = 'Draft';
-    if (s === 'approved') {
-      statusBg = '#dcfce7'; statusColor = '#166534'; statusText = 'Approved';
-    } else if (s === 'hidden') {
-      statusBg = '#f1f5f9'; statusColor = '#64748b'; statusText = 'Hidden';
+
+  function mcSetFilter(status) {
+    mcFilterStatus = status;
+    mcFilterCardsList();
+
+    // Cập nhật UI filter
+    document.querySelectorAll('.mc-stat-item').forEach(el => el.classList.remove('active-filter'));
+    if (status === 'approved') {
+      const el = document.getElementById("mcStatApproved");
+      if (el) el.classList.add('active-filter');
+    } else if (status === 'draft') {
+      const el = document.getElementById("mcStatDraft");
+      if (el) el.classList.add('active-filter');
+    } else if (status === 'hidden') {
+      const el = document.getElementById("mcStatHidden");
+      if (el) el.classList.add('active-filter');
+    } else {
+      const el = document.getElementById("mcStatAll");
+      if (el) el.classList.add('active-filter');
     }
-    
-    html += `
+  }
+
+  function mcFilterCardsList() {
+    const searchInput = document.getElementById("mcSearchTermInput");
+    mcSearchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    mcRenderCards();
+  }
+
+  function mcOnSearchTerm() {
+    mcFilterCardsList();
+  }
+
+  function mcClearSearchTerm() {
+    const searchInput = document.getElementById("mcSearchTermInput");
+    if (searchInput) searchInput.value = "";
+    mcFilterCardsList();
+  }
+
+  function mcApproveSelectedCards() {
+    // Implement approve logic if needed
+    if (typeof showToast === 'function') showToast("Chức năng duyệt nhiều thẻ đang phát triển.", "info");
+  }
+
+  function mcPublishTopic() {
+    // Implement publish logic if needed
+    if (typeof showToast === 'function') showToast("Chức năng xuất bản Topic đang phát triển.", "info");
+  }
+
+  function mcRenderCards() {
+    const listEl = document.getElementById("mcCardsList");
+
+    if (mcCurrentCards.length === 0) {
+      document.getElementById("mcCardsArea").style.display = "none";
+      document.getElementById("mcEmptyState").style.display = "flex";
+      return;
+    }
+
+    document.getElementById("mcCardsArea").style.display = "block";
+    document.getElementById("mcEmptyState").style.display = "none";
+
+    let html = '';
+
+    const filteredCards = mcCurrentCards.filter(c => {
+      if (mcFilterStatus !== 'all') {
+        const s = (c.status || "").trim().toLowerCase();
+        if (s !== mcFilterStatus) {
+          return false;
+        }
+      }
+
+      if (mcSearchTerm !== '') {
+        const term = (c.term || "").toLowerCase();
+        const def = (c.definition || "").toLowerCase();
+        if (!term.includes(mcSearchTerm) && !def.includes(mcSearchTerm)) return false;
+      }
+
+      return true;
+    });
+
+    if (filteredCards.length === 0) {
+      html = '<div style="text-align:center; padding: 20px; color: #64748b;">Không có thẻ nào phù hợp với bộ lọc.</div>';
+    }
+
+    filteredCards.forEach((c) => {
+      const index = mcCurrentCards.indexOf(c);
+      const s = (c.status || "").trim().toLowerCase();
+      const isChecked = false;
+
+      let statusBg = '#fef08a';
+      let statusColor = '#854d0e';
+      let statusText = 'Draft';
+      if (s === 'approved') {
+        statusBg = '#dcfce7'; statusColor = '#166534'; statusText = 'Approved';
+      } else if (s === 'hidden') {
+        statusBg = '#f1f5f9'; statusColor = '#64748b'; statusText = 'Hidden';
+      }
+
+      html += `
       <div class="mc-term-card ${isChecked ? 'selected' : ''}" id="mcCard_${index}">
         <div class="mc-card-header">
           <div class="mc-card-header-left">
@@ -416,549 +526,549 @@ function mcRenderCards() {
         </div>
       </div>
     `;
-  });
-  
-  listEl.innerHTML = html;
-  
-  // Update "Select All" checkbox state
-  mcUpdateSelectAllCheckbox();
-}
+    });
 
-function escapeHtml(unsafe) {
-  if (unsafe === undefined || unsafe === null) return '';
-  return String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+    listEl.innerHTML = html;
 
-function mcToggleSelect(index, checkbox) {
-  const card = document.getElementById(`mcCard_${index}`);
-  if (checkbox.checked) {
-    card.classList.add("selected");
-  } else {
-    card.classList.remove("selected");
+    // Update "Select All" checkbox state
+    mcUpdateSelectAllCheckbox();
   }
-  mcUpdateSelectAllCheckbox();
-}
 
-function mcToggleSelectAll(checkbox) {
-  const targetChecked = checkbox.checked;
-  const checkboxes = document.querySelectorAll('.mc-c-select');
-  checkboxes.forEach(cb => {
-    cb.checked = targetChecked;
-    const card = document.getElementById(`mcCard_${cb.dataset.index}`);
-    if (targetChecked) {
+  function escapeHtml(unsafe) {
+    if (unsafe === undefined || unsafe === null) return '';
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function mcToggleSelect(index, checkbox) {
+    const card = document.getElementById(`mcCard_${index}`);
+    if (checkbox.checked) {
       card.classList.add("selected");
     } else {
       card.classList.remove("selected");
     }
-  });
-
-  mcUpdateSelectAllCheckbox();
-}
-
-function mcUpdateSelectAllCheckbox() {
-  const checkboxes = document.querySelectorAll('.mc-c-select');
-  const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
-  const someChecked = Array.from(checkboxes).some(cb => cb.checked);
-  
-  const selectAllCb = document.getElementById("mcSelectAll");
-  if (selectAllCb) {
-    selectAllCb.checked = allChecked;
-    selectAllCb.indeterminate = someChecked && !allChecked;
+    mcUpdateSelectAllCheckbox();
   }
-  
-  const bulkDeleteBtn = document.getElementById("mcBulkDeleteBtn");
-  const bulkSaveBtn = document.getElementById("mcBulkSaveBtn");
-  const bulkApproveBtn = document.getElementById("mcBulkApproveBtn");
-  const bulkHideBtn = document.getElementById("mcBulkHideBtn");
-  
-  if (bulkDeleteBtn) bulkDeleteBtn.style.display = someChecked ? 'inline-flex' : 'none';
-  if (bulkSaveBtn) bulkSaveBtn.style.display = someChecked ? 'inline-flex' : 'none';
-  if (bulkApproveBtn) bulkApproveBtn.style.display = someChecked ? 'inline-flex' : 'none';
-  if (bulkHideBtn) bulkHideBtn.style.display = someChecked ? 'inline-flex' : 'none';
-}
 
-function mcToggleEdit(index) {
-  const card = document.getElementById(`mcCard_${index}`);
-  card.classList.toggle("editing");
-}
+  function mcToggleSelectAll(checkbox) {
+    const targetChecked = checkbox.checked;
+    const checkboxes = document.querySelectorAll('.mc-c-select');
+    checkboxes.forEach(cb => {
+      cb.checked = targetChecked;
+      const card = document.getElementById(`mcCard_${cb.dataset.index}`);
+      if (targetChecked) {
+        card.classList.add("selected");
+      } else {
+        card.classList.remove("selected");
+      }
+    });
 
-function mcApplyEdit(index) {
-  const c = mcCurrentCards[index];
-  
-  c.term = document.getElementById(`mcEditTerm_${index}`).value;
-  c.definition = document.getElementById(`mcEditDef_${index}`).value;
-  c.shortDefinition = document.getElementById(`mcEditShortDef_${index}`).value;
-  c.example = document.getElementById(`mcEditEx_${index}`).value;
-  c.hint = document.getElementById(`mcEditHint_${index}`).value;
-  c.tags = document.getElementById(`mcEditTags_${index}`).value;
-  c.difficulty = document.getElementById(`mcEditDiff_${index}`).value;
-  c.status = document.getElementById(`mcEditStatus_${index}`).value;
-  c.isActive = document.getElementById(`mcEditActive_${index}`).checked;
-  
-  mcRenderCards();
-}
-
-function mcSaveSingleCard(index) {
-  const c = mcCurrentCards[index];
-  const topicId = mcGetSelectedTopicId();
-  if (!topicId) return;
-  
-  if (!c.term || !c.definition) {
-    if (typeof showToast === 'function') showToast("Vui lòng nhập Thuật ngữ và Định nghĩa", "warning");
-    return;
+    mcUpdateSelectAllCheckbox();
   }
-  
-  // Auto approve when saving manually
-  if (c.status === "draft") {
-    c.status = "approved";
-    c.isActive = true;
+
+  function mcUpdateSelectAllCheckbox() {
+    const checkboxes = document.querySelectorAll('.mc-c-select');
+    const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+    const someChecked = Array.from(checkboxes).some(cb => cb.checked);
+
+    const selectAllCb = document.getElementById("mcSelectAll");
+    if (selectAllCb) {
+      selectAllCb.checked = allChecked;
+      selectAllCb.indeterminate = someChecked && !allChecked;
+    }
+
+    const bulkDeleteBtn = document.getElementById("mcBulkDeleteBtn");
+    const bulkSaveBtn = document.getElementById("mcBulkSaveBtn");
+    const bulkApproveBtn = document.getElementById("mcBulkApproveBtn");
+    const bulkHideBtn = document.getElementById("mcBulkHideBtn");
+
+    if (bulkDeleteBtn) bulkDeleteBtn.style.display = someChecked ? 'inline-flex' : 'none';
+    if (bulkSaveBtn) bulkSaveBtn.style.display = someChecked ? 'inline-flex' : 'none';
+    if (bulkApproveBtn) bulkApproveBtn.style.display = someChecked ? 'inline-flex' : 'none';
+    if (bulkHideBtn) bulkHideBtn.style.display = someChecked ? 'inline-flex' : 'none';
   }
-  
-  const isNew = !c.cardId || String(c.cardId).startsWith("TEMP_");
-  
-  if (isNew) {
+
+  function mcToggleEdit(index) {
+    const card = document.getElementById(`mcCard_${index}`);
+    card.classList.toggle("editing");
+  }
+
+  function mcApplyEdit(index) {
+    const c = mcCurrentCards[index];
+
+    c.term = document.getElementById(`mcEditTerm_${index}`).value;
+    c.definition = document.getElementById(`mcEditDef_${index}`).value;
+    c.shortDefinition = document.getElementById(`mcEditShortDef_${index}`).value;
+    c.example = document.getElementById(`mcEditEx_${index}`).value;
+    c.hint = document.getElementById(`mcEditHint_${index}`).value;
+    c.tags = document.getElementById(`mcEditTags_${index}`).value;
+    c.difficulty = document.getElementById(`mcEditDiff_${index}`).value;
+    c.status = document.getElementById(`mcEditStatus_${index}`).value;
+    c.isActive = document.getElementById(`mcEditActive_${index}`).checked;
+
+    mcRenderCards();
+  }
+
+  function mcSaveSingleCard(index) {
+    const c = mcCurrentCards[index];
+    const topicId = mcGetSelectedTopicId();
+    if (!topicId) return;
+
+    if (!c.term || !c.definition) {
+      if (typeof showToast === 'function') showToast("Vui lòng nhập Thuật ngữ và Định nghĩa", "warning");
+      return;
+    }
+
+    // Auto approve when saving manually
+    if (c.status === "draft") {
+      c.status = "approved";
+      c.isActive = true;
+    }
+
+    const isNew = !c.cardId || String(c.cardId).startsWith("TEMP_");
+
+    if (isNew) {
+      google.script.run
+        .withSuccessHandler((response) => {
+          if (response.success) {
+            if (typeof showToast === 'function') showToast("Thêm thẻ mới thành công!", "success");
+            mcLoadTopicCards(topicId, true);
+          } else {
+            if (typeof showToast === 'function') showToast("Lỗi thêm: " + response.message, "error");
+          }
+        })
+        .withFailureHandler((err) => {
+          if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+        })
+        .createMatchingTermCard(c);
+    } else {
+      google.script.run
+        .withSuccessHandler((response) => {
+          if (response.success) {
+            if (typeof showToast === 'function') showToast("Cập nhật thẻ thành công!", "success");
+            mcLoadTopicCards(topicId, true);
+          } else {
+            if (typeof showToast === 'function') showToast("Lỗi cập nhật: " + response.message, "error");
+          }
+        })
+        .withFailureHandler((err) => {
+          if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+        })
+        .updateMatchingTermCard(c.cardId, c);
+    }
+  }
+
+  function mcAddNewManualCard() {
+    const topicId = mcGetSelectedTopicId();
+    if (!topicId) {
+      if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước", "warning");
+      return;
+    }
+
+    mcCurrentCards.unshift({
+      cardId: "TEMP_" + Date.now(),
+      topicId: topicId,
+      term: "",
+      definition: "",
+      shortDefinition: "",
+      example: "",
+      hint: "",
+      difficulty: "medium",
+      tags: "",
+      status: "draft",
+      isActive: true,
+      source: "manual"
+    });
+
+    mcFilterStatus = 'all'; // Đảm bảo thẻ mới hiện ra
+    mcSearchTerm = '';
+    const searchInput = document.getElementById("mcSearchTermInput");
+    if (searchInput) searchInput.value = '';
+
+    mcRenderCards();
+    mcUpdateStats();
+
+    mcToggleEdit(0); // Mở form sửa của thẻ mới nhất
+
+    setTimeout(() => {
+      const newCard = document.getElementById(`mcCard_0`);
+      if (newCard) {
+        newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+  }
+
+  function mcGenerateAICards() {
+    const topicId = mcGetSelectedTopicId();
+    if (!topicId) {
+      if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước khi tạo bằng AI", "warning");
+      return;
+    }
+
+    mcShowLoading("AI đang phân tích tài liệu bài học và tạo thẻ... Vui lòng đợi (có thể mất 10-20 giây).");
+
     google.script.run
       .withSuccessHandler((response) => {
+        mcHideLoading();
         if (response.success) {
-          if (typeof showToast === 'function') showToast("Thêm thẻ mới thành công!", "success");
+          if (typeof showToast === 'function') showToast(response.message || "Tạo thẻ bằng AI thành công!", "success");
+          // Reload cards
           mcLoadTopicCards(topicId, true);
+          mcLoadTopics();
         } else {
-          if (typeof showToast === 'function') showToast("Lỗi thêm: " + response.message, "error");
+          if (typeof showToast === 'function') showToast("Lỗi AI: " + response.message, "error");
+          mcLoadTopicCards(topicId, true); // reload to remove loading state and show old cards
         }
       })
       .withFailureHandler((err) => {
-        if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
+        mcHideLoading();
+        if (typeof showToast === 'function') showToast("Lỗi kết nối: " + err, "error");
+        mcLoadTopicCards(topicId, true);
       })
-      .createMatchingTermCard(c);
-  } else {
+      .adminGenerateMatchingCardsByAI(topicId);
+  }
+
+
+  // Giữ lại hàm mcSaveCards nếu Admin muốn cập nhật nhiều thẻ một lúc, nhưng sẽ gọi adminSaveMatchingCards (hàm cũ, hoặc có thể map sang từng update, nhưng thôi ta cứ dùng update vòng lặp hoặc thông báo). Ở quy trình 3 yêu cầu dùng hàm CRUD, ta sẽ gọi update liên tiếp.
+  function mcSaveCards() {
+    const topicId = mcGetSelectedTopicId();
+    if (!topicId) return;
+
+    const checkboxes = document.querySelectorAll('.mc-c-select');
+    const cardsToSave = [];
+
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        const idx = cb.dataset.index;
+        // Auto approve when bulk saving
+        if (mcCurrentCards[idx].status === "draft") {
+          mcCurrentCards[idx].status = "approved";
+          mcCurrentCards[idx].isActive = true;
+        }
+        cardsToSave.push(mcCurrentCards[idx]);
+      }
+    });
+
+    if (cardsToSave.length === 0) {
+      if (typeof showToast === 'function') showToast("Không có thẻ nào được chọn để lưu.", "warning");
+      return;
+    }
+
+    mcShowLoading("Đang lưu hàng loạt...");
+
     google.script.run
       .withSuccessHandler((response) => {
+        mcHideLoading();
         if (response.success) {
-          if (typeof showToast === 'function') showToast("Cập nhật thẻ thành công!", "success");
+          if (typeof showToast === 'function') showToast(response.message, "success");
           mcLoadTopicCards(topicId, true);
+          mcUpdateSelectAllCheckbox();
         } else {
-          if (typeof showToast === 'function') showToast("Lỗi cập nhật: " + response.message, "error");
+          if (typeof showToast === 'function') showToast("Lỗi lưu hàng loạt: " + response.message, "error");
         }
       })
       .withFailureHandler((err) => {
+        mcHideLoading();
         if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
       })
-      .updateMatchingTermCard(c.cardId, c);
+      .bulkSaveMatchingTermCards(cardsToSave);
   }
-}
 
-function mcAddNewManualCard() {
-  const topicId = mcGetSelectedTopicId();
-  if (!topicId) {
-    if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước", "warning");
-    return;
-  }
-  
-  mcCurrentCards.unshift({
-    cardId: "TEMP_" + Date.now(),
-    topicId: topicId,
-    term: "",
-    definition: "",
-    shortDefinition: "",
-    example: "",
-    hint: "",
-    difficulty: "medium",
-    tags: "",
-    status: "draft",
-    isActive: true,
-    source: "manual"
-  });
-  
-  mcFilterStatus = 'all'; // Đảm bảo thẻ mới hiện ra
-  mcSearchTerm = '';
-  const searchInput = document.getElementById("mcSearchTermInput");
-  if (searchInput) searchInput.value = '';
-  
-  mcRenderCards();
-  mcUpdateStats();
-  
-  mcToggleEdit(0); // Mở form sửa của thẻ mới nhất
-  
-  setTimeout(() => {
-    const newCard = document.getElementById(`mcCard_0`);
-    if (newCard) {
-      newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, 100);
-}
+  function mcDeleteCard(index) {
+    mcShowConfirmDeleteModal("Bạn có chắc chắn muốn xóa thẻ này?", function () {
+      const c = mcCurrentCards[index];
+      const cardId = c && c.cardId ? String(c.cardId) : "";
 
-function mcGenerateAICards() {
-  const topicId = mcGetSelectedTopicId();
-  if (!topicId) {
-    if (typeof showToast === 'function') showToast("Vui lòng chọn Topic trước khi tạo bằng AI", "warning");
-    return;
-  }
-  
-  mcShowLoading("AI đang phân tích tài liệu bài học và tạo thẻ... Vui lòng đợi (có thể mất 10-20 giây).");
-  
-  google.script.run
-    .withSuccessHandler((response) => {
-      mcHideLoading();
-      if (response.success) {
-        if (typeof showToast === 'function') showToast(response.message || "Tạo thẻ bằng AI thành công!", "success");
-        // Reload cards
-        mcLoadTopicCards(topicId, true);
-        mcLoadTopics();
+      if (!cardId) return;
+
+      // Xóa khỏi giao diện ngay
+      mcCurrentCards.splice(index, 1);
+      mcRenderCards();
+      mcUpdateStats();
+
+      if (!cardId.startsWith("TEMP_")) {
+        google.script.run
+          .withFailureHandler((err) => {
+            if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
+          })
+          .deleteMatchingTermCard([cardId]);
       } else {
-        if (typeof showToast === 'function') showToast("Lỗi AI: " + response.message, "error");
-        mcLoadTopicCards(topicId, true); // reload to remove loading state and show old cards
+        if (typeof showToast === 'function') showToast("Đã xóa thẻ nháp", "success");
       }
-    })
-    .withFailureHandler((err) => {
-      mcHideLoading();
-      if (typeof showToast === 'function') showToast("Lỗi kết nối: " + err, "error");
-      mcLoadTopicCards(topicId, true);
-    })
-    .adminGenerateMatchingCardsByAI(topicId);
-}
-
-
-// Giữ lại hàm mcSaveCards nếu Admin muốn cập nhật nhiều thẻ một lúc, nhưng sẽ gọi adminSaveMatchingCards (hàm cũ, hoặc có thể map sang từng update, nhưng thôi ta cứ dùng update vòng lặp hoặc thông báo). Ở quy trình 3 yêu cầu dùng hàm CRUD, ta sẽ gọi update liên tiếp.
-function mcSaveCards() {
-  const topicId = mcGetSelectedTopicId();
-  if (!topicId) return;
-  
-  const checkboxes = document.querySelectorAll('.mc-c-select');
-  const cardsToSave = [];
-  
-  checkboxes.forEach(cb => {
-    if (cb.checked) {
-      const idx = cb.dataset.index;
-      // Auto approve when bulk saving
-      if (mcCurrentCards[idx].status === "draft") {
-        mcCurrentCards[idx].status = "approved";
-        mcCurrentCards[idx].isActive = true;
-      }
-      cardsToSave.push(mcCurrentCards[idx]);
-    }
-  });
-  
-  if (cardsToSave.length === 0) {
-    if (typeof showToast === 'function') showToast("Không có thẻ nào được chọn để lưu.", "warning");
-    return;
+    });
   }
-  
-  mcShowLoading("Đang lưu hàng loạt...");
-  
-  google.script.run
-    .withSuccessHandler((response) => {
-      mcHideLoading();
-      if (response.success) {
-        if (typeof showToast === 'function') showToast(response.message, "success");
-        mcLoadTopicCards(topicId, true);
-        mcUpdateSelectAllCheckbox();
-      } else {
-        if (typeof showToast === 'function') showToast("Lỗi lưu hàng loạt: " + response.message, "error");
-      }
-    })
-    .withFailureHandler((err) => {
-      mcHideLoading();
-      if (typeof showToast === 'function') showToast("Lỗi mạng: " + err, "error");
-    })
-    .bulkSaveMatchingTermCards(cardsToSave);
-}
 
-function mcDeleteCard(index) {
-  mcShowConfirmDeleteModal("Bạn có chắc chắn muốn xóa thẻ này?", function() {
+  function mcDeleteSelectedCards() {
+    const checkboxes = document.querySelectorAll('.mc-c-select');
+    const idsToDelete = [];
+    const idxToRemove = [];
+
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        const idx = parseInt(cb.dataset.index);
+        idxToRemove.push(idx);
+        const c = mcCurrentCards[idx];
+        if (c && c.cardId) {
+          const cId = String(c.cardId);
+          if (!cId.startsWith("TEMP_")) {
+            idsToDelete.push(cId);
+          }
+        }
+      }
+    });
+
+    if (idxToRemove.length === 0) {
+      if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ để xóa", "warning");
+      return;
+    }
+
+    mcShowConfirmDeleteModal(`Bạn có chắc muốn xóa ${idxToRemove.length} thẻ đã chọn?`, function () {
+      idxToRemove.sort((a, b) => b - a).forEach(idx => {
+        mcCurrentCards.splice(idx, 1);
+      });
+      mcRenderCards();
+      mcUpdateStats();
+
+      if (idsToDelete.length > 0) {
+        google.script.run
+          .withFailureHandler((err) => {
+            if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
+          })
+          .deleteMatchingTermCard(idsToDelete);
+      } else {
+        if (typeof showToast === 'function') showToast(`Đã xóa ${idxToRemove.length} thẻ nháp`, "success");
+      }
+    });
+  }
+
+  function mcHideCard(index) {
     const c = mcCurrentCards[index];
     const cardId = c && c.cardId ? String(c.cardId) : "";
-    
     if (!cardId) return;
-    
-    // Xóa khỏi giao diện ngay
-    mcCurrentCards.splice(index, 1);
-    mcRenderCards();
-    mcUpdateStats();
 
-    if (!cardId.startsWith("TEMP_")) {
-      google.script.run
-        .withFailureHandler((err) => {
-          if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
-        })
-        .deleteMatchingTermCard([cardId]);
-    } else {
-      if (typeof showToast === 'function') showToast("Đã xóa thẻ nháp", "success");
+    if (cardId.startsWith("TEMP_")) {
+      if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước khi ẩn", "warning");
+      return;
     }
-  });
-}
 
-function mcDeleteSelectedCards() {
-  const checkboxes = document.querySelectorAll('.mc-c-select');
-  const idsToDelete = [];
-  const idxToRemove = [];
-  
-  checkboxes.forEach(cb => {
-    if (cb.checked) {
-      const idx = parseInt(cb.dataset.index);
-      idxToRemove.push(idx);
-      const c = mcCurrentCards[idx];
-      if (c && c.cardId) {
-        const cId = String(c.cardId);
-        if (!cId.startsWith("TEMP_")) {
-          idsToDelete.push(cId);
+    const topicId = mcGetSelectedTopicId();
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (res.success) {
+          if (typeof showToast === 'function') showToast("Đã ẩn thẻ", "success");
+          mcLoadTopicCards(topicId, true);
+        }
+      })
+      .withFailureHandler((err) => {
+        if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
+      })
+      .hideMatchingTermCard([cardId]);
+  }
+
+  function mcUnhideCard(index) {
+    const c = mcCurrentCards[index];
+    const cardId = c && c.cardId ? String(c.cardId) : "";
+    if (!cardId) return;
+
+    if (cardId.startsWith("TEMP_")) {
+      if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước", "warning");
+      return;
+    }
+
+    const topicId = mcGetSelectedTopicId();
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (res.success) {
+          if (typeof showToast === 'function') showToast("Đã mở ẩn thẻ", "success");
+          mcLoadTopicCards(topicId, true);
+        }
+      })
+      .withFailureHandler((err) => {
+        if (typeof showToast === 'function') showToast("Lỗi mạng khi mở ẩn: " + err, "error");
+      })
+      .approveMatchingTermCards([cardId]);
+  }
+
+  function mcHideSelectedCards() {
+    const checkboxes = document.querySelectorAll('.mc-c-select');
+    const idsToHide = [];
+
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        const idx = parseInt(cb.dataset.index);
+        const c = mcCurrentCards[idx];
+        if (c && c.cardId && !String(c.cardId).startsWith("TEMP_")) {
+          idsToHide.push(String(c.cardId));
         }
       }
-    }
-  });
-  
-  if (idxToRemove.length === 0) {
-    if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ để xóa", "warning");
-    return;
-  }
-  
-  mcShowConfirmDeleteModal(`Bạn có chắc muốn xóa ${idxToRemove.length} thẻ đã chọn?`, function() {
-    idxToRemove.sort((a, b) => b - a).forEach(idx => {
-      mcCurrentCards.splice(idx, 1);
     });
-    mcRenderCards();
-    mcUpdateStats();
 
-    if (idsToDelete.length > 0) {
-      google.script.run
-        .withFailureHandler((err) => {
-          if (typeof showToast === 'function') showToast("Lỗi mạng khi xóa: " + err, "error");
-        })
-        .deleteMatchingTermCard(idsToDelete);
+    if (idsToHide.length === 0) {
+      if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ (đã được lưu) để ẩn", "warning");
+      return;
+    }
+
+    const topicId = mcGetSelectedTopicId();
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (res.success) {
+          if (typeof showToast === 'function') showToast(`Đã ẩn ${res.updatedCount} thẻ`, "success");
+          mcLoadTopicCards(topicId, true);
+        }
+      })
+      .withFailureHandler((err) => {
+        if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
+      })
+      .hideMatchingTermCard(idsToHide);
+  }
+
+  // Modal helpers
+  function mcShowConfirmDeleteModal(msg, onConfirm) {
+    const modal = document.getElementById("mcConfirmDeleteModal");
+    const msgEl = document.getElementById("mcConfirmDeleteMsg");
+    const btn = document.getElementById("mcConfirmDeleteBtn");
+
+    if (modal && msgEl && btn) {
+      msgEl.textContent = msg;
+      btn.onclick = function () {
+        mcCloseConfirmDeleteModal();
+        if (typeof onConfirm === 'function') onConfirm();
+      };
+      modal.style.display = "flex";
     } else {
-      if (typeof showToast === 'function') showToast(`Đã xóa ${idxToRemove.length} thẻ nháp`, "success");
-    }
-  });
-}
-
-function mcHideCard(index) {
-  const c = mcCurrentCards[index];
-  const cardId = c && c.cardId ? String(c.cardId) : "";
-  if (!cardId) return;
-  
-  if (cardId.startsWith("TEMP_")) {
-    if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước khi ẩn", "warning");
-    return;
-  }
-  
-  const topicId = mcGetSelectedTopicId();
-  google.script.run
-    .withSuccessHandler((res) => {
-      if(res.success) {
-        if (typeof showToast === 'function') showToast("Đã ẩn thẻ", "success");
-        mcLoadTopicCards(topicId, true);
-      }
-    })
-    .withFailureHandler((err) => {
-      if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
-    })
-    .hideMatchingTermCard([cardId]);
-}
-
-function mcUnhideCard(index) {
-  const c = mcCurrentCards[index];
-  const cardId = c && c.cardId ? String(c.cardId) : "";
-  if (!cardId) return;
-  
-  if (cardId.startsWith("TEMP_")) {
-    if (typeof showToast === 'function') showToast("Vui lòng lưu thẻ trước", "warning");
-    return;
-  }
-  
-  const topicId = mcGetSelectedTopicId();
-  google.script.run
-    .withSuccessHandler((res) => {
-      if(res.success) {
-        if (typeof showToast === 'function') showToast("Đã mở ẩn thẻ", "success");
-        mcLoadTopicCards(topicId, true);
-      }
-    })
-    .withFailureHandler((err) => {
-      if (typeof showToast === 'function') showToast("Lỗi mạng khi mở ẩn: " + err, "error");
-    })
-    .approveMatchingTermCards([cardId]);
-}
-
-function mcHideSelectedCards() {
-  const checkboxes = document.querySelectorAll('.mc-c-select');
-  const idsToHide = [];
-  
-  checkboxes.forEach(cb => {
-    if (cb.checked) {
-      const idx = parseInt(cb.dataset.index);
-      const c = mcCurrentCards[idx];
-      if (c && c.cardId && !String(c.cardId).startsWith("TEMP_")) {
-        idsToHide.push(String(c.cardId));
+      // Fallback if modal is missing
+      if (confirm(msg)) {
+        if (typeof onConfirm === 'function') onConfirm();
       }
     }
-  });
-  
-  if (idsToHide.length === 0) {
-    if (typeof showToast === 'function') showToast("Vui lòng chọn ít nhất 1 thẻ (đã được lưu) để ẩn", "warning");
-    return;
   }
-  
-  const topicId = mcGetSelectedTopicId();
-  google.script.run
-    .withSuccessHandler((res) => {
-      if(res.success) {
-        if (typeof showToast === 'function') showToast(`Đã ẩn ${res.updatedCount} thẻ`, "success");
-        mcLoadTopicCards(topicId, true);
-      }
-    })
-    .withFailureHandler((err) => {
-      if (typeof showToast === 'function') showToast("Lỗi mạng khi ẩn: " + err, "error");
-    })
-    .hideMatchingTermCard(idsToHide);
-}
 
-// Modal helpers
-function mcShowConfirmDeleteModal(msg, onConfirm) {
-  const modal = document.getElementById("mcConfirmDeleteModal");
-  const msgEl = document.getElementById("mcConfirmDeleteMsg");
-  const btn = document.getElementById("mcConfirmDeleteBtn");
-  
-  if (modal && msgEl && btn) {
-    msgEl.textContent = msg;
-    btn.onclick = function() {
-      mcCloseConfirmDeleteModal();
-      if (typeof onConfirm === 'function') onConfirm();
-    };
-    modal.style.display = "flex";
-  } else {
-    // Fallback if modal is missing
-    if (confirm(msg)) {
-      if (typeof onConfirm === 'function') onConfirm();
-    }
+  function mcCloseConfirmDeleteModal() {
+    const modal = document.getElementById("mcConfirmDeleteModal");
+    if (modal) modal.style.display = "none";
   }
-}
 
-function mcCloseConfirmDeleteModal() {
-  const modal = document.getElementById("mcConfirmDeleteModal");
-  if (modal) modal.style.display = "none";
-}
+  function mcCheckGeminiKeyStatus() {
+    const btn = document.getElementById("mcGeminiKeyBtn");
+    const icon = document.getElementById("mcGeminiKeyIcon");
+    const text = document.getElementById("mcGeminiKeyText");
 
-function mcCheckGeminiKeyStatus() {
-  const btn = document.getElementById("mcGeminiKeyBtn");
-  const icon = document.getElementById("mcGeminiKeyIcon");
-  const text = document.getElementById("mcGeminiKeyText");
-  
-  if (!btn) return;
-  
-  btn.style.opacity = '0.5';
-  
-  google.script.run
-    .withSuccessHandler((res) => {
-      btn.style.opacity = '1';
-      if (res && res.success && res.hasKey && res.isValid) {
-        btn.style.background = '#dcfce7';
-        btn.style.color = '#166534';
-        btn.style.borderColor = '#bbf7d0';
-        icon.textContent = 'key';
-        text.textContent = 'Gemini Key Sẵn Sàng';
+    if (!btn) return;
+
+    btn.style.opacity = '0.5';
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        btn.style.opacity = '1';
+        if (res && res.success && res.hasKey && res.isValid) {
+          btn.style.background = '#dcfce7';
+          btn.style.color = '#166534';
+          btn.style.borderColor = '#bbf7d0';
+          icon.textContent = 'key';
+          text.textContent = 'Gemini Key Sẵn Sàng';
+        } else {
+          btn.style.background = '#fee2e2';
+          btn.style.color = '#b91c1c';
+          btn.style.borderColor = '#fecaca';
+          icon.textContent = 'key_off';
+          text.textContent = res ? (res.hasKey ? 'Key Lỗi/Hết Hạn' : 'Thiếu Gemini Key') : 'Thiếu Gemini Key';
+        }
+      })
+      .withFailureHandler(() => {
+        btn.style.opacity = '1';
+      })
+      .getUserGeminiKeyStatus(null);
+  }
+
+  function mcOpenGeminiKeyModal() {
+    document.getElementById("mcGeminiKeyModal").style.display = "flex";
+    document.getElementById("mcGeminiKeyInput").value = "";
+    document.getElementById("mcGeminiKeyFeedback").style.display = "none";
+  }
+
+  function mcCloseGeminiKeyModal() {
+    document.getElementById("mcGeminiKeyModal").style.display = "none";
+  }
+
+  function mcToggleKeyVisibility() {
+    const input = document.getElementById("mcGeminiKeyInput");
+    const icon = document.getElementById("mcKeyVisibilityIcon");
+    if (input && icon) {
+      if (input.type === "password") {
+        input.type = "text";
+        icon.textContent = "visibility";
       } else {
-        btn.style.background = '#fee2e2';
-        btn.style.color = '#b91c1c';
-        btn.style.borderColor = '#fecaca';
-        icon.textContent = 'key_off';
-        text.textContent = res ? (res.hasKey ? 'Key Lỗi/Hết Hạn' : 'Thiếu Gemini Key') : 'Thiếu Gemini Key';
+        input.type = "password";
+        icon.textContent = "visibility_off";
       }
-    })
-    .withFailureHandler(() => {
-      btn.style.opacity = '1';
-    })
-    .getUserGeminiKeyStatus(null);
-}
-
-function mcOpenGeminiKeyModal() {
-  document.getElementById("mcGeminiKeyModal").style.display = "flex";
-  document.getElementById("mcGeminiKeyInput").value = "";
-  document.getElementById("mcGeminiKeyFeedback").style.display = "none";
-}
-
-function mcCloseGeminiKeyModal() {
-  document.getElementById("mcGeminiKeyModal").style.display = "none";
-}
-
-function mcToggleKeyVisibility() {
-  const input = document.getElementById("mcGeminiKeyInput");
-  const icon = document.getElementById("mcKeyVisibilityIcon");
-  if (input && icon) {
-    if (input.type === "password") {
-      input.type = "text";
-      icon.textContent = "visibility";
-    } else {
-      input.type = "password";
-      icon.textContent = "visibility_off";
     }
   }
-}
 
-function mcSaveGeminiKey() {
-  const keyInput = document.getElementById("mcGeminiKeyInput").value.trim();
-  const feedback = document.getElementById("mcGeminiKeyFeedback");
-  const saveBtn = document.getElementById("mcSaveGeminiKeyBtn");
-  
-  if (!keyInput) {
-    feedback.textContent = "Vui lòng nhập API key";
-    feedback.style.color = "#dc2626";
-    feedback.style.display = "block";
-    return;
-  }
-  
-  feedback.textContent = "Đang kiểm tra và lưu...";
-  feedback.style.color = "#2563eb";
-  feedback.style.display = "block";
-  saveBtn.disabled = true;
-  
-  google.script.run
-    .withSuccessHandler((res) => {
-      saveBtn.disabled = false;
-      if (res && res.success) {
-        feedback.textContent = "Lưu API Key thành công!";
-        feedback.style.color = "#166534";
-        mcCheckGeminiKeyStatus();
-        setTimeout(() => mcCloseGeminiKeyModal(), 1500);
-      } else {
-        feedback.textContent = "Lỗi: " + (res?.message || "Vui lòng kiểm tra lại Key.");
-        feedback.style.color = "#dc2626";
-      }
-    })
-    .withFailureHandler((err) => {
-      saveBtn.disabled = false;
-      feedback.textContent = "Lỗi kết nối: " + err;
+  function mcSaveGeminiKey() {
+    const keyInput = document.getElementById("mcGeminiKeyInput").value.trim();
+    const feedback = document.getElementById("mcGeminiKeyFeedback");
+    const saveBtn = document.getElementById("mcSaveGeminiKeyBtn");
+
+    if (!keyInput) {
+      feedback.textContent = "Vui lòng nhập API key";
       feedback.style.color = "#dc2626";
-    })
-    .upsertUserGeminiApiKey(null, keyInput);
-}
+      feedback.style.display = "block";
+      return;
+    }
 
-function mcSaveTopicMatchingXp() {
-  const topicId = mcGetSelectedTopicId();
-  if (!topicId) return;
-  const input = document.getElementById("mcTopicMatchingXpInput");
-  if (!input) return;
-  const newReward = parseInt(input.value) || 0;
-  
-  mcShowLoading("Đang lưu điểm thưởng XP...");
-  google.script.run
-    .withSuccessHandler((res) => {
-      mcHideLoading();
-      if (res && res.success) {
-        if (typeof showToast === 'function') showToast("✅ Đã lưu điểm thưởng XP Matching: " + newReward + " XP", "success");
-        const topic = mcTopics.find(t => t.topicId === topicId);
-        if (topic) topic.matchingXpReward = newReward;
-      } else {
-        if (typeof showToast === 'function') showToast("❌ Lỗi: " + (res ? res.message : "Không thể lưu"), "error");
-      }
-    })
-    .withFailureHandler((err) => {
-      mcHideLoading();
-      if (typeof showToast === 'function') showToast("❌ Lỗi kết nối: " + err, "error");
-    })
-    .adminUpdateTopicReward(topicId, 'matchingXpReward', newReward);
-}
+    feedback.textContent = "Đang kiểm tra và lưu...";
+    feedback.style.color = "#2563eb";
+    feedback.style.display = "block";
+    saveBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        saveBtn.disabled = false;
+        if (res && res.success) {
+          feedback.textContent = "Lưu API Key thành công!";
+          feedback.style.color = "#166534";
+          mcCheckGeminiKeyStatus();
+          setTimeout(() => mcCloseGeminiKeyModal(), 1500);
+        } else {
+          feedback.textContent = "Lỗi: " + (res?.message || "Vui lòng kiểm tra lại Key.");
+          feedback.style.color = "#dc2626";
+        }
+      })
+      .withFailureHandler((err) => {
+        saveBtn.disabled = false;
+        feedback.textContent = "Lỗi kết nối: " + err;
+        feedback.style.color = "#dc2626";
+      })
+      .upsertUserGeminiApiKey(null, keyInput);
+  }
+
+  function mcSaveTopicMatchingXp() {
+    const topicId = mcGetSelectedTopicId();
+    if (!topicId) return;
+    const input = document.getElementById("mcTopicMatchingXpInput");
+    if (!input) return;
+    const newReward = parseInt(input.value) || 0;
+
+    mcShowLoading("Đang lưu điểm thưởng XP...");
+    google.script.run
+      .withSuccessHandler((res) => {
+        mcHideLoading();
+        if (res && res.success) {
+          if (typeof showToast === 'function') showToast("✅ Đã lưu điểm thưởng XP Matching: " + newReward + " XP", "success");
+          const topic = mcTopics.find(t => t.topicId === topicId);
+          if (topic) topic.matchingXpReward = newReward;
+        } else {
+          if (typeof showToast === 'function') showToast("❌ Lỗi: " + (res ? res.message : "Không thể lưu"), "error");
+        }
+      })
+      .withFailureHandler((err) => {
+        mcHideLoading();
+        if (typeof showToast === 'function') showToast("❌ Lỗi kết nối: " + err, "error");
+      })
+      .adminUpdateTopicReward(topicId, 'matchingXpReward', newReward);
+  }
 </script>
