@@ -195,7 +195,7 @@ function registerWithEmail(userData) {
       username,
       passwordHash,
       randomAvatar, // ⭐ AVATAR NGẪU NHIÊN
-      "student",
+      "USER",
       1,
       1,
       0,
