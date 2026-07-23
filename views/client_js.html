@@ -1623,16 +1623,8 @@
 
           showToast(response.message, "success");
 
-          // ⭐ Redirect dựa vào role
-          setTimeout(() => {
-            if (response.user.role === "ADMIN") {
-              console.log("🛡️ Admin detected, redirecting to admin panel...");
-              showPage("page-admin");
-            } else {
-              showPage("page-dashboard");
-              loadDashboardData();
-            }
-          }, 1000);
+          // ⭐ Show full-page success screen
+          showLoginSuccessScreen(response.user);
         } else {
           showToast(response.message, "error");
         }
@@ -3759,6 +3751,145 @@ function initStudyWidgetDrag() {
     var computed = window.getComputedStyle(widget);
     var currentBottom = parseFloat(computed.bottom) || 22;
     applyVerticalPosition(currentBottom);
+  });
+}
+
+function showLoginSuccessScreen(user) {
+  const overlay = document.createElement('div');
+  overlay.id = 'manual-login-success-overlay';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.zIndex = '999999';
+  overlay.style.backgroundColor = '#162e23';
+  overlay.style.backgroundImage = 'linear-gradient(135deg, #1a3328 0%, #2d5a3d 30%, #1e4a2e 60%, #162e23 100%)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.overflow = 'hidden';
+
+  if (!document.getElementById('success-screen-styles')) {
+    const style = document.createElement('style');
+    style.id = 'success-screen-styles';
+    style.innerHTML = `
+      .stars { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+      .star { position: absolute; width: 3px; height: 3px; background: white; border-radius: 50%; animation: twinkle 2s ease-in-out infinite; }
+      @keyframes twinkle { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }
+      .success-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border-radius: 24px; padding: 3rem 2.5rem; text-align: center; max-width: 420px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); animation: cardAppear 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); position: relative; z-index: 10; }
+      @keyframes cardAppear { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      .success-logo { margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; height: 60px; }
+      .success-logo img { height: 50px; width: auto; transform: scale(2.2); transform-origin: center; filter: drop-shadow(0 4px 15px rgba(0,0,0,0.15)); }
+      .success-card h2 { color: #0f172a; font-size: 1.75rem; font-weight: 700; margin-bottom: 0.75rem; }
+      .welcome-text { color: #64748b; font-size: 1rem; line-height: 1.6; margin-bottom: 2rem; }
+      .welcome-text strong { color: #2d5a3d; font-weight: 600; }
+      .btn-dashboard { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: linear-gradient(135deg, #2d5a3d 0%, #1a3328 100%); color: white; padding: 1rem 2rem; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 1rem; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 4px 15px rgba(45, 90, 61, 0.4); border: none; cursor: pointer; }
+      .btn-dashboard:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(45, 90, 61, 0.5); }
+      .btn-dashboard svg { width: 20px; height: 20px; transition: transform 0.3s ease; }
+      .btn-dashboard:hover svg { transform: translateX(4px); }
+      .fireflies { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+      .firefly { position: absolute; width: 4px; height: 4px; background: #eab308; border-radius: 50%; filter: blur(1px); box-shadow: 0 0 10px 2px #facc15; animation: fly 10s infinite ease-in-out; opacity: 0; }
+      @keyframes fly { 0% { transform: translate(0, 0) scale(1); opacity: 0; } 20% { opacity: 0.8; } 80% { opacity: 0.8; } 100% { transform: translate(var(--tw-tx), var(--tw-ty)) scale(0.5); opacity: 0; } }
+      .confetti { position: absolute; width: 10px; height: 10px; border-radius: 2px; animation: confettiFall 3s ease-out forwards; z-index: 5; }
+      @keyframes confettiFall { 0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+      @media (max-width: 768px) {
+        .success-card { width: 94vw; max-width: 94vw; padding: 6rem 4.5rem; border-radius: 40px; }
+        .success-logo { height: 100px; margin-bottom: 3rem; }
+        .success-logo img { height: 80px; transform: scale(2.9); }
+        .success-card h2 { font-size: 2.8rem; }
+        .welcome-text { font-size: 1.5rem; }
+        .btn-dashboard { padding: 1.6rem 3.2rem; font-size: 1.4rem; border-radius: 20px; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const buttonText = user.role === 'ADMIN' ? 'Vào Admin Panel' : 'Vào Dashboard';
+  const displayName = user.displayName || user.fullName || user.username || 'User';
+
+  overlay.innerHTML = `
+    <!-- Stars Background -->
+    <div class="stars" id="login-stars"></div>
+    
+    <!-- Fireflies Background -->
+    <div class="fireflies" id="login-fireflies"></div>
+    
+    <!-- Success Card -->
+    <div class="success-card">
+      <div class="success-logo">
+        <img src="https://cdn.jsdelivr.net/gh/twngvi/Doan@main/Image/Dashboard/TerraCode.png?v=20260524" alt="Logo" />
+      </div>
+        
+      <h2>Chào mừng trở lại! 🎉</h2>
+      <p class="welcome-text">
+        Xin chào <strong>${displayName}</strong>!<br>
+      </p>
+      
+      <button class="btn-dashboard" id="loginRedirectBtn">
+        ${buttonText}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Stars
+  const starsContainer = document.getElementById('login-stars');
+  for (let i = 0; i < 50; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    star.style.left = Math.random() * 100 + '%';
+    star.style.top = Math.random() * 100 + '%';
+    star.style.animationDelay = Math.random() * 2 + 's';
+    star.style.width = (Math.random() * 2 + 1) + 'px';
+    star.style.height = star.style.width;
+    starsContainer.appendChild(star);
+  }
+
+  // Fireflies
+  const firefliesContainer = document.getElementById('login-fireflies');
+  for (let i = 0; i < 15; i++) {
+    const f = document.createElement('div');
+    f.className = 'firefly';
+    f.style.left = Math.random() * 100 + '%';
+    f.style.top = Math.random() * 100 + '%';
+    const tx = (Math.random() - 0.5) * 500;
+    const ty = (Math.random() - 0.5) * 500;
+    f.style.setProperty('--tw-tx', tx + 'px');
+    f.style.setProperty('--tw-ty', ty + 'px');
+    f.style.animationDuration = (Math.random() * 5 + 8) + 's';
+    f.style.animationDelay = Math.random() * 5 + 's';
+    firefliesContainer.appendChild(f);
+  }
+
+  // Confetti
+  const colors = ['#facc15', '#22c55e', '#ef4444', '#3b82f6', '#a855f7'];
+  for (let i = 0; i < 50; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+    c.style.animationDelay = Math.random() * 2 + 's';
+    overlay.appendChild(c);
+  }
+
+  // Handle click
+  document.getElementById('loginRedirectBtn').addEventListener('click', function() {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.5s ease';
+    setTimeout(() => {
+      document.body.removeChild(overlay);
+      if (user.role === "ADMIN") {
+        showPage("page-admin");
+      } else {
+        showPage("page-dashboard");
+        try { loadDashboardData(); } catch(e) {}
+      }
+    }, 500);
   });
 }
 
