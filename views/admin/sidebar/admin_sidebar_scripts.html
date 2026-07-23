@@ -358,42 +358,41 @@
   }
 
   function handleAdminLogout() {
-    if (typeof handleLogout === "function") {
-      handleLogout(true);
-      document.body.classList.remove("has-admin-sidebar");
-      document.body.classList.remove("admin-sidebar-collapsed");
-      return;
-    }
-
-    // Clear session/token
-    window.currentUser = null;
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("userSession");
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("lastActivePage");
-    localStorage.removeItem(ADMIN_LAST_PAGE_KEY);
-    localStorage.removeItem("authToken");
-    sessionStorage.removeItem("authPanelOpen");
-    sessionStorage.removeItem("authFormType");
-
     // Remove admin sidebar classes
     document.body.classList.remove("has-admin-sidebar");
     document.body.classList.remove("admin-sidebar-collapsed");
-
-    // Reset landing CTA if available
-    if (typeof resetLandingCTA === "function") {
-      resetLandingCTA();
+    document.body.classList.remove("admin-mobile-open");
+    document.body.style.overflow = ""; // Remove overflow hidden if on mobile
+    
+    // Close any open modals and mobile sidebar
+    if (typeof closeAdminMobileSidebar === "function") {
+      closeAdminMobileSidebar();
     }
+    hideAdminLogoutModal();
+    window.location.hash = "";
 
-    // Navigate to login page
-    if (typeof showPage === "function") {
-      showPage("page-login");
+    // Clear admin-specific tokens
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem(ADMIN_LAST_PAGE_KEY);
+    localStorage.removeItem("lastActivePage");
+
+    // Call the global logout function
+    if (typeof window.handleLogout === "function") {
+      window.handleLogout(true);
     } else {
-      // Reload current page without parameters
-      var baseUrl = window.location.href.split("?")[0];
-      window.location.href = baseUrl;
+      // Fallback
+      window.currentUser = null;
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("userSession");
+      localStorage.removeItem("isLoggedIn");
+      localStorage.removeItem("userId");
+      
+      if (typeof showPage === "function") {
+        showPage("page-landing", {}, false);
+        history.replaceState({ pageId: "page-landing", params: {} }, "", window.location.pathname + "?page=landing");
+      } else {
+        window.location.reload();
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   /**
    * client_js.html - Client-Side JavaScript
    *
@@ -212,12 +212,28 @@
     }, SESSION_CHECK_INTERVAL_MS);
   }
 
-  function handleForceLogout(message) {
+  function stopSessionInfrastructure() {
+    stopUserHeartbeat();
+    
+    if (heartbeatMonitorId) {
+      clearInterval(heartbeatMonitorId);
+      heartbeatMonitorId = null;
+    }
+    
     if (sessionMonitorId) {
       clearInterval(sessionMonitorId);
       sessionMonitorId = null;
     }
-    stopUserHeartbeat();
+  }
+
+  function startSessionInfrastructure() {
+    startUserHeartbeat();
+    initHeartbeatMonitor();
+    initSessionMonitor();
+  }
+
+  function handleForceLogout(message) {
+    stopSessionInfrastructure();
 
     // Show toast
     if (typeof window.showToast === "function") {
@@ -228,7 +244,7 @@
 
     // Call logout if available, or just clear storage and redirect
     if (typeof handleLogout === "function") {
-      handleLogout(false); // pass false if we don't need a server call, but handleLogout might do it anyway.
+      handleLogout(false, false); // No server session clear, no duplicate toast
     } else {
       localStorage.removeItem("currentUser");
       localStorage.removeItem("isLoggedIn");
@@ -656,11 +672,9 @@
     }
 
     if (isSessionLoggedIn()) {
-      startUserHeartbeat();
+      startSessionInfrastructure();
       setTimeout(initStudyWidget, 2000); // Init study widget after login
     }
-    initHeartbeatMonitor();
-    initSessionMonitor(); // ⭐ Start checking session periodically
 
     // BƯỚC 1.5: Khôi phục Theme ngay lập tức (via ThemeManager)
     try {
@@ -1015,7 +1029,20 @@
     const isAdmin = userRole === "ADMIN";
 
     // Kiểm tra quyền truy cập
-    if (window.currentUser) {
+    const publicPages = [
+      "page-landing",
+      "page-login",
+      "page-register",
+      "page-verify-email",
+      "page-forgot-password",
+    ];
+
+    if (!isSessionLoggedIn() && !publicPages.includes(pageId)) {
+      console.warn("🚫 Chặn truy cập trang bảo vệ khi chưa đăng nhập:", pageId);
+      pageId = "page-landing";
+      addToHistory = false;
+      history.replaceState({ pageId: "page-landing", params: {} }, "", window.location.pathname + "?page=landing");
+    } else if (window.currentUser) {
       if (isAdmin && userOnlyPageIds.includes(pageId)) {
         console.warn("🛡️ Admin không được vào trang user:", pageId);
         showToast("Admin chỉ có thể truy cập Admin Panel", "warning");
@@ -1611,7 +1638,7 @@
           dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
           localStorage.setItem("userId", response.user.userId);
-          startUserHeartbeat();
+          startSessionInfrastructure();
           applyThemeFromAuthenticatedUser(response.user);
 
           console.log("✅ Session saved:", {
@@ -1824,6 +1851,153 @@
     return key;
   }
 
+  function handleLogout(clearServerSession = true, showLogoutToast = true) {
+    console.log("Logging out...");
+
+    const userBeforeLogout = window.currentUser || currentUser || getStoredCurrentUser();
+
+    if (typeof stopSessionInfrastructure === "function") {
+      stopSessionInfrastructure();
+    } else {
+      stopUserHeartbeat();
+    }
+    showLoading(true);
+
+    function finalizeLogout() {
+      // Clear user data from all storage
+      currentUser = null;
+      window.currentUser = null; // ⭐ Xóa khỏi window
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("userSession");
+      localStorage.removeItem("isLoggedIn");
+      localStorage.removeItem("userId");
+
+      // Clear App caches (Dashboard, Topics, etc.)
+      clearAppLocalCaches();
+
+      // ⭐ FIX F5: Xóa trang đã lưu để tránh quay lại trang cũ
+      localStorage.removeItem("lastActivePage");
+
+      // Clear localStorage nếu có
+      localStorage.removeItem("user");
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("recentActivities"); // Clear activity cache
+      localStorage.removeItem("streakData");       // Clear streak cache
+
+      // Clear theme
+      if (window.ThemeManager) {
+        window.ThemeManager.resetTheme();
+      } else {
+        localStorage.removeItem("userTheme");
+        document.body.className = "theme-default";
+      }
+
+      // Clear auth panel state
+      sessionStorage.removeItem("authPanelOpen");
+      sessionStorage.removeItem("authFormType");
+      sessionStorage.removeItem("currentUser");
+      sessionStorage.removeItem("isLoggedIn");
+      sessionStorage.removeItem("userId");
+
+      // Hide Study Widget and Timeline Popup
+      const studyWidget = document.getElementById("study-widget");
+      if (studyWidget) studyWidget.style.display = "none";
+      if (typeof closeTimelinePopup === "function") closeTimelinePopup();
+      if (typeof toggleStudyWidget === "function") {
+          const panel = document.getElementById("study-widget-panel");
+          if (panel && panel.classList.contains("active")) {
+             toggleStudyWidget();
+          }
+      }
+
+      // Clear Google auth state if needed
+      if (
+        typeof googleClientInitialized !== "undefined" && googleClientInitialized &&
+        typeof google !== "undefined" &&
+        google.accounts
+      ) {
+        try {
+          google.accounts.id.disableAutoSelect();
+          console.log("Google auto-select disabled");
+        } catch (e) {
+          console.log("Error disabling Google auto-select:", e);
+        }
+      }
+
+      // Show message
+      if (showLogoutToast) {
+        if (typeof showToast === "function") {
+          showToast("Đã đăng xuất", "info");
+        } else {
+          showAppAlert("Đã đăng xuất");
+        }
+      }
+
+      // Navigate to login safely
+      setTimeout(() => {
+        // Reset landing page CTA buttons to show login/register
+        if (typeof resetLandingCTA === "function") resetLandingCTA();
+        if (typeof dispatchCurrentUserState === "function") dispatchCurrentUserState(null);
+
+        hideLoading();
+        
+        if (typeof showPage === "function") {
+          showPage("page-landing", {}, false);
+          // Block the back button from returning to the app
+          history.replaceState({ pageId: "page-landing", params: {} }, "", window.location.pathname + "?page=landing");
+        } else {
+          document
+            .querySelectorAll(".page-content")
+            .forEach((p) => (p.style.display = "none"));
+          const landingPage = document.getElementById("page-landing");
+          if (landingPage) landingPage.style.display = "block";
+        }
+      }, 500);
+    }
+
+    // Chỉ xóa session server khi user bấm đăng xuất thật
+    if (
+      clearServerSession &&
+      userBeforeLogout &&
+      userBeforeLogout.userId &&
+      userBeforeLogout.sessionId &&
+      typeof google !== "undefined" &&
+      google.script &&
+      google.script.run
+    ) {
+      // Setup a timeout so we don't hang if server is slow or fails silently
+      let finalized = false;
+      const fallbackTimeout = setTimeout(() => {
+        if (!finalized) {
+           console.warn("Server session clear timeout. Finalizing logout locally.");
+           finalized = true;
+           finalizeLogout();
+        }
+      }, 3000);
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          console.log("Server session cleared:", res);
+          if (!finalized) {
+            finalized = true;
+            clearTimeout(fallbackTimeout);
+            finalizeLogout();
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn("Clear server session failed:", err);
+          if (!finalized) {
+            finalized = true;
+            clearTimeout(fallbackTimeout);
+            finalizeLogout();
+          }
+        })
+        .clearSessionDb(userBeforeLogout.userId, userBeforeLogout.sessionId);
+    } else {
+      finalizeLogout();
+    }
+  }
+
   function getAppActiveDraftKey(moduleName) {
     return moduleName + "_active_draft_" + getAppUserKey();
   }
@@ -1862,120 +2036,6 @@
     }
   }
 
-  /**
-   * Handle logout
-   */
-  function handleLogout(clearServerSession = true) {
-    console.log("Logging out...");
-
-    const userBeforeLogout = window.currentUser || currentUser || getStoredCurrentUser();
-
-    stopUserHeartbeat();
-
-    // Chỉ xóa session server khi user bấm đăng xuất thật
-    // Không xóa khi bị FORCE_LOGOUT từ thiết bị khác
-    if (
-      clearServerSession &&
-      userBeforeLogout &&
-      userBeforeLogout.userId &&
-      userBeforeLogout.sessionId &&
-      typeof google !== "undefined" &&
-      google.script &&
-      google.script.run
-    ) {
-      google.script.run
-        .withSuccessHandler(function (res) {
-          console.log("Server session cleared:", res);
-        })
-        .withFailureHandler(function (err) {
-          console.warn("Clear server session failed:", err);
-        })
-        .clearUserSession(userBeforeLogout.userId, userBeforeLogout.sessionId);
-    }
-
-    // Clear user data from all storage
-    currentUser = null;
-    window.currentUser = null; // â­ XÃ³a khá»i window
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("userSession");
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("userId");
-
-    // Clear App caches (Dashboard, Topics, etc.)
-    clearAppLocalCaches();
-
-    // â­ FIX F5: XÃ³a trang Ä‘Ã£ lÆ°u Ä‘á»ƒ trÃ¡nh quay láº¡i trang cÅ©
-    localStorage.removeItem("lastActivePage");
-
-    // Clear localStorage náº¿u cÃ³
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("user");
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("recentActivities"); // Clear activity cache
-    localStorage.removeItem("streakData");       // Clear streak cache
-
-    // Clear theme
-    if (window.ThemeManager) {
-      window.ThemeManager.resetTheme();
-    } else {
-      localStorage.removeItem("userTheme");
-    }
-
-    // Clear auth panel state
-    sessionStorage.removeItem("authPanelOpen");
-    sessionStorage.removeItem("authFormType");
-    sessionStorage.removeItem("currentUser");
-    sessionStorage.removeItem("isLoggedIn");
-    sessionStorage.removeItem("userId");
-
-    // Hide Study Widget and Timeline Popup
-    const studyWidget = document.getElementById("study-widget");
-    if (studyWidget) studyWidget.style.display = "none";
-    if (typeof closeTimelinePopup === "function") closeTimelinePopup();
-    if (typeof toggleStudyWidget === "function") {
-        const panel = document.getElementById("study-widget-panel");
-        if (panel && panel.classList.contains("active")) {
-           toggleStudyWidget();
-        }
-    }
-
-    // Clear Google auth state if needed
-    if (
-      googleClientInitialized &&
-      typeof google !== "undefined" &&
-      google.accounts
-    ) {
-      try {
-        google.accounts.id.disableAutoSelect();
-        console.log("Google auto-select disabled");
-      } catch (e) {
-        console.log("Error disabling Google auto-select:", e);
-      }
-    }
-
-    // Show message
-    if (typeof showToast === "function") {
-      showToast("Đã đăng xuất", "info");
-    } else {
-      showAppAlert("Đã đăng xuất");
-    }
-
-    // Navigate to login
-    setTimeout(() => {
-      // Reset landing page CTA buttons to show login/register
-      resetLandingCTA();
-
-      if (typeof showPage === "function") {
-        showPage("page-landing");
-      } else {
-        document
-          .querySelectorAll(".page-content")
-          .forEach((p) => (p.style.display = "none"));
-        const landingPage = document.getElementById("page-landing");
-        if (landingPage) landingPage.style.display = "block";
-      }
-    }, 500);
-  }
 
   /**
    * Reset landing page CTA buttons to default (login/register)
@@ -2022,9 +2082,9 @@
     const shouldOpen = await showAppConfirm(
       message + "\n\nBáº¡n cÃ³ muá»‘n má»Ÿ trang Google Accounts khÃ´ng?",
       {
-        title: "Chá»n tÃ i khoáº£n Google",
+        title: "Chá» n tÃ i khoáº£n Google",
         confirmText: "Má»Ÿ Google Accounts",
-        cancelText: "ÄÃ³ng",
+        cancelText: "Ä Ã³ng",
       },
     );
     if (shouldOpen) {
@@ -2072,7 +2132,7 @@
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
-          startUserHeartbeat();
+          startSessionInfrastructure();
           applyThemeFromAuthenticatedUser(response.user);
 
           showToast(response.message || "Đăng nhập thành công!", "success");
@@ -2194,7 +2254,7 @@
       showToast("Timeout: Vui lòng thử lại.", "error");
     }, 30000);
 
-    // Gá»i autoRegisterWithGoogle() - email tá»± Ä‘á»™ng láº¥y tá»« Session
+    // Gá» i autoRegisterWithGoogle() - email tá»± Ä‘á»™ng láº¥y tá»« Session
     google.script.run
       .withSuccessHandler(function (response) {
         clearTimeout(timeoutId);
@@ -2203,13 +2263,13 @@
         console.log("âœ… Auto Register Response:", response);
 
         if (response.success) {
-          // ÄÄƒng kÃ½ thÃ nh cÃ´ng
+          // Ä Äƒng kÃ½ thÃ nh cÃ´ng
           currentUser = response.user;
           window.currentUser = response.user;
           localStorage.setItem("currentUser", JSON.stringify(response.user));
           dispatchCurrentUserState(response.user);
           localStorage.setItem("isLoggedIn", "true");
-          startUserHeartbeat();
+          startSessionInfrastructure();
 
           showToast(response.message || "Đăng ký thành công!", "success");
 
@@ -2257,7 +2317,7 @@
       localStorage.setItem("currentUser", JSON.stringify(currentUser));
       dispatchCurrentUserState(response.user);
       localStorage.setItem("isLoggedIn", "true");
-      startUserHeartbeat();
+      startSessionInfrastructure();
       console.log("âœ… Current user synced to window:", currentUser.username);
 
       console.log("User saved to localStorage:", currentUser.username);
@@ -3296,20 +3356,8 @@
 
 
 
+  // pagehide listener removed as it causes session drops on refresh
   window.loadDashboardData = loadDashboardData;
-  function tryClearSessionOnClose() {
-    const user = getHeartbeatUser && getHeartbeatUser();
-
-    if (!user || !user.userId || !user.sessionId) return;
-
-    try {
-      google.script.run.clearUserSession(user.userId, user.sessionId);
-    } catch (e) {
-      console.warn("Clear session on close failed:", e);
-    }
-  }
-
-  window.addEventListener("pagehide", tryClearSessionOnClose);
 
   // ==================== Study Widget Logic ====================
   function toggleStudyWidget(e) {
