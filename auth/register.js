@@ -529,6 +529,8 @@ function verifyEmailWithCode(verificationData) {
     const expiresIndex = headers.indexOf("verificationExpires");
     const emailVerifiedIndex = headers.indexOf("emailVerified");
     const isActiveIndex = headers.indexOf("isActive");
+    const progressSheetIdIndex = headers.indexOf("progressSheetId");
+    const fullNameIndex = headers.indexOf("fullName");
 
     // Find user by email
     for (let i = 1; i < data.length; i++) {
@@ -567,6 +569,27 @@ function verifyEmailWithCode(verificationData) {
         usersSheet.getRange(i + 1, emailVerifiedIndex + 1).setValue(true);
         usersSheet.getRange(i + 1, isActiveIndex + 1).setValue(true);
         usersSheet.getRange(i + 1, tokenIndex + 1).setValue(""); // Clear token
+
+        // Create personal sheet if needed
+        let progressSheetId = progressSheetIdIndex >= 0 ? data[i][progressSheetIdIndex] : "";
+        if (!progressSheetId || progressSheetId === "") {
+          try {
+            const userId = data[i][0];
+            const username = fullNameIndex >= 0 ? data[i][fullNameIndex] : verificationData.email;
+            Logger.log("Creating personal sheet for user: " + userId);
+            progressSheetId = createUserPersonalSheet(userId, username);
+            if (progressSheetIdIndex >= 0) {
+              usersSheet
+                .getRange(i + 1, progressSheetIdIndex + 1)
+                .setValue(progressSheetId);
+            }
+            Logger.log("Created personal sheet: " + progressSheetId);
+          } catch (sheetError) {
+            Logger.log(
+              "Failed to create personal sheet: " + sheetError.toString(),
+            );
+          }
+        }
 
         // Log activity
         logActivity({
