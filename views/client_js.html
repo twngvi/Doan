@@ -1909,7 +1909,7 @@
       // Hide Study Widget and Timeline Popup
       const studyWidget = document.getElementById("study-widget");
       if (studyWidget) studyWidget.style.display = "none";
-      if (typeof closeTimelinePopup === "function") closeTimelinePopup();
+
       if (typeof toggleStudyWidget === "function") {
           const panel = document.getElementById("study-widget-panel");
           if (panel && panel.classList.contains("active")) {
@@ -3470,16 +3470,14 @@
     const spaceBottom = viewportHeight - btnRect.bottom;
   
     let placement = "top";
-    let top = btnRect.top - panelHeight - gap;
+    // Đặt panel sang bên trái nút
+    let left = btnRect.left - panelWidth - gap;
+    let top = btnRect.bottom - panelHeight; // Căn đáy panel bằng đáy nút
   
-    // Nếu phía trên không đủ chỗ thì bung xuống dưới
-    if (spaceTop < panelHeight + gap && spaceBottom > spaceTop) {
-      placement = "bottom";
-      top = btnRect.bottom + gap;
+    // Nếu màn hình nhỏ không đủ chỗ bên trái, căn giữa màn hình hoặc căn trái nút
+    if (left < safe) {
+      left = Math.max(safe, btnRect.left - panelWidth + btnRect.width); 
     }
-  
-    // Căn panel theo tâm của icon
-    let left = btnRect.left + btnRect.width / 2 - panelWidth / 2;
   
     // Không cho panel tràn khỏi màn hình
     left = Math.max(safe, Math.min(left, viewportWidth - panelWidth - safe));
@@ -3518,80 +3516,10 @@
      }
      loadStudyWidgetData();
      
-     // Check if we should show the timeline popup (only once per session/day)
-     if (!sessionStorage.getItem("timelinePopupShown")) {
-        setTimeout(checkAndShowTimelinePopup, 1000);
-     }
+
   }
 
-  function checkAndShowTimelinePopup() {
-     const user = getHeartbeatUser();
-     if (!user) return;
 
-     google.script.run
-      .withSuccessHandler(function(res) {
-         if (res && res.success && res.timeline) {
-            const today = res.timeline.today;
-            
-            // Only show if there are lessons to learn
-            if (today.goal > 0 && today.lessons && today.lessons.length > 0) {
-                const popup = document.getElementById("timeline-popup-overlay");
-                const content = document.getElementById("timeline-popup-content");
-                const streak = document.getElementById("timeline-popup-streak");
-                const title = document.querySelector("#timeline-popup-overlay .app-dialog-title");
-                
-                if (title) {
-                    title.textContent = `Mục tiêu hôm nay: ${today.completed}/${today.goal} bài`;
-                }
-
-                if (content) {
-                    let html = today.lessons.map((l, index) => {
-                        const isDone = l.isCompleted;
-                        const bgColor = isDone ? '#dcfce7' : '#fef3c7';
-                        const textColor = isDone ? '#166534' : '#d97706';
-                        const icon = isDone ? '✓' : (index + 1);
-                        const titleStyle = isDone ? 'text-decoration: line-through; color: #6b7280;' : '';
-                        return `
-                           <div style="display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-                              <div style="width: 30px; height: 30px; border-radius: 50%; background: ${bgColor}; color: ${textColor}; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; flex-shrink: 0;">
-                                 ${icon}
-                              </div>
-                              <div style="flex: 1; font-weight: 500; ${titleStyle}">${l.title || 'Bài học'}</div>
-                           </div>
-                        `;
-                    }).join("");
-                    
-                    if (today.lessons.length < today.goal) {
-                        html += `<div style="text-align: center; color: #6b7280; font-size: 0.9rem; margin-top: 10px; font-style: italic;">Hiện chỉ còn ${today.lessons.length} bài khả dụng trong lộ trình.</div>`;
-                    }
-                    content.innerHTML = html;
-                }
-                
-                if (popup) {
-                    popup.classList.add("active");
-                    popup.setAttribute("aria-hidden", "false");
-                }
-                
-                sessionStorage.setItem("timelinePopupShown", "true");
-            }
-         }
-      })
-      .apiGenerateTimeline({ email: user.email });
-  }
-
-  function closeTimelinePopup(event) {
-      const popup = document.getElementById("timeline-popup-overlay");
-      if (popup) {
-          popup.classList.remove("active");
-          popup.setAttribute("aria-hidden", "true");
-      }
-      
-      if (!event) {
-          if (typeof showPage === "function") {
-              showPage("page-topics");
-          }
-      }
-  }
 
   function loadStudyWidgetData() {
      const user = getHeartbeatUser();
