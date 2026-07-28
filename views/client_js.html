@@ -3571,9 +3571,6 @@ var _studyWidgetDragInited = false;
 function initStudyWidgetDrag() {
   if (_studyWidgetDragInited) return;
 
-  // Xóa key cũ nếu trước đó bạn đã dùng kéo tự do
-  localStorage.removeItem("studyWidgetPosition:v1");
-
   var widget = document.getElementById("study-widget");
   var btn = document.getElementById("study-widget-btn");
 
@@ -3581,8 +3578,10 @@ function initStudyWidgetDrag() {
 
   _studyWidgetDragInited = true;
 
-  var STORAGE_KEY = "studyWidgetVerticalPosition:v1";
+  var STORAGE_KEY = "studyWidgetPosition:v2";
+  var startX = 0;
   var startY = 0;
+  var startRight = 0;
   var startBottom = 0;
   var isDragging = false;
   var dragged = false;
@@ -3590,72 +3589,66 @@ function initStudyWidgetDrag() {
   btn.style.touchAction = "none";
   widget.style.touchAction = "none";
 
-  function getRightColumnValue() {
-    var backToTop = document.getElementById("app-back-to-top");
-
-    if (backToTop) {
-      var computed = window.getComputedStyle(backToTop);
-      return computed.right || "1.25rem";
-    }
-
-    return window.innerWidth <= 768 ? "1rem" : "1.25rem";
-  }
-
-  function clampBottom(bottomValue) {
-    var safeBottom = 14;
-    var safeTop = 14;
-
+  function clampPosition(rightValue, bottomValue) {
+    var safeX = 14;
+    var safeY = 14;
+    var widgetWidth = widget.offsetWidth || 46;
     var widgetHeight = widget.offsetHeight || 46;
-    var maxBottom = window.innerHeight - widgetHeight - safeTop;
+    
+    var maxRight = window.innerWidth - widgetWidth - safeX;
+    var maxBottom = window.innerHeight - widgetHeight - safeY;
 
-    return Math.max(safeBottom, Math.min(bottomValue, maxBottom));
+    return {
+      right: Math.max(safeX, Math.min(rightValue, maxRight)),
+      bottom: Math.max(safeY, Math.min(bottomValue, maxBottom))
+    };
   }
 
-  function applyVerticalPosition(bottomValue) {
-    var finalBottom = clampBottom(bottomValue);
+  function applyPosition(rightValue, bottomValue) {
+    var pos = clampPosition(rightValue, bottomValue);
 
     widget.style.setProperty("position", "fixed", "important");
-    widget.style.setProperty("right", getRightColumnValue(), "important");
-    widget.style.setProperty("bottom", finalBottom + "px", "important");
-
-    // Khóa ngang tuyệt đối
+    widget.style.setProperty("right", pos.right + "px", "important");
+    widget.style.setProperty("bottom", pos.bottom + "px", "important");
     widget.style.setProperty("left", "auto", "important");
     widget.style.setProperty("top", "auto", "important");
 
-    return finalBottom;
+    return pos;
   }
 
-  function saveVerticalPosition() {
+  function savePosition() {
     var computed = window.getComputedStyle(widget);
+    var right = parseFloat(computed.right) || 20;
     var bottom = parseFloat(computed.bottom) || 22;
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ bottom: bottom }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ right: right, bottom: bottom }));
     } catch (e) {
       console.warn("Không thể lưu vị trí study widget:", e);
     }
   }
 
-  function restoreVerticalPosition() {
+  function restorePosition() {
     try {
       var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
-      if (saved && typeof saved.bottom !== "undefined") {
-        applyVerticalPosition(Number(saved.bottom) || 22);
+      if (saved && typeof saved.right !== "undefined" && typeof saved.bottom !== "undefined") {
+        applyPosition(Number(saved.right), Number(saved.bottom));
       } else {
-        applyVerticalPosition(22);
+        applyPosition(20, 22);
       }
     } catch (e) {
-      applyVerticalPosition(22);
+      applyPosition(20, 22);
     }
   }
 
   function onPointerMove(e) {
     if (!isDragging) return;
 
+    var deltaX = e.clientX - startX;
     var deltaY = e.clientY - startY;
 
-    if (!dragged && Math.abs(deltaY) > 4) {
+    if (!dragged && (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4)) {
       dragged = true;
       window.isDraggingStudyWidget = true;
       widget.classList.add("is-dragging");
@@ -3666,9 +3659,10 @@ function initStudyWidgetDrag() {
     e.preventDefault();
     e.stopPropagation();
 
-    // Chỉ thay đổi bottom, không thay đổi left/right
+    var newRight = startRight - deltaX;
     var newBottom = startBottom - deltaY;
-    applyVerticalPosition(newBottom);
+    
+    applyPosition(newRight, newBottom);
 
     if (typeof positionStudyWidgetPanel === "function") {
       positionStudyWidgetPanel();
@@ -3687,7 +3681,7 @@ function initStudyWidgetDrag() {
     document.body.style.userSelect = "";
 
     if (dragged) {
-      saveVerticalPosition();
+      savePosition();
     }
 
     setTimeout(function () {
@@ -3705,16 +3699,17 @@ function initStudyWidgetDrag() {
     isDragging = true;
     dragged = false;
 
+    startX = e.clientX;
     startY = e.clientY;
 
     var computed = window.getComputedStyle(widget);
+    startRight = parseFloat(computed.right) || 20;
     startBottom = parseFloat(computed.bottom) || 22;
 
     widget.style.transition = "none";
     document.body.style.userSelect = "none";
 
-    // Đảm bảo vừa bấm kéo là nó quay về đúng cột cạnh phải
-    applyVerticalPosition(startBottom);
+    applyPosition(startRight, startBottom);
 
     if (btn.setPointerCapture) {
       try {
@@ -3728,12 +3723,13 @@ function initStudyWidgetDrag() {
 
   btn.addEventListener("pointerdown", onPointerDown, { passive: false });
 
-  restoreVerticalPosition();
+  restorePosition();
 
   window.addEventListener("resize", function () {
     var computed = window.getComputedStyle(widget);
+    var currentRight = parseFloat(computed.right) || 20;
     var currentBottom = parseFloat(computed.bottom) || 22;
-    applyVerticalPosition(currentBottom);
+    applyPosition(currentRight, currentBottom);
   });
 }
 
