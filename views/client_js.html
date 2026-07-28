@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   /**
    * client_js.html - Client-Side JavaScript
    *
@@ -189,9 +189,16 @@
       return;
     }
 
+    const checkedSessionId = user.sessionId;
+
     google.script.run
       .withSuccessHandler((response) => {
         if (response && response.status === "FORCE_LOGOUT") {
+          const newestUser = getHeartbeatUser();
+          if (newestUser && newestUser.sessionId && newestUser.sessionId !== checkedSessionId) {
+            console.log("Bỏ qua kết quả kiểm tra session cũ");
+            return;
+          }
           console.warn("Session invalid, forcing logout...");
           handleForceLogout(response.message || "Tài khoản đang được đăng nhập ở thiết bị khác.");
         }
@@ -3802,7 +3809,13 @@ function initStudyWidgetDrag() {
   });
 }
 
-function showLoginSuccessScreen(user) {
+function showLoginSuccessScreen(user, redirectPage) {
+  // Xóa overlay cũ nếu có để tránh lỗi nút sự kiện
+  const existingOverlay = document.getElementById('manual-login-success-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
   const overlay = document.createElement('div');
   overlay.id = 'manual-login-success-overlay';
   overlay.style.position = 'fixed';
@@ -3925,20 +3938,49 @@ function showLoginSuccessScreen(user) {
     overlay.appendChild(c);
   }
 
-  // Handle click
-  document.getElementById('loginRedirectBtn').addEventListener('click', function() {
+  // Xác định trang chuyển đến
+  const targetPage = redirectPage || (user.role === 'ADMIN' ? 'page-admin' : 'page-dashboard');
+
+  const doRedirect = () => {
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.5s ease';
     setTimeout(() => {
-      document.body.removeChild(overlay);
-      if (user.role === "ADMIN") {
-        showPage("page-admin");
-      } else {
-        showPage("page-dashboard");
+      if (document.body.contains(overlay)) {
+        document.body.removeChild(overlay);
+      }
+      
+      // Mở trang
+      showPage(targetPage, {}, false);
+      if (targetPage === "page-dashboard" && typeof loadDashboardData === "function") {
         try { loadDashboardData(); } catch(e) {}
       }
+      
+      // Bật session infrastructure sau khi chuyển trang
+      if (typeof startSessionInfrastructure === "function") {
+        startSessionInfrastructure();
+      }
+      
+      // Chạy các tác vụ nặng (ghi lịch sử, streak...) ở chế độ nền
+      if (typeof google !== "undefined" && google.script && user && user.email) {
+        google.script.run
+          .withFailureHandler(function (e) { console.warn("Post login tasks failed:", e); })
+          .runPostLoginTasks({
+            userId: user.userId,
+            email: user.email
+          });
+      }
     }, 500);
-  });
+  };
+
+  // Handle click
+  document.getElementById('loginRedirectBtn').addEventListener('click', doRedirect);
+
+  // Auto redirect sau 1.5s
+  setTimeout(() => {
+    if (document.body.contains(overlay)) {
+      doRedirect();
+    }
+  }, 1500);
 }
 
 </script>

@@ -454,12 +454,55 @@
     }
 
     try {
+      if (typeof stopSessionInfrastructure === "function") {
+        stopSessionInfrastructure();
+      }
+      
       // Call existing login function if available
       if (typeof google !== "undefined" && google.script) {
-        google.script.run
-          .withSuccessHandler((result) => {
-            // Hide loading overlay
+        const handleSuccess = (result) => {
+          console.log("handleSuccess triggered with result:", result);
+          
+          if (!result) {
+            console.error("Server returned null or empty result!");
             if (loadingOverlay) loadingOverlay.classList.remove("active");
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = "<span>Đăng nhập</span>";
+            }
+            showAuthToast("Lỗi hệ thống: Phản hồi từ server bị rỗng.", "error");
+            return;
+          }
+
+          if (result && result.requireConfirmation) {
+            console.log("Require confirmation needed");
+            const accepted = confirm(result.message);
+            if (accepted) {
+              google.script.run
+                .withSuccessHandler(handleSuccess)
+                .withFailureHandler((error) => {
+                  console.error("Force login failed:", error);
+                  if (loadingOverlay) loadingOverlay.classList.remove("active");
+                  if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "<span>Đăng nhập</span>";
+                  }
+                  showAuthToast("Lỗi: " + error.message, "error");
+                })
+                .terracodeLoginV2({ email, password, remember, force: true });
+            } else {
+              if (loadingOverlay) loadingOverlay.classList.remove("active");
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = "<span>Đăng nhập</span>";
+              }
+            }
+            return;
+          }
+
+          console.log("Hiding loading overlay");
+          // Hide loading overlay
+          if (loadingOverlay) loadingOverlay.classList.remove("active");
 
             if (submitBtn) {
               submitBtn.disabled = false;
@@ -479,10 +522,7 @@
                   dispatchCurrentUserState(result.user);
                 }
 
-                // ⭐ Khởi động heartbeat
-                if (typeof startUserHeartbeat === "function") {
-                  startUserHeartbeat();
-                }
+                // ⭐ Khởi động heartbeat sẽ được gọi sau khi chuyển trang
 
                 // ⭐ Áp dụng theme
                 if (typeof applyThemeFromAuthenticatedUser === "function") {
@@ -504,12 +544,28 @@
                 window.preloadAppOfflineCaches();
               }
 
-              // Show full-page success screen
-              showLoginSuccessScreen(result.user);
+              // Đóng form đăng nhập
+              closeAuthPanel();
+
+              // Show full-page success screen (will handle auto-redirect and starting heartbeat)
+              if (typeof showLoginSuccessScreen === "function") {
+                showLoginSuccessScreen(result.user, redirectPage);
+              } else {
+                showPage(redirectPage, {}, false);
+                if (redirectPage === "page-dashboard" && typeof loadDashboardData === "function") {
+                  loadDashboardData();
+                }
+                if (typeof startSessionInfrastructure === "function") {
+                  startSessionInfrastructure();
+                }
+              }
             } else {
               showAuthToast(result.message || "Đăng nhập thất bại!", "error");
             }
-          })
+          };
+
+          google.script.run
+            .withSuccessHandler(handleSuccess)
           .withFailureHandler((error) => {
             // Hide loading overlay
             if (loadingOverlay) loadingOverlay.classList.remove("active");
@@ -520,7 +576,7 @@
             }
             showAuthToast("Lỗi: " + error.message, "error");
           })
-          .loginUser({ email, password, remember });
+          .terracodeLoginV2({ email, password, remember });
       } else {
         // Fallback for testing - simulate loading
         setTimeout(() => {

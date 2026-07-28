@@ -108,7 +108,7 @@ function loginWithEmailPassword(credentials) {
   return loginWithEmail(credentials);
 }
 
-function loginUser(payload) {
+function terracodeLoginV2(payload) {
   // Wrapper function for frontend compatibility
   const result = loginWithEmail({
     // Support both legacy username field and current email field.

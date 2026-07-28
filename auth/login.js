@@ -91,39 +91,42 @@ function loginWithEmail(credentials) {
         const activeSessionIdIndex = headers.indexOf("activeSessionId");
         const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
 
-        if (activeSessionIdIndex >= 0) {
-          const currentActiveSession = data[i][activeSessionIdIndex];
-          
-          let isSessionFresh = true;
-          if (activeSessionUpdatedAtIndex >= 0) {
-            const lastSeenValue = data[i][activeSessionUpdatedAtIndex];
-            const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-            const SESSION_STALE_MS = 90 * 1000; // 90 giây
-            isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
-          }
-
-          if (currentActiveSession && currentActiveSession !== "" && !isSessionFresh) {
-            usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
-          }
-
-          if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && credentials.force !== true) {
-            return {
-              success: false,
-              requireConfirmation: true,
-              message: "Tài khoản của bạn đang được đăng nhập ở thiết bị khác. Nếu bạn tiếp tục đăng nhập, thiết bị kia sẽ bị đăng xuất. Bạn có muốn tiếp tục?",
-            };
-          }
-        }
-
-        // Update lastLogin and session with Lock
+        // Lock entire session check and creation
         const lock = LockService.getScriptLock();
         let sessionId = "";
         let now = new Date();
+        let sessionWriteSuccess = false;
+
         try {
-          lock.waitLock(10000); // 10s wait
+          lock.waitLock(10000); // wait up to 10s
+
+          // Read the latest row data to ensure we don't overwrite another concurrent login
+          const latestDataRow = usersSheet.getRange(i + 1, 1, 1, headers.length).getValues()[0];
+
+          if (activeSessionIdIndex >= 0) {
+            const currentActiveSession = latestDataRow[activeSessionIdIndex];
+            
+            let isSessionFresh = true;
+            if (activeSessionUpdatedAtIndex >= 0) {
+              const lastSeenValue = latestDataRow[activeSessionUpdatedAtIndex];
+              const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
+              const SESSION_STALE_MS = 90 * 1000; // 90 giây
+              isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
+            }
+
+            if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && credentials.force !== true) {
+              lock.releaseLock();
+              return {
+                success: false,
+                requireConfirmation: true,
+                message: "Tài khoản của bạn đang được đăng nhập ở thiết bị khác. Nếu bạn tiếp tục đăng nhập, thiết bị kia sẽ bị đăng xuất. Bạn có muốn tiếp tục?",
+              };
+            }
+          }
+
           sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
-          
           now = new Date();
+          
           usersSheet.getRange(i + 1, lastLoginIndex + 1).setValue(now);
           
           if (activeSessionIdIndex >= 0) {
@@ -132,35 +135,26 @@ function loginWithEmail(credentials) {
           if (activeSessionUpdatedAtIndex >= 0) {
             usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(now);
           }
-        } catch (e) {
-          Logger.log("Could not obtain lock for session update: " + e.toString());
-          // continue anyway or fail
-        } finally {
-          lock.releaseLock();
-        }
 
-        // ⭐ Also save login to user's personal sheet
-        const progressSheetId = data[i][progressSheetIdIndex];
-        if (progressSheetId) {
-          saveLoginToPersonalSheet(progressSheetId, data[i][emailIndex], now);
-          // ⭐ Update streak based on login history
-          try {
-            updateUserStreak(data[i][emailIndex]);
-          } catch (e) {
-            Logger.log("Warning: Could not update streak: " + e.toString());
+          SpreadsheetApp.flush();
+          sessionWriteSuccess = true;
+        } catch (e) {
+          Logger.log("Could not obtain lock or write session: " + e.toString());
+        } finally {
+          if (lock.hasLock()) {
+            lock.releaseLock();
           }
         }
 
-        // Log activity
-        logActivity({
-          level: "INFO",
-          category: "USER",
-          userId: data[i][userIdIndex],
-          action: "LOGIN",
-          details: "Logged in with email: " + credentials.email,
-        });
+        if (!sessionWriteSuccess) {
+          return {
+            success: false,
+            message: "Lỗi hệ thống khi tạo phiên đăng nhập. Vui lòng thử lại.",
+          };
+        }
 
         Logger.log("Login successful: " + credentials.email);
+
 
         // ⭐ Get avatar URL - ưu tiên stored avatar từ đúng cột
         let avatarUrl = data[i][avatarUrlIndex];
@@ -197,22 +191,19 @@ function loginWithEmail(credentials) {
           success: true,
           message: "Đăng nhập thành công!",
           user: {
-            userId: data[i][userIdIndex],
-            username: data[i][usernameIndex],
-            email: data[i][emailIndex],
-            displayName: data[i][displayNameIndex],
-            avatarUrl: avatarUrl,
-            role: data[i][roleIndex],
-            level: data[i][levelIndex],
-            totalXP: data[i][totalXPIndex],
-            totalXQP: totalXQPIndex >= 0 ? (parseInt(data[i][totalXQPIndex]) || 0) : 0,
-            progressSheetId: data[i][progressSheetIdIndex],
-            playerId: finalPlayerId,
-            theme:
-              themeIndex >= 0 && data[i][themeIndex]
-                ? String(data[i][themeIndex])
-                : "forest",
-            sessionId: sessionId,
+            userId: String(data[i][userIdIndex] || ""),
+            username: String(data[i][usernameIndex] || ""),
+            email: String(data[i][emailIndex] || ""),
+            displayName: String(data[i][displayNameIndex] || ""),
+            avatarUrl: String(avatarUrl || ""),
+            role: String(data[i][roleIndex] || "USER"),
+            level: Number(data[i][levelIndex]) || 1,
+            totalXP: Number(data[i][totalXPIndex]) || 0,
+            totalXQP: totalXQPIndex >= 0 ? (Number(data[i][totalXQPIndex]) || 0) : 0,
+            progressSheetId: String(data[i][progressSheetIdIndex] || ""),
+            playerId: String(finalPlayerId || ""),
+            theme: themeIndex >= 0 && data[i][themeIndex] ? String(data[i][themeIndex]) : "forest",
+            sessionId: String(sessionId || ""),
           },
         };
       }
@@ -374,8 +365,9 @@ function checkSession(userId, sessionId) {
     }
 
     for (let i = 1; i < data.length; i++) {
-      if (data[i][userIdIndex] === userId) {
-        const activeSessionId = data[i][activeSessionIdIndex];
+      if (String(data[i][userIdIndex]) === String(userId)) {
+        const activeSessionId = String(data[i][activeSessionIdIndex] || "");
+        const checkSessionId = String(sessionId || "");
         
         const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
         const isActiveIndex = headers.indexOf("isActive");
@@ -387,20 +379,23 @@ function checkSession(userId, sessionId) {
           if (!isActive) {
             // Xóa session để không bị lỗi "đang đăng nhập ở thiết bị khác" sau khi được mở khóa
             usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
+            if (activeSessionUpdatedAtIndex >= 0) {
+              usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue("");
+            }
             return { status: "FORCE_LOGOUT", message: "Tài khoản đã bị khóa. Vui lòng liên hệ admin." };
           }
         }
 
         // If no active session is set yet (legacy data), consider it valid and update it
         if (!activeSessionId) {
-           usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue(sessionId);
+           usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue(checkSessionId);
            if (activeSessionUpdatedAtIndex >= 0) {
              usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(new Date());
            }
            return { status: "valid" };
         }
 
-        if (activeSessionId === sessionId) {
+        if (activeSessionId === checkSessionId) {
           if (activeSessionUpdatedAtIndex >= 0) {
             usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue(new Date());
           }
@@ -468,7 +463,11 @@ function clearSessionDb(userId, sessionId) {
           }
 
           usersSheet.getRange(i + 1, activeSessionIdIndex + 1).setValue("");
-
+          
+          const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
+          if (activeSessionUpdatedAtIndex >= 0) {
+            usersSheet.getRange(i + 1, activeSessionUpdatedAtIndex + 1).setValue("");
+          }
           return {
             success: true,
             message: "Session cleared",
@@ -489,5 +488,56 @@ function clearSessionDb(userId, sessionId) {
       success: false,
       message: error.toString(),
     };
+  }
+}
+
+/**
+ * Handle heavy tasks after login to avoid blocking the client response
+ * @param {object} payload - {userId, email}
+ */
+function runPostLoginTasks(payload) {
+  try {
+    if (!payload || !payload.email) return { success: false, message: "Missing email" };
+    Logger.log("=== RUN POST LOGIN TASKS ===");
+    
+    const ss = getOrCreateDatabase();
+    const usersSheet = ss.getSheetByName("Users");
+    if (!usersSheet) return { success: false };
+    
+    const data = usersSheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIndex = headers.indexOf("email");
+    const userIdIndex = headers.indexOf("userId");
+    const progressSheetIdIndex = headers.indexOf("progressSheetId");
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][emailIndex] === payload.email) {
+        const now = new Date();
+        const progressSheetId = data[i][progressSheetIdIndex];
+        
+        if (progressSheetId) {
+          saveLoginToPersonalSheet(progressSheetId, data[i][emailIndex], now);
+          try {
+            updateUserStreak(data[i][emailIndex]);
+          } catch (e) {
+            Logger.log("Warning: Could not update streak: " + e.toString());
+          }
+        }
+        
+        logActivity({
+          level: "INFO",
+          category: "USER",
+          userId: data[i][userIdIndex],
+          action: "LOGIN",
+          details: "Logged in with email: " + payload.email,
+        });
+        
+        return { success: true };
+      }
+    }
+    return { success: false, message: "User not found" };
+  } catch (error) {
+    Logger.log("Error in runPostLoginTasks: " + error.toString());
+    return { success: false, message: error.toString() };
   }
 }
