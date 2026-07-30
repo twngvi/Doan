@@ -3,6 +3,7 @@
 
 // State variables
 let allTopics = [];
+let allCourses = [];
 let filteredTopics = [];
 let currentPage = 1;
 const itemsPerPage = 10;
@@ -12,6 +13,8 @@ let categoriesList = [];
 let isDataLoaded = false; // Flag để track data đã load chưa
 const TOPICS_DATA_CHANGED_KEY = 'topics_data_changed_at';
 let latestTopicsLoadRequestId = 0; // Tránh race condition khi gọi load nhiều lần
+
+let currentCourseFilter = null;
 
 // ===== Initialize =====
 function initContentManagement() {
@@ -60,14 +63,23 @@ function initContentManagement() {
 
   // Load data - sẽ tự render khi load xong
   loadCategories();
+  loadCoursesList();
   loadTopicsList();
 }
 
 // ===== Load Categories for Filter =====
 function loadCategories() {
   google.script.run
-    .withSuccessHandler(function(categories) {
+    .withSuccessHandler(function(response) {
       const select = document.getElementById('cm-category-filter');
+      
+      let categories = [];
+      if (response && response.success && Array.isArray(response.data)) {
+        categories = response.data;
+      } else if (Array.isArray(response)) {
+        categories = response;
+      }
+
       if (select && categories) {
         categoriesList = categories;
         select.innerHTML = '<option value="">Tất cả danh mục</option>';
@@ -84,6 +96,39 @@ function loadCategories() {
       console.error('[ContentManagement] Failed to load categories:', error);
     })
     .getTopicCategories();
+}
+
+// ===== Load Courses List =====
+function loadCoursesList() {
+  const loading = document.getElementById('cm-courses-loading-state');
+  if (loading) {
+    loading.style.display = 'block';
+  }
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (!response || response.success !== true) {
+        allCourses = [];
+        if (typeof showNotification === 'function') {
+          showNotification(response ? response.message : 'Không thể tải danh sách khóa học', 'error');
+        }
+        renderCoursesView();
+        return;
+      }
+      
+      allCourses = Array.isArray(response.courses) ? response.courses : [];
+      renderCoursesView();
+    })
+    .withFailureHandler(function(error) {
+      console.error('[ContentManagement] Failed to load courses:', error);
+      if (loading) {
+        loading.style.display = 'none';
+      }
+      if (typeof showNotification === 'function') {
+        showNotification('Lỗi khi tải danh sách khóa học', 'error');
+      }
+    })
+    .getAllCoursesForAdmin();
 }
 
 // ===== Load Topics List =====
@@ -124,7 +169,11 @@ function loadTopicsList() {
         ? searchInput.value.toLowerCase().trim()
         : '';
 
-      applyFilters(searchTerm);
+      if (currentCourseFilter) {
+        applyFilters(searchTerm);
+      } else {
+        renderCoursesView();
+      }
 
       showLoading(false);
 
@@ -248,7 +297,12 @@ function updateStats() {
     locked: 0
   };
 
-  allTopics.forEach(function(topic) {
+  const topicsToCount = currentCourseFilter 
+    ? allTopics.filter(t => String(t.courseId || '').trim() === currentCourseFilter)
+    : allTopics;
+
+  topicsToCount.forEach(function(topic) {
+    if (topic.title === 'DUMMY_COURSE_HOLDER') return;
     const status = getTopicUiStatus(topic);
 
     if (Object.prototype.hasOwnProperty.call(statusCounts, status.key)) {
@@ -256,11 +310,9 @@ function updateStats() {
     }
   });
 
-  const categorySource = categoriesList.length > 0
-    ? categoriesList
-    : allTopics.map(function(topic) {
-        return topic.category;
-      });
+  const categorySource = topicsToCount.map(function(topic) {
+    return topic.category;
+  });
 
   const normalizedCategories = categorySource
     .map(function(category) {
@@ -270,7 +322,8 @@ function updateStats() {
 
   const categoryCount = new Set(normalizedCategories).size;
 
-  cmSetStatNumber(totalEl, allTopics.length);
+  const validTopicsCount = topicsToCount.filter(t => t.title !== 'DUMMY_COURSE_HOLDER').length;
+  cmSetStatNumber(totalEl, validTopicsCount);
   cmSetStatNumber(activeEl, statusCounts.active);
   cmSetStatNumber(draftEl, statusCounts.draft);
   cmSetStatNumber(lockedEl, statusCounts.locked);
@@ -737,8 +790,28 @@ function applyFilters(searchTerm) {
     const matchesStatus =
       !statusFilter ||
       topicStatus.key === statusFilter;
+      
+    const matchesCourse = 
+      !currentCourseFilter || 
+      String(topic.courseId || '').trim() === currentCourseFilter;
+      
+    const notDummy = topic.title !== 'DUMMY_COURSE_HOLDER';
 
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategory && matchesStatus && matchesCourse && notDummy;
+  });
+
+  filteredTopics.sort(function(a, b) {
+    const orderA = Number(a.order) || 999;
+    const orderB = Number(b.order) || 999;
+
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+
+    return String(a.title || '').localeCompare(
+      String(b.title || ''),
+      'vi'
+    );
   });
 
   currentPage = 1;
@@ -1640,6 +1713,7 @@ function confirmDeleteTopic() {
 
         // Reload lại data từ server để UI luôn khớp DB
         loadTopicsList();
+        loadCoursesList();
 
         // Hiển thị thông báo thành công
         if (typeof showNotification === 'function') {
@@ -1713,6 +1787,7 @@ function refreshTopicsList(e) {
   // Reset flag và load lại data
   isDataLoaded = false;
   loadTopicsList();
+  loadCoursesList();
 }
 
 // ===== Helper Functions =====
@@ -1837,6 +1912,212 @@ function renderCMPreviewTopicSwitcherList(currentTopic) {
 window.toggleCMPreviewTopicSwitcher = toggleCMPreviewTopicSwitcher;
 window.switchToCMPreviewTopic = switchToCMPreviewTopic;
 window.renderCMPreviewTopicSwitcherList = renderCMPreviewTopicSwitcherList;
+
+// ===== Course View Logic =====
+
+function renderCoursesView() {
+  const coursesGrid = document.getElementById('cm-courses-grid');
+  const loadingState = document.getElementById('cm-courses-loading-state');
+  
+  if (!coursesGrid) return;
+  
+  if (loadingState) loadingState.style.display = 'none';
+  coursesGrid.innerHTML = '';
+  
+  allCourses = allCourses
+    .slice()
+    .sort(function(a, b) {
+      return (Number(a.order) || 999) - (Number(b.order) || 999);
+    });
+  
+  if (allCourses.length === 0) {
+    coursesGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--theme-text-muted);">Chưa có khóa học nào.</div>';
+    return;
+  }
+
+  let html = '';
+  allCourses.forEach(course => {
+    const safeName = String(course.title).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
+    const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    
+    html += `
+      <div class="cm-course-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #eee; position: relative;">
+        <div style="position: absolute; top: 12px; right: 12px; display: flex; gap: 8px;">
+          <button class="cm-btn cm-btn-icon" onclick="openCourseModal('${safeCourseId}')" title="Sửa" style="width: 32px; height: 32px; padding: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <span class="material-symbols-sharp" style="font-size: 16px; color: #64748b;">edit</span>
+          </button>
+
+        </div>
+        
+        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 12px; cursor: pointer;" onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')">
+          <div class="cm-course-icon-wrapper" style="width: 64px; height: 64px; border-radius: 12px; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; color: #4f46e5; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #e2e8f0;">
+            ${!course.thumbnailUrl ? '<span class="material-symbols-sharp">school</span>' : ''}
+          </div>
+          <div class="cm-course-info">
+            <h3 class="cm-course-title" style="margin: 0 0 4px; font-size: 18px; font-weight: 600; color: #1e293b;">${escapeHtml(course.title)}</h3>
+            <span style="font-size: 12px; background: #eef2ff; color: #4f46e5; padding: 2px 8px; border-radius: 12px;">${escapeHtml(course.level || 'Chưa phân loại')}</span>
+          </div>
+        </div>
+        
+        <div class="cm-course-stats" style="display: flex; gap: 12px; font-size: 13px; color: #64748b; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f1f5f9;">
+          <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px;">
+            <span class="material-symbols-sharp" style="font-size: 16px;">library_books</span>
+            ${course.totalTopics} Bài học
+          </div>
+          <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px; color: #10b981;">
+            <span class="material-symbols-sharp" style="font-size: 16px;">check_circle</span>
+            ${course.publishedTopics} Đã xuất bản
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  coursesGrid.innerHTML = html;
+  
+  // Áp dụng CSS dạng lưới
+  coursesGrid.style.display = 'grid';
+  coursesGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(320px, 1fr))';
+  coursesGrid.style.gap = '20px';
+  coursesGrid.style.padding = '20px';
+}
+
+function showTopicsForCourse(courseId, courseTitle) {
+  document.getElementById('cm-courses-view-wrapper').style.display = 'none';
+  document.getElementById('cm-topics-view-wrapper').style.display = 'block';
+  
+  const btnCourse = document.getElementById('cm-btn-create-course');
+  const btnTopic = document.getElementById('cm-btn-create-topic');
+  if (btnCourse) btnCourse.style.display = 'none';
+  if (btnTopic) btnTopic.style.display = 'inline-flex';
+  
+  document.getElementById('cm-current-course-title').textContent = courseTitle;
+  
+  currentCourseFilter = courseId;
+  localStorage.setItem('adminSelectedCourseId', courseId);
+  
+  const searchInput = document.getElementById('cm-search-input');
+  const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  applyFilters(searchTerm);
+  updateStats();
+}
+
+function backToCoursesView() {
+  document.getElementById('cm-courses-view-wrapper').style.display = 'block';
+  document.getElementById('cm-topics-view-wrapper').style.display = 'none';
+  
+  const btnCourse = document.getElementById('cm-btn-create-course');
+  const btnTopic = document.getElementById('cm-btn-create-topic');
+  if (btnCourse) btnCourse.style.display = 'inline-flex';
+  if (btnTopic) btnTopic.style.display = 'none';
+  
+  currentCourseFilter = null;
+  localStorage.removeItem('adminSelectedCourseId');
+  
+  renderCoursesView();
+}
+
+function promptCreateNewCourse() {
+  openCourseModal(null);
+}
+
+function openCourseModal(courseId) {
+  const modal = document.getElementById('cm-course-modal-overlay');
+  const form = document.getElementById('cm-course-form');
+  const title = document.getElementById('cm-course-modal-title');
+  
+  form.reset();
+  
+  if (courseId) {
+    title.textContent = "Chỉnh sửa khóa học";
+    const course = allCourses.find(c => c.courseId === courseId);
+    if (course) {
+      document.getElementById('course-id-input').value = course.courseId;
+      document.getElementById('course-title-input').value = course.title || '';
+      document.getElementById('course-short-desc-input').value = course.shortDescription || '';
+      document.getElementById('course-category-input').value = course.category || '';
+      document.getElementById('course-level-input').value = course.level || 'beginner';
+      document.getElementById('course-order-input').value = course.order || 1;
+      document.getElementById('course-status-input').value = course.status || 'draft';
+      document.getElementById('course-thumb-input').value = course.thumbnailUrl || '';
+    }
+  } else {
+    title.textContent = "Tạo khóa học mới";
+    document.getElementById('course-id-input').value = '';
+    
+    let maxOrder = 0;
+    allCourses.forEach(c => { if (c.order > maxOrder) maxOrder = c.order; });
+    document.getElementById('course-order-input').value = maxOrder + 1;
+    document.getElementById('course-status-input').value = 'draft';
+  }
+  
+  modal.style.display = 'flex';
+}
+
+function closeCourseModal() {
+  document.getElementById('cm-course-modal-overlay').style.display = 'none';
+}
+
+function handleCourseSubmit(e) {
+  e.preventDefault();
+  
+  const courseId = document.getElementById('course-id-input').value;
+  const courseData = {
+    title: document.getElementById('course-title-input').value,
+    shortDescription: document.getElementById('course-short-desc-input').value,
+    category: document.getElementById('course-category-input').value,
+    level: document.getElementById('course-level-input').value,
+    status: document.getElementById('course-status-input').value,
+    order: parseInt(document.getElementById('course-order-input').value) || 1,
+    thumbnailUrl: document.getElementById('course-thumb-input').value,
+  };
+  
+  const btn = document.getElementById('course-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Đang lưu...';
+  
+  if (courseId) {
+    google.script.run
+      .withSuccessHandler(res => {
+        btn.disabled = false;
+        btn.textContent = 'Lưu khóa học';
+        if (res && res.success) {
+          if (typeof showNotification === 'function') showNotification('Cập nhật khóa học thành công', 'success');
+          closeCourseModal();
+          loadCoursesList();
+        } else {
+          if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
+        }
+      })
+      .withFailureHandler(err => {
+        btn.disabled = false;
+        btn.textContent = 'Lưu khóa học';
+        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
+      })
+      .updateCourse(courseId, courseData);
+  } else {
+    google.script.run
+      .withSuccessHandler(res => {
+        btn.disabled = false;
+        btn.textContent = 'Lưu khóa học';
+        if (res && res.success) {
+          if (typeof showNotification === 'function') showNotification('Tạo khóa học thành công', 'success');
+          closeCourseModal();
+          loadCoursesList();
+        } else {
+          if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
+        }
+      })
+      .withFailureHandler(err => {
+        btn.disabled = false;
+        btn.textContent = 'Lưu khóa học';
+        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
+      })
+      .createCourse(courseData);
+  }
+}
+
 
 // ===== Auto-init when page shown =====
 window.initcontentmanagement = initContentManagement;

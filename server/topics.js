@@ -15,6 +15,8 @@ const TOPICS_CACHE_DURATION = 300; // Cache 5 phút (tính bằng giây trong Ca
  */
 function getAllTopicsIncludingHidden() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
+  const auth = typeof requireAdminContext_ === "function" ? requireAdminContext_() : {success: true};
+  if (!auth.success) return { success: false, message: "Không có quyền admin" };
 
   try {
     // ⭐ Kiểm tra cache phía server
@@ -95,7 +97,8 @@ function getAllTopicsIncludingHidden() {
       mindmapStatus: headers.indexOf("mindmapStatus"),
       matchingStatus: headers.indexOf("matchingStatus"),
       isHidden: headers.indexOf("isHidden"),
-      status: headers.indexOf("status")
+      status: headers.indexOf("status"),
+      courseId: headers.indexOf("courseId")
     };
 
     const aiCacheMap = {};
@@ -249,6 +252,10 @@ function getAllTopicsIncludingHidden() {
           col.createdBy >= 0 && row[col.createdBy] !== undefined
             ? String(row[col.createdBy] || "")
             : "",
+        courseId:
+          col.courseId >= 0 && row[col.courseId] !== undefined
+            ? String(row[col.courseId] || "")
+            : "",
         createdAt:
           col.createdAt >= 0 && row[col.createdAt] instanceof Date
           ? row[col.createdAt].toISOString()
@@ -302,15 +309,19 @@ function getAllTopicsIncludingHidden() {
     }
 
     topics.sort(function(a, b) {
-      var catA = normalizeCategoryName(a.category);
-      var catB = normalizeCategoryName(b.category);
-
-      if (catA !== catB) {
-        return catA.localeCompare(catB, 'vi');
+      const courseA = String(a.courseId || '');
+      const courseB = String(b.courseId || '');
+      
+      if (courseA !== courseB) {
+        return courseA.localeCompare(courseB, 'vi');
+      }
+      
+      const orderA = Number(a.order) || 999;
+      const orderB = Number(b.order) || 999;
+      if (orderA !== orderB) {
+        return orderA - orderB;
       }
 
-      // Không sort theo order nữa.
-      // Giữ thứ tự dòng DB bằng rowIndex.
       return (a.rowIndex || 0) - (b.rowIndex || 0);
     });
 
@@ -351,10 +362,25 @@ function getAllTopicsIncludingHidden() {
  */
 function clearTopicsCache() {
   try {
-    CacheService.getScriptCache().remove(TOPICS_CACHE_KEY);
-    Logger.log("✅ Topics cache cleared");
-  } catch(e) {
-    Logger.log("⚠️ Failed to clear cache: " + e.toString());
+    const cache = CacheService.getScriptCache();
+    cache.remove(TOPICS_CACHE_KEY);
+    Logger.log("Đã xóa cache server-side: " + TOPICS_CACHE_KEY);
+  } catch (e) {
+    Logger.log("Lỗi khi xóa cache: " + e.toString());
+  }
+}
+
+/**
+ * Xóa cả cache Topics và Courses
+ */
+function clearCourseStructureCaches() {
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.remove(TOPICS_CACHE_KEY);
+    cache.remove("ALL_COURSES_CACHE");
+    Logger.log("Topics and Courses cache cleared.");
+  } catch (error) {
+    Logger.log("Không thể xóa cache: " + error.toString());
   }
 }
 
@@ -1421,3 +1447,141 @@ function recordMiniQuizAttempt(topicId) {
     return { success: false, message: error.toString() };
   }
 }
+
+/**
+ * Get all courses for Admin
+ */
+function getAllCoursesForAdmin() {
+  Logger.log("=== BẮT ĐẦU HÀM getAllCoursesForAdmin ===");
+
+  try {
+    const adminContext = requireAdminContext_();
+    if (!adminContext.success) {
+      return adminContext;
+    }
+
+    const cache = CacheService.getScriptCache();
+    const cachedCourses = cache.get("ALL_COURSES_CACHE");
+    
+    if (cachedCourses) {
+      Logger.log("✅ Using server-side cached courses (CacheService)");
+      return { success: true, courses: JSON.parse(cachedCourses) };
+    }
+
+    const SPREADSHEET_ID = typeof DB_CONFIG !== 'undefined' && DB_CONFIG.SPREADSHEET_ID ? DB_CONFIG.SPREADSHEET_ID : "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    // Đọc courses
+    let coursesSheet = null;
+    try {
+      coursesSheet = ss.getSheetByName(DB_CONFIG.SHEETS.COURSES.name);
+    } catch(e) {
+      coursesSheet = ss.getSheetByName("Courses");
+    }
+    
+    if (!coursesSheet) {
+      return { success: false, message: "Sheet Courses không tồn tại." };
+    }
+    
+    const coursesData = coursesSheet.getDataRange().getValues();
+    if (coursesData.length < 2) return { success: true, courses: [] };
+    
+    const cHeaders = coursesData[0];
+    const cCol = {};
+    cHeaders.forEach((h, i) => { cCol[h] = i; });
+    
+    const courses = [];
+    for (let i = 1; i < coursesData.length; i++) {
+      const row = coursesData[i];
+      const courseId = row[cCol.courseId];
+      if (!courseId) continue;
+      
+      courses.push({
+        courseId: courseId,
+        title: row[cCol.title] || "",
+        shortDescription: row[cCol.shortDescription] || "",
+        description: row[cCol.description] || "",
+        thumbnailUrl: row[cCol.thumbnailUrl] || "",
+        level: row[cCol.level] || "",
+        category: row[cCol.category] || "",
+        order: Number(row[cCol.order]) || 0,
+        status: row[cCol.status] || "draft",
+        estimatedTime: row[cCol.estimatedTime] || "",
+        prerequisiteCourseIds: row[cCol.prerequisiteCourseIds] || "",
+        unlockCondition: row[cCol.unlockCondition] || "",
+        // Khởi tạo các mảng để đếm topics sau này
+        totalTopics: 0,
+        publishedTopics: 0,
+        draftTopics: 0,
+        hiddenTopics: 0
+      });
+    }
+    
+    // Đọc topics để đếm
+    const topicsRes = getAllTopicsIncludingHidden();
+    const topicsList = topicsRes && !topicsRes.success && topicsRes.topics === undefined ? [] : (topicsRes.topics || topicsRes);
+    
+    const courseMap = {};
+    courses.forEach(c => courseMap[c.courseId] = c);
+    
+    topicsList.forEach(function(topic) {
+      if (!topic) return;
+
+      const topicId = String(topic.topicId || "").trim();
+      const title = String(topic.title || "").trim();
+      const courseId = String(topic.courseId || "").trim();
+
+      if (!topicId) return;
+
+      if (title === "DUMMY_COURSE_HOLDER" || topicId.indexOf("course_holder_") === 0) {
+        return;
+      }
+
+      if (courseId && courseMap[courseId]) {
+        courseMap[courseId].totalTopics++;
+        if (topic.publishStatus === "published") {
+          courseMap[courseId].publishedTopics++;
+        } else if (topic.publishStatus === "hidden") {
+          courseMap[courseId].hiddenTopics++;
+        } else {
+          courseMap[courseId].draftTopics++;
+        }
+      }
+    });
+
+    try {
+      cache.put("ALL_COURSES_CACHE", JSON.stringify(courses), TOPICS_CACHE_DURATION);
+    } catch(e) {
+      Logger.log("Could not cache courses: " + e.toString());
+    }
+
+    return { success: true, courses: courses };
+  } catch (error) {
+    Logger.log("❌ Lỗi trong getAllCoursesForAdmin: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get topics by course ID
+ */
+function getTopicsByCourseForAdmin(courseId) {
+  try {
+    const adminContext = requireAdminContext_();
+    if (!adminContext.success) {
+      return adminContext;
+    }
+    
+    const topicsRes = getAllTopicsIncludingHidden();
+    const allTopics = topicsRes && !topicsRes.success && topicsRes.topics === undefined ? [] : (topicsRes.topics || topicsRes);
+    
+    if (!Array.isArray(allTopics)) return { success: true, topics: [] };
+    
+    const topics = allTopics.filter(t => t.courseId === courseId);
+    return { success: true, topics: topics };
+  } catch (error) {
+    Logger.log("❌ Lỗi trong getTopicsByCourseForAdmin: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+

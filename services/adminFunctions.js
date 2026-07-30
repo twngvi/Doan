@@ -1,7 +1,7 @@
 /**
  * adminFunctions.js - Backend Functions for Admin Panel
  * 
- * Các hàm server-side cho Admin quản lý Users, Topics, Lessons
+ * C뿯½뿯½c h뿯½뿯½m server-side cho Admin qu뿯½뿯½뿯½n l뿯½뿯½ Users, Topics, Lessons
  */
 
 // ========================================
@@ -9,7 +9,7 @@
 // ========================================
 
 /**
- * Kiểm tra user có phải admin không
+ * Ki뿯½뿯½뿯ƽm tra user c뿯½뿯½ ph뿯½뿯½뿯½i admin kh뿯½뿯½ng
  */
 function isUserAdmin(userId) {
   try {
@@ -34,18 +34,18 @@ function isUserAdmin(userId) {
 }
 
 /**
- * Set role ADMIN cho một user (chạy thủ công trong Apps Script Editor)
+ * Set role ADMIN cho m뿯½뿯½™t user (ch뿯½뿯½뿯½y th뿯½뿯½뿯½ c뿯½뿯½ng trong Apps Script Editor)
  * 
- * Cách dùng:
- * 1. Mở Google Apps Script Editor
- * 2. Chọn function: setUserAsAdmin
- * 3. Chạy và nhập email của user cần set làm admin
+ * C뿯½뿯½ch d뿯½뿯½ng:
+ * 1. M뿯½뿯½Ÿ Google Apps Script Editor
+ * 2. Ch뿯½뿯½뿯½n function: setUserAsAdmin
+ * 3. Ch뿯½뿯½뿯½y v뿯½뿯½ nh뿯½뿯½뿯½p email c뿯½뿯½뿯½a user c뿯½뿯½뿯½n set l뿯½뿯½m admin
  */
 function setUserAsAdmin() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.prompt(
     "Set User as Admin",
-    "Nhập EMAIL của user cần set làm ADMIN:",
+    "Nh뿯½뿯½뿯½p EMAIL c뿯½뿯½뿯½a user c뿯½뿯½뿯½n set l뿯½뿯½m ADMIN:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -56,16 +56,16 @@ function setUserAsAdmin() {
   const email = response.getResponseText().trim().toLowerCase();
   
   if (!email) {
-    ui.alert("Lỗi", "Email không được để trống!", ui.ButtonSet.OK);
+    ui.alert("L뿯½뿯½—i", "Email kh뿯½뿯½ng 뿯½‘뿯½뿯½뿯½뿯½뿯½c 뿯½‘뿯½뿯½뿯ƽ tr뿯½뿯½‘ng!", ui.ButtonSet.OK);
     return;
   }
   
   const result = setUserRole(email, "ADMIN");
   
   if (result.success) {
-    ui.alert("Thành công!", result.message, ui.ButtonSet.OK);
+    ui.alert("Th뿯½뿯½nh c뿯½뿯½ng!", result.message, ui.ButtonSet.OK);
   } else {
-    ui.alert("Lỗi", result.message, ui.ButtonSet.OK);
+    ui.alert("L뿯½뿯½—i", result.message, ui.ButtonSet.OK);
   }
 }
 
@@ -76,7 +76,7 @@ function setUserRole(email, role) {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
     
     const data = sheet.getDataRange().getValues();
@@ -85,38 +85,38 @@ function setUserRole(email, role) {
     const roleIndex = headers.indexOf("role");
     
     if (emailIndex === -1 || roleIndex === -1) {
-      return { success: false, message: "Không tìm thấy cột email hoặc role" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y c뿯½뿯½™t email ho뿯½뿯½뿯½c role" };
     }
     
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailIndex].toLowerCase() === email.toLowerCase()) {
-        // Tìm thấy user, cập nhật role
+        // T뿯½뿯½m th뿯½뿯½뿯½y user, c뿯½뿯½뿯½p nh뿯½뿯½뿯½t role
         sheet.getRange(i + 1, roleIndex + 1).setValue(role);
         Logger.log("Set " + email + " as " + role);
         return { 
           success: true, 
-          message: "Đã set " + email + " thành " + role + " thành công!" 
+          message: "뿯½뿯½뿯½뿯½ set " + email + " th뿯½뿯½nh " + role + " th뿯½뿯½nh c뿯½뿯½ng!" 
         };
       }
     }
     
-    return { success: false, message: "Không tìm thấy user với email: " + email };
+    return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y user v뿯½뿯½›i email: " + email };
   } catch (error) {
     Logger.log("Error setting user role: " + error.toString());
-    return { success: false, message: "Lỗi: " + error.toString() };
+    return { success: false, message: "L뿯½뿯½—i: " + error.toString() };
   }
 }
 
 /**
- * Tạo tài khoản admin mới (chạy 1 lần khi setup)
+ * T뿯½뿯½뿯½o t뿯½뿯½i kho뿯½뿯½뿯½n admin m뿯½뿯½›i (ch뿯½뿯½뿯½y 1 l뿯½뿯½뿯½n khi setup)
  */
 function createAdminAccount() {
   const ui = SpreadsheetApp.getUi();
   
   // Prompt for email
   const emailResponse = ui.prompt(
-    "Tạo Admin Account",
-    "Nhập EMAIL cho tài khoản admin:",
+    "T뿯½뿯½뿯½o Admin Account",
+    "Nh뿯½뿯½뿯½p EMAIL cho t뿯½뿯½i kho뿯½뿯½뿯½n admin:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -125,8 +125,8 @@ function createAdminAccount() {
   
   // Prompt for password
   const passResponse = ui.prompt(
-    "Tạo Admin Account",
-    "Nhập PASSWORD cho tài khoản admin:",
+    "T뿯½뿯½뿯½o Admin Account",
+    "Nh뿯½뿯½뿯½p PASSWORD cho t뿯½뿯½i kho뿯½뿯½뿯½n admin:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -135,8 +135,8 @@ function createAdminAccount() {
   
   // Prompt for display name
   const nameResponse = ui.prompt(
-    "Tạo Admin Account",
-    "Nhập TÊN HIỂN THỊ:",
+    "T뿯½뿯½뿯½o Admin Account",
+    "Nh뿯½뿯½뿯½p T뿯½ŠN HI뿯½뿯½‚N TH뿯½뿯½Š:",
     ui.ButtonSet.OK_CANCEL
   );
   
@@ -147,9 +147,9 @@ function createAdminAccount() {
   const result = createAdminUser(email, password, displayName);
   
   if (result.success) {
-    ui.alert("Thành công!", result.message, ui.ButtonSet.OK);
+    ui.alert("Th뿯½뿯½nh c뿯½뿯½ng!", result.message, ui.ButtonSet.OK);
   } else {
-    ui.alert("Lỗi", result.message, ui.ButtonSet.OK);
+    ui.alert("L뿯½뿯½—i", result.message, ui.ButtonSet.OK);
   }
 }
 
@@ -160,7 +160,7 @@ function createAdminUser(email, password, displayName) {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
     
     // Check if email exists
@@ -170,7 +170,7 @@ function createAdminUser(email, password, displayName) {
     
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailIndex].toLowerCase() === email.toLowerCase()) {
-        return { success: false, message: "Email đã tồn tại!" };
+        return { success: false, message: "Email 뿯½‘뿯½뿯½ t뿯½뿯½“n t뿯½뿯½뿯½i!" };
       }
     }
     
@@ -181,36 +181,31 @@ function createAdminUser(email, password, displayName) {
     const now = new Date();
     const userId = "USR_ADMIN_" + now.getTime();
     
-    const newRow = [
-      userId,           // userId
-      "",               // googleId
-      email,            // email
-      displayName,      // displayName
-      email.split("@")[0], // username
-      passwordHash,     // passwordHash
-      "",               // avatarUrl
-      "ADMIN",          // role ⭐
-      1,                // level
-      1,                // aiLevel
-      0,                // totalPoints
-      0,                // totalXP
-      0,                // currentStreak
-      0,                // longestStreak
-      now,              // lastActiveDate
-      now,              // lastLogin
-      now,              // createdAt
-      true,             // isActive
-      0,                // mountainPosition
-      1,                // mountainStage
-      0,                // mountainProgress
-      0,                // totalQuizAnswered
-      0,                // totalPuzzleSolved
-      0,                // totalChallengeCompleted
-      "",               // progressSheetId
-      true,             // emailVerified ⭐ Admin không cần verify
-      "",               // verificationToken
-      "",               // verificationExpires
-    ];
+    const values = {
+      userId: userId,
+      googleId: "",
+      email: email,
+      displayName: displayName,
+      username: email.split("@")[0],
+      passwordHash: passwordHash,
+      avatarUrl: "",
+      role: "ADMIN",
+      isActive: true,
+      createdAt: now,
+      lastLogin: now,
+      lastActiveDate: now,
+      activeSessionId: "",
+      activeSessionUpdatedAt: "",
+      emailVerified: true,
+      verificationToken: "",
+      verificationExpires: "",
+      playerId: "",
+      progressSheetId: ""
+    };
+    
+    const newRow = headers.map(function(header) {
+      return values[header] !== undefined ? values[header] : "";
+    });
     
     sheet.appendRow(newRow);
     
@@ -218,11 +213,11 @@ function createAdminUser(email, password, displayName) {
     
     return {
       success: true,
-      message: "Đã tạo tài khoản Admin thành công!\nEmail: " + email + "\nPassword: [đã nhập]"
+      message: "뿯½뿯½뿯½뿯½ t뿯½뿯½뿯½o t뿯½뿯½i kho뿯½뿯½뿯½n Admin th뿯½뿯½nh c뿯½뿯½ng!\nEmail: " + email + "\nPassword: [뿯½‘뿯½뿯½ nh뿯½뿯½뿯½p]"
     };
   } catch (error) {
     Logger.log("Error creating admin: " + error.toString());
-    return { success: false, message: "Lỗi: " + error.toString() };
+    return { success: false, message: "L뿯½뿯½—i: " + error.toString() };
   }
 }
 
@@ -231,7 +226,7 @@ function createAdminUser(email, password, displayName) {
 // ========================================
 
 /**
- * Lấy thống kê cho Admin Dashboard
+ * L뿯½뿯½뿯½y th뿯½뿯½‘ng k뿯½뿯½ cho Admin Dashboard
  */
 function getAdminDashboardStats() {
   try {
@@ -281,7 +276,7 @@ function getAdminDashboardStats() {
 }
 
 /**
- * Lấy thống kê AI usage cho admin theo user/topic/model
+ * L뿯½뿯½뿯½y th뿯½뿯½‘ng k뿯½뿯½ AI usage cho admin theo user/topic/model
  * @param {object=} options - { days: number }
  * @returns {object}
  */
@@ -291,7 +286,7 @@ function getAdminAIUsageStats(options) {
     if (!adminContext || !adminContext.success) {
       return {
         success: false,
-        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin",
+        message: (adminContext && adminContext.message) || "Kh뿯½뿯½ng th뿯½뿯½뿯ƽ x뿯½뿯½c th뿯½뿯½뿯½c quy뿯½뿯½뿯½n admin",
       };
     }
 
@@ -482,20 +477,20 @@ function getAdminAIUsageStats(options) {
 }
 
 /**
- * Khóa hoặc mở khóa tài khoản người dùng
+ * Kh뿯½뿯½a ho뿯½뿯½뿯½c m뿯½뿯½Ÿ kh뿯½뿯½a t뿯½뿯½i kho뿯½뿯½뿯½n ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng
  * @param {string} userId
- * @param {boolean} isBlocked - true nếu muốn khóa (isActive = false), false nếu muốn mở khóa (isActive = true)
+ * @param {boolean} isBlocked - true n뿯½뿯½뿯½u mu뿯½뿯½‘n kh뿯½뿯½a (isActive = false), false n뿯½뿯½뿯½u mu뿯½뿯½‘n m뿯½뿯½Ÿ kh뿯½뿯½a (isActive = true)
  */
 function toggleUserBlockStatus(userId, isBlocked) {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
 
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) {
-      return { success: false, message: "Không có người dùng nào" };
+      return { success: false, message: "Kh뿯½뿯½ng c뿯½뿯½ ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng n뿯½뿯½o" };
     }
 
     const headers = data[0];
@@ -505,16 +500,16 @@ function toggleUserBlockStatus(userId, isBlocked) {
     };
 
     if (col.userId < 0 || col.isActive < 0) {
-      return { success: false, message: "Cấu trúc cột Users không hợp lệ" };
+      return { success: false, message: "C뿯½뿯½뿯½u tr뿯½뿯½c c뿯½뿯½™t Users kh뿯½뿯½ng h뿯½뿯½뿯½p l뿯½뿯½‡" };
     }
 
     let found = false;
     for (let i = 1; i < data.length; i++) {
       if (data[i][col.userId] === userId) {
-        // Cập nhật giá trị isActive
+        // C뿯½뿯½뿯½p nh뿯½뿯½뿯½t gi뿯½뿯½ tr뿯½뿯½‹ isActive
         sheet.getRange(i + 1, col.isActive + 1).setValue(!isBlocked);
         
-        // NẾU BỊ KHÓA, XÓA LUÔN SESSION ĐỂ BỊ VĂNG KHỎI THIẾT BỊ VÀ TRÁNH LỖI ĐĂNG NHẬP SAU NÀY
+        // N뿯½뿯½뿯½U B뿯½뿯½Š KH뿯½“A, X뿯½“A LU뿯½”N SESSION 뿯½뿯½뿯½뿯½‚ B뿯½뿯½Š V뿯½‚NG KH뿯½뿯½ŽI THI뿯½뿯½뿯½T B뿯½뿯½Š V뿯½뿯₽ TR뿯½뿯½NH L뿯½뿯½–I 뿯½뿯½뿯½‚NG NH뿯½뿯½뿯½P SAU N뿯½뿯₽Y
         if (isBlocked) {
           const activeSessionIdIndex = headers.indexOf("activeSessionId");
           if (activeSessionIdIndex >= 0) {
@@ -528,32 +523,32 @@ function toggleUserBlockStatus(userId, isBlocked) {
     }
 
     if (!found) {
-      return { success: false, message: "Không tìm thấy người dùng với ID: " + userId };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng v뿯½뿯½›i ID: " + userId };
     }
 
     return { 
       success: true, 
-      message: isBlocked ? "Đã khóa tài khoản thành công" : "Đã mở khóa tài khoản thành công" 
+      message: isBlocked ? "뿯½뿯½뿯½뿯½ kh뿯½뿯½a t뿯½뿯½i kho뿯½뿯½뿯½n th뿯½뿯½nh c뿯½뿯½ng" : "뿯½뿯½뿯½뿯½ m뿯½뿯½Ÿ kh뿯½뿯½a t뿯½뿯½i kho뿯½뿯½뿯½n th뿯½뿯½nh c뿯½뿯½ng" 
     };
   } catch (error) {
     Logger.log("Error toggling user block status: " + error.toString());
-    return { success: false, message: "Lỗi hệ thống: " + error.toString() };
+    return { success: false, message: "L뿯½뿯½—i h뿯½뿯½‡ th뿯½뿯½‘ng: " + error.toString() };
   }
 }
 
 /**
- * Lấy dữ liệu trạng thái hoạt động users cho Admin Online Stats
- * Quy ước:
- * - active: hoạt động trong 1 phút
- * - idle: hoạt động trong 5 phút
- * - offline: quá 5 phút hoặc chưa có hoạt động gần đây
- * - disabled: tài khoản bị khóa (isActive = false)
+ * L뿯½뿯½뿯½y d뿯½뿯½뿯½ li뿯½뿯½‡u tr뿯½뿯½뿯½ng th뿯½뿯½i ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng users cho Admin Online Stats
+ * Quy 뿯½뿯½뿯½뿯½›c:
+ * - active: ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng trong 1 ph뿯½뿯½t
+ * - idle: ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng trong 5 ph뿯½뿯½t
+ * - offline: qu뿯½뿯½ 5 ph뿯½뿯½t ho뿯½뿯½뿯½c ch뿯½뿯½a c뿯½뿯½ ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng g뿯½뿯½뿯½n 뿯½‘뿯½뿯½y
+ * - disabled: t뿯½뿯½i kho뿯½뿯½뿯½n b뿯½뿯½‹ kh뿯½뿯½a (isActive = false)
  */
 function getAdminOnlineUsersData() {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
 
     const lastSeenIndex = ensureUsersColumn(sheet, "lastSeenAt");
@@ -650,7 +645,7 @@ function getAdminOnlineUsersData() {
         (col.displayName >= 0 && row[col.displayName]) ||
         (col.username >= 0 && row[col.username]) ||
         (col.email >= 0 && row[col.email]) ||
-        "Người dùng";
+        "Ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng";
 
       const email = col.email >= 0 ? row[col.email] || "" : "";
       const avatarUrl =
@@ -666,11 +661,11 @@ function getAdminOnlineUsersData() {
         status: status,
         activity:
           status === "active"
-            ? "Đang hoạt động"
+            ? "뿯½뿯½ang ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng"
             : status === "idle"
-              ? "Tạm không hoạt động"
+              ? "T뿯½뿯½뿯½m kh뿯½뿯½ng ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng"
               : status === "disabled"
-                ? "Tài khoản đã bị khóa"
+                ? "T뿯½뿯½i kho뿯½뿯½뿯½n 뿯½‘뿯½뿯½ b뿯½뿯½‹ kh뿯½뿯½a"
                 : "Offline",
         loginTime: lastLogin ? lastLogin.toISOString() : "",
         lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : "",
@@ -693,7 +688,7 @@ function getAdminOnlineUsersData() {
     const disabledUsers = users.filter(function(u) { return u.status === "disabled"; }).length;
     const totalOnline = activeNow + idleUsers;
 
-    // Timeline đơn giản dựa trên hoạt động gần nhất
+    // Timeline 뿯½‘뿯½뿯½n gi뿯½뿯½뿯½n d뿯½뿯½뿯½a tr뿯½뿯½n ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng g뿯½뿯½뿯½n nh뿯½뿯½뿯½t
     const activities = users
       .filter(function(u) { return u.status === "active" || u.status === "idle"; })
       .slice(0, 10)
@@ -701,7 +696,7 @@ function getAdminOnlineUsersData() {
       return {
         type: u.status === "active" ? "activity" : "login",
         user: u.name,
-        action: u.status === "active" ? "đang hoạt động" : "vừa online",
+        action: u.status === "active" ? "뿯½‘ang ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng" : "v뿯½뿯½뿯½a online",
         time: u.lastActivity,
       };
       });
@@ -726,8 +721,8 @@ function getAdminOnlineUsersData() {
 }
 
 /**
- * Lấy dữ liệu thống kê học tập/người chơi cho trang Admin User Stats.
- * Trả về format tương thích với views/admin/userStats/user_stats_scripts.html
+ * L뿯½뿯½뿯½y d뿯½뿯½뿯½ li뿯½뿯½‡u th뿯½뿯½‘ng k뿯½뿯½ h뿯½뿯½뿯½c t뿯½뿯½뿯½p/ng뿯½뿯½뿯½뿯½뿯½i ch뿯½뿯½i cho trang Admin User Stats.
+ * Tr뿯½뿯½뿯½ v뿯½뿯½뿯½ format t뿯½뿯½뿯½뿯½ng th뿯½뿯½ch v뿯½뿯½›i views/admin/userStats/user_stats_scripts.html
  */
 function getAdminUserLearningStats(options) {
   try {
@@ -737,7 +732,7 @@ function getAdminUserLearningStats(options) {
         success: false,
         message:
           (adminContext && adminContext.message) ||
-          "Không thể xác thực quyền admin",
+          "Kh뿯½뿯½ng th뿯½뿯½뿯ƽ x뿯½뿯½c th뿯½뿯½뿯½c quy뿯½뿯½뿯½n admin",
       };
     }
 
@@ -746,7 +741,7 @@ function getAdminUserLearningStats(options) {
 
     const usersSheet = getSheet("Users");
     if (!usersSheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
 
     const usersData = usersSheet.getDataRange().getValues();
@@ -776,7 +771,7 @@ function getAdminUserLearningStats(options) {
       const role =
         userCols.role >= 0 ? String(row[userCols.role] || "").trim().toUpperCase() : "";
 
-      // Chỉ thống kê tài khoản có vai trò USER.
+      // Ch뿯½뿯½‰ th뿯½뿯½‘ng k뿯½뿯½ t뿯½뿯½i kho뿯½뿯½뿯½n c뿯½뿯½ vai tr뿯½뿯½ USER.
       if (role !== "USER") {
         continue;
       }
@@ -794,7 +789,7 @@ function getAdminUserLearningStats(options) {
         (userCols.username >= 0 && row[userCols.username]) ||
         email ||
         userId ||
-        "Người dùng";
+        "Ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng";
       const progressSheetId =
         userCols.progressSheetId >= 0 && row[userCols.progressSheetId]
           ? String(row[userCols.progressSheetId]).trim()
@@ -1220,7 +1215,7 @@ function deriveQuizPercent_(score, totalQuestions) {
 }
 
 /**
- * Heartbeat từ client để ghi nhận user còn đang mở web
+ * Heartbeat t뿯½뿯½뿯½ client 뿯½‘뿯½뿯½뿯ƽ ghi nh뿯½뿯½뿯½n user c뿯½뿯½n 뿯½‘ang m뿯½뿯½Ÿ web
  * payload: { userId?: string, email?: string, page?: string }
  */
 function updateUserHeartbeat(payload) {
@@ -1239,13 +1234,13 @@ function updateUserHeartbeat(payload) {
     const ss = getOrCreateDatabase();
     const sheet = ss.getSheetByName("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
 
     const lastSeenIndex = ensureUsersColumn(sheet, "lastSeenAt");
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) {
-      return { success: false, message: "Không có dữ liệu người dùng" };
+      return { success: false, message: "Kh뿯½뿯½ng c뿯½뿯½ d뿯½뿯½뿯½ li뿯½뿯½‡u ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng" };
     }
 
     const headers = data[0];
@@ -1270,19 +1265,19 @@ function updateUserHeartbeat(payload) {
             isActiveFlag === "false" ||
             isActiveFlag === "FALSE"
           ) {
-            return { success: false, message: "Tài khoản đang bị khóa" };
+            return { success: false, message: "T뿯½뿯½i kho뿯½뿯½뿯½n 뿯½‘ang b뿯½뿯½‹ kh뿯½뿯½a" };
           }
         }
 
         const activeSessionId = String(data[i][activeSessionIdIndex] || "");
 
-        // Chỉ cập nhật heartbeat nếu đúng phiên hiện tại
-        // Tránh tab cũ ghi đè trạng thái của tab mới
+        // Ch뿯½뿯½‰ c뿯½뿯½뿯½p nh뿯½뿯½뿯½t heartbeat n뿯½뿯½뿯½u 뿯½‘뿯½뿯½ng phi뿯½뿯½n hi뿯½뿯½‡n t뿯½뿯½뿯½i
+        // Tr뿯½뿯½nh tab c뿯½뿯½ ghi 뿯½‘뿯½뿯½ tr뿯½뿯½뿯½ng th뿯½뿯½i c뿯½뿯½뿯½a tab m뿯½뿯½›i
         if (activeSessionId !== sessionId) {
           return {
             success: false,
             status: "STALE_SESSION",
-            message: "Session không còn hợp lệ",
+            message: "Session kh뿯½뿯½ng c뿯½뿯½n h뿯½뿯½뿯½p l뿯½뿯½‡",
           };
         }
 
@@ -1311,7 +1306,7 @@ function updateUserHeartbeat(payload) {
 }
 
 /**
- * Parse dữ liệu ngày từ sheet (Date object hoặc string)
+ * Parse d뿯½뿯½뿯½ li뿯½뿯½‡u ng뿯½뿯½y t뿯½뿯½뿯½ sheet (Date object ho뿯½뿯½뿯½c string)
  */
 function parseAdminSheetDate(value) {
   if (!value) return null;
@@ -1368,7 +1363,7 @@ function parseAdminAttemptDetail_(value, activityType) {
 }
 
 /**
- * Lấy Date mới nhất trong 2 giá trị
+ * L뿯½뿯½뿯½y Date m뿯½뿯½›i nh뿯½뿯½뿯½t trong 2 gi뿯½뿯½ tr뿯½뿯½‹
  */
 function getLatestAdminDate(dateA, dateB) {
   if (dateA && dateB) {
@@ -1378,7 +1373,7 @@ function getLatestAdminDate(dateA, dateB) {
 }
 
 /**
- * Đảm bảo cột tồn tại trong Users header, tạo mới ở cuối nếu thiếu
+ * 뿯½뿯½뿯½뿯½뿯½m b뿯½뿯½뿯½o c뿯½뿯½™t t뿯½뿯½“n t뿯½뿯½뿯½i trong Users header, t뿯½뿯½뿯½o m뿯½뿯½›i 뿯½뿯½Ÿ cu뿯½뿯½‘i n뿯½뿯½뿯½u thi뿯½뿯½뿯½u
  */
 function ensureUsersColumn(sheet, columnName) {
   const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
@@ -1396,13 +1391,13 @@ function ensureUsersColumn(sheet, columnName) {
 // ========================================
 
 /**
- * Lấy danh sách tất cả users cho Admin
+ * L뿯½뿯½뿯½y danh s뿯½뿯½ch t뿯½뿯½뿯½t c뿯½뿯½뿯½ users cho Admin
  */
 function getAllUsersForAdmin() {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
     
     const data = sheet.getDataRange().getValues();
@@ -1438,13 +1433,13 @@ function getAllUsersForAdmin() {
 }
 
 /**
- * Cập nhật trạng thái user (khóa/mở khóa)
+ * C뿯½뿯½뿯½p nh뿯½뿯½뿯½t tr뿯½뿯½뿯½ng th뿯½뿯½i user (kh뿯½뿯½a/m뿯½뿯½Ÿ kh뿯½뿯½a)
  */
 function updateUserStatus(userId, isActive) {
   try {
     const sheet = getSheet("Users");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Users" };
     }
     
     const data = sheet.getDataRange().getValues();
@@ -1457,12 +1452,12 @@ function updateUserStatus(userId, isActive) {
         sheet.getRange(i + 1, isActiveIndex + 1).setValue(isActive);
         return { 
           success: true, 
-          message: isActive ? "Đã mở khóa user" : "Đã khóa user" 
+          message: isActive ? "뿯½뿯½뿯½뿯½ m뿯½뿯½Ÿ kh뿯½뿯½a user" : "뿯½뿯½뿯½뿯½ kh뿯½뿯½a user" 
         };
       }
     }
     
-    return { success: false, message: "Không tìm thấy user" };
+    return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y user" };
   } catch (error) {
     Logger.log("Error updating user status: " + error.toString());
     return { success: false, message: error.toString() };
@@ -1474,19 +1469,58 @@ function updateUserStatus(userId, isActive) {
 // ========================================
 
 /**
- * Lấy danh sách Topics cho Admin (Content Management)
- * Trả về mảng topics trực tiếp để sử dụng trong giao diện quản lý
+ * L뿯½뿯½뿯½y danh s뿯½뿯½ch Topics cho Admin (Content Management)
+ * Tr뿯½뿯½뿯½ v뿯½뿯½뿯½ m뿯½뿯½뿯½ng topics tr뿯½뿯½뿯½c ti뿯½뿯½뿯½p 뿯½‘뿯½뿯½뿯ƽ s뿯½뿯½뿯½ d뿯½뿯½뿯½ng trong giao di뿯½뿯½‡n qu뿯½뿯½뿯½n l뿯½뿯½
  */
 function getAllTopicsForAdmin() {
   try {
-    const res = typeof getAllTopicsIncludingHidden === "function" ? getAllTopicsIncludingHidden() : null;
-    if (res && res.success && Array.isArray(res.topics)) {
-      return res.topics;
+    const adminContext = (typeof requireAdminContext_ === 'function') ? requireAdminContext_() : getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return { success: false, message: "Không có quyền admin" };
     }
-    return [];
+
+    const sheet = getSheet("Topics");
+    if (!sheet) return { success: false, message: "Không tìm thấy cơ sở dữ liệu Topics" };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdIdx = headers.indexOf("topicId");
+    let isHiddenIdx = headers.indexOf("isHidden");
+
+    if (topicIdIdx === -1) {
+      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ (thiếu topicId)" };
+    }
+
+    if (isHiddenIdx === -1) {
+      isHiddenIdx = headers.length;
+      sheet.getRange(1, isHiddenIdx + 1).setValue("isHidden");
+    }
+
+    const topics = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const topicId = row[topicIdIdx];
+      
+      if (!topicId) continue;
+
+      const topicData = {};
+      headers.forEach(function(header, idx) {
+        topicData[header] = row[idx];
+      });
+      
+      topicData.isHidden = (topicData.isHidden === true || String(topicData.isHidden).toLowerCase() === "true");
+      
+      topics.push(topicData);
+    }
+
+    return {
+      success: true,
+      data: topics
+    };
   } catch (error) {
-    Logger.log("Error getting topics for admin: " + error.toString());
-    return [];
+    Logger.log("Error getting all topics for admin: " + error.toString());
+    return { success: false, message: error.toString() };
   }
 }
 
@@ -1495,13 +1529,13 @@ function getAllTopicsForAdmin() {
 // ========================================
 
 /**
- * Lấy danh sách Lessons (MCQ) cho Admin
+ * L뿯½뿯½뿯½y danh s뿯½뿯½ch Lessons (MCQ) cho Admin
  */
 function getAllLessonsForAdmin() {
   try {
     const sheet = getSheet("MCQ_Questions");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet MCQ_Questions" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet MCQ_Questions" };
     }
     
     const data = sheet.getDataRange().getValues();
@@ -1554,7 +1588,7 @@ function clearAllAdminCache() {
   try {
     const cache = CacheService.getScriptCache();
     cache.removeAll(["topics_cache", "users_cache", "stats_cache"]);
-    return { success: true, message: "Đã xóa cache thành công!" };
+    return { success: true, message: "뿯½뿯½뿯½뿯½ x뿯½뿯½a cache th뿯½뿯½nh c뿯½뿯½ng!" };
   } catch (error) {
     Logger.log("Error clearing cache: " + error.toString());
     return { success: false, message: error.toString() };
@@ -1562,63 +1596,53 @@ function clearAllAdminCache() {
 }
 
 /**
- * Lấy thông tin admin hiện tại dựa trên email đăng nhập
+ * L뿯½뿯½뿯½y th뿯½뿯½ng tin admin hi뿯½뿯½‡n t뿯½뿯½뿯½i d뿯½뿯½뿯½a tr뿯½뿯½n email 뿯½‘뿯½뿯ƽng nh뿯½뿯½뿯½p
  */
+function requireAdminContext_() {
+  if (typeof getCurrentAdminContext !== 'function') {
+    return { success: false, message: "H뿯½뿯½‡ th뿯½뿯½‘ng x뿯½뿯½c th뿯½뿯½뿯½c admin ch뿯½뿯½a s뿯½뿯½뿯½n s뿯½뿯½ng." };
+  }
+  const context = getCurrentAdminContext();
+  if (!context || !context.success) {
+    return {
+      success: false,
+      message: context && context.message ? context.message : "Kh뿯½뿯½ng c뿯½뿯½ quy뿯½뿯½뿯½n admin."
+    };
+  }
+  return context;
+}
+
 function getCurrentAdminContext() {
   try {
-    // Try to get email from Session (works for owner/editors)
     let email = "";
-    try {
-      email = Session.getActiveUser().getEmail();
-    } catch (e) {
-      Logger.log("Session.getActiveUser() failed: " + e.toString());
-    }
-
-    // If no email from session, try effective user
+    try { email = Session.getActiveUser().getEmail(); } catch (e) {}
     if (!email) {
-      try {
-        email = Session.getEffectiveUser().getEmail();
-      } catch (e) {
-        Logger.log("Session.getEffectiveUser() failed: " + e.toString());
-      }
+      try { email = Session.getEffectiveUser().getEmail(); } catch (e) {}
     }
-
-    Logger.log("getCurrentAdminContext - email: " + email);
-
+    
     if (!email) {
-      // If still no email, allow if running as script owner (dev mode)
-      Logger.log("⚠️ No email from Session, checking if script owner...");
-      // For development, allow access - in production, you should handle this differently
-      return {
-        success: true,
-        email: "admin@local",
-        userId: "ADMIN_SCRIPT_OWNER",
-        role: "ADMIN",
-        note: "Running as script owner (no session email)"
-      };
+      return { success: false, message: "Không thể lấy email phiên đăng nhập." };
     }
 
     const sheet = getSheet("Users");
-    if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Users" };
-    }
+    if (!sheet) return { success: false, message: "Không tìm thấy sheet Users" };
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const emailIndex = headers.indexOf("email");
     const roleIndex = headers.indexOf("role");
     const userIdIndex = headers.indexOf("userId");
+    const isActiveIndex = headers.indexOf("isActive");
 
     for (let i = 1; i < data.length; i++) {
-      if (
-        emailIndex !== -1 &&
-        String(data[i][emailIndex]).toLowerCase() === email.toLowerCase()
-      ) {
+      if (emailIndex !== -1 && String(data[i][emailIndex]).toLowerCase() === email.toLowerCase()) {
         const role = roleIndex !== -1 ? String(data[i][roleIndex]).toUpperCase() : "";
         if (role !== "ADMIN") {
-          return { success: false, message: "Chỉ ADMIN mới được tạo/chỉnh sửa topic." };
+          return { success: false, message: "Chỉ ADMIN mới có quyền truy cập." };
         }
-
+        if (isActiveIndex !== -1 && data[i][isActiveIndex] === false) {
+          return { success: false, message: "Tài khoản ADMIN đã bị khóa." };
+        }
         return {
           success: true,
           email: email,
@@ -1627,13 +1651,8 @@ function getCurrentAdminContext() {
         };
       }
     }
-
-    return {
-      success: false,
-      message: "Không tìm thấy tài khoản với email này hoặc không phải ADMIN.",
-    };
+    return { success: false, message: "Không tìm thấy tài khoản admin hợp lệ." };
   } catch (error) {
-    Logger.log("Error getting admin context: " + error.toString());
     return { success: false, message: "Lỗi kiểm tra quyền admin: " + error.toString() };
   }
 }
@@ -1651,7 +1670,7 @@ const TOPIC_EDITOR_CONFIG = {
 };
 
 /**
- * Lấy HTML của Topic Editor
+ * L뿯½뿯½뿯½y HTML c뿯½뿯½뿯½a Topic Editor
  */
 function getTopicEditorHtml() {
   try {
@@ -1659,12 +1678,12 @@ function getTopicEditorHtml() {
     return template.evaluate().getContent();
   } catch (error) {
     Logger.log("Error getting topic editor HTML: " + error.toString());
-    return "<p>Lỗi tải Topic Editor: " + error.toString() + "</p>";
+    return "<p>L뿯½뿯½—i t뿯½뿯½뿯½i Topic Editor: " + error.toString() + "</p>";
   }
 }
 
 /**
- * Lấy HTML đầy đủ của Topic Editor (styles + content + scripts)
+ * L뿯½뿯½뿯½y HTML 뿯½‘뿯½뿯½뿯½y 뿯½‘뿯½뿯½뿯½ c뿯½뿯½뿯½a Topic Editor (styles + content + scripts)
  */
 function getTopicEditorFullHtml() {
   try {
@@ -1675,12 +1694,12 @@ function getTopicEditorFullHtml() {
     return styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting topic editor full HTML: " + error.toString());
-    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Topic Editor: " + error.toString() + "</p>";
+    return "<p style='color:#d93025;padding:20px;'>L뿯½뿯½—i t뿯½뿯½뿯½i Topic Editor: " + error.toString() + "</p>";
   }
 }
 
 /**
- * Lấy HTML đầy đủ của Content Management (styles + content + scripts)
+ * L뿯½뿯½뿯½y HTML 뿯½‘뿯½뿯½뿯½y 뿯½‘뿯½뿯½뿯½ c뿯½뿯½뿯½a Content Management (styles + content + scripts)
  */
 function getContentManagementFullHtml() {
   try {
@@ -1692,12 +1711,12 @@ function getContentManagementFullHtml() {
     return symbols + styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting content management full HTML: " + error.toString());
-    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý Nội dung: " + error.toString() + "</p>";
+    return "<p style='color:#d93025;padding:20px;'>L뿯½뿯½—i t뿯½뿯½뿯½i Qu뿯½뿯½뿯½n l뿯½뿯½ N뿯½뿯½™i dung: " + error.toString() + "</p>";
   }
 }
 
 /**
- * Lấy HTML đầy đủ của User Stats (styles + content + scripts)
+ * L뿯½뿯½뿯½y HTML 뿯½‘뿯½뿯½뿯½y 뿯½‘뿯½뿯½뿯½ c뿯½뿯½뿯½a User Stats (styles + content + scripts)
  */
 function getUserStatsFullHtml() {
   try {
@@ -1708,12 +1727,12 @@ function getUserStatsFullHtml() {
     return styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting user stats full HTML: " + error.toString());
-    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Thống kê người dùng: " + error.toString() + "</p>";
+    return "<p style='color:#d93025;padding:20px;'>L뿯½뿯½—i t뿯½뿯½뿯½i Th뿯½뿯½‘ng k뿯½뿯½ ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng: " + error.toString() + "</p>";
   }
 }
 
 /**
- * Lấy HTML đầy đủ của Course Stats (styles + content + scripts)
+ * L뿯½뿯½뿯½y HTML 뿯½‘뿯½뿯½뿯½y 뿯½‘뿯½뿯½뿯½ c뿯½뿯½뿯½a Course Stats (styles + content + scripts)
  */
 function getCourseStatsFullHtml() {
   try {
@@ -1724,7 +1743,7 @@ function getCourseStatsFullHtml() {
     return styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting course stats full HTML: " + error.toString());
-    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Thống kê khóa học: " + error.toString() + "</p>";
+    return "<p style='color:#d93025;padding:20px;'>L뿯½뿯½—i t뿯½뿯½뿯½i Th뿯½뿯½‘ng k뿯½뿯½ kh뿯½뿯½a h뿯½뿯½뿯½c: " + error.toString() + "</p>";
   }
 }
 
@@ -2572,7 +2591,7 @@ function savePetVariantsForAdmin(payloadJson) {
 
     return {
       success: true,
-      message: "Đã lưu danh sách Pet variants thành công",
+      message: "뿯½뿯½뿯½뿯½ l뿯½뿯½u danh s뿯½뿯½ch Pet variants th뿯½뿯½nh c뿯½뿯½ng",
       totalVariants: rows.length,
     };
   } catch (error) {
@@ -2672,7 +2691,7 @@ function savePetItemsForAdmin(payloadJson) {
 
     return {
       success: true,
-      message: "Đã lưu danh mục PET thành công",
+      message: "뿯½뿯½뿯½뿯½ l뿯½뿯½u danh m뿯½뿯½뿯½c PET th뿯½뿯½nh c뿯½뿯½ng",
       totalItems: rows.length,
     };
   } catch (error) {
@@ -2687,8 +2706,8 @@ function savePetItemsForAdmin(payloadJson) {
 }
 
 /**
- * Kiểm tra quyền admin của user hiện tại
- * @returns {boolean} - true nếu là admin, ngược lại false
+ * Ki뿯½뿯½뿯ƽm tra quy뿯½뿯½뿯½n admin c뿯½뿯½뿯½a user hi뿯½뿯½‡n t뿯½뿯½뿯½i
+ * @returns {boolean} - true n뿯½뿯½뿯½u l뿯½뿯½ admin, ng뿯½뿯½뿯½뿯½뿯½c l뿯½뿯½뿯½i false
  */
 function checkAdminRole() {
   try {
@@ -2701,13 +2720,13 @@ function checkAdminRole() {
 }
 
 /**
- * Lấy toàn bộ HTML (Styles + Content + Scripts) cho trang Quản lý Email
+ * L뿯½뿯½뿯½y to뿯½뿯½n b뿯½뿯½™ HTML (Styles + Content + Scripts) cho trang Qu뿯½뿯½뿯½n l뿯½뿯½ Email
  */
 function getAdminEmailManagementFullHtml() {
   try {
     const isAdmin = checkAdminRole();
     if (!isAdmin) {
-      return '<div style="padding:40px;text-align:center;color:#d93025;">Bạn không có quyền truy cập trang này.</div>';
+      return '<div style="padding:40px;text-align:center;color:#d93025;">B뿯½뿯½뿯½n kh뿯½뿯½ng c뿯½뿯½ quy뿯½뿯½뿯½n truy c뿯½뿯½뿯½p trang n뿯½뿯½y.</div>';
     }
 
     const styles = HtmlService.createHtmlOutputFromFile('views/admin/emailManagement/email_management_styles').getContent();
@@ -2716,13 +2735,13 @@ function getAdminEmailManagementFullHtml() {
 
     return styles + '\n' + content + '\n' + scripts;
   } catch (error) {
-    Logger.log('Lỗi trong getAdminEmailManagementFullHtml: ' + error.toString());
-    return '<div style="padding:40px;text-align:center;color:#d93025;">Lỗi render Quản lý Email: ' + error.toString() + '</div>';
+    Logger.log('L뿯½뿯½—i trong getAdminEmailManagementFullHtml: ' + error.toString());
+    return '<div style="padding:40px;text-align:center;color:#d93025;">L뿯½뿯½—i render Qu뿯½뿯½뿯½n l뿯½뿯½ Email: ' + error.toString() + '</div>';
   }
 }
 
 /**
- * Lấy HTML đầy đủ của Pet Management (styles + content + scripts)
+ * L뿯½뿯½뿯½y HTML 뿯½‘뿯½뿯½뿯½y 뿯½‘뿯½뿯½뿯½ c뿯½뿯½뿯½a Pet Management (styles + content + scripts)
  */
 function getPetManagementFullHtml() {
   try {
@@ -2733,7 +2752,7 @@ function getPetManagementFullHtml() {
     return styles + content + scripts;
   } catch (error) {
     Logger.log("Error getting pet management full HTML: " + error.toString());
-    return "<p style='color:#d93025;padding:20px;'>Lỗi tải Quản lý PET: " + error.toString() + "</p>";
+    return "<p style='color:#d93025;padding:20px;'>L뿯½뿯½—i t뿯½뿯½뿯½i Qu뿯½뿯½뿯½n l뿯½뿯½ PET: " + error.toString() + "</p>";
   }
 }
 
@@ -2745,10 +2764,10 @@ function includeTopicEditorFile(filename) {
 }
 
 /**
- * Upload hình ảnh lên Google Drive
- * @param {string} base64Data - Dữ liệu hình ảnh dạng base64
- * @param {string} fileName - Tên file
- * @param {string} mimeType - Loại file (image/png, image/jpeg, etc.)
+ * Upload h뿯½뿯½nh 뿯½뿯½뿯½nh l뿯½뿯½n Google Drive
+ * @param {string} base64Data - D뿯½뿯½뿯½ li뿯½뿯½‡u h뿯½뿯½nh 뿯½뿯½뿯½nh d뿯½뿯½뿯½ng base64
+ * @param {string} fileName - T뿯½뿯½n file
+ * @param {string} mimeType - Lo뿯½뿯½뿯½i file (image/png, image/jpeg, etc.)
  * @returns {object} - {success, imageUrl, message}
  */
 function uploadImageToDrive(base64Data, fileName, mimeType) {
@@ -2783,12 +2802,12 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
     // Set permissions - anyone with link can view
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
-    // Get direct image URL - sử dụng format lh3.googleusercontent.com để embed tốt hơn
+    // Get direct image URL - s뿯½뿯½뿯½ d뿯½뿯½뿯½ng format lh3.googleusercontent.com 뿯½‘뿯½뿯½뿯ƽ embed t뿯½뿯½‘t h뿯½뿯½n
     const fileId = file.getId();
-    // Format này hoạt động tốt hơn cho embedding trong HTML
+    // Format n뿯½뿯½y ho뿯½뿯½뿯½t 뿯½‘뿯½뿯½™ng t뿯½뿯½‘t h뿯½뿯½n cho embedding trong HTML
     const imageUrl = "https://lh3.googleusercontent.com/d/" + fileId;
 
-    Logger.log("✅ Image uploaded successfully");
+    Logger.log("뿯½œ… Image uploaded successfully");
     Logger.log("File ID: " + fileId);
     Logger.log("Image URL: " + imageUrl);
 
@@ -2796,70 +2815,50 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
       success: true,
       imageUrl: imageUrl,
       fileId: fileId,
-      message: "Upload thành công!"
+      message: "Upload th뿯½뿯½nh c뿯½뿯½ng!"
     };
   } catch (error) {
-    Logger.log("❌ Error uploading image: " + error.toString());
+    Logger.log("뿯½뿯½Œ Error uploading image: " + error.toString());
     return {
       success: false,
       imageUrl: "",
-      message: "Lỗi upload: " + error.toString()
+      message: "L뿯½뿯½—i upload: " + error.toString()
     };
   }
 }
 
 /**
- * Tạo Google Doc và publish topic vào MasterDB
- * @param {object} topicData - Dữ liệu topic
+ * T뿯½뿯½뿯½o Google Doc v뿯½뿯½ publish topic v뿯½뿯½o MasterDB
+ * @param {object} topicData - D뿯½뿯½뿯½ li뿯½뿯½‡u topic
  * @returns {object} - {success, docId, docUrl, message}
  */
 function createAndPublishTopic(topicData) {
   try {
-    Logger.log("=== CREATE AND PUBLISH TOPIC ===");
-    Logger.log("Topic data received: " + JSON.stringify(topicData));
-
-    // Quyền: chỉ ADMIN được phép
-    Logger.log("Step 1: Checking admin context...");
     const adminContext = getCurrentAdminContext();
-    Logger.log("Admin context result: " + JSON.stringify(adminContext));
-    if (!adminContext.success) {
-      return { success: false, message: adminContext.message };
+    if (!adminContext.success) return { success: false, message: adminContext.message };
+
+    if (!topicData.topicId || !topicData.title || !topicData.courseId || !topicData.content) {
+      return { success: false, message: "Thiếu thông tin bắt buộc (topicId, title, courseId, content)" };
     }
 
-    // Validate input
-    Logger.log("Step 2: Validating input...");
-    if (!topicData.topicId || !topicData.title || !topicData.category || !topicData.content) {
-      Logger.log("❌ Missing required fields");
-      return {
-        success: false,
-        message: "Thiếu thông tin bắt buộc (topicId, title, category, content)"
-      };
-    }
-
-    // Check if topicId already exists
-    Logger.log("Step 3: Checking if topicId exists: " + topicData.topicId);
     const existingTopic = checkTopicIdExists(topicData.topicId);
-    Logger.log("Topic exists: " + existingTopic);
     if (existingTopic) {
-      return {
-        success: false,
-        message: "Topic ID '" + topicData.topicId + "' đã tồn tại. Vui lòng chọn ID khác."
-      };
+      return { success: false, message: "Topic ID đã tồn tại." };
+    }
+    
+    if (typeof courseExists_ === "function" && !courseExists_(topicData.courseId)) {
+      return { success: false, message: "Course ID không tồn tại." };
     }
 
-    // Step 1: Create Google Doc with content
-    Logger.log("Step 4: Creating Google Doc...");
     const docResult = createTopicDocument(topicData.title, topicData.content);
-    Logger.log("Doc creation result: " + JSON.stringify(docResult));
-    if (!docResult.success) {
-      return docResult;
-    }
+    if (!docResult.success) return docResult;
 
     const saveResult = saveTopicToMasterDB({
       topicId: topicData.topicId,
       title: topicData.title,
       description: topicData.description || "",
-      category: topicData.category,
+      courseId: topicData.courseId,
+      category: topicData.category || "General",
       order: topicData.order || 999,
       prerequisiteTopics: topicData.prerequisiteTopics || "",
       unlockCondition: topicData.unlockCondition || "",
@@ -2867,27 +2866,17 @@ function createAndPublishTopic(topicData) {
       contentDocId: docResult.docId,
       contentDocUrl: docResult.docUrl,
       createdBy: adminContext.userId || adminContext.email || "ADMIN",
+      xpReward: topicData.xpReward,
+      quizXpReward: topicData.quizXpReward,
+      matchingXpReward: topicData.matchingXpReward
     });
-    Logger.log("Save result: " + JSON.stringify(saveResult));
     
     if (!saveResult.success) {
-      // If save fails, try to delete the created doc
-      try {
-        DriveApp.getFileById(docResult.docId).setTrashed(true);
-      } catch (e) {
-        Logger.log("Could not trash doc after save failure: " + e.toString());
-      }
+      try { DriveApp.getFileById(docResult.docId).setTrashed(true); } catch (e) {}
       return saveResult;
     }
     
-    // Clear server topics cache so new topic appears immediately
-    try {
-      clearTopicsCache();
-    } catch (e) {
-      Logger.log("⚠️ Could not clear topics cache: " + e.toString());
-    }
-    
-    Logger.log("✅ Topic created and published successfully");
+    try { clearTopicsCache(); } catch (e) {}
     
     return {
       success: true,
@@ -2897,18 +2886,14 @@ function createAndPublishTopic(topicData) {
       message: "Topic đã được publish thành công!"
     };
   } catch (error) {
-    Logger.log("❌ Error creating topic: " + error.toString());
-    return {
-      success: false,
-      message: "Lỗi tạo topic: " + error.toString()
-    };
+    return { success: false, message: "Lỗi tạo topic: " + error.toString() };
   }
 }
 
 /**
- * Tạo Google Doc từ nội dung HTML
- * @param {string} title - Tiêu đề doc
- * @param {string} htmlContent - Nội dung HTML
+ * T뿯½뿯½뿯½o Google Doc t뿯½뿯½뿯½ n뿯½뿯½™i dung HTML
+ * @param {string} title - Ti뿯½뿯½u 뿯½‘뿯½뿯½뿯½ doc
+ * @param {string} htmlContent - N뿯½뿯½™i dung HTML
  * @returns {object} - {success, docId, docUrl, message}
   */
 function createTopicDocument(title, htmlContent) {
@@ -2921,13 +2906,13 @@ function createTopicDocument(title, htmlContent) {
     try {
       folder = DriveApp.getFolderById(TOPIC_EDITOR_CONFIG.TOPIC_DOCS_FOLDER_ID);
     } catch (folderErr) {
-      Logger.log("❌ Cannot access topics folder: " + folderErr.toString());
+      Logger.log("뿯½뿯½Œ Cannot access topics folder: " + folderErr.toString());
       return {
         success: false,
         docId: "",
         docUrl: "",
         message:
-          "Không truy cập được folder lưu Docs. Kiểm tra quyền truy cập folder: " +
+          "Kh뿯½뿯½ng truy c뿯½뿯½뿯½p 뿯½‘뿯½뿯½뿯½뿯½뿯½c folder l뿯½뿯½u Docs. Ki뿯½뿯½뿯ƽm tra quy뿯½뿯½뿯½n truy c뿯½뿯½뿯½p folder: " +
           TOPIC_EDITOR_CONFIG.TOPIC_DOCS_FOLDER_ID,
       };
     }
@@ -2953,7 +2938,7 @@ function createTopicDocument(title, htmlContent) {
     try {
       DriveApp.getRootFolder().removeFile(file);
     } catch (e) {
-      Logger.log("⚠️ Could not remove file from root: " + e.toString());
+      Logger.log("뿯½š뿯½뿯½뿯½뿯½ Could not remove file from root: " + e.toString());
     }
     
     // Set sharing - anyone with link can view
@@ -2961,7 +2946,7 @@ function createTopicDocument(title, htmlContent) {
     
     const docUrl = doc.getUrl();
     
-    Logger.log("✅ Doc created successfully");
+    Logger.log("뿯½œ… Doc created successfully");
     Logger.log("Doc ID: " + docId);
     Logger.log("Doc URL: " + docUrl);
     
@@ -2969,21 +2954,21 @@ function createTopicDocument(title, htmlContent) {
       success: true,
       docId: docId,
       docUrl: docUrl,
-      message: "Tạo document thành công!"
+      message: "T뿯½뿯½뿯½o document th뿯½뿯½nh c뿯½뿯½ng!"
     };
   } catch (error) {
-    Logger.log("❌ Error creating document: " + error.toString());
+    Logger.log("뿯½뿯½Œ Error creating document: " + error.toString());
     return {
       success: false,
       docId: "",
       docUrl: "",
-      message: "Lỗi tạo document: " + error.toString()
+      message: "L뿯½뿯½—i t뿯½뿯½뿯½o document: " + error.toString()
     };
   }
 }
 
 /**
- * Chuyển đổi HTML content sang Google Doc format.
+ * Chuy뿯½뿯½뿯ƽn 뿯½‘뿯½뿯½•i HTML content sang Google Doc format.
  * Handles both HTML elements AND text-based block markers ([[NOTE]], [[CODE:PYTHON]], etc.).
  *
  * Strategy:
@@ -2993,8 +2978,8 @@ function createTopicDocument(title, htmlContent) {
  *   3. For each HTML segment, use parseHtmlBlocks() to write structured content.
  *   4. For each marker segment, write it as a plain-text paragraph so it round-trips.
  *
- * @param {string} html - Nội dung HTML (with block markers as text)
- * @param {Body} body - Body của Google Doc
+ * @param {string} html - N뿯½뿯½™i dung HTML (with block markers as text)
+ * @param {Body} body - Body c뿯½뿯½뿯½a Google Doc
  */
 function convertHtmlToDocContent(html, body) {
   try {
@@ -3007,7 +2992,7 @@ function convertHtmlToDocContent(html, body) {
 
     // If no content, add placeholder
     if (!html || html.trim() === '' || html.trim() === '<br>' || html.trim() === '<p><br></p>') {
-      body.appendParagraph("(Nội dung trống)");
+      body.appendParagraph("(N뿯½뿯½™i dung tr뿯½뿯½‘ng)");
       ensureDocEndsWithHetMarker(body);
       return true;
     }
@@ -3035,7 +3020,7 @@ function convertHtmlToDocContent(html, body) {
     Logger.log("Segments count: " + segments.length);
 
     if (segments.length === 0) {
-      body.appendParagraph("(Không thể parse nội dung)");
+      body.appendParagraph("(Kh뿯½뿯½ng th뿯½뿯½뿯ƽ parse n뿯½뿯½™i dung)");
       ensureDocEndsWithHetMarker(body);
       return true;
     }
@@ -3054,7 +3039,7 @@ function convertHtmlToDocContent(html, body) {
         continue;
       }
 
-      // seg.kind === "html" — process the HTML chunk with parseHtmlBlocks
+      // seg.kind === "html" 뿯½뿯₽” process the HTML chunk with parseHtmlBlocks
       var htmlChunk = seg.value;
       if (!htmlChunk || !htmlChunk.trim()) continue;
 
@@ -3150,7 +3135,7 @@ function convertHtmlToDocContent(html, body) {
             break;
 
           case 'codeblock':
-            var codeHeader = body.appendParagraph('📝 ' + (block.language || 'Code').toUpperCase());
+            var codeHeader = body.appendParagraph('뿯½Ÿ“뿯½ ' + (block.language || 'Code').toUpperCase());
             codeHeader.setFontFamily('Arial');
             codeHeader.setForegroundColor('#666666');
             codeHeader.setFontSize(10);
@@ -3177,11 +3162,11 @@ function convertHtmlToDocContent(html, body) {
           case 'image':
             try {
               if (!block.src || block.src.trim() === '') {
-                body.appendParagraph('[Hình ảnh: URL trống]');
+                body.appendParagraph('[H뿯½뿯½nh 뿯½뿯½뿯½nh: URL tr뿯½뿯½‘ng]');
                 break;
               }
               if (imageCount >= MAX_IMAGES) {
-                body.appendParagraph('[Hình ảnh: ' + block.src + '] (bỏ qua - đã đạt giới hạn)');
+                body.appendParagraph('[H뿯½뿯½nh 뿯½뿯½뿯½nh: ' + block.src + '] (b뿯½뿯½뿯½ qua - 뿯½‘뿯½뿯½ 뿯½‘뿯½뿯½뿯½t gi뿯½뿯½›i h뿯½뿯½뿯½n)');
                 break;
               }
               imageCount++;
@@ -3189,11 +3174,11 @@ function convertHtmlToDocContent(html, body) {
               if (imageBlob) {
                 appendResizedImageToDoc(body, imageBlob);
               } else {
-                body.appendParagraph('[Hình ảnh không tải được: ' + block.src + ']');
+                body.appendParagraph('[H뿯½뿯½nh 뿯½뿯½뿯½nh kh뿯½뿯½ng t뿯½뿯½뿯½i 뿯½‘뿯½뿯½뿯½뿯½뿯½c: ' + block.src + ']');
               }
             } catch (imgErr) {
               Logger.log("Image error: " + imgErr.toString() + " - URL: " + block.src);
-              body.appendParagraph('[Hình ảnh: ' + block.src + ']');
+              body.appendParagraph('[H뿯½뿯½nh 뿯½뿯½뿯½nh: ' + block.src + ']');
             }
             break;
 
@@ -3207,7 +3192,7 @@ function convertHtmlToDocContent(html, body) {
 
     ensureCodeMarkersClosedInDoc(body);
     ensureDocEndsWithHetMarker(body);
-    Logger.log("✅ HTML converted successfully");
+    Logger.log("뿯½œ… HTML converted successfully");
     return true;
   } catch (error) {
     Logger.log("Error converting HTML to Doc: " + error.toString());
@@ -3336,7 +3321,7 @@ function normalizeCodeMarkersInHtml(html) {
   if (closingCount < openingCount) {
     var missingClosings = openingCount - closingCount;
     Logger.log(
-      "⚠️ Detected missing [[/CODE]] markers: " +
+      "뿯½š뿯½뿯½뿯½뿯½ Detected missing [[/CODE]] markers: " +
         missingClosings +
         " (open=" +
         openingCount +
@@ -3378,7 +3363,7 @@ function ensureCodeMarkersClosedInDoc(body) {
   if (closingCount < openingCount) {
     var missingClosings = openingCount - closingCount;
     Logger.log(
-      "⚠️ Repairing Doc CODE markers: append " +
+      "뿯½š뿯½뿯½뿯½뿯½ Repairing Doc CODE markers: append " +
         missingClosings +
         " missing [[/CODE]] (open=" +
         openingCount +
@@ -3393,8 +3378,8 @@ function ensureCodeMarkersClosedInDoc(body) {
 }
 
 /**
- * Ensure the Google Doc ends with centered "Hết".
- * Only appends when the last meaningful line is not already "Hết".
+ * Ensure the Google Doc ends with centered "H뿯½뿯½뿯½t".
+ * Only appends when the last meaningful line is not already "H뿯½뿯½뿯½t".
  * @param {Body} body
  */
 function ensureDocEndsWithHetMarker(body) {
@@ -3427,14 +3412,14 @@ function ensureDocEndsWithHetMarker(body) {
     }
   }
 
-  if (lastMeaningfulText === "Hết") {
-    // "Hết" already exists – ensure it is centered (it may have lost alignment
+  if (lastMeaningfulText === "H뿯½뿯½뿯½t") {
+    // "H뿯½뿯½뿯½t" already exists 뿯½뿯₽“ ensure it is centered (it may have lost alignment
     // after a round-trip through the web editor which strips center styling).
     for (var j = body.getNumChildren() - 1; j >= 0; j--) {
       var el = body.getChild(j);
       if (el.getType() === DocumentApp.ElementType.PARAGRAPH) {
         var elText = normalizeLineText(el.asParagraph().getText());
-        if (elText === "Hết") {
+        if (elText === "H뿯½뿯½뿯½t") {
           el.asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
           break;
         }
@@ -3443,12 +3428,12 @@ function ensureDocEndsWithHetMarker(body) {
     return;
   }
 
-  var endParagraph = body.appendParagraph("Hết");
+  var endParagraph = body.appendParagraph("H뿯½뿯½뿯½t");
   endParagraph.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 }
 
 /**
- * Lấy blob ảnh từ src (data URL, Google Drive URL, Google Docs export URL, hoặc URL thường)
+ * L뿯½뿯½뿯½y blob 뿯½뿯½뿯½nh t뿯½뿯½뿯½ src (data URL, Google Drive URL, Google Docs export URL, ho뿯½뿯½뿯½c URL th뿯½뿯½뿯½뿯½뿯½ng)
  * @param {string} src
  * @returns {Blob|null}
  */
@@ -3456,7 +3441,7 @@ function getImageBlobFromSrc(src) {
   var imageSrc = String(src || "").trim();
   if (!imageSrc) return null;
 
-  // 1) Data URL (quan trọng cho edit mode vì ảnh cũ có thể đã được normalize thành base64)
+  // 1) Data URL (quan tr뿯½뿯½뿯½ng cho edit mode v뿯½뿯½ 뿯½뿯½뿯½nh c뿯½뿯½ c뿯½뿯½ th뿯½뿯½뿯ƽ 뿯½‘뿯½뿯½ 뿯½‘뿯½뿯½뿯½뿯½뿯½c normalize th뿯½뿯½nh base64)
   if (imageSrc.indexOf("data:") === 0) {
     var dataMatch = imageSrc.match(/^data:([^;,]+)?((?:;[^,]*)*),(.*)$/i);
     if (!dataMatch) return null;
@@ -3468,7 +3453,7 @@ function getImageBlobFromSrc(src) {
 
     try {
       if (isBase64) {
-        // Dọn payload để decode ổn định (tránh xuống dòng/khoảng trắng, url-safe base64)
+        // D뿯½뿯½뿯½n payload 뿯½‘뿯½뿯½뿯ƽ decode 뿯½뿯½•n 뿯½‘뿯½뿯½‹nh (tr뿯½뿯½nh xu뿯½뿯½‘ng d뿯½뿯½ng/kho뿯½뿯½뿯½ng tr뿯½뿯½뿯½ng, url-safe base64)
         payload = payload.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
         var bytes = Utilities.base64Decode(payload);
         return Utilities.newBlob(bytes, mimeType, "embedded_image");
@@ -3476,12 +3461,12 @@ function getImageBlobFromSrc(src) {
       var decodedText = decodeURIComponent(payload);
       return Utilities.newBlob(decodedText, mimeType, "embedded_image");
     } catch (dataError) {
-      Logger.log("⚠️ Data URL decode failed: " + dataError.toString());
+      Logger.log("뿯½š뿯½뿯½뿯½뿯½ Data URL decode failed: " + dataError.toString());
       return null;
     }
   }
 
-  // 2) Google Drive URL -> lấy trực tiếp bằng DriveApp
+  // 2) Google Drive URL -> l뿯½뿯½뿯½y tr뿯½뿯½뿯½c ti뿯½뿯½뿯½p b뿯½뿯½뿯½ng DriveApp
   var drivePatterns = [
     /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,
     /drive\.google\.com\/uc\?.*id=([a-zA-Z0-9_-]+)/,
@@ -3496,13 +3481,13 @@ function getImageBlobFromSrc(src) {
         Logger.log("Fetching image from Drive: " + driveMatch[1]);
         return DriveApp.getFileById(driveMatch[1]).getBlob();
       } catch (driveError) {
-        Logger.log("⚠️ Drive fetch failed: " + driveError.toString());
+        Logger.log("뿯½š뿯½뿯½뿯½뿯½ Drive fetch failed: " + driveError.toString());
       }
       break;
     }
   }
 
-  // 3) Fetch URL từ web, thử với OAuth trước cho googleusercontent/docsz
+  // 3) Fetch URL t뿯½뿯½뿯½ web, th뿯½뿯½뿯½ v뿯½뿯½›i OAuth tr뿯½뿯½뿯½뿯½›c cho googleusercontent/docsz
   try {
     var useAuth =
       imageSrc.indexOf("googleusercontent.com/") !== -1 ||
@@ -3523,14 +3508,14 @@ function getImageBlobFromSrc(src) {
     }
     Logger.log("Image fetch failed: " + imageSrc + " - Status: " + response.getResponseCode());
   } catch (fetchError) {
-    Logger.log("⚠️ UrlFetch image failed: " + fetchError.toString());
+    Logger.log("뿯½š뿯½뿯½뿯½뿯½ UrlFetch image failed: " + fetchError.toString());
   }
 
   return null;
 }
 
 /**
- * Thêm ảnh vào Google Doc và tự thu nhỏ theo giới hạn cấu hình, giữ tỉ lệ gốc.
+ * Th뿯½뿯½m 뿯½뿯½뿯½nh v뿯½뿯½o Google Doc v뿯½뿯½ t뿯½뿯½뿯½ thu nh뿯½뿯½뿯½ theo gi뿯½뿯½›i h뿯½뿯½뿯½n c뿯½뿯½뿯½u h뿯½뿯½nh, gi뿯½뿯½뿯½ t뿯½뿯½‰ l뿯½뿯½‡ g뿯½뿯½‘c.
  * @param {Body} body
  * @param {Blob} imageBlob
  * @returns {InlineImage|null}
@@ -3554,7 +3539,7 @@ function appendResizedImageToDoc(body, imageBlob) {
 
     var widthRatio = maxWidth / originalWidth;
     var heightRatio = maxHeight / originalHeight;
-    var scale = Math.min(widthRatio, heightRatio, 1); // Không phóng to ảnh nhỏ
+    var scale = Math.min(widthRatio, heightRatio, 1); // Kh뿯½뿯½ng ph뿯½뿯½ng to 뿯½뿯½뿯½nh nh뿯½뿯½뿯½
 
     if (scale < 1) {
       image.setWidth(Math.round(originalWidth * scale));
@@ -3563,7 +3548,7 @@ function appendResizedImageToDoc(body, imageBlob) {
 
     return image;
   } catch (error) {
-    Logger.log("⚠️ appendResizedImageToDoc error: " + error.toString());
+    Logger.log("뿯½š뿯½뿯½뿯½뿯½ appendResizedImageToDoc error: " + error.toString());
     return null;
   }
 }
@@ -3587,9 +3572,9 @@ function extractDivContent(html) {
 }
 
 /**
- * Parse HTML thành các block elements
- * @param {string} html - Nội dung HTML
- * @returns {Array} - Mảng các block objects
+ * Parse HTML th뿯½뿯½nh c뿯½뿯½c block elements
+ * @param {string} html - N뿯½뿯½™i dung HTML
+ * @returns {Array} - M뿯½뿯½뿯½ng c뿯½뿯½c block objects
  */
 function parseHtmlBlocks(html) {
   const blocks = [];
@@ -3634,7 +3619,7 @@ function parseHtmlBlocks(html) {
     let match;
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
     let matchCount = 0;
-    const MAX_MATCHES = 200; // Giới hạn số lần match để tránh timeout
+    const MAX_MATCHES = 200; // Gi뿯½뿯½›i h뿯½뿯½뿯½n s뿯½뿯½‘ l뿯½뿯½뿯½n match 뿯½‘뿯½뿯½뿯ƽ tr뿯½뿯½nh timeout
 
     while ((match = regex.exec(html)) !== null && matchCount < MAX_MATCHES) {
       matchCount++;
@@ -3698,14 +3683,14 @@ function parseHtmlBlocks(html) {
         matchData.src = String(srcValue || "").trim();
       } else if (pattern.type === 'p') {
         const pInnerHtml = match[1] || "";
-        // Tránh để <p> chứa ảnh/code/list bị parse thành text và làm rơi block con.
+        // Tr뿯½뿯½nh 뿯½‘뿯½뿯½뿯ƽ <p> ch뿯½뿯½뿯½a 뿯½뿯½뿯½nh/code/list b뿯½뿯½‹ parse th뿯½뿯½nh text v뿯½뿯½ l뿯½뿯½m r뿯½뿯½i block con.
         if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<div\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(pInnerHtml)) {
           continue;
         }
         matchData.text = stripHtml(pInnerHtml);
       } else if (pattern.type === 'div') {
         const divInnerHtml = match[1] || "";
-        // Tránh để generic div nuốt mất các block đặc thù (đặc biệt là ảnh).
+        // Tr뿯½뿯½nh 뿯½‘뿯½뿯½뿯ƽ generic div nu뿯½뿯½‘t m뿯½뿯½뿯½t c뿯½뿯½c block 뿯½‘뿯½뿯½뿯½c th뿯½뿯½ (뿯½‘뿯½뿯½뿯½c bi뿯½뿯½‡t l뿯½뿯½ 뿯½뿯½뿯½nh).
         if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(divInnerHtml)) {
           continue;
         }
@@ -3759,7 +3744,7 @@ function parseHtmlBlocks(html) {
 }
 
 /**
- * Xóa HTML tags và giữ lại text
+ * X뿯½뿯½a HTML tags v뿯½뿯½ gi뿯½뿯½뿯½ l뿯½뿯½뿯½i text
  */
 function stripHtml(html) {
   if (!html) return '';
@@ -3775,7 +3760,7 @@ function stripHtml(html) {
 }
 
 /**
- * Decode HTML entities (dùng cho code blocks)
+ * Decode HTML entities (d뿯½뿯½ng cho code blocks)
  */
 function decodeHtmlEntities(text) {
   if (!text) return '';
@@ -3791,7 +3776,7 @@ function decodeHtmlEntities(text) {
 }
 
 /**
- * Kiểm tra topicId đã tồn tại chưa
+ * Ki뿯½뿯½뿯ƽm tra topicId 뿯½‘뿯½뿯½ t뿯½뿯½“n t뿯½뿯½뿯½i ch뿯½뿯½a
  */
 function checkTopicIdExists(topicId) {
   try {
@@ -3815,28 +3800,16 @@ function checkTopicIdExists(topicId) {
 }
 
 /**
- * Lưu topic vào MasterDB
+ * L뿯½뿯½u topic v뿯½뿯½o MasterDB
  */
 function saveTopicToMasterDB(topicData) {
   try {
-    Logger.log("=== SAVE TOPIC TO MASTERDB ===");
-    Logger.log("Topic data: " + JSON.stringify(topicData));
-    
     const sheet = getSheet("Topics");
-    if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Topics" };
-    }
+    if (!sheet) return { success: false, message: "Không tìm thấy sheet Topics" };
     
     let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-    // Ensure new column for doc URL exists
-    if (headers.indexOf("contentDocUrl") === -1) {
-      const newColIndex = headers.length + 1;
-      sheet.getRange(1, newColIndex).setValue("contentDocUrl");
-      headers = headers.concat(["contentDocUrl"]);
-    }
-    // Ensure columns for XP rewards exist
-    ["xpReward", "quizXpReward", "matchingXpReward"].forEach(colName => {
+    ["contentDocUrl", "courseId", "xpReward", "quizXpReward", "matchingXpReward"].forEach(colName => {
       if (headers.indexOf(colName) === -1) {
         const newColIndex = headers.length + 1;
         sheet.getRange(1, newColIndex).setValue(colName);
@@ -3844,93 +3817,46 @@ function saveTopicToMasterDB(topicData) {
       }
     });
     
-    // Prepare row data based on schema
     const rowData = [];
     const now = new Date().toISOString();
     
     for (const header of headers) {
       switch (header) {
-        case 'topicId':
-          rowData.push(topicData.topicId);
-          break;
-        case 'title':
-          rowData.push(topicData.title);
-          break;
-        case 'description':
-          rowData.push(topicData.description || '');
-          break;
-        case 'category':
-          rowData.push(topicData.category);
-          break;
-        case 'iconUrl':
-          rowData.push(topicData.iconUrl || '');
-          break;
-        case 'estimatedTime':
-          rowData.push(topicData.estimatedTime || '');
-          break;
-        case 'prerequisiteTopics':
-          rowData.push(topicData.prerequisiteTopics || '');
-          break;
-        case 'unlockCondition':
-          rowData.push(topicData.unlockCondition || '');
-          break;
-        case 'order':
-          rowData.push(topicData.order || 999);
-          break;
-        case 'contentDocId':
-          rowData.push(topicData.contentDocId);
-          break;
-        case 'contentDocUrl':
-          rowData.push(topicData.contentDocUrl || '');
-          break;
-        case 'createdBy':
-          rowData.push(topicData.createdBy || 'ADMIN');
-          break;
-        case 'createdAt':
-          rowData.push(now);
-          break;
-        case 'updatedAt':
-          rowData.push(now);
-          break;
-        case 'isLocked':
-          rowData.push(
-            typeof topicData.isLocked === "boolean" ? topicData.isLocked : false,
-          );
-          break;
-        case 'xpReward':
-          rowData.push(topicData.xpReward !== undefined && topicData.xpReward !== "" ? Number(topicData.xpReward) : 100);
-          break;
-        case 'quizXpReward':
-          rowData.push(topicData.quizXpReward !== undefined && topicData.quizXpReward !== "" ? Number(topicData.quizXpReward) : 100);
-          break;
-        case 'matchingXpReward':
-          rowData.push(topicData.matchingXpReward !== undefined && topicData.matchingXpReward !== "" ? Number(topicData.matchingXpReward) : 100);
-          break;
-        default:
-          rowData.push('');
+        case "topicId": rowData.push(topicData.topicId); break;
+        case "title": rowData.push(topicData.title); break;
+        case "description": rowData.push(topicData.description || ""); break;
+        case "courseId": rowData.push(topicData.courseId || ""); break;
+        case "category": rowData.push(topicData.category || ""); break;
+        case "iconUrl": rowData.push(topicData.iconUrl || ""); break;
+        case "estimatedTime": rowData.push(topicData.estimatedTime || ""); break;
+        case "prerequisiteTopics": rowData.push(topicData.prerequisiteTopics || ""); break;
+        case "unlockCondition": rowData.push(topicData.unlockCondition || ""); break;
+        case "order": rowData.push(topicData.order || 999); break;
+        case "contentDocId": rowData.push(topicData.contentDocId); break;
+        case "contentDocUrl": rowData.push(topicData.contentDocUrl || ""); break;
+        case "createdBy": rowData.push(topicData.createdBy || "ADMIN"); break;
+        case "createdAt": rowData.push(now); break;
+        case "updatedAt": rowData.push(now); break;
+        case "isLocked": rowData.push(!!topicData.isLocked); break;
+        case "xpReward": rowData.push(topicData.xpReward !== undefined && topicData.xpReward !== "" ? Number(topicData.xpReward) : 100); break;
+        case "quizXpReward": rowData.push(topicData.quizXpReward !== undefined && topicData.quizXpReward !== "" ? Number(topicData.quizXpReward) : 100); break;
+        case "matchingXpReward": rowData.push(topicData.matchingXpReward !== undefined && topicData.matchingXpReward !== "" ? Number(topicData.matchingXpReward) : 100); break;
+        default: rowData.push("");
       }
     }
     
-    // Shift other topics' orders if a specific order was set
     if (topicData.order && topicData.order < 999) {
-      shiftTopicOrdersInCategory(sheet, headers, sheet.getDataRange().getValues(), topicData.category, parseInt(topicData.order), null, topicData.topicId);
+      if (topicData.courseId && typeof makeOrderRoomInCourse === "function") {
+        makeOrderRoomInCourse(sheet, headers, sheet.getDataRange().getValues(), topicData.courseId, parseInt(topicData.order), null, topicData.topicId);
+      } else if (typeof shiftTopicOrdersInCategory === "function") {
+        shiftTopicOrdersInCategory(sheet, headers, sheet.getDataRange().getValues(), topicData.category, parseInt(topicData.order), null, topicData.topicId);
+      }
     }
     
-    // Append new row
     sheet.appendRow(rowData);
-    
-    Logger.log("✅ Topic saved to MasterDB successfully");
-    
-    return {
-      success: true,
-      message: "Đã lưu topic vào MasterDB"
-    };
+    return { success: true, message: "Đã lưu topic vào MasterDB" };
   } catch (error) {
-    Logger.log("❌ Error saving topic: " + error.toString());
-    return {
-      success: false,
-      message: "Lỗi lưu topic: " + error.toString()
-    };
+    return { success: false, message: "Lỗi lưu topic: " + error.toString() };
   }
 }
 
@@ -3982,7 +3908,7 @@ function shiftTopicOrdersInCategory(sheet, headers, data, category, newOrder, ol
 }
 
 /**
- * Cập nhật trạng thái hiển thị của bài học
+ * C뿯½뿯½뿯½p nh뿯½뿯½뿯½t tr뿯½뿯½뿯½ng th뿯½뿯½i hi뿯½뿯½뿯ƽn th뿯½뿯½‹ c뿯½뿯½뿯½a b뿯½뿯½i h뿯½뿯½뿯½c
  * @param {string} topicId 
  * @param {boolean} isHiddenVal 
  */
@@ -3990,11 +3916,11 @@ function updateTopicLockStatus(topicId, isHiddenVal) {
   try {
     const adminContext = getCurrentAdminContext();
     if (!adminContext || !adminContext.success) {
-      return { success: false, message: "Không có quyền admin" };
+      return { success: false, message: "Kh뿯½뿯½ng c뿯½뿯½ quy뿯½뿯½뿯½n admin" };
     }
 
     const sheet = getSheet("Topics");
-    if (!sheet) return { success: false, message: "Không tìm thấy cơ sở dữ liệu Topics" };
+    if (!sheet) return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y c뿯½뿯½ s뿯½뿯½Ÿ d뿯½뿯½뿯½ li뿯½뿯½‡u Topics" };
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
@@ -4002,7 +3928,7 @@ function updateTopicLockStatus(topicId, isHiddenVal) {
     let isHiddenIdx = headers.indexOf("isHidden");
 
     if (topicIdIdx === -1) {
-      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ (thiếu topicId)" };
+      return { success: false, message: "C뿯½뿯½뿯½u tr뿯½뿯½c d뿯½뿯½뿯½ li뿯½뿯½‡u kh뿯½뿯½ng h뿯½뿯½뿯½p l뿯½뿯½‡ (thi뿯½뿯½뿯½u topicId)" };
     }
 
     if (isHiddenIdx === -1) {
@@ -4019,7 +3945,7 @@ function updateTopicLockStatus(topicId, isHiddenVal) {
     }
 
     if (foundRow === -1) {
-      return { success: false, message: "Không tìm thấy bài học có ID: " + topicId };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y b뿯½뿯½i h뿯½뿯½뿯½c c뿯½뿯½ ID: " + topicId };
     }
 
     sheet.getRange(foundRow, isHiddenIdx + 1).setValue(Boolean(isHiddenVal));
@@ -4032,7 +3958,7 @@ function updateTopicLockStatus(topicId, isHiddenVal) {
       Logger.log("Could not clear cache: " + e.toString());
     }
 
-    return { success: true, message: isHiddenVal ? "Đã ẩn chủ đề khỏi học viên" : "Đã bật hiển thị chủ đề" };
+    return { success: true, message: isHiddenVal ? "뿯½뿯½뿯½뿯½ 뿯½뿯½뿯½n ch뿯½뿯½뿯½ 뿯½‘뿯½뿯½뿯½ kh뿯½뿯½뿯½i h뿯½뿯½뿯½c vi뿯½뿯½n" : "뿯½뿯½뿯½뿯½ b뿯½뿯½뿯½t hi뿯½뿯½뿯ƽn th뿯½뿯½‹ ch뿯½뿯½뿯½ 뿯½‘뿯½뿯½뿯½" };
   } catch (error) {
     Logger.log("Error updating topic visibility status: " + error.toString());
     return { success: false, message: error.toString() };
@@ -4040,126 +3966,113 @@ function updateTopicLockStatus(topicId, isHiddenVal) {
 }
 
 /**
- * Xóa topic và document Google Doc liên quan
- * @param {string} topicId - ID của topic cần xóa
- * @returns {Object} Kết quả xóa
+ * X뿯½뿯½a topic v뿯½뿯½ document Google Doc li뿯½뿯½n quan
+ * @param {string} topicId - ID c뿯½뿯½뿯½a topic c뿯½뿯½뿯½n x뿯½뿯½a
+ * @returns {Object} K뿯½뿯½뿯½t qu뿯½뿯½뿯½ x뿯½뿯½a
  */
 function deleteTopicWithDoc(topicId) {
   try {
-    Logger.log("=== DELETE TOPIC WITH DOC ===");
-    Logger.log("Topic ID: " + topicId);
-
-    // Kiểm tra quyền admin
     const adminContext = getCurrentAdminContext();
-    if (!adminContext.success) {
-      return { success: false, message: adminContext.message || "Không có quyền admin" };
-    }
+    if (!adminContext.success) return { success: false, message: adminContext.message || "Không có quyền admin" };
 
-    // Lấy sheet Topics
     const sheet = getSheet("Topics");
-    if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Topics" };
-    }
+    if (!sheet) return { success: false, message: "Không tìm thấy sheet Topics" };
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const topicIdIndex = headers.indexOf("topicId");
     const contentDocIdIndex = headers.indexOf("contentDocId");
     const titleIndex = headers.indexOf("title");
+    const courseIdIndex = headers.indexOf("courseId");
+    const orderIndex = headers.indexOf("order");
 
-    if (topicIdIndex === -1) {
-      return { success: false, message: "Không tìm thấy cột topicId trong sheet" };
-    }
+    if (topicIdIndex === -1) return { success: false, message: "Không tìm thấy cột topicId trong sheet" };
 
-    // Tìm row chứa topic
     let rowIndex = -1;
     let contentDocId = null;
     let topicTitle = "";
+    let courseId = "";
+    let order = 999;
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][topicIdIndex] === topicId) {
-        rowIndex = i + 1; // +1 vì sheet row bắt đầu từ 1, không phải 0
-        if (contentDocIdIndex !== -1) {
-          contentDocId = data[i][contentDocIdIndex];
-        }
-        if (titleIndex !== -1) {
-          topicTitle = data[i][titleIndex];
-        }
+        rowIndex = i + 1;
+        if (contentDocIdIndex !== -1) contentDocId = data[i][contentDocIdIndex];
+        if (titleIndex !== -1) topicTitle = data[i][titleIndex];
+        if (courseIdIndex !== -1) courseId = data[i][courseIdIndex];
+        if (orderIndex !== -1) order = parseInt(data[i][orderIndex]) || 999;
         break;
       }
     }
 
-    if (rowIndex === -1) {
-      return { success: false, message: "Không tìm thấy topic với ID: " + topicId };
-    }
+    if (rowIndex === -1) return { success: false, message: "Không tìm thấy topic với ID: " + topicId };
 
-    Logger.log("Found topic at row: " + rowIndex);
-    Logger.log("Topic title: " + topicTitle);
-    Logger.log("Content Doc ID: " + contentDocId);
-
-    // Xóa Google Doc nếu có
     let docDeleted = false;
     if (contentDocId) {
       try {
-        const file = DriveApp.getFileById(contentDocId);
-        file.setTrashed(true);
+        DriveApp.getFileById(contentDocId).setTrashed(true);
         docDeleted = true;
-        Logger.log("✅ Document moved to trash: " + contentDocId);
-      } catch (docError) {
-        Logger.log("⚠️ Could not delete document: " + docError.toString());
-        // Vẫn tiếp tục xóa topic trong sheet
-      }
+      } catch (docError) {}
     }
 
-    // Xóa row trong sheet
     sheet.deleteRow(rowIndex);
-    Logger.log("✅ Topic row deleted from sheet");
 
-    // Xóa cache
-    try {
-      clearTopicsCache();
-    } catch (cacheError) {
-      Logger.log("⚠️ Could not clear cache: " + cacheError.toString());
+    if (courseId && order < 999 && typeof closeOrderGapInCourse === "function") {
+      closeOrderGapInCourse(sheet, headers, data, courseId, order);
     }
+
+    try { clearTopicsCache(); } catch (cacheError) {}
 
     return {
       success: true,
       message: "Đã xóa bài học " + (topicTitle ? '"' + topicTitle + '"' : topicId) + " thành công!",
       docDeleted: docDeleted
     };
-
   } catch (error) {
-    Logger.log("❌ Error deleting topic: " + error.toString());
     return { success: false, message: "Lỗi khi xóa topic: " + error.toString() };
   }
 }
 
 /**
- * Lấy danh sách categories từ Topics hiện có
- * Trả về mảng categories trực tiếp
+ * L뿯½뿯½뿯½y danh s뿯½뿯½ch categories t뿯½뿯½뿯½ Topics hi뿯½뿯½‡n c뿯½뿯½
+ * Tr뿯½뿯½뿯½ v뿯½뿯½뿯½ m뿯½뿯½뿯½ng categories tr뿯½뿯½뿯½c ti뿯½뿯½뿯½p
  */
 function getTopicCategories() {
   try {
-    const sheet = getSheet("Topics");
-    if (!sheet) return [];
+    const adminContext = (typeof requireAdminContext_ === 'function') ? requireAdminContext_() : getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return { success: false, message: "Không có quyền admin" };
+    }
+    
+    var sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Không tìm thấy cơ sở dữ liệu Topics" };
+    }
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const categoryIndex = headers.indexOf("category");
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var categoryIdx = headers.indexOf("category");
+    
+    if (categoryIdx === -1) {
+      return { success: false, message: "Không tìm thấy cột category" };
+    }
 
-    if (categoryIndex === -1) return [];
-
-    const categories = new Set();
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][categoryIndex]) {
-        categories.add(data[i][categoryIndex]);
+    var categories = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      var cat = data[i][categoryIdx];
+      if (cat && categories.indexOf(cat) === -1) {
+        categories.push(cat);
       }
     }
 
-    return Array.from(categories).sort();
+    return {
+      success: true,
+      data: categories.sort()
+    };
   } catch (error) {
-    Logger.log("Error getting categories: " + error.toString());
-    return [];
+    Logger.log("Error getting topic categories: " + error.toString());
+    return { success: false, message: error.toString() };
   }
 }
 
@@ -4168,8 +4081,8 @@ function getTopicCategories() {
 // ========================================
 
 /**
- * Lấy thông tin topic + nội dung doc HTML để edit
- * @param {string} topicId - ID của topic cần edit
+ * L뿯½뿯½뿯½y th뿯½뿯½ng tin topic + n뿯½뿯½™i dung doc HTML 뿯½‘뿯½뿯½뿯ƽ edit
+ * @param {string} topicId - ID c뿯½뿯½뿯½a topic c뿯½뿯½뿯½n edit
  * @returns {object} { success, data: { topic, content } }
  */
 function getTopicForEdit(topicId) {
@@ -4177,24 +4090,24 @@ function getTopicForEdit(topicId) {
     Logger.log("=== GET TOPIC FOR EDIT ===");
     Logger.log("Topic ID: " + topicId);
 
-    // Kiểm tra quyền admin
+    // Ki뿯½뿯½뿯ƽm tra quy뿯½뿯½뿯½n admin
     const adminContext = getCurrentAdminContext();
     if (!adminContext || !adminContext.success) {
       return {
         success: false,
-        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin"
+        message: (adminContext && adminContext.message) || "Kh뿯½뿯½ng th뿯½뿯½뿯ƽ x뿯½뿯½c th뿯½뿯½뿯½c quy뿯½뿯½뿯½n admin"
       };
     }
 
     // Validate
     if (!topicId) {
-      return { success: false, message: "Thiếu Topic ID" };
+      return { success: false, message: "Thi뿯½뿯½뿯½u Topic ID" };
     }
 
-    // Lấy topic metadata từ sheet
+    // L뿯½뿯½뿯½y topic metadata t뿯½뿯½뿯½ sheet
     const sheet = getSheet("Topics");
     if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Topics" };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Topics" };
     }
 
     const data = sheet.getDataRange().getValues();
@@ -4211,7 +4124,7 @@ function getTopicForEdit(topicId) {
     }
 
     if (!topicRow) {
-      return { success: false, message: "Không tìm thấy topic: " + topicId };
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y topic: " + topicId };
     }
 
     // Build topic object
@@ -4255,7 +4168,7 @@ function getTopicForEdit(topicId) {
           : 100
     };
 
-    // Lấy nội dung doc HTML
+    // L뿯½뿯½뿯½y n뿯½뿯½™i dung doc HTML
     var content = "";
     if (topic.contentDocId) {
       var docResult = getTopicContentByDocId(topic.contentDocId);
@@ -4264,7 +4177,7 @@ function getTopicForEdit(topicId) {
       }
     }
 
-    Logger.log("✅ Topic loaded for edit: " + topic.title);
+    Logger.log("뿯½œ… Topic loaded for edit: " + topic.title);
     Logger.log("Content length: " + content.length);
 
     return {
@@ -4275,18 +4188,18 @@ function getTopicForEdit(topicId) {
       }
     };
   } catch (error) {
-    Logger.log("❌ Error getting topic for edit: " + error.toString());
+    Logger.log("뿯½뿯½Œ Error getting topic for edit: " + error.toString());
     return {
       success: false,
-      message: "Lỗi khi tải topic: " + error.toString()
+      message: "L뿯½뿯½—i khi t뿯½뿯½뿯½i topic: " + error.toString()
     };
   }
 }
 
 /**
- * Chuẩn hóa ảnh từ Google Doc export để hiển thị ổn định trong Topic Editor.
- * Google Doc thường trả URL dạng docsz/googleusercontent tạm thời, có thể không render được ở client.
- * Hàm này đổi các ảnh đó sang data URL để khi mở màn hình edit vẫn thấy ảnh.
+ * Chu뿯½뿯½뿯½n h뿯½뿯½a 뿯½뿯½뿯½nh t뿯½뿯½뿯½ Google Doc export 뿯½‘뿯½뿯½뿯ƽ hi뿯½뿯½뿯ƽn th뿯½뿯½‹ 뿯½뿯½•n 뿯½‘뿯½뿯½‹nh trong Topic Editor.
+ * Google Doc th뿯½뿯½뿯½뿯½뿯½ng tr뿯½뿯½뿯½ URL d뿯½뿯½뿯½ng docsz/googleusercontent t뿯½뿯½뿯½m th뿯½뿯½뿯½i, c뿯½뿯½ th뿯½뿯½뿯ƽ kh뿯½뿯½ng render 뿯½‘뿯½뿯½뿯½뿯½뿯½c 뿯½뿯½Ÿ client.
+ * H뿯½뿯½m n뿯½뿯½y 뿯½‘뿯½뿯½•i c뿯½뿯½c 뿯½뿯½뿯½nh 뿯½‘뿯½뿯½ sang data URL 뿯½‘뿯½뿯½뿯ƽ khi m뿯½뿯½Ÿ m뿯½뿯½n h뿯½뿯½nh edit v뿯½뿯½뿯½n th뿯½뿯½뿯½y 뿯½뿯½뿯½nh.
  *
  * @param {string} html
  * @returns {string}
@@ -4312,7 +4225,7 @@ function normalizeDocImagesForTopicEditor(html) {
       return fullMatch;
     }
 
-    // Chỉ xử lý nhóm URL ảnh export từ Google Docs.
+    // Ch뿯½뿯½‰ x뿯½뿯½뿯½ l뿯½뿯½ nh뿯½뿯½m URL 뿯½뿯½뿯½nh export t뿯½뿯½뿯½ Google Docs.
     var isGoogleDocExportImage =
       originalSrc.indexOf("googleusercontent.com/docsz/") !== -1 ||
       originalSrc.indexOf("googleusercontent.com/docs/") !== -1 ||
@@ -4331,7 +4244,7 @@ function normalizeDocImagesForTopicEditor(html) {
 
       if (response.getResponseCode() !== 200) {
         Logger.log(
-          "⚠️ normalizeDocImagesForTopicEditor: cannot fetch image (" +
+          "뿯½š뿯½뿯½뿯½뿯½ normalizeDocImagesForTopicEditor: cannot fetch image (" +
             response.getResponseCode() +
             "): " +
             originalSrc,
@@ -4356,7 +4269,202 @@ function normalizeDocImagesForTopicEditor(html) {
       );
     } catch (imageError) {
       Logger.log(
-        "⚠️ normalizeDocImagesForTopicEditor error: " + imageError.toString(),
+        "뿯½š뿯½뿯½뿯½뿯½ normalizeDocImagesForTopicEditor error: " + imageError.toString(),
+      );
+      return fullMatch;
+    }
+  });
+
+/**
+ * L뿯½뿯½뿯½y th뿯½뿯½ng tin topic + n뿯½뿯½™i dung doc HTML 뿯½‘뿯½뿯½뿯ƽ edit
+ * @param {string} topicId - ID c뿯½뿯½뿯½a topic c뿯½뿯½뿯½n edit
+ * @returns {object} { success, data: { topic, content } }
+ */
+function getTopicForEdit(topicId) {
+  try {
+    Logger.log("=== GET TOPIC FOR EDIT ===");
+    Logger.log("Topic ID: " + topicId);
+
+    // Ki뿯½뿯½뿯ƽm tra quy뿯½뿯½뿯½n admin
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return {
+        success: false,
+        message: (adminContext && adminContext.message) || "Kh뿯½뿯½ng th뿯½뿯½뿯ƽ x뿯½뿯½c th뿯½뿯½뿯½c quy뿯½뿯½뿯½n admin"
+      };
+    }
+
+    // Validate
+    if (!topicId) {
+      return { success: false, message: "Thi뿯½뿯½뿯½u Topic ID" };
+    }
+
+    // L뿯½뿯½뿯½y topic metadata t뿯½뿯½뿯½ sheet
+    const sheet = getSheet("Topics");
+    if (!sheet) {
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y sheet Topics" };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    let topicRow = null;
+    let topicRowIndex = -1;
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][headers.indexOf("topicId")] === topicId) {
+        topicRow = data[i];
+        topicRowIndex = i;
+        break;
+      }
+    }
+
+    if (!topicRow) {
+      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y topic: " + topicId };
+    }
+
+    // Build topic object
+    var topic = {
+      topicId: topicRow[headers.indexOf("topicId")] || "",
+      title: topicRow[headers.indexOf("title")] || "",
+      description: topicRow[headers.indexOf("description")] || "",
+      category: topicRow[headers.indexOf("category")] || "",
+      order: topicRow[headers.indexOf("order")] || 999,
+      iconUrl: topicRow[headers.indexOf("iconUrl")] || "",
+      estimatedTime: topicRow[headers.indexOf("estimatedTime")] || "",
+      
+      prerequisiteTopics:
+        headers.indexOf("prerequisiteTopics") >= 0
+          ? String(topicRow[headers.indexOf("prerequisiteTopics")] || "")
+          : "",
+
+      unlockCondition:
+        headers.indexOf("unlockCondition") >= 0
+          ? String(topicRow[headers.indexOf("unlockCondition")] || "")
+          : "",
+
+      contentDocId: topicRow[headers.indexOf("contentDocId")] || "",
+      contentDocUrl: topicRow[headers.indexOf("contentDocUrl")] || "",
+      
+      isLocked:
+        topicRow[headers.indexOf("isLocked")] === true ||
+        String(topicRow[headers.indexOf("isLocked")]).toLowerCase() === "true",
+
+      xpReward:
+        headers.indexOf("xpReward") >= 0 && topicRow[headers.indexOf("xpReward")] !== undefined && topicRow[headers.indexOf("xpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("xpReward")]) || 100
+          : 100,
+      quizXpReward:
+        headers.indexOf("quizXpReward") >= 0 && topicRow[headers.indexOf("quizXpReward")] !== undefined && topicRow[headers.indexOf("quizXpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("quizXpReward")]) || 100
+          : 100,
+      matchingXpReward:
+        headers.indexOf("matchingXpReward") >= 0 && topicRow[headers.indexOf("matchingXpReward")] !== undefined && topicRow[headers.indexOf("matchingXpReward")] !== ""
+          ? Number(topicRow[headers.indexOf("matchingXpReward")]) || 100
+          : 100
+    };
+
+    // L뿯½뿯½뿯½y n뿯½뿯½™i dung doc HTML
+    var content = "";
+    if (topic.contentDocId) {
+      var docResult = getTopicContentByDocId(topic.contentDocId);
+      if (docResult && docResult.success && docResult.content) {
+        content = normalizeDocImagesForTopicEditor(docResult.content);
+      }
+    }
+
+    Logger.log("뿯½œ… Topic loaded for edit: " + topic.title);
+    Logger.log("Content length: " + content.length);
+
+    return {
+      success: true,
+      data: {
+        topic: topic,
+        content: content
+      }
+    };
+  } catch (error) {
+    Logger.log("뿯½뿯½Œ Error getting topic for edit: " + error.toString());
+    return {
+      success: false,
+      message: "L뿯½뿯½—i khi t뿯½뿯½뿯½i topic: " + error.toString()
+    };
+  }
+}
+
+/**
+ * Chu뿯½뿯½뿯½n h뿯½뿯½a 뿯½뿯½뿯½nh t뿯½뿯½뿯½ Google Doc export 뿯½‘뿯½뿯½뿯ƽ hi뿯½뿯½뿯ƽn th뿯½뿯½‹ 뿯½뿯½•n 뿯½‘뿯½뿯½‹nh trong Topic Editor.
+ * Google Doc th뿯½뿯½뿯½뿯½뿯½ng tr뿯½뿯½뿯½ URL d뿯½뿯½뿯½ng docsz/googleusercontent t뿯½뿯½뿯½m th뿯½뿯½뿯½i, c뿯½뿯½ th뿯½뿯½뿯ƽ kh뿯½뿯½ng render 뿯½‘뿯½뿯½뿯½뿯½뿯½c 뿯½뿯½Ÿ client.
+ * H뿯½뿯½m n뿯½뿯½y 뿯½‘뿯½뿯½•i c뿯½뿯½c 뿯½뿯½뿯½nh 뿯½‘뿯½뿯½ sang data URL 뿯½‘뿯½뿯½뿯ƽ khi m뿯½뿯½Ÿ m뿯½뿯½n h뿯½뿯½nh edit v뿯½뿯½뿯½n th뿯½뿯½뿯½y 뿯½뿯½뿯½nh.
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function normalizeDocImagesForTopicEditor(html) {
+  if (!html || typeof html !== "string") {
+    return "";
+  }
+
+  var imgRegex = /<img\b([^>]*?)\bsrc=(["'])(.*?)\2([^>]*)>/gi;
+
+  var normalized = html.replace(imgRegex, function (fullMatch, preAttr, quote, src, postAttr) {
+    var originalSrc = String(src || "").trim();
+    if (!originalSrc) return fullMatch;
+
+    // Keep already-stable/public URLs as-is.
+    if (
+      originalSrc.indexOf("data:") === 0 ||
+      originalSrc.indexOf("lh3.googleusercontent.com/d/") !== -1 ||
+      originalSrc.indexOf("drive.google.com/uc?") !== -1 ||
+      originalSrc.indexOf("drive.google.com/file/d/") !== -1
+    ) {
+      return fullMatch;
+    }
+
+    // Ch뿯½뿯½‰ x뿯½뿯½뿯½ l뿯½뿯½ nh뿯½뿯½m URL 뿯½뿯½뿯½nh export t뿯½뿯½뿯½ Google Docs.
+    var isGoogleDocExportImage =
+      originalSrc.indexOf("googleusercontent.com/docsz/") !== -1 ||
+      originalSrc.indexOf("googleusercontent.com/docs/") !== -1 ||
+      originalSrc.indexOf("googleusercontent.com/") !== -1;
+
+    if (!isGoogleDocExportImage) {
+      return fullMatch;
+    }
+
+    try {
+      var response = UrlFetchApp.fetch(originalSrc, {
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true,
+        followRedirects: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log(
+          "뿯½š뿯½뿯½뿯½뿯½ normalizeDocImagesForTopicEditor: cannot fetch image (" +
+            response.getResponseCode() +
+            "): " +
+            originalSrc,
+        );
+        return fullMatch;
+      }
+
+      var blob = response.getBlob();
+      var mimeType = blob.getContentType() || "image/png";
+      var bytes = blob.getBytes();
+      var base64 = Utilities.base64Encode(bytes);
+      var dataUrl = "data:" + mimeType + ";base64," + base64;
+
+      return (
+        "<img" +
+        (preAttr || "") +
+        'src="' +
+        dataUrl +
+        '"' +
+        (postAttr || "") +
+        ">"
+      );
+    } catch (imageError) {
+      Logger.log(
+        "뿯½š뿯½뿯½뿯½뿯½ normalizeDocImagesForTopicEditor error: " + imageError.toString(),
       );
       return fullMatch;
     }
@@ -4366,38 +4474,23 @@ function normalizeDocImagesForTopicEditor(html) {
 }
 
 /**
- * Cập nhật topic: metadata in MasterDB + nội dung Google Doc
- * @param {string} topicId - ID topic cần cập nhật
+ * C뿯½뿯½뿯½p nh뿯½뿯½뿯½t topic: metadata in MasterDB + n뿯½뿯½™i dung Google Doc
+ * @param {string} topicId - ID topic c뿯½뿯½뿯½n c뿯½뿯½뿯½p nh뿯½뿯½뿯½t
  * @param {object} topicData - { title, description, category, order, content }
  * @returns {object} { success, message }
  */
 function updateTopicWithContent(topicId, topicData) {
   try {
-    Logger.log("=== UPDATE TOPIC WITH CONTENT ===");
-    Logger.log("Topic ID: " + topicId);
-
-    // Kiểm tra quyền admin
     var adminContext = getCurrentAdminContext();
     if (!adminContext || !adminContext.success) {
-      return {
-        success: false,
-        message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin"
-      };
+      return { success: false, message: (adminContext && adminContext.message) || "Không thể xác thực quyền admin" };
     }
 
-    // Validate
-    if (!topicId) {
-      return { success: false, message: "Thiếu Topic ID" };
-    }
-    if (!topicData) {
-      return { success: false, message: "Không có dữ liệu cập nhật" };
-    }
+    if (!topicId) return { success: false, message: "Thiếu Topic ID" };
+    if (!topicData) return { success: false, message: "Không có dữ liệu cập nhật" };
 
-    // Tìm topic trong sheet
     var sheet = getSheet("Topics");
-    if (!sheet) {
-      return { success: false, message: "Không tìm thấy sheet Topics" };
-    }
+    if (!sheet) return { success: false, message: "Không tìm thấy sheet Topics" };
 
     var data = sheet.getDataRange().getValues();
     var headers = data[0];
@@ -4414,48 +4507,42 @@ function updateTopicWithContent(topicId, topicData) {
       }
     }
 
-    if (topicRowIndex === -1) {
-      return { success: false, message: "Không tìm thấy topic: " + topicId };
-    }
+    if (topicRowIndex === -1) return { success: false, message: "Không tìm thấy topic: " + topicId };
 
     var hasContentInPayload = Object.prototype.hasOwnProperty.call(topicData, "content");
     if (hasContentInPayload && !contentDocId) {
-      return {
-        success: false,
-        message: "Topic chưa có Google Doc để cập nhật nội dung. Vui lòng tạo lại topic có liên kết Doc."
-      };
+      return { success: false, message: "Topic chưa có Google Doc để cập nhật nội dung." };
     }
 
-    // 1. Cập nhật metadata trong sheet Topics
     var now = new Date().toISOString();
     var titleCol = headers.indexOf("title");
     var descCol = headers.indexOf("description");
     var categoryCol = headers.indexOf("category");
+    var courseIdCol = headers.indexOf("courseId");
     var orderCol = headers.indexOf("order");
     var updatedAtCol = headers.indexOf("updatedAt");
-    var contentDocIdCol = headers.indexOf("contentDocId");
-    var contentDocUrlCol = headers.indexOf("contentDocUrl");
 
-    var rowNum = topicRowIndex + 1; // 1-indexed for sheet
+    var rowNum = topicRowIndex + 1;
 
-    if (titleCol >= 0 && topicData.title) {
-      sheet.getRange(rowNum, titleCol + 1).setValue(topicData.title);
-    }
-    if (descCol >= 0 && topicData.description !== undefined) {
-      sheet.getRange(rowNum, descCol + 1).setValue(topicData.description || "");
-    }
-    if (categoryCol >= 0 && topicData.category) {
-      sheet.getRange(rowNum, categoryCol + 1).setValue(topicData.category);
-    }
+    if (titleCol >= 0 && topicData.title) sheet.getRange(rowNum, titleCol + 1).setValue(topicData.title);
+    if (descCol >= 0 && topicData.description !== undefined) sheet.getRange(rowNum, descCol + 1).setValue(topicData.description || "");
+    if (categoryCol >= 0 && topicData.category) sheet.getRange(rowNum, categoryCol + 1).setValue(topicData.category);
+    if (courseIdCol >= 0 && topicData.courseId) sheet.getRange(rowNum, courseIdCol + 1).setValue(topicData.courseId);
+
     if (orderCol >= 0 && topicData.order !== undefined) {
       var oldOrderValue = parseInt(data[topicRowIndex][orderCol]);
       if (isNaN(oldOrderValue)) oldOrderValue = null;
       var newOrderValue = parseInt(topicData.order) || 999;
       
       if (newOrderValue < 999 && newOrderValue !== oldOrderValue) {
-        shiftTopicOrdersInCategory(sheet, headers, data, topicData.category, newOrderValue, oldOrderValue, topicData.topicId);
+        var activeCourseId = topicData.courseId !== undefined ? topicData.courseId : (data[topicRowIndex][courseIdCol] || "");
+        if (activeCourseId && typeof makeOrderRoomInCourse === "function") {
+          makeOrderRoomInCourse(sheet, headers, data, activeCourseId, newOrderValue, oldOrderValue, topicId);
+        } else if (typeof shiftTopicOrdersInCategory === "function") {
+          var activeCategory = topicData.category !== undefined ? topicData.category : (data[topicRowIndex][categoryCol] || "");
+          shiftTopicOrdersInCategory(sheet, headers, data, activeCategory, newOrderValue, oldOrderValue, topicId);
+        }
       }
-      
       sheet.getRange(rowNum, orderCol + 1).setValue(newOrderValue);
     }
     
@@ -4463,21 +4550,11 @@ function updateTopicWithContent(topicId, topicData) {
     var unlockCol = headers.indexOf("unlockCondition");
     var isLockedCol = headers.indexOf("isLocked");
     
-    if (prereqCol >= 0 && topicData.prerequisiteTopics !== undefined) {
-      sheet.getRange(rowNum, prereqCol + 1).setValue(topicData.prerequisiteTopics);
-    }
-    if (unlockCol >= 0 && topicData.unlockCondition !== undefined) {
-      sheet.getRange(rowNum, unlockCol + 1).setValue(topicData.unlockCondition);
-    }
-    if (isLockedCol >= 0 && topicData.isLocked !== undefined) {
-      sheet.getRange(rowNum, isLockedCol + 1).setValue(topicData.isLocked);
-    }
-    
-    if (updatedAtCol >= 0) {
-      sheet.getRange(rowNum, updatedAtCol + 1).setValue(now);
-    }
+    if (prereqCol >= 0 && topicData.prerequisiteTopics !== undefined) sheet.getRange(rowNum, prereqCol + 1).setValue(topicData.prerequisiteTopics);
+    if (unlockCol >= 0 && topicData.unlockCondition !== undefined) sheet.getRange(rowNum, unlockCol + 1).setValue(topicData.unlockCondition);
+    if (isLockedCol >= 0 && topicData.isLocked !== undefined) sheet.getRange(rowNum, isLockedCol + 1).setValue(topicData.isLocked);
+    if (updatedAtCol >= 0) sheet.getRange(rowNum, updatedAtCol + 1).setValue(now);
 
-    // Cập nhật điểm thưởng XP nếu có
     ["xpReward", "quizXpReward", "matchingXpReward"].forEach(function(colName) {
       if (topicData[colName] !== undefined && topicData[colName] !== "") {
         var colIndex = headers.indexOf(colName);
@@ -4490,39 +4567,21 @@ function updateTopicWithContent(topicId, topicData) {
       }
     });
 
-    Logger.log("✅ Metadata updated in MasterDB");
-
-    // 2. Cập nhật nội dung Google Doc
     var docOperation = "none";
     if (contentDocId && hasContentInPayload) {
       try {
         var doc = DocumentApp.openById(contentDocId);
         var body = doc.getBody();
-
-        // Xóa toàn bộ nội dung cũ trước khi đẩy nội dung mới
         body.clear();
         convertHtmlToDocContent(topicData.content || "", body);
-
         doc.saveAndClose();
-        Logger.log("✅ Google Doc updated: " + contentDocId);
         docOperation = "updated";
       } catch (docError) {
-        Logger.log("❌ Error updating Doc: " + docError.toString());
-        return {
-          success: false,
-          message: "Đã cập nhật metadata nhưng lỗi khi cập nhật Doc: " + docError.toString()
-        };
+        return { success: false, message: "Đã cập nhật metadata nhưng lỗi khi cập nhật Doc: " + docError.toString() };
       }
     }
 
-    // Clear cache để data mới hiện ngay
-    try {
-      clearTopicsCache();
-    } catch (e) {
-      Logger.log("⚠️ Could not clear topics cache: " + e.toString());
-    }
-
-    Logger.log("✅ Topic updated successfully");
+    try { clearTopicsCache(); } catch (e) {}
 
     return {
       success: true,
@@ -4532,10 +4591,256 @@ function updateTopicWithContent(topicId, topicData) {
       contentDocUrl: contentDocUrl
     };
   } catch (error) {
-    Logger.log("❌ Error updating topic: " + error.toString());
-    return {
-      success: false,
-      message: "Lỗi khi cập nhật topic: " + error.toString()
-    };
+    return { success: false, message: "Lỗi khi cập nhật topic: " + error.toString() };
   }
+}
+
+
+// ==========================================
+// COURSE CRUD & ORDER HELPERS (MIGRATION)
+// ==========================================
+
+function normalizeCourseTitle_(title) {
+  if (!title) return "";
+  return String(title).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function courseTitleExists_(sheet, headers, title, excludeId) {
+  const data = sheet.getDataRange().getValues();
+  const normalizedTitle = normalizeCourseTitle_(title);
+  const titleIdx = headers.indexOf('title');
+  const idIdx = headers.indexOf('courseId');
+  if (titleIdx < 0) return false;
+  
+  for (let i = 1; i < data.length; i++) {
+    if (excludeId && idIdx >= 0 && data[i][idIdx] === excludeId) continue;
+    if (normalizeCourseTitle_(data[i][titleIdx]) === normalizedTitle) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function courseExists_(courseId) {
+  if (!courseId) return false;
+  const sheet = getSheet('Courses');
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx = headers.indexOf('courseId');
+  if (idIdx < 0) return false;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idIdx] === courseId) return true;
+  }
+  return false;
+}
+
+function validateCourseData(courseData) {
+  if (!courseData.title || !String(courseData.title).trim()) return "T뿯½뿯½n kh뿯½뿯½a h뿯½뿯½뿯½c kh뿯½뿯½ng 뿯½‘뿯½뿯½뿯½뿯½뿯½c 뿯½‘뿯½뿯½뿯ƽ tr뿯½뿯½‘ng";
+  return null;
+}
+
+function createCourse(courseData) {
+  const auth = (typeof requireAdminContext_ === 'function') ? requireAdminContext_() : {success: true};
+  if (!auth.success) return auth;
+  const error = (typeof validateCourseData === 'function') ? validateCourseData(courseData) : null;
+  if (error) return { success: false, message: error };
+  let lockAcquired = false;
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    lockAcquired = true;
+    const sheet = (typeof getSheet === 'function') ? getSheet('Courses') : SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Courses');
+    if (!sheet) return { success: false, message: 'Sheet Courses not found' };
+    const headers = sheet.getDataRange().getValues()[0];
+    
+    if (typeof courseTitleExists_ === 'function' && courseTitleExists_(sheet, headers, courseData.title)) {
+       return { success: false, message: 'Course title already exists.' };
+    }
+    
+    const newCourseId = 'CRS_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
+    const newRow = headers.map(function(h) {
+      switch(h) {
+        case 'courseId': return newCourseId;
+        case 'title': return String(courseData.title || '').trim();
+        case 'shortDescription': return courseData.shortDescription || '';
+        case 'description': return courseData.description || '';
+        case 'thumbnailUrl': return courseData.thumbnailUrl || '';
+        case 'level': return courseData.level || 'beginner';
+        case 'category': return courseData.category || '';
+        case 'status': return courseData.status || 'draft';
+        case 'order': return parseInt(courseData.order, 10) || 999;
+        case 'createdAt':
+        case 'updatedAt': return new Date().toISOString();
+        case 'createdBy': return auth.userId || 'ADMIN';
+        default: return '';
+      }
+    });
+    sheet.appendRow(newRow);
+    if (typeof clearCourseStructureCaches === 'function') clearCourseStructureCaches();
+    return { success: true, message: 'Course created successfully', courseId: newCourseId };
+  } catch (e) {
+    return { success: false, message: 'Error creating course: ' + e.toString() };
+  } finally {
+    if (lockAcquired) lock.releaseLock();
+  }
+}
+
+function updateCourse(courseId, courseData) {
+  courseData = courseData || {};
+  courseData.courseId = String(courseId || "").trim();
+  const auth = requireAdminContext_();
+  if (!auth.success) return auth;
+  if (!courseData.courseId) return { success: false, message: "Thiếu courseId" };
+  
+  const error = validateCourseData(courseData);
+  if (error) return { success: false, message: error };
+  
+  const lock = LockService.getScriptLock();
+  let lockAcquired = false;
+  try {
+    lock.waitLock(10000);
+    lockAcquired = true;
+    const sheet = getSheet("Courses");
+    if (!sheet) return { success: false, message: "Không tìm thấy sheet Courses" };
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idIdx = headers.indexOf("courseId");
+    if (courseTitleExists_(sheet, headers, courseData.title, courseData.courseId)) {
+       return { success: false, message: "Tên khóa học đã bị trùng với khóa khác." };
+    }
+    let rowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][idIdx] === courseData.courseId) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+    if (rowIndex === -1) return { success: false, message: "Không tìm thấy khóa học" };
+    
+    const updateMap = {
+      title: String(courseData.title || "").trim(),
+      shortDescription: courseData.shortDescription,
+      description: courseData.description,
+      category: courseData.category,
+      level: courseData.level,
+      thumbnailUrl: courseData.thumbnailUrl,
+      status: courseData.status,
+      order: courseData.order,
+      updatedAt: new Date().toISOString()
+    };
+    for (const key in updateMap) {
+      if (updateMap[key] !== undefined) {
+        let colIdx = headers.indexOf(key);
+        if (colIdx === -1) {
+           colIdx = headers.length;
+           sheet.getRange(1, colIdx + 1).setValue(key);
+           headers.push(key);
+        }
+        sheet.getRange(rowIndex, colIdx + 1).setValue(updateMap[key]);
+      }
+    }
+    if (typeof clearCourseStructureCaches === "function") clearCourseStructureCaches();
+    return { success: true, message: "Cập nhật khóa học thành công" };
+  } catch(e) {
+    return { success: false, message: "Lỗi cập nhật: " + e.toString() };
+  } finally {
+    if (lockAcquired) lock.releaseLock();
+  }
+}
+
+
+function removeDummyCourseHolders() {
+  const sheet = getSheet("Topics");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { success: true, deleted: 0 };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const topicIdIndex = headers.indexOf("topicId");
+  const titleIndex = headers.indexOf("title");
+  let deleted = 0;
+
+  for (let index = data.length - 1; index >= 1; index--) {
+    const topicId = topicIdIndex >= 0 ? String(data[index][topicIdIndex] || "").trim() : "";
+    const title = titleIndex >= 0 ? String(data[index][titleIndex] || "").trim() : "";
+    const isDummy = title === "DUMMY_COURSE_HOLDER" || topicId.indexOf("course_holder_") === 0;
+
+    if (isDummy) {
+      sheet.deleteRow(index + 1);
+      deleted++;
+    }
+  }
+
+  if (typeof clearCourseStructureCaches === "function") {
+    clearCourseStructureCaches();
+  }
+
+  return { success: true, deleted: deleted };
+}
+
+function closeOrderGapInCourse(sheet, headers, data, courseId, oldOrder, excludeTopicId) {
+  const courseIdIdx = headers.indexOf('courseId');
+  const orderIdx = headers.indexOf('order');
+  const topicIdIdx = headers.indexOf('topicId');
+  if (courseIdIdx < 0 || orderIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const rowCourse = String(data[i][courseIdIdx] || "").trim();
+    if (rowCourse === courseId) {
+      if (excludeTopicId && data[i][topicIdIdx] === excludeTopicId) continue;
+      const currentOrder = parseInt(data[i][orderIdx], 10);
+      if (Number.isInteger(currentOrder) && currentOrder > oldOrder && currentOrder < 999) {
+        sheet.getRange(i + 1, orderIdx + 1).setValue(currentOrder - 1);
+        data[i][orderIdx] = currentOrder - 1;
+      }
+    }
+  }
+}
+
+function makeOrderRoomInCourse(sheet, headers, data, courseId, newOrder, excludeTopicId) {
+  const courseIdIdx = headers.indexOf('courseId');
+  const orderIdx = headers.indexOf('order');
+  const topicIdIdx = headers.indexOf('topicId');
+  if (courseIdIdx < 0 || orderIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const rowCourse = String(data[i][courseIdIdx] || "").trim();
+    if (rowCourse === courseId) {
+      if (excludeTopicId && data[i][topicIdIdx] === excludeTopicId) continue;
+      const currentOrder = parseInt(data[i][orderIdx], 10);
+      if (Number.isInteger(currentOrder) && currentOrder >= newOrder && currentOrder < 999) {
+        sheet.getRange(i + 1, orderIdx + 1).setValue(currentOrder + 1);
+        data[i][orderIdx] = currentOrder + 1;
+      }
+    }
+  }
+}
+
+function shiftTopicOrdersInCourse(sheet, headers, data, courseId, newOrder, oldOrder, excludeTopicId) {
+  if (newOrder === oldOrder) return;
+  const courseIdIdx = headers.indexOf('courseId');
+  const orderIdx = headers.indexOf('order');
+  const topicIdIdx = headers.indexOf('topicId');
+  if (courseIdIdx < 0 || orderIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    const rowCourse = String(data[i][courseIdIdx] || "").trim();
+    if (rowCourse === courseId) {
+      if (excludeTopicId && data[i][topicIdIdx] === excludeTopicId) continue;
+      const currentOrder = parseInt(data[i][orderIdx], 10);
+      if (!Number.isInteger(currentOrder) || currentOrder >= 999) continue;
+      
+      if (oldOrder < newOrder) {
+        if (currentOrder > oldOrder && currentOrder <= newOrder) {
+          sheet.getRange(i + 1, orderIdx + 1).setValue(currentOrder - 1);
+          data[i][orderIdx] = currentOrder - 1;
+        }
+      } else {
+        if (currentOrder >= newOrder && currentOrder < oldOrder) {
+          sheet.getRange(i + 1, orderIdx + 1).setValue(currentOrder + 1);
+          data[i][orderIdx] = currentOrder + 1;
+        }
+      }
+    }
+  }
+}
 }

@@ -162,12 +162,35 @@ const DB_CONFIG = {
         "petConfig",
       ],
     },
+    
+    COURSES: {
+      name: "Courses",
+      idPrefix: "CRS",
+      columns: [
+        "courseId",
+        "title",
+        "shortDescription",
+        "description",
+        "thumbnailUrl",
+        "level",
+        "category",
+        "order",
+        "status",
+        "prerequisiteCourseIds",
+        "unlockCondition",
+        "estimatedTime",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
 
     TOPICS: {
       name: "Topics",
       idPrefix: "TOP",
       columns: [
         "topicId",
+        "courseId", // Link to COURSES
         "title",
         "description",
         "category",
@@ -177,6 +200,7 @@ const DB_CONFIG = {
         "prerequisiteTopics",
         "isLocked",
         "unlockCondition",
+        "isHidden",
         "createdBy",
         "createdAt",
         "updatedAt",
