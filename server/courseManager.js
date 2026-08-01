@@ -150,6 +150,9 @@ function updateCourse(courseId, courseData) {
   }
 }
 
+const COURSE_IMAGE_FOLDER_ID =
+  "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN";
+
 function uploadCourseThumbnail(payload) {
   try {
     if (!payload || !payload.base64) {
@@ -172,11 +175,23 @@ function uploadCourseThumbnail(payload) {
     if (allowedTypes.indexOf(mimeType) === -1) {
       return {
         success: false,
-        message: "Định dạng ảnh không được hỗ trợ"
+        message:
+          "Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP"
       };
     }
 
-    var bytes = Utilities.base64Decode(payload.base64);
+    var bytes;
+
+    try {
+      bytes = Utilities.base64Decode(
+        payload.base64
+      );
+    } catch (decodeError) {
+      return {
+        success: false,
+        message: "Dữ liệu ảnh không hợp lệ"
+      };
+    }
 
     var maxSize = 3 * 1024 * 1024;
 
@@ -191,15 +206,27 @@ function uploadCourseThumbnail(payload) {
       payload.fileName || "course-image"
     );
 
-    var safeName = originalName
-      .replace(/[^\w.\-]+/g, "_")
-      .substring(0, 100);
+    var extension = "";
+
+    if (mimeType === "image/jpeg") {
+      extension = ".jpg";
+    } else if (mimeType === "image/png") {
+      extension = ".png";
+    } else if (mimeType === "image/webp") {
+      extension = ".webp";
+    }
+
+    var nameWithoutExtension = originalName
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^\w\-]+/g, "_")
+      .substring(0, 80);
 
     var finalName =
       "COURSE_" +
       new Date().getTime() +
       "_" +
-      safeName;
+      nameWithoutExtension +
+      extension;
 
     var blob = Utilities.newBlob(
       bytes,
@@ -208,33 +235,84 @@ function uploadCourseThumbnail(payload) {
     );
 
     /*
-     * Nên tạo riêng một thư mục Drive chứa ảnh khóa học,
-     * sau đó điền ID thư mục tại đây.
+     * BƯỚC 1: Kiểm tra quyền truy cập thư mục.
      */
-    var folderId = "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN";
+    var folder;
 
-    if (
-      !folderId ||
-      folderId === "DAN_ID_THU_MUC_DRIVE_VAO_DAY"
-    ) {
+    try {
+      folder = DriveApp.getFolderById(
+        COURSE_IMAGE_FOLDER_ID
+      );
+
+      // Buộc Apps Script kiểm tra quyền đọc thư mục.
+      folder.getName();
+    } catch (folderError) {
+      Logger.log(
+        "[uploadCourseThumbnail] Folder access error: " +
+        folderError
+      );
+
       return {
         success: false,
+        code: "DRIVE_FOLDER_ACCESS_DENIED",
         message:
-          "Chưa cấu hình thư mục lưu ảnh khóa học"
+          "Tài khoản thực thi Web App không có quyền truy cập " +
+          "thư mục lưu ảnh. Hãy cấp quyền chỉnh sửa thư mục cho " +
+          "tài khoản đã triển khai Web App và cấp quyền DriveApp."
       };
     }
 
-    var folder = DriveApp.getFolderById(folderId);
-    var file = folder.createFile(blob);
+    /*
+     * BƯỚC 2: Tạo file trong thư mục.
+     */
+    var file;
+
+    try {
+      file = folder.createFile(blob);
+    } catch (createError) {
+      Logger.log(
+        "[uploadCourseThumbnail] Create file error: " +
+        createError
+      );
+
+      return {
+        success: false,
+        code: "DRIVE_CREATE_FILE_FAILED",
+        message:
+          "Không thể tạo ảnh trong thư mục Drive: " +
+          (
+            createError && createError.message
+              ? createError.message
+              : createError
+          )
+      };
+    }
 
     /*
-     * Ảnh phải có quyền xem bằng liên kết để hiển thị
-     * trên thẻ khóa học.
+     * Thư mục đã được chia sẻ bằng liên kết nên file mới
+     * sẽ nhận quyền kế thừa từ thư mục.
+     *
+     * setSharing có thể bị chặn bởi chính sách tài khoản,
+     * vì vậy lỗi ở bước này không được làm hỏng toàn bộ upload.
      */
-    file.setSharing(
-      DriveApp.Access.ANYONE_WITH_LINK,
-      DriveApp.Permission.VIEW
-    );
+    var sharingWarning = "";
+
+    try {
+      file.setSharing(
+        DriveApp.Access.ANYONE_WITH_LINK,
+        DriveApp.Permission.VIEW
+      );
+    } catch (sharingError) {
+      sharingWarning =
+        sharingError && sharingError.message
+          ? sharingError.message
+          : String(sharingError);
+
+      Logger.log(
+        "[uploadCourseThumbnail] Sharing warning: " +
+        sharingWarning
+      );
+    }
 
     var fileId = file.getId();
 
@@ -245,13 +323,17 @@ function uploadCourseThumbnail(payload) {
 
     return {
       success: true,
-      message: "Tải ảnh thành công",
+      message: sharingWarning
+        ? "Đã tải ảnh lên. File đang sử dụng quyền kế thừa từ thư mục."
+        : "Tải ảnh thành công",
       url: imageUrl,
-      fileId: fileId
+      fileId: fileId,
+      sharingWarning: sharingWarning
     };
+
   } catch (error) {
     Logger.log(
-      "[uploadCourseThumbnail] " +
+      "[uploadCourseThumbnail] Unexpected error: " +
       (
         error && error.stack
           ? error.stack
@@ -266,7 +348,7 @@ function uploadCourseThumbnail(payload) {
         (
           error && error.message
             ? error.message
-            : error
+            : String(error)
         )
     };
   }
@@ -364,4 +446,23 @@ function shiftTopicOrdersInCourse(sheet, headers, data, courseId, newOrder, oldO
       }
     }
   }
+}
+
+function authorizeCourseThumbnailDrive() {
+  var folder = DriveApp.getFolderById(
+    COURSE_IMAGE_FOLDER_ID
+  );
+
+  var folderName = folder.getName();
+
+  Logger.log(
+    "Đã truy cập thư mục ảnh khóa học: " +
+    folderName
+  );
+
+  return {
+    success: true,
+    folderId: COURSE_IMAGE_FOLDER_ID,
+    folderName: folderName
+  };
 }
