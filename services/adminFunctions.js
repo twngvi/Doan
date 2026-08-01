@@ -3775,6 +3775,59 @@ function decodeHtmlEntities(text) {
     .replace(/&#x2F;/g, '/');
 }
 
+function getTopicContentChecklist_(topicId) {
+  const allTopics = getAllTopicsIncludingHidden();
+  const topic = allTopics.find(t => String(t.topicId) === String(topicId));
+  if (!topic) return { LT: false, MM: false, QZ: false, MC: false };
+  return {
+    LT: Boolean(topic.hasTheory),
+    MM: Boolean(topic.hasMindmap),
+    QZ: Boolean(topic.hasQuiz),
+    MC: Boolean(topic.hasMatching)
+  };
+}
+
+function isTopicContentComplete_(checklist) {
+  return checklist.LT === true && checklist.MM === true && checklist.QZ === true && checklist.MC === true;
+}
+
+function syncTopicVisibilityAfterContentChange_(topicId) {
+  try {
+    if (typeof clearTopicsCache === 'function') clearTopicsCache();
+    
+    const checklist = getTopicContentChecklist_(topicId);
+    const complete = isTopicContentComplete_(checklist);
+
+    if (!complete) {
+      const sheet = getSheet("Topics");
+      if (sheet) {
+        const data = sheet.getDataRange().getValues();
+        const headers = data[0];
+        const topicIdIdx = headers.indexOf("topicId");
+        let isHiddenIdx = headers.indexOf("isHidden");
+        
+        if (topicIdIdx !== -1 && isHiddenIdx !== -1) {
+          for (let i = 1; i < data.length; i++) {
+            if (data[i][topicIdIdx] === topicId) {
+              sheet.getRange(i + 1, isHiddenIdx + 1).setValue(true);
+              break;
+            }
+          }
+        }
+      }
+      if (typeof clearTopicsCache === 'function') clearTopicsCache();
+    }
+    
+    return {
+      complete: complete,
+      checklist: checklist,
+      isVisible: complete ? null : false
+    };
+  } catch (error) {
+    Logger.log("Error syncing topic visibility: " + error.toString());
+  }
+}
+
 /**
  * Ki뿯½뿯½뿯ƽm tra topicId 뿯½‘뿯½뿯½ t뿯½뿯½“n t뿯½뿯½뿯½i ch뿯½뿯½a
  */
@@ -3799,6 +3852,91 @@ function checkTopicIdExists(topicId) {
   }
 }
 
+function updateTopicLockStatus(topicId, isHiddenVal) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) {
+      return { success: false, message: "Kh\u00f4ng c\u00f3 quy\u1ec1n admin" };
+    }
+
+    if (!isHiddenVal) {
+      const checklist = getTopicContentChecklist_(topicId);
+      if (!isTopicContentComplete_(checklist)) {
+        const missing = [];
+        if (!checklist.LT) missing.push('Lý thuyết');
+        if (!checklist.MM) missing.push('Mindmap');
+        if (!checklist.QZ) missing.push('Quiz');
+        if (!checklist.MC) missing.push('Matching');
+        
+        isHiddenVal = true;
+        
+        const sheet = getSheet("Topics");
+        if (sheet) {
+          const data = sheet.getDataRange().getValues();
+          const headers = data[0];
+          const topicIdIdx = headers.indexOf("topicId");
+          const isHiddenIdx = headers.indexOf("isHidden");
+          if (topicIdIdx !== -1 && isHiddenIdx !== -1) {
+            for (let i = 1; i < data.length; i++) {
+              if (data[i][topicIdIdx] === topicId) {
+                sheet.getRange(i + 1, isHiddenIdx + 1).setValue(true);
+                break;
+              }
+            }
+          }
+          if (typeof clearTopicsCache === 'function') clearTopicsCache();
+        }
+        
+        return { success: false, code: 'TOPIC_CONTENT_INCOMPLETE', message: "Bài học chưa có đầy đủ nội dung. Thiếu: " + missing.join(", ") };
+      }
+    }
+
+    const sheet = getSheet("Topics");
+    if (!sheet) return { success: false, message: "Kh\u00f4ng t\u00ecm th\u1ea5y c\u01a1 s\u1edf d\u1eef li\u1ec7u Topics" };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const topicIdIdx = headers.indexOf("topicId");
+    let isHiddenIdx = headers.indexOf("isHidden");
+
+    if (topicIdIdx === -1) {
+      return { success: false, message: "C\u1ea5u tr\u00fac d\u1eef li\u1ec7u kh\u00f4ng h\u1ee3p l\u1ec7 (thi\u1ebfu topicId)" };
+    }
+
+    if (isHiddenIdx === -1) {
+      isHiddenIdx = headers.length;
+      sheet.getRange(1, isHiddenIdx + 1).setValue("isHidden");
+    }
+
+    let foundRow = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][topicIdIdx] === topicId) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    if (foundRow === -1) {
+      return { success: false, message: "Kh\u00f4ng t\u00ecm th\u1ea5y b\u00e0i h\u1ecdc c\u00f3 ID: " + topicId };
+    }
+
+    sheet.getRange(foundRow, isHiddenIdx + 1).setValue(Boolean(isHiddenVal));
+    
+    try {
+      if (typeof clearTopicsCache === 'function') {
+        clearTopicsCache();
+      }
+    } catch (e) {
+      Logger.log("Could not clear cache: " + e.toString());
+    }
+
+    return { success: true, message: isHiddenVal ? "\u0110\u00e3 \u1ea9n ch\u1ee7 \u0111\u1ec1 kh\u1ecfi h\u1ecdc vi\u00ean" : "\u0110\u00e3 b\u1eadt hi\u1ec3n th\u1ecb ch\u1ee7 \u0111\u1ec1" };
+  } catch (error) {
+    Logger.log("Error updating topic visibility status: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
 /**
  * L뿯½뿯½u topic v뿯½뿯½o MasterDB
  */
@@ -3809,7 +3947,7 @@ function saveTopicToMasterDB(topicData) {
     
     let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-    ["contentDocUrl", "courseId", "xpReward", "quizXpReward", "matchingXpReward"].forEach(colName => {
+    ["contentDocUrl", "courseId", "xpReward", "quizXpReward", "matchingXpReward", "isHidden"].forEach(colName => {
       if (headers.indexOf(colName) === -1) {
         const newColIndex = headers.length + 1;
         sheet.getRange(1, newColIndex).setValue(colName);
@@ -3841,6 +3979,7 @@ function saveTopicToMasterDB(topicData) {
         case "xpReward": rowData.push(topicData.xpReward !== undefined && topicData.xpReward !== "" ? Number(topicData.xpReward) : 100); break;
         case "quizXpReward": rowData.push(topicData.quizXpReward !== undefined && topicData.quizXpReward !== "" ? Number(topicData.quizXpReward) : 100); break;
         case "matchingXpReward": rowData.push(topicData.matchingXpReward !== undefined && topicData.matchingXpReward !== "" ? Number(topicData.matchingXpReward) : 100); break;
+        case "isHidden": rowData.push(true); break;
         default: rowData.push("");
       }
     }
@@ -3907,63 +4046,6 @@ function shiftTopicOrdersInCategory(sheet, headers, data, category, newOrder, ol
   }
 }
 
-/**
- * C뿯½뿯½뿯½p nh뿯½뿯½뿯½t tr뿯½뿯½뿯½ng th뿯½뿯½i hi뿯½뿯½뿯ƽn th뿯½뿯½‹ c뿯½뿯½뿯½a b뿯½뿯½i h뿯½뿯½뿯½c
- * @param {string} topicId 
- * @param {boolean} isHiddenVal 
- */
-function updateTopicLockStatus(topicId, isHiddenVal) {
-  try {
-    const adminContext = getCurrentAdminContext();
-    if (!adminContext || !adminContext.success) {
-      return { success: false, message: "Kh뿯½뿯½ng c뿯½뿯½ quy뿯½뿯½뿯½n admin" };
-    }
-
-    const sheet = getSheet("Topics");
-    if (!sheet) return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y c뿯½뿯½ s뿯½뿯½Ÿ d뿯½뿯½뿯½ li뿯½뿯½‡u Topics" };
-
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const topicIdIdx = headers.indexOf("topicId");
-    let isHiddenIdx = headers.indexOf("isHidden");
-
-    if (topicIdIdx === -1) {
-      return { success: false, message: "C뿯½뿯½뿯½u tr뿯½뿯½c d뿯½뿯½뿯½ li뿯½뿯½‡u kh뿯½뿯½ng h뿯½뿯½뿯½p l뿯½뿯½‡ (thi뿯½뿯½뿯½u topicId)" };
-    }
-
-    if (isHiddenIdx === -1) {
-      isHiddenIdx = headers.length;
-      sheet.getRange(1, isHiddenIdx + 1).setValue("isHidden");
-    }
-
-    let foundRow = -1;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][topicIdIdx] === topicId) {
-        foundRow = i + 1;
-        break;
-      }
-    }
-
-    if (foundRow === -1) {
-      return { success: false, message: "Kh뿯½뿯½ng t뿯½뿯½m th뿯½뿯½뿯½y b뿯½뿯½i h뿯½뿯½뿯½c c뿯½뿯½ ID: " + topicId };
-    }
-
-    sheet.getRange(foundRow, isHiddenIdx + 1).setValue(Boolean(isHiddenVal));
-    
-    try {
-      if (typeof clearTopicsCache === 'function') {
-        clearTopicsCache();
-      }
-    } catch (e) {
-      Logger.log("Could not clear cache: " + e.toString());
-    }
-
-    return { success: true, message: isHiddenVal ? "뿯½뿯½뿯½뿯½ 뿯½뿯½뿯½n ch뿯½뿯½뿯½ 뿯½‘뿯½뿯½뿯½ kh뿯½뿯½뿯½i h뿯½뿯½뿯½c vi뿯½뿯½n" : "뿯½뿯½뿯½뿯½ b뿯½뿯½뿯½t hi뿯½뿯½뿯ƽn th뿯½뿯½‹ ch뿯½뿯½뿯½ 뿯½‘뿯½뿯½뿯½" };
-  } catch (error) {
-    Logger.log("Error updating topic visibility status: " + error.toString());
-    return { success: false, message: error.toString() };
-  }
-}
 
 /**
  * X뿯½뿯½a topic v뿯½뿯½ document Google Doc li뿯½뿯½n quan

@@ -274,6 +274,16 @@ function getTopicUiStatus(topic) {
       visibleToStudent: false
     };
   }
+  
+  if (!isTopicComplete(topic)) {
+    return {
+      key: 'locked',
+      publishStatus: 'hidden',
+      text: 'Đang ẩn',
+      icon: 'visibility_off',
+      visibleToStudent: false
+    };
+  }
 
   if (
     publishStatus === 'published' ||
@@ -876,6 +886,19 @@ function toggleTopicStatus(topicId, event) {
    */
   const newHidden = currentStatus.key !== 'locked';
 
+  if (!newHidden && !isTopicComplete(topic)) {
+    let missing = [];
+    if (!cmToBoolean(topic.hasTheory)) missing.push('Lý thuyết');
+    if (!cmToBoolean(topic.hasMindmap)) missing.push('Mindmap');
+    if (!cmToBoolean(topic.hasQuiz)) missing.push('Quiz');
+    if (!cmToBoolean(topic.hasMatching)) missing.push('Matching');
+    
+    if (typeof showNotification === 'function') {
+      showNotification('Chưa thể hiển thị bài học. Còn thiếu nội dung: ' + missing.join(', '), 'warning');
+    }
+    return;
+  }
+
   let nextStatus;
 
   if (newHidden) {
@@ -885,19 +908,12 @@ function toggleTopicStatus(topicId, event) {
       text: 'Đang ẩn',
       icon: 'visibility_off'
     };
-  } else if (isTopicComplete(topic)) {
+  } else {
     nextStatus = {
       key: 'active',
       publishStatus: 'published',
       text: 'Đang hiển thị',
       icon: 'visibility'
-    };
-  } else {
-    nextStatus = {
-      key: 'draft',
-      publishStatus: 'draft',
-      text: 'Bản nháp',
-      icon: 'edit_note'
     };
   }
 

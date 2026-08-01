@@ -667,6 +667,8 @@ function deleteMatchingTermCard(cardIds) {
 
     const now = new Date();
     let updatedCount = 0;
+    const modifiedTopics = new Set();
+    const topicIdCol = headers.indexOf("topicId");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][cIdCol]) {
@@ -677,6 +679,9 @@ function deleteMatchingTermCard(cardIds) {
           if (updatedAtCol !== -1) {
             mcSheet.getRange(i + 1, updatedAtCol + 1).setValue(now);
           }
+          if (topicIdCol !== -1 && data[i][topicIdCol]) {
+            modifiedTopics.add(String(data[i][topicIdCol]).trim());
+          }
           updatedCount++;
         }
       }
@@ -684,6 +689,11 @@ function deleteMatchingTermCard(cardIds) {
 
     SpreadsheetApp.flush();
     if (typeof clearTopicsCache === 'function') clearTopicsCache();
+    
+    if (typeof syncTopicVisibilityAfterContentChange_ === 'function') {
+      modifiedTopics.forEach(tId => syncTopicVisibilityAfterContentChange_(tId));
+    }
+    
     return { success: true, message: `Đã xóa ${updatedCount} thẻ`, updatedCount: updatedCount };
   } catch (error) {
     Logger.log("Error in deleteMatchingTermCard: " + error.toString());
