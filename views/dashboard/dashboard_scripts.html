@@ -2323,6 +2323,12 @@
     const lastDay = new Date(year, month, 0);
     const totalDays = lastDay.getDate();
 
+    // Lấy ngày hôm nay theo thời gian trên thiết bị người dùng
+    const today = new Date();
+    const todayYear = today.getFullYear();
+    const todayMonth = today.getMonth() + 1;
+    const todayDay = today.getDate();
+
     // JS: CN = 0, T2 = 1... Chuyển về lịch bắt đầu T2.
     const startOffset = (firstDay.getDay() + 6) % 7;
 
@@ -2338,6 +2344,14 @@
       const dayData = map[dateKey];
       const statusClass = getStudyCalendarStatusClass(dayData, dateObj);
 
+      const isToday =
+        year === todayYear &&
+        month === todayMonth &&
+        day === todayDay;
+
+      const todayClass = isToday ? " is-today" : "";
+      const todayAttribute = isToday ? ' aria-current="date"' : "";
+
       let title = dateKey;
       if (dayData) {
         title +=
@@ -2345,14 +2359,21 @@
           Number(dayData.lessonCount || dayData.lessons || 0);
       }
 
+      if (isToday) {
+        title = "Hôm nay - " + title;
+      }
+
       html +=
         '<button type="button" class="study-calendar-day ' +
         statusClass +
+        todayClass +
         '" title="' +
         title.replace(/"/g, "&quot;") +
         '" aria-label="' +
         title.replace(/"/g, "&quot;") +
-        '"></button>';
+        '"' +
+        todayAttribute +
+        '></button>';
     }
 
     return html;
