@@ -243,17 +243,38 @@ function populateTopicCourses() {
 }
 
 function renderCourseOptions(courses, selectEl) {
-  const currentVal = selectEl.dataset.selectedValue || selectEl.value;
-  const firstOption = selectEl.options.length > 0 ? selectEl.options[0].outerHTML : '<option value="">-- Chọn khóa học --</option>';
+  // selectEl is now the hidden input topicCourseId
+  const displayEl = document.getElementById('topicCourseDisplay');
+  const datalist = document.getElementById('topicCourseDataList');
+  if (!displayEl || !datalist) return;
   
-  let html = firstOption;
+  let html = '';
+  window.topicCoursesMap = {};
+  window.topicCoursesTitleMap = {};
+  
   courses.forEach(c => {
-    html += `<option value="${c.courseId}">${escapeHtml(c.title)}</option>`;
+    html += `<option value="${escapeHtml(c.title)}"></option>`;
+    window.topicCoursesMap[c.courseId] = c.title;
+    window.topicCoursesTitleMap[c.title] = c.courseId;
   });
   
-  selectEl.innerHTML = html;
-  if (currentVal) selectEl.value = currentVal;
+  datalist.innerHTML = html;
+  
+  const currentVal = selectEl.dataset.selectedValue || selectEl.value;
+  if (currentVal && window.topicCoursesMap[currentVal]) {
+      displayEl.value = window.topicCoursesMap[currentVal];
+      selectEl.value = currentVal;
+  }
 }
+
+// Add event listener to update hidden ID when user types/selects course
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'topicCourseDisplay') {
+     const title = e.target.value.trim();
+     const id = window.topicCoursesTitleMap[title] || '';
+     document.getElementById('topicCourseId').value = id;
+  }
+});
 
 // ========================================
 // TEXT FORMATTING
@@ -1839,6 +1860,14 @@ function populateEditForm(data) {
   if (courseEl) {
     courseEl.dataset.selectedValue = topic.courseId || '';
     courseEl.value = topic.courseId || '';
+    
+    // Update display input for datalist
+    const displayEl = document.getElementById('topicCourseDisplay');
+    if (displayEl && window.topicCoursesMap && window.topicCoursesMap[topic.courseId]) {
+      displayEl.value = window.topicCoursesMap[topic.courseId];
+    } else if (displayEl) {
+      displayEl.value = '';
+    }
   }
     document.getElementById('topicTitle').value = topic.title || '';
   document.getElementById('topicCategory').value = topic.category || '';
@@ -2877,8 +2906,17 @@ function resetForm() {
   document.getElementById('topicId').value = 'TPC_' + new Date().getTime();
   const courseEl = document.getElementById('topicCourseId');
   if (courseEl) {
-    courseEl.dataset.selectedValue = '';
-    courseEl.value = '';
+    const defaultCourseId = localStorage.getItem('defaultTopicCourseId') || '';
+    courseEl.dataset.selectedValue = defaultCourseId;
+    courseEl.value = defaultCourseId;
+    
+    // Update display input for datalist
+    const displayEl = document.getElementById('topicCourseDisplay');
+    if (displayEl && defaultCourseId && window.topicCoursesMap && window.topicCoursesMap[defaultCourseId]) {
+      displayEl.value = window.topicCoursesMap[defaultCourseId];
+    } else if (displayEl) {
+      displayEl.value = '';
+    }
   }
   document.getElementById('topicTitle').value = '';
   document.getElementById('topicCategory').value = '';
