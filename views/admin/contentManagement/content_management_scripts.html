@@ -142,7 +142,12 @@ function loadTopicsList() {
       // Bỏ qua response cũ để không ghi đè data mới hơn
       if (requestId !== latestTopicsLoadRequestId) return;
 
-      const rawTopics = Array.isArray(topics) ? topics : [];
+      let rawTopics = [];
+      if (Array.isArray(topics)) {
+        rawTopics = topics;
+      } else if (topics && topics.success && Array.isArray(topics.data)) {
+        rawTopics = topics.data;
+      }
       const topicMap = new Map();
 
       rawTopics.forEach(function(topic) {

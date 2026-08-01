@@ -3378,8 +3378,8 @@ function ensureCodeMarkersClosedInDoc(body) {
 }
 
 /**
- * Ensure the Google Doc ends with centered "H뿯½뿯½뿯½t".
- * Only appends when the last meaningful line is not already "H뿯½뿯½뿯½t".
+ * Ensure the Google Doc ends with centered "Hết".
+ * Only appends when the last meaningful line is not already "Hết".
  * @param {Body} body
  */
 function ensureDocEndsWithHetMarker(body) {
@@ -3412,14 +3412,14 @@ function ensureDocEndsWithHetMarker(body) {
     }
   }
 
-  if (lastMeaningfulText === "H뿯½뿯½뿯½t") {
-    // "H뿯½뿯½뿯½t" already exists 뿯½뿯₽“ ensure it is centered (it may have lost alignment
+  if (lastMeaningfulText === "Hết") {
+    // "Hết" already exists 뿯½뿯₽“ ensure it is centered (it may have lost alignment
     // after a round-trip through the web editor which strips center styling).
     for (var j = body.getNumChildren() - 1; j >= 0; j--) {
       var el = body.getChild(j);
       if (el.getType() === DocumentApp.ElementType.PARAGRAPH) {
         var elText = normalizeLineText(el.asParagraph().getText());
-        if (elText === "H뿯½뿯½뿯½t") {
+        if (elText === "Hết") {
           el.asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
           break;
         }
@@ -3428,7 +3428,7 @@ function ensureDocEndsWithHetMarker(body) {
     return;
   }
 
-  var endParagraph = body.appendParagraph("H뿯½뿯½뿯½t");
+  var endParagraph = body.appendParagraph("Hết");
   endParagraph.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 }
 

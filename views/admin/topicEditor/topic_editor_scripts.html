@@ -2296,25 +2296,27 @@ function enforceHeadingColorLineBreak(editor) {
 function normalizeHetAlignmentForEditor(editor) {
   if (!editor) return;
 
-  // Walk all block-level elements and check for "Hết" text
+  // Walk all block-level elements and check for "Hết" text (or corrupted versions like H삖½삖½삖½t)
   var blocks = editor.querySelectorAll('p, div, span, h1, h2, h3, h4, h5, h6');
   for (var i = 0; i < blocks.length; i++) {
     var el = blocks[i];
     var text = (el.textContent || '').replace(/\u00A0/g, ' ').trim();
 
-    if (text === 'Hết') {
+    // Check if it's the "Hết" marker or its corrupted variants
+    var isHet = text === 'Hết' || (text.startsWith('H') && text.endsWith('t') && text.length >= 3 && text.length <= 15 && text.includes('½'));
+    
+    if (isHet) {
+      // Fix the text content in case it's corrupted mojibake
+      el.textContent = 'Hết';
+
       // Remove center alignment from inline style
       if (el.style && el.style.textAlign === 'center') {
         el.style.textAlign = 'left';
       }
-      // Also check parent for center alignment (Google Doc often wraps in <p style="text-align:center">)
+      // Also check parent for center alignment
       var parent = el.parentElement;
       if (parent && parent !== editor && parent.style && parent.style.textAlign === 'center') {
-        // Only reset if the parent only contains "Hết"
-        var parentText = (parent.textContent || '').replace(/\u00A0/g, ' ').trim();
-        if (parentText === 'Hết') {
-          parent.style.textAlign = 'left';
-        }
+        parent.style.textAlign = 'left';
       }
     }
   }
