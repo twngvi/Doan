@@ -2062,59 +2062,66 @@ function closeCourseModal() {
 function handleCourseSubmit(e) {
   e.preventDefault();
   
-  const courseId = document.getElementById('course-id-input').value;
-  const courseData = {
-    title: document.getElementById('course-title-input').value,
-    shortDescription: document.getElementById('course-short-desc-input').value,
-    category: document.getElementById('course-category-input').value,
-    level: document.getElementById('course-level-input').value,
-    status: document.getElementById('course-status-input').value,
-    order: parseInt(document.getElementById('course-order-input').value) || 1,
-    thumbnailUrl: document.getElementById('course-thumb-input').value,
-  };
-  
   const btn = document.getElementById('course-save-btn');
   btn.disabled = true;
   btn.textContent = 'Đang lưu...';
   
-  if (courseId) {
-    google.script.run
-      .withSuccessHandler(res => {
-        btn.disabled = false;
-        btn.textContent = 'Lưu khóa học';
-        if (res && res.success) {
-          if (typeof showNotification === 'function') showNotification('Cập nhật khóa học thành công', 'success');
-          closeCourseModal();
-          loadCoursesList();
-        } else {
-          if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
-        }
-      })
-      .withFailureHandler(err => {
-        btn.disabled = false;
-        btn.textContent = 'Lưu khóa học';
-        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
-      })
-      .updateCourse(courseId, courseData);
-  } else {
-    google.script.run
-      .withSuccessHandler(res => {
-        btn.disabled = false;
-        btn.textContent = 'Lưu khóa học';
-        if (res && res.success) {
-          if (typeof showNotification === 'function') showNotification('Tạo khóa học thành công', 'success');
-          closeCourseModal();
-          loadCoursesList();
-        } else {
-          if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
-        }
-      })
-      .withFailureHandler(err => {
-        btn.disabled = false;
-        btn.textContent = 'Lưu khóa học';
-        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
-      })
-      .createCourse(courseData);
+  try {
+    const courseId = document.getElementById('course-id-input').value;
+    const courseData = {
+      title: document.getElementById('course-title-input').value,
+      shortDescription: document.getElementById('course-short-desc-input').value,
+      category: document.getElementById('course-category-input').value,
+      level: document.getElementById('course-level-input').value,
+      status: document.getElementById('course-status-input').value,
+      order: parseInt(document.getElementById('course-order-input').value) || 1,
+      thumbnailUrl: document.getElementById('course-thumb-input').value,
+    };
+    
+    if (courseId) {
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.textContent = 'Lưu khóa học';
+          if (res && res.success) {
+            if (typeof showNotification === 'function') showNotification('Cập nhật khóa học thành công', 'success');
+            closeCourseModal();
+            loadCoursesList();
+          } else {
+            if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
+          }
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          btn.textContent = 'Lưu khóa học';
+          if (typeof showNotification === 'function') showNotification('Lỗi kết nối: ' + err.message, 'error');
+        })
+        .updateCourse(courseId, courseData);
+    } else {
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.textContent = 'Lưu khóa học';
+          if (res && res.success) {
+            if (typeof showNotification === 'function') showNotification('Tạo khóa học thành công', 'success');
+            closeCourseModal();
+            loadCoursesList();
+          } else {
+            if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
+          }
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          btn.textContent = 'Lưu khóa học';
+          if (typeof showNotification === 'function') showNotification('Lỗi kết nối: ' + err.message, 'error');
+        })
+        .createCourse(courseData);
+    }
+  } catch (error) {
+    console.error("Error in handleCourseSubmit:", error);
+    btn.disabled = false;
+    btn.textContent = 'Lưu khóa học';
+    if (typeof showNotification === 'function') showNotification('Lỗi xử lý: ' + error.message, 'error');
   }
 }
 
