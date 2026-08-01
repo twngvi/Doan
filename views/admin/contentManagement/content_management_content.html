@@ -50,13 +50,23 @@
 
   <!-- TOPIC VIEW -->
   <div id="cm-topics-view-wrapper" style="display: none;">
-    <div class="cm-topic-view-header" style="display: flex; align-items: center; margin-bottom: 24px; gap: 16px;">
-      <button class="cm-btn cm-btn-secondary" onclick="backToCoursesView()" style="padding: 8px; border-radius: 50%;">
-        <span class="material-symbols-sharp">arrow_back</span>
-      </button>
-      <div>
-        <h2 id="cm-current-course-title" style="margin: 0; color: var(--theme-text-main);">Tên khóa học</h2>
-        <p style="margin: 4px 0 0; font-size: 14px; color: var(--theme-text-muted);">Quản lý các bài học trong khóa này</p>
+    <div class="cm-topic-view-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; padding: 24px 32px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); border-radius: 20px; border: 1px solid rgba(99, 102, 241, 0.15); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04); gap: 24px; position: relative; overflow: hidden;">
+      <div style="position: absolute; top: -50%; left: -10%; width: 50%; height: 200%; background: radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%); pointer-events: none;"></div>
+      <div style="display: flex; align-items: center; gap: 24px; z-index: 1;">
+        <button class="cm-btn cm-btn-secondary" onclick="backToCoursesView()" style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border-radius: 14px; border: 1px solid rgba(150, 150, 150, 0.2); background: var(--theme-surface, #fff); box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.2s ease; cursor: pointer;">
+          <span class="material-symbols-sharp" style="font-size: 22px; color: var(--theme-text-main);">arrow_back_ios_new</span>
+        </button>
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span class="material-symbols-sharp" style="color: #6366f1; font-size: 20px; background: rgba(99,102,241,0.1); padding: 4px; border-radius: 6px;">menu_book</span>
+            <span style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #6366f1;">Chi tiết khóa học</span>
+          </div>
+          <h2 id="cm-current-course-title" style="margin: 0; color: var(--theme-text-main); font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Tên khóa học</h2>
+          <p style="margin: 8px 0 0; font-size: 15px; color: var(--theme-text-muted); display: flex; align-items: center; gap: 6px;">
+            <span class="material-symbols-sharp" style="font-size: 18px; opacity: 0.7;">view_list</span>
+            Quản lý các bài học và nội dung chi tiết trong khóa này
+          </p>
+        </div>
       </div>
     </div>
 
@@ -487,67 +497,252 @@
   </div>
 </div>
 
-<!-- Course Modal (Create/Edit) -->
-<div id="cm-course-modal-overlay" class="cm-modal" style="display: none">
+<!-- Course Modal: Create/Edit -->
+<div id="cm-course-modal-overlay" class="cm-modal cm-course-modal" style="display: none">
   <div class="cm-modal-overlay" onclick="closeCourseModal()"></div>
-  <div class="cm-modal-content" style="max-width: 600px; padding: 0;">
-    <div class="cm-modal-header">
-      <div class="cm-modal-header-left">
-        <span class="material-symbols-sharp">edit_document</span>
-        <h3 id="cm-course-modal-title" style="margin: 0; font-size: 18px; font-weight: 600;">Tạo khóa học mới</h3>
+
+  <div
+    class="cm-modal-content cm-course-modal-content"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="cm-course-modal-title"
+  >
+    <!-- Header -->
+    <div class="cm-course-modal-header">
+      <div class="cm-course-modal-heading">
+        <div class="cm-course-modal-icon">
+          <span class="material-symbols-sharp">school</span>
+        </div>
+
+        <div>
+          <h3 id="cm-course-modal-title">Tạo khóa học mới</h3>
+          <p id="cm-course-modal-subtitle">
+            Nhập thông tin để tạo một khóa học mới
+          </p>
+        </div>
       </div>
-      <button class="cm-modal-close" onclick="closeCourseModal()">
+
+      <button
+        type="button"
+        class="cm-course-modal-close"
+        onclick="closeCourseModal()"
+        aria-label="Đóng"
+        title="Đóng"
+      >
         <span class="material-symbols-sharp">close</span>
       </button>
     </div>
-    <div class="cm-modal-body">
+
+    <!-- Body -->
+    <div class="cm-course-modal-body">
       <form id="cm-course-form" onsubmit="handleCourseSubmit(event)">
-        <input type="hidden" id="course-id-input" value="">
-        <div class="cm-form-group">
-          <label>Tên khóa học <span class="required">*</span></label>
-          <input type="text" id="course-title-input" class="cm-input" required placeholder="Nhập tên khóa học">
-        </div>
-        <div class="cm-form-group">
-          <label>Mô tả ngắn</label>
-          <textarea id="course-short-desc-input" class="cm-input" rows="2" placeholder="Tóm tắt ngắn gọn về khóa học"></textarea>
-        </div>
-        <div class="cm-form-group">
-          <label>Danh mục</label>
-          <input type="text" id="course-category-input" class="cm-input" placeholder="VD: Lập trình, Ngoại ngữ...">
-        </div>
-        <div style="display: flex; gap: 16px;">
-          <div class="cm-form-group" style="flex: 1;">
-            <label>Mức độ</label>
-            <select id="course-level-input" class="cm-input">
-              <option value="beginner">Người mới bắt đầu</option>
-              <option value="intermediate">Trung bình</option>
-              <option value="advanced">Nâng cao</option>
-            </select>
+        <input type="hidden" id="course-id-input" value="" />
+
+        <!-- Lưu URL ảnh cũ khi chỉnh sửa -->
+        <input type="hidden" id="course-existing-thumb-input" value="" />
+
+        <div class="cm-course-form-layout">
+          <!-- Cột ảnh -->
+          <div class="cm-course-image-column">
+            <div
+              class="cm-course-image-uploader"
+              id="course-thumbnail-dropzone"
+              onclick="document.getElementById('course-thumb-file-input').click()"
+            >
+              <img
+                id="course-thumb-preview"
+                class="cm-course-thumb-preview"
+                src=""
+                alt="Xem trước ảnh khóa học"
+                style="display: none"
+              />
+
+              <div
+                class="cm-course-upload-placeholder"
+                id="course-thumb-placeholder"
+              >
+                <div class="cm-course-upload-icon">
+                  <span class="material-symbols-sharp">add_photo_alternate</span>
+                </div>
+
+                <strong>Chọn ảnh từ máy</strong>
+                <span>PNG, JPG hoặc WEBP</span>
+                <small>Dung lượng tối đa 3 MB</small>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              id="course-thumb-file-input"
+              accept="image/png,image/jpeg,image/webp"
+              onchange="handleCourseThumbnailChange(event)"
+              hidden
+            />
+
+            <div class="cm-course-image-actions">
+              <button
+                type="button"
+                class="cm-course-file-button"
+                onclick="document.getElementById('course-thumb-file-input').click()"
+              >
+                <span class="material-symbols-sharp">upload</span>
+                Chọn tệp
+              </button>
+
+              <button
+                type="button"
+                class="cm-course-remove-image"
+                id="course-remove-thumb-btn"
+                onclick="removeCourseThumbnail()"
+                style="display: none"
+              >
+                <span class="material-symbols-sharp">delete</span>
+                Xóa ảnh
+              </button>
+            </div>
+
+            <p class="cm-course-selected-file" id="course-selected-file-name">
+              Chưa chọn tệp
+            </p>
           </div>
-          <div class="cm-form-group" style="flex: 1;">
-            <label>Thứ tự</label>
-            <input type="number" id="course-order-input" class="cm-input" value="1" min="1">
+
+          <!-- Cột thông tin -->
+          <div class="cm-course-fields-column">
+            <div class="cm-course-form-group cm-course-form-group-full">
+              <label for="course-title-input">
+                Tên khóa học
+                <span class="required">*</span>
+              </label>
+
+              <div class="cm-course-input-wrapper">
+                <span class="material-symbols-sharp">menu_book</span>
+
+                <input
+                  type="text"
+                  id="course-title-input"
+                  class="cm-course-input"
+                  required
+                  maxlength="150"
+                  placeholder="Nhập tên khóa học"
+                />
+              </div>
+            </div>
+
+            <div class="cm-course-form-group cm-course-form-group-full">
+              <label for="course-short-desc-input">Mô tả ngắn</label>
+
+              <div class="cm-course-input-wrapper cm-course-textarea-wrapper">
+                <span class="material-symbols-sharp">subject</span>
+
+                <textarea
+                  id="course-short-desc-input"
+                  class="cm-course-input cm-course-textarea"
+                  rows="4"
+                  maxlength="500"
+                  placeholder="Tóm tắt nội dung chính của khóa học"
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="cm-course-form-group cm-course-form-group-full">
+              <label for="course-category-input">Danh mục</label>
+
+              <div class="cm-course-input-wrapper">
+                <span class="material-symbols-sharp">category</span>
+
+                <input
+                  type="text"
+                  id="course-category-input"
+                  class="cm-course-input"
+                  maxlength="100"
+                  placeholder="Ví dụ: Lập trình, Ngoại ngữ"
+                />
+              </div>
+            </div>
+
+            <div class="cm-course-form-grid">
+              <div class="cm-course-form-group">
+                <label for="course-level-input">Mức độ</label>
+
+                <div class="cm-course-input-wrapper">
+                  <span class="material-symbols-sharp">signal_cellular_alt</span>
+
+                  <select
+                    id="course-level-input"
+                    class="cm-course-input cm-course-select"
+                  >
+                    <option value="beginner">Người mới bắt đầu</option>
+                    <option value="intermediate">Trung bình</option>
+                    <option value="advanced">Nâng cao</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="cm-course-form-group">
+                <label for="course-order-input">Thứ tự</label>
+
+                <div class="cm-course-input-wrapper">
+                  <span class="material-symbols-sharp">format_list_numbered</span>
+
+                  <input
+                    type="number"
+                    id="course-order-input"
+                    class="cm-course-input"
+                    value="1"
+                    min="1"
+                    max="9999"
+                  />
+                </div>
+              </div>
+
+              <div class="cm-course-form-group">
+                <label for="course-status-input">Trạng thái</label>
+
+                <div class="cm-course-input-wrapper">
+                  <span class="material-symbols-sharp">visibility</span>
+
+                  <select
+                    id="course-status-input"
+                    class="cm-course-input cm-course-select"
+                  >
+                    <option value="draft">Bản nháp</option>
+                    <option value="published">Đang hiển thị</option>
+                    <option value="hidden">Đang ẩn</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="cm-form-group" style="flex: 1;">
-            <label>Trạng thái</label>
-            <select id="course-status-input" class="cm-input">
-              <option value="draft">Bản nháp</option>
-              <option value="published">Đang hiển thị</option>
-              <option value="hidden">Đang ẩn</option>
-            </select>
-          </div>
-        </div>
-        <div class="cm-form-group">
-          <label>URL ảnh đại diện</label>
-          <input type="text" id="course-thumb-input" class="cm-input" placeholder="https://...">
         </div>
       </form>
     </div>
-    <div class="cm-modal-actions" style="padding: 20px 24px; border-top: 1px solid var(--border-color, #e2e8f0);">
-      <button class="cm-btn cm-btn-secondary" onclick="closeCourseModal()">Hủy</button>
-      <button type="submit" form="cm-course-form" class="cm-btn cm-btn-primary" id="course-save-btn">
-        Lưu khóa học
-      </button>
+
+    <!-- Footer -->
+    <div class="cm-course-modal-footer">
+      <div class="cm-course-footer-note">
+        <span class="material-symbols-sharp">info</span>
+        Các thay đổi chỉ được áp dụng sau khi bấm lưu.
+      </div>
+
+      <div class="cm-course-modal-actions">
+        <button
+          type="button"
+          class="cm-btn cm-course-cancel-btn"
+          onclick="closeCourseModal()"
+        >
+          Hủy
+        </button>
+
+        <button
+          type="submit"
+          form="cm-course-form"
+          class="cm-btn cm-course-save-btn"
+          id="course-save-btn"
+        >
+          <span class="material-symbols-sharp">save</span>
+          <span id="course-save-btn-text">Lưu khóa học</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>

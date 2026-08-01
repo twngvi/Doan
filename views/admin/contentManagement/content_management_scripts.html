@@ -16,6 +16,16 @@ let latestTopicsLoadRequestId = 0; // Tránh race condition khi gọi load nhi�
 
 let currentCourseFilter = null;
 
+let selectedCourseThumbnailFile = null;
+let removeExistingCourseThumbnail = false;
+
+const COURSE_THUMB_MAX_SIZE = 3 * 1024 * 1024;
+const COURSE_THUMB_ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp"
+];
+
 // ===== Initialize =====
 function initContentManagement() {
 
@@ -2028,110 +2038,543 @@ function backToCoursesView() {
   renderCoursesView();
 }
 
+function handleCourseThumbnailChange(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+
+  if (!file) return;
+
+  if (!COURSE_THUMB_ALLOWED_TYPES.includes(file.type)) {
+    input.value = "";
+
+    if (typeof showNotification === "function") {
+      showNotification(
+        "Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP",
+        "warning"
+      );
+    }
+
+    return;
+  }
+
+  if (file.size > COURSE_THUMB_MAX_SIZE) {
+    input.value = "";
+
+    if (typeof showNotification === "function") {
+      showNotification(
+        "Ảnh đại diện không được vượt quá 3 MB",
+        "warning"
+      );
+    }
+
+    return;
+  }
+
+  selectedCourseThumbnailFile = file;
+  removeExistingCourseThumbnail = false;
+
+  const reader = new FileReader();
+
+  reader.onload = function(loadEvent) {
+    setCourseThumbnailPreview(
+      loadEvent.target.result,
+      file.name
+    );
+  };
+
+  reader.onerror = function() {
+    selectedCourseThumbnailFile = null;
+    input.value = "";
+
+    if (typeof showNotification === "function") {
+      showNotification("Không thể đọc tệp ảnh đã chọn", "error");
+    }
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function setCourseThumbnailPreview(imageUrl, fileName) {
+  const preview = document.getElementById("course-thumb-preview");
+  const placeholder = document.getElementById(
+    "course-thumb-placeholder"
+  );
+  const removeBtn = document.getElementById(
+    "course-remove-thumb-btn"
+  );
+  const fileNameEl = document.getElementById(
+    "course-selected-file-name"
+  );
+
+  const hasImage = Boolean(imageUrl);
+
+  if (preview) {
+    preview.src = hasImage ? imageUrl : "";
+    preview.style.display = hasImage ? "block" : "none";
+  }
+
+  if (placeholder) {
+    placeholder.style.display = hasImage ? "none" : "flex";
+  }
+
+  if (removeBtn) {
+    removeBtn.style.display = hasImage ? "inline-flex" : "none";
+  }
+
+  if (fileNameEl) {
+    fileNameEl.textContent = hasImage
+      ? fileName || "Ảnh hiện tại"
+      : "Chưa chọn tệp";
+  }
+}
+
+function removeCourseThumbnail() {
+  const input = document.getElementById(
+    "course-thumb-file-input"
+  );
+
+  const existingInput = document.getElementById(
+    "course-existing-thumb-input"
+  );
+
+  selectedCourseThumbnailFile = null;
+  removeExistingCourseThumbnail = true;
+
+  if (input) {
+    input.value = "";
+  }
+
+  if (existingInput) {
+    existingInput.value = "";
+  }
+
+  setCourseThumbnailPreview("", "");
+}
+
+function resetCourseThumbnailState() {
+  const fileInput = document.getElementById(
+    "course-thumb-file-input"
+  );
+
+  const existingInput = document.getElementById(
+    "course-existing-thumb-input"
+  );
+
+  selectedCourseThumbnailFile = null;
+  removeExistingCourseThumbnail = false;
+
+  if (fileInput) {
+    fileInput.value = "";
+  }
+
+  if (existingInput) {
+    existingInput.value = "";
+  }
+
+  setCourseThumbnailPreview("", "");
+}
+
+function convertCourseImageToPayload(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+
+    reader.onload = function(event) {
+      const dataUrl = String(event.target.result || "");
+      const commaIndex = dataUrl.indexOf(",");
+
+      if (commaIndex === -1) {
+        reject(new Error("Dữ liệu ảnh không hợp lệ"));
+        return;
+      }
+
+      resolve({
+        fileName: file.name,
+        mimeType: file.type,
+        base64: dataUrl.substring(commaIndex + 1)
+      });
+    };
+
+    reader.onerror = function() {
+      reject(new Error("Không thể đọc tệp ảnh"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+function uploadCourseThumbnailFile(file) {
+  return convertCourseImageToPayload(file).then(function(payload) {
+    return new Promise(function(resolve, reject) {
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (
+            response &&
+            response.success &&
+            response.url
+          ) {
+            resolve(response.url);
+            return;
+          }
+
+          reject(
+            new Error(
+              response && response.message
+                ? response.message
+                : "Không thể tải ảnh lên"
+            )
+          );
+        })
+        .withFailureHandler(function(error) {
+          reject(
+            new Error(
+              error && error.message
+                ? error.message
+                : "Lỗi kết nối khi tải ảnh"
+            )
+          );
+        })
+        .uploadCourseThumbnail(payload);
+    });
+  });
+}
+
+function setCourseSaveLoading(isLoading, text) {
+  const btn = document.getElementById("course-save-btn");
+  const textEl = document.getElementById(
+    "course-save-btn-text"
+  );
+
+  if (!btn) return;
+
+  btn.disabled = isLoading;
+
+  if (textEl) {
+    textEl.textContent = text || "Lưu khóa học";
+  }
+
+  const icon = btn.querySelector(".material-symbols-sharp");
+
+  if (icon) {
+    icon.textContent = isLoading
+      ? "progress_activity"
+      : "save";
+
+    icon.classList.toggle("cm-spin", isLoading);
+  }
+}
+
 function promptCreateNewCourse() {
   openCourseModal(null);
 }
 
 function openCourseModal(courseId) {
-  const modal = document.getElementById('cm-course-modal-overlay');
-  const form = document.getElementById('cm-course-form');
-  const title = document.getElementById('cm-course-modal-title');
-  
+  const modal = document.getElementById(
+    "cm-course-modal-overlay"
+  );
+
+  const form = document.getElementById("cm-course-form");
+
+  const title = document.getElementById(
+    "cm-course-modal-title"
+  );
+
+  const subtitle = document.getElementById(
+    "cm-course-modal-subtitle"
+  );
+
+  if (!modal || !form) return;
+
   form.reset();
-  
+  resetCourseThumbnailState();
+  setCourseSaveLoading(false, "Lưu khóa học");
+
   if (courseId) {
-    title.textContent = "Chỉnh sửa khóa học";
-    const course = allCourses.find(c => c.courseId === courseId);
-    if (course) {
-      document.getElementById('course-id-input').value = course.courseId;
-      document.getElementById('course-title-input').value = course.title || '';
-      document.getElementById('course-short-desc-input').value = course.shortDescription || '';
-      document.getElementById('course-category-input').value = course.category || '';
-      document.getElementById('course-level-input').value = course.level || 'beginner';
-      document.getElementById('course-order-input').value = course.order || 1;
-      document.getElementById('course-status-input').value = course.status || 'draft';
-      document.getElementById('course-thumb-input').value = course.thumbnailUrl || '';
+    if (title) {
+      title.textContent = "Chỉnh sửa khóa học";
+    }
+
+    if (subtitle) {
+      subtitle.textContent =
+        "Cập nhật thông tin và ảnh đại diện của khóa học";
+    }
+
+    const course = allCourses.find(function(item) {
+      return String(item.courseId) === String(courseId);
+    });
+
+    if (!course) {
+      if (typeof showNotification === "function") {
+        showNotification(
+          "Không tìm thấy thông tin khóa học",
+          "error"
+        );
+      }
+
+      return;
+    }
+
+    document.getElementById("course-id-input").value =
+      course.courseId || "";
+
+    document.getElementById("course-title-input").value =
+      course.title || "";
+
+    document.getElementById(
+      "course-short-desc-input"
+    ).value = course.shortDescription || "";
+
+    document.getElementById(
+      "course-category-input"
+    ).value = course.category || "";
+
+    document.getElementById(
+      "course-level-input"
+    ).value = course.level || "beginner";
+
+    document.getElementById(
+      "course-order-input"
+    ).value = Number(course.order) || 1;
+
+    document.getElementById(
+      "course-status-input"
+    ).value = course.status || "draft";
+
+    const oldThumbnailUrl = String(
+      course.thumbnailUrl || ""
+    ).trim();
+
+    document.getElementById(
+      "course-existing-thumb-input"
+    ).value = oldThumbnailUrl;
+
+    if (oldThumbnailUrl) {
+      setCourseThumbnailPreview(
+        oldThumbnailUrl,
+        "Ảnh đại diện hiện tại"
+      );
     }
   } else {
-    title.textContent = "Tạo khóa học mới";
-    document.getElementById('course-id-input').value = '';
-    
+    if (title) {
+      title.textContent = "Tạo khóa học mới";
+    }
+
+    if (subtitle) {
+      subtitle.textContent =
+        "Nhập thông tin để tạo một khóa học mới";
+    }
+
+    document.getElementById("course-id-input").value = "";
+
     let maxOrder = 0;
-    allCourses.forEach(c => { if (c.order > maxOrder) maxOrder = c.order; });
-    document.getElementById('course-order-input').value = maxOrder + 1;
-    document.getElementById('course-status-input').value = 'draft';
+
+    allCourses.forEach(function(course) {
+      const courseOrder = Number(course.order) || 0;
+
+      if (courseOrder > maxOrder) {
+        maxOrder = courseOrder;
+      }
+    });
+
+    document.getElementById(
+      "course-order-input"
+    ).value = maxOrder + 1;
+
+    document.getElementById(
+      "course-level-input"
+    ).value = "beginner";
+
+    document.getElementById(
+      "course-status-input"
+    ).value = "draft";
   }
-  
-  modal.style.display = 'flex';
+
+  modal.style.display = "flex";
+
+  requestAnimationFrame(function() {
+    const titleInput = document.getElementById(
+      "course-title-input"
+    );
+
+    if (titleInput) {
+      titleInput.focus();
+    }
+  });
 }
 
 function closeCourseModal() {
-  document.getElementById('cm-course-modal-overlay').style.display = 'none';
+  const modal = document.getElementById(
+    "cm-course-modal-overlay"
+  );
+
+  if (modal) {
+    modal.style.display = "none";
+  }
+
+  const form = document.getElementById("cm-course-form");
+
+  if (form) {
+    form.reset();
+  }
+
+  resetCourseThumbnailState();
+  setCourseSaveLoading(false, "Lưu khóa học");
 }
 
-function handleCourseSubmit(e) {
-  e.preventDefault();
-  
-  const btn = document.getElementById('course-save-btn');
-  btn.disabled = true;
-  btn.textContent = 'Đang lưu...';
-  
+async function handleCourseSubmit(event) {
+  event.preventDefault();
+
+  const titleInput = document.getElementById(
+    "course-title-input"
+  );
+
+  const title = titleInput
+    ? titleInput.value.trim()
+    : "";
+
+  if (!title) {
+    if (typeof showNotification === "function") {
+      showNotification(
+        "Vui lòng nhập tên khóa học",
+        "warning"
+      );
+    }
+
+    if (titleInput) {
+      titleInput.focus();
+    }
+
+    return;
+  }
+
+  setCourseSaveLoading(true, "Đang lưu...");
+
   try {
-    const courseId = document.getElementById('course-id-input').value;
+    const courseId = document
+      .getElementById("course-id-input")
+      .value
+      .trim();
+
+    let thumbnailUrl = document
+      .getElementById("course-existing-thumb-input")
+      .value
+      .trim();
+
+    /*
+     * Chỉ tải ảnh lên khi người dùng chọn ảnh mới.
+     * Nếu không chọn ảnh mới thì giữ nguyên URL ảnh cũ.
+     */
+    if (selectedCourseThumbnailFile) {
+      setCourseSaveLoading(true, "Đang tải ảnh...");
+
+      thumbnailUrl = await uploadCourseThumbnailFile(
+        selectedCourseThumbnailFile
+      );
+    } else if (removeExistingCourseThumbnail) {
+      thumbnailUrl = "";
+    }
+
+    setCourseSaveLoading(true, "Đang lưu...");
+
     const courseData = {
-      title: document.getElementById('course-title-input').value,
-      shortDescription: document.getElementById('course-short-desc-input').value,
-      category: document.getElementById('course-category-input').value,
-      level: document.getElementById('course-level-input').value,
-      status: document.getElementById('course-status-input').value,
-      order: parseInt(document.getElementById('course-order-input').value) || 1,
-      thumbnailUrl: document.getElementById('course-thumb-input').value,
+      title: title,
+
+      shortDescription: document
+        .getElementById("course-short-desc-input")
+        .value
+        .trim(),
+
+      category: document
+        .getElementById("course-category-input")
+        .value
+        .trim(),
+
+      level: document.getElementById(
+        "course-level-input"
+      ).value,
+
+      status: document.getElementById(
+        "course-status-input"
+      ).value,
+
+      order:
+        parseInt(
+          document.getElementById(
+            "course-order-input"
+          ).value,
+          10
+        ) || 1,
+
+      thumbnailUrl: thumbnailUrl
     };
-    
+
+    const serverCall = google.script.run
+      .withSuccessHandler(function(response) {
+        setCourseSaveLoading(false, "Lưu khóa học");
+
+        if (response && response.success) {
+          if (typeof showNotification === "function") {
+            showNotification(
+              courseId
+                ? "Cập nhật khóa học thành công"
+                : "Tạo khóa học thành công",
+              "success"
+            );
+          }
+
+          closeCourseModal();
+          loadCoursesList();
+          return;
+        }
+
+        if (typeof showNotification === "function") {
+          showNotification(
+            "Lỗi: " +
+              (
+                response && response.message
+                  ? response.message
+                  : "Không thể lưu khóa học"
+              ),
+            "error"
+          );
+        }
+      })
+      .withFailureHandler(function(error) {
+        setCourseSaveLoading(false, "Lưu khóa học");
+
+        if (typeof showNotification === "function") {
+          showNotification(
+            "Lỗi kết nối: " +
+              (
+                error && error.message
+                  ? error.message
+                  : error
+              ),
+            "error"
+          );
+        }
+      });
+
     if (courseId) {
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.textContent = 'Lưu khóa học';
-          if (res && res.success) {
-            if (typeof showNotification === 'function') showNotification('Cập nhật khóa học thành công', 'success');
-            closeCourseModal();
-            loadCoursesList();
-          } else {
-            if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
-          }
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false;
-          btn.textContent = 'Lưu khóa học';
-          if (typeof showNotification === 'function') showNotification('Lỗi kết nối: ' + err.message, 'error');
-        })
-        .updateCourse(courseId, courseData);
+      serverCall.updateCourse(courseId, courseData);
     } else {
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.textContent = 'Lưu khóa học';
-          if (res && res.success) {
-            if (typeof showNotification === 'function') showNotification('Tạo khóa học thành công', 'success');
-            closeCourseModal();
-            loadCoursesList();
-          } else {
-            if (typeof showNotification === 'function') showNotification('Lỗi: ' + res.message, 'error');
-          }
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false;
-          btn.textContent = 'Lưu khóa học';
-          if (typeof showNotification === 'function') showNotification('Lỗi kết nối: ' + err.message, 'error');
-        })
-        .createCourse(courseData);
+      serverCall.createCourse(courseData);
     }
   } catch (error) {
-    console.error("Error in handleCourseSubmit:", error);
-    btn.disabled = false;
-    btn.textContent = 'Lưu khóa học';
-    if (typeof showNotification === 'function') showNotification('Lỗi xử lý: ' + error.message, 'error');
+    console.error(
+      "[ContentManagement] Course submit error:",
+      error
+    );
+
+    setCourseSaveLoading(false, "Lưu khóa học");
+
+    if (typeof showNotification === "function") {
+      showNotification(
+        error && error.message
+          ? error.message
+          : "Không thể xử lý ảnh hoặc lưu khóa học",
+        "error"
+      );
+    }
   }
 }
 

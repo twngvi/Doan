@@ -150,6 +150,127 @@ function updateCourse(courseId, courseData) {
   }
 }
 
+function uploadCourseThumbnail(payload) {
+  try {
+    if (!payload || !payload.base64) {
+      return {
+        success: false,
+        message: "Không nhận được dữ liệu ảnh"
+      };
+    }
+
+    var mimeType = String(
+      payload.mimeType || ""
+    ).toLowerCase();
+
+    var allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+    if (allowedTypes.indexOf(mimeType) === -1) {
+      return {
+        success: false,
+        message: "Định dạng ảnh không được hỗ trợ"
+      };
+    }
+
+    var bytes = Utilities.base64Decode(payload.base64);
+
+    var maxSize = 3 * 1024 * 1024;
+
+    if (bytes.length > maxSize) {
+      return {
+        success: false,
+        message: "Ảnh không được vượt quá 3 MB"
+      };
+    }
+
+    var originalName = String(
+      payload.fileName || "course-image"
+    );
+
+    var safeName = originalName
+      .replace(/[^\w.\-]+/g, "_")
+      .substring(0, 100);
+
+    var finalName =
+      "COURSE_" +
+      new Date().getTime() +
+      "_" +
+      safeName;
+
+    var blob = Utilities.newBlob(
+      bytes,
+      mimeType,
+      finalName
+    );
+
+    /*
+     * Nên tạo riêng một thư mục Drive chứa ảnh khóa học,
+     * sau đó điền ID thư mục tại đây.
+     */
+    var folderId = "1nrcuio2Da7Zc3bij2HO4b7P8a-_053LN";
+
+    if (
+      !folderId ||
+      folderId === "DAN_ID_THU_MUC_DRIVE_VAO_DAY"
+    ) {
+      return {
+        success: false,
+        message:
+          "Chưa cấu hình thư mục lưu ảnh khóa học"
+      };
+    }
+
+    var folder = DriveApp.getFolderById(folderId);
+    var file = folder.createFile(blob);
+
+    /*
+     * Ảnh phải có quyền xem bằng liên kết để hiển thị
+     * trên thẻ khóa học.
+     */
+    file.setSharing(
+      DriveApp.Access.ANYONE_WITH_LINK,
+      DriveApp.Permission.VIEW
+    );
+
+    var fileId = file.getId();
+
+    var imageUrl =
+      "https://drive.google.com/thumbnail?id=" +
+      encodeURIComponent(fileId) +
+      "&sz=w1200";
+
+    return {
+      success: true,
+      message: "Tải ảnh thành công",
+      url: imageUrl,
+      fileId: fileId
+    };
+  } catch (error) {
+    Logger.log(
+      "[uploadCourseThumbnail] " +
+      (
+        error && error.stack
+          ? error.stack
+          : error
+      )
+    );
+
+    return {
+      success: false,
+      message:
+        "Không thể tải ảnh lên: " +
+        (
+          error && error.message
+            ? error.message
+            : error
+        )
+    };
+  }
+}
 
 function removeDummyCourseHolders() {
   const sheet = getSheet("Topics");
