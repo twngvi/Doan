@@ -8,6 +8,10 @@
     // ========================================
     let allTopics = [];
     let filteredTopics = [];
+    let allCourses = [];
+    let currentViewMode = "courses"; // "courses" or "topics"
+    let currentCourseId = null;
+    let coursesLoaded = false; // Flag to track if courses API call completed
     let currentFilter = "all";
     let currentView = "grid";
     let selectedTopic = null;
@@ -261,7 +265,12 @@
 
         // Use cached progress for instant render, then refresh from server
         userProgress = mergeLocalStorageProgress(progressCache || {});
-        renderTopics();
+        if (currentViewMode === 'courses') {
+          renderCourses();
+          goBackToCourses();
+        } else {
+          renderTopics();
+        }
         updateProgressStats();
         hideLoadingState();
 
@@ -288,7 +297,12 @@
           progressCache = userProgress;
           lastLoadTime = localStoreCache.savedAt;
 
-          renderTopics();
+          if (currentViewMode === 'courses') {
+            renderCourses();
+            goBackToCourses();
+          } else {
+            renderTopics();
+          }
           updateProgressStats();
           hideLoadingState();
           
@@ -331,6 +345,17 @@
       allTopics = result.topics || [];
       filteredTopics = [...allTopics];
       
+      // ⭐ Extract courses from the same API response
+      if (result.courses && result.courses.length > 0) {
+        allCourses = result.courses;
+        coursesLoaded = true;
+        console.log('✅ Got ' + allCourses.length + ' courses from server');
+      } else if (!coursesLoaded) {
+        // No courses in response - mark as loaded with empty
+        coursesLoaded = true;
+        allCourses = [];
+      }
+      
       // Xử lý progress
       let serverProgress = result.progress || {};
       userProgress = mergeLocalStorageProgress(serverProgress, {
@@ -358,8 +383,19 @@
       // ⭐ Save to LocalStorage for offline-first architecture
       saveTopicsLocalCache(result);
 
-      // ⭐ RENDER 1 LẦN DUY NHẤT (không có setTimeout delay)
-      renderTopics();
+      // ⭐ RENDER
+      if (currentViewMode === 'courses') {
+        renderCourses();
+        const coursesGridEl = document.getElementById('coursesGrid');
+        if (coursesGridEl) coursesGridEl.style.display = 'grid';
+        document.getElementById('topicsGrid').style.display = 'none';
+        document.getElementById('topicsJourney').style.display = 'none';
+        document.getElementById('topicsEmpty').style.display = 'none';
+        document.getElementById('btnBackToCourses').style.display = 'none';
+        document.getElementById('topicsHeaderControls').style.display = 'none';
+      } else {
+        renderTopics();
+      }
       updateProgressStats();
       hideLoadingState();
     }
@@ -452,6 +488,8 @@
     // RENDER TOPICS - OPTIMIZED
     // ========================================
     function renderTopics() {
+      if (currentViewMode === 'courses') return;
+
       if (currentView === "grid") {
         renderGridView();
       } else {
@@ -751,6 +789,126 @@
     }
 
     // ========================================
+    // COURSES LOGIC
+    // ========================================
+    function renderCourses() {
+      const container = document.getElementById('coursesGrid');
+      if (!container) return;
+      
+      container.innerHTML = '';
+      
+      if (!coursesLoaded) {
+        // Still loading - show a loading indicator
+        container.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);"><div class="quiz-loading-logo" style="margin: 0 auto 12px;"><span class="logo-o">O</span><div class="logo-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>Đang tải khóa học...</div>';
+        return;
+      }
+      
+      if (!allCourses || allCourses.length === 0) {
+        container.innerHTML = '<div style="padding: 24px; color: var(--text-muted);">Không có khóa học nào.</div>';
+        return;
+      }
+      
+      allCourses.forEach(course => {
+        const card = document.createElement('div');
+        card.className = 'course-card';
+        card.onclick = () => openCourse(course.courseId);
+        
+        const imgUrl = course.thumbnailUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop';
+        
+        // Count topics in this course
+        const topicsCount = allTopics.filter(t => t.courseId === course.courseId).length;
+        
+        card.innerHTML = `
+          <img src="${imgUrl}" alt="${escapeHtml(course.title)}" class="course-card-image" onerror="this.src='https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop'">
+          <div class="course-card-content">
+            ${course.category ? `<div class="course-card-category">${escapeHtml(course.category)}</div>` : ''}
+            <h3 class="course-card-title">${escapeHtml(course.title)}</h3>
+            <div class="course-card-desc">${escapeHtml(course.shortDescription || course.description || '')}</div>
+            <div class="course-card-footer">
+              <div class="course-card-stat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                ${topicsCount} bài học
+              </div>
+              ${course.level ? `
+              <div class="course-card-stat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                ${escapeHtml(course.level)}
+              </div>` : ''}
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function openCourse(courseId) {
+      currentCourseId = courseId;
+      currentViewMode = 'topics';
+      
+      document.getElementById('coursesGrid').style.display = 'none';
+      document.getElementById('btnBackToCourses').style.display = 'flex';
+      document.getElementById('topicsHeaderControls').style.display = 'flex';
+      
+      // Filter and render topics for this course
+      searchTopics('');
+    }
+
+    function goBackToCourses() {
+      currentCourseId = null;
+      currentViewMode = 'courses';
+      
+      document.getElementById('coursesGrid').style.display = 'grid';
+      document.getElementById('topicsGrid').style.display = 'none';
+      document.getElementById('topicsJourney').style.display = 'none';
+      document.getElementById('topicsEmpty').style.display = 'none';
+      document.getElementById('btnBackToCourses').style.display = 'none';
+      document.getElementById('topicsHeaderControls').style.display = 'none';
+    }
+
+    function loadCourses() {
+      console.log('🔄 loadCourses: Starting...');
+      coursesLoaded = false;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          console.log('✅ loadCourses: Server response:', JSON.stringify(result).substring(0, 200));
+          coursesLoaded = true;
+          if (result && result.success) {
+            allCourses = result.courses || [];
+            console.log('✅ loadCourses: Got ' + allCourses.length + ' courses');
+          } else {
+            console.error('❌ loadCourses: Server returned error:', result && result.message);
+            allCourses = [];
+          }
+          // Always re-render if we're in courses view
+          if (currentViewMode === 'courses') {
+            renderCourses();
+            goBackToCourses();
+            hideLoadingState();
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('❌ loadCourses: FAILED:', error);
+          coursesLoaded = true; // Mark as loaded even on error so we show error state
+          allCourses = [];
+          if (currentViewMode === 'courses') {
+            renderCourses();
+            goBackToCourses();
+            hideLoadingState();
+          }
+        })
+        .getCoursesForUserPage();
+    }
+
+    window.openCourse = openCourse;
+    window.goBackToCourses = goBackToCourses;
+    window.loadCourses = loadCourses;
+
+    // ========================================
     // FILTER & SEARCH
     // ========================================
     function filterTopics(category) {
@@ -788,6 +946,11 @@
               return getCategoryName(topic) === currentFilter;
             });
 
+      // Filter by current course if inside a course
+      if (currentViewMode === 'topics' && currentCourseId) {
+        baseTopics = baseTopics.filter(topic => topic.courseId === currentCourseId);
+      }
+
       if (currentStatusFilter !== 'all') {
         baseTopics = baseTopics.filter(function(topic) {
           const status = typeof getTopicStatus === 'function' ? getTopicStatus(topic, window.currentPageParams) : 'available';
@@ -795,14 +958,14 @@
           const isCompleted = status === 'completed' || progressData.completed === true;
           const progressPercent = Number(progressData.progress || 0);
           
-          if (currentStatusFilter === 'played') {
+          if (currentStatusFilter === 'completed' || currentStatusFilter === 'played') {
             return isCompleted;
           }
           if (currentStatusFilter === 'in_progress') {
-            return !isCompleted && status !== 'locked' && (progressPercent > 0 || status === 'current');
+            return progressPercent > 0 && !isCompleted;
           }
-          if (currentStatusFilter === 'unplayed') {
-            return !isCompleted && status !== 'locked' && progressPercent === 0 && status !== 'current';
+          if (currentStatusFilter === 'unplayed' || currentStatusFilter === 'available') {
+            return progressPercent === 0 && !isCompleted;
           }
           return true;
         });

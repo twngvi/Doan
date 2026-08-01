@@ -15,8 +15,6 @@ const TOPICS_CACHE_DURATION = 300; // Cache 5 phút (tính bằng giây trong Ca
  */
 function getAllTopicsIncludingHidden() {
   Logger.log("=== BẮT ĐẦU HÀM getAllTopics ===");
-  const auth = typeof requireAdminContext_ === "function" ? requireAdminContext_() : {success: true};
-  if (!auth.success) return { success: false, message: "Không có quyền admin" };
 
   try {
     // ⭐ Kiểm tra cache phía server
@@ -1228,10 +1226,51 @@ function getTopicsForUserPage() {
       });
     });
 
+    // ⭐ Also load courses data to send along
+    var coursesData = [];
+    try {
+      var SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+      var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var coursesSheet = ss.getSheetByName("Courses");
+      if (coursesSheet && coursesSheet.getLastRow() >= 2) {
+        var cData = coursesSheet.getDataRange().getValues();
+        var cHeaders = cData[0];
+        var cCol = {};
+        cHeaders.forEach(function(h, i) { cCol[String(h).trim()] = i; });
+        
+        for (var ci = 1; ci < cData.length; ci++) {
+          var crow = cData[ci];
+          var cid = cCol.courseId !== undefined ? crow[cCol.courseId] : null;
+          if (!cid) continue;
+          var cStatus = cCol.status !== undefined ? String(crow[cCol.status] || "").trim().toLowerCase() : "draft";
+          if (cStatus !== "published" && cStatus !== "active") continue;
+          
+          coursesData.push({
+            courseId: String(cid),
+            title: cCol.title !== undefined ? String(crow[cCol.title] || "") : "",
+            shortDescription: cCol.shortDescription !== undefined ? String(crow[cCol.shortDescription] || "") : "",
+            description: cCol.description !== undefined ? String(crow[cCol.description] || "") : "",
+            thumbnailUrl: cCol.thumbnailUrl !== undefined ? String(crow[cCol.thumbnailUrl] || "") : "",
+            level: cCol.level !== undefined ? String(crow[cCol.level] || "") : "",
+            category: cCol.category !== undefined ? String(crow[cCol.category] || "") : "",
+            order: cCol.order !== undefined ? Number(crow[cCol.order]) || 0 : 0,
+            status: cStatus
+          });
+        }
+        
+        coursesData.sort(function(a, b) {
+          return (a.order || 0) - (b.order || 0);
+        });
+      }
+    } catch(courseErr) {
+      Logger.log("Warning: Could not load courses: " + courseErr.toString());
+    }
+
     return {
       success: true,
       topics: enhancedTopics,
       progress: progressMap,
+      courses: coursesData,
       count: enhancedTopics.length
     };
   } catch (error) {
@@ -1581,6 +1620,103 @@ function getTopicsByCourseForAdmin(courseId) {
     return { success: true, topics: topics };
   } catch (error) {
     Logger.log("❌ Lỗi trong getTopicsByCourseForAdmin: " + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Get all courses for User Page (only published/active ones)
+ */
+function getCoursesForUserPage() {
+  try {
+    Logger.log("=== getCoursesForUserPage START ===");
+    
+    const cache = CacheService.getScriptCache();
+    const cachedCourses = cache.get("ALL_COURSES_CACHE_V3");
+    
+    let allCourses = [];
+    if (cachedCourses) {
+      Logger.log("Using cached courses");
+      allCourses = JSON.parse(cachedCourses);
+    } else {
+      // Use the SAME spreadsheet ID as getAllTopicsIncludingHidden
+      const SPREADSHEET_ID = "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      
+      const coursesSheet = ss.getSheetByName("Courses");
+      
+      if (!coursesSheet) {
+        Logger.log("❌ Sheet 'Courses' not found");
+        return { success: true, courses: [] };
+      }
+      
+      const coursesData = coursesSheet.getDataRange().getValues();
+      Logger.log("Courses sheet rows: " + coursesData.length);
+      
+      if (coursesData.length < 2) return { success: true, courses: [] };
+      
+      const cHeaders = coursesData[0];
+      const cCol = {};
+      cHeaders.forEach((h, i) => { cCol[String(h).trim()] = i; });
+      
+      Logger.log("Courses headers: " + JSON.stringify(cHeaders));
+      Logger.log("Courses column map: " + JSON.stringify(cCol));
+      
+      for (let i = 1; i < coursesData.length; i++) {
+        const row = coursesData[i];
+        const courseId = cCol.courseId !== undefined ? row[cCol.courseId] : null;
+        if (!courseId) continue;
+        
+        const status = cCol.status !== undefined ? String(row[cCol.status] || "").trim() : "draft";
+        Logger.log("Course " + i + ": id=" + courseId + ", title=" + (cCol.title !== undefined ? row[cCol.title] : "") + ", status=" + status);
+        
+        allCourses.push({
+          courseId: String(courseId),
+          title: cCol.title !== undefined ? String(row[cCol.title] || "") : "",
+          shortDescription: cCol.shortDescription !== undefined ? String(row[cCol.shortDescription] || "") : "",
+          description: cCol.description !== undefined ? String(row[cCol.description] || "") : "",
+          thumbnailUrl: cCol.thumbnailUrl !== undefined ? String(row[cCol.thumbnailUrl] || "") : "",
+          level: cCol.level !== undefined ? String(row[cCol.level] || "") : "",
+          category: cCol.category !== undefined ? String(row[cCol.category] || "") : "",
+          order: cCol.order !== undefined ? Number(row[cCol.order]) || 0 : 0,
+          status: status.toLowerCase(),
+          estimatedTime: cCol.estimatedTime !== undefined ? String(row[cCol.estimatedTime] || "") : "",
+          createdAt: cCol.createdAt !== undefined ? String(row[cCol.createdAt] || "") : "",
+          updatedAt: cCol.updatedAt !== undefined ? String(row[cCol.updatedAt] || "") : ""
+        });
+      }
+      
+      Logger.log("Total courses parsed: " + allCourses.length);
+      
+      // Save to cache for 15 minutes
+      try {
+        cache.put("ALL_COURSES_CACHE_V3", JSON.stringify(allCourses), 900);
+      } catch(e) {
+        Logger.log("Cache put error: " + e.toString());
+      }
+    }
+    
+    // Filter out draft/hidden courses for regular users
+    const visibleCourses = allCourses.filter(c => {
+      const st = String(c.status || "").toLowerCase().trim();
+      return st === "published" || st === "active";
+    });
+    
+    Logger.log("Visible courses (published/active): " + visibleCourses.length);
+    
+    // Sort courses
+    visibleCourses.sort((a, b) => {
+      if (a.category !== b.category) {
+        return (a.category || "").localeCompare(b.category || "", "vi");
+      }
+      return (a.order || 0) - (b.order || 0);
+    });
+    
+    Logger.log("=== getCoursesForUserPage END - returning " + visibleCourses.length + " courses ===");
+    return { success: true, courses: visibleCourses };
+  } catch (error) {
+    Logger.log("❌ Lỗi trong getCoursesForUserPage: " + error.toString());
+    Logger.log("Stack: " + error.stack);
     return { success: false, message: error.toString() };
   }
 }
