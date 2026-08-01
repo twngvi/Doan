@@ -185,16 +185,19 @@ function initializeTopicEditor() {
   initEditMode();
 
   // Bind order preview events
+  const courseInput = document.getElementById('topicCourseId');
   const catInput = document.getElementById('topicCategory');
   const orderInput = document.getElementById('topicOrder');
   const titleInput = document.getElementById('topicTitle');
-  if (catInput) catInput.addEventListener('input', function() {
+  
+  function updateOrderAndPreview() {
     // If we are in create mode, suggest the next order number
-    if (!isEditMode && catInput.value && !orderInput.value) {
+    if (!isEditMode && courseInput && courseInput.value && !orderInput.value) {
       if (allTopicsForPrereq && allTopicsForPrereq.length > 0) {
-        const catTopics = allTopicsForPrereq.filter(t => t.category === catInput.value);
-        if (catTopics.length > 0) {
-          const maxOrder = Math.max(...catTopics.map(t => parseInt(t.order) || 0));
+        // Filter ONLY by courseId, since order is per-course
+        const filteredTopics = allTopicsForPrereq.filter(t => t.courseId === courseInput.value);
+        if (filteredTopics.length > 0) {
+          const maxOrder = Math.max(...filteredTopics.map(t => parseInt(t.order) || 0));
           if (!isNaN(maxOrder) && maxOrder < 999) {
             orderInput.value = maxOrder + 1;
           }
@@ -204,7 +207,10 @@ function initializeTopicEditor() {
       }
     }
     renderTopicOrderPreview();
-  });
+  }
+
+  if (courseInput) courseInput.addEventListener('change', updateOrderAndPreview);
+  if (catInput) catInput.addEventListener('input', updateOrderAndPreview);
   if (orderInput) orderInput.addEventListener('input', renderTopicOrderPreview);
   if (titleInput) titleInput.addEventListener('input', renderTopicOrderPreview);
 
@@ -212,6 +218,41 @@ function initializeTopicEditor() {
   if (!isEditMode) {
     editor.focus();
   }
+  
+  // Populate courses dropdown
+  populateTopicCourses();
+}
+
+function populateTopicCourses() {
+  const courseSelect = document.getElementById('topicCourseId');
+  if (!courseSelect) return;
+  
+  // Try to use allCourses from content_management_scripts if available
+  if (typeof allCourses !== 'undefined' && allCourses.length > 0) {
+    renderCourseOptions(allCourses, courseSelect);
+  } else {
+    // Fallback to fetch from server
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (response && response.success && response.courses) {
+          renderCourseOptions(response.courses, courseSelect);
+        }
+      })
+      .getAllCoursesForAdmin();
+  }
+}
+
+function renderCourseOptions(courses, selectEl) {
+  const currentVal = selectEl.dataset.selectedValue || selectEl.value;
+  const firstOption = selectEl.options.length > 0 ? selectEl.options[0].outerHTML : '<option value="">-- Chọn khóa học --</option>';
+  
+  let html = firstOption;
+  courses.forEach(c => {
+    html += `<option value="${c.courseId}">${escapeHtml(c.title)}</option>`;
+  });
+  
+  selectEl.innerHTML = html;
+  if (currentVal) selectEl.value = currentVal;
 }
 
 // ========================================
@@ -1794,7 +1835,11 @@ function populateEditForm(data) {
 
   // Fill form fields
   document.getElementById('topicId').value = topic.topicId || '';
-  document.getElementById('topicCourseId').value = topic.courseId || '';
+  const courseEl = document.getElementById('topicCourseId');
+  if (courseEl) {
+    courseEl.dataset.selectedValue = topic.courseId || '';
+    courseEl.value = topic.courseId || '';
+  }
     document.getElementById('topicTitle').value = topic.title || '';
   document.getElementById('topicCategory').value = topic.category || '';
   document.getElementById('topicDescription').value = topic.description || '';
@@ -2710,7 +2755,8 @@ function toggleTopicOrderPreview() {
 }
 
 function renderTopicOrderPreview() {
-  const categoryInput = document.getElementById('topicCategory').value.trim();
+  const courseInput = document.getElementById('topicCourseId');
+  const courseId = courseInput ? courseInput.value.trim() : '';
   const orderInput = document.getElementById('topicOrder').value;
   const titleInput = document.getElementById('topicTitle').value.trim() || 'Bài đang tạo';
   const container = document.getElementById('topicOrderPreviewContainer');
@@ -2723,9 +2769,9 @@ function renderTopicOrderPreview() {
   // Preserve collapsed state
   const isCollapsed = container.classList.contains('is-collapsed');
   
-  if (!categoryInput) {
+  if (!courseId) {
     container.className = 'topic-order-preview is-empty' + (isCollapsed ? ' is-collapsed' : '');
-    titleEl.textContent = 'Chọn danh mục để xem thứ tự bài học';
+    titleEl.textContent = 'Chọn khóa học để xem thứ tự bài học';
     countEl.textContent = '';
     listEl.innerHTML = '';
     return;
@@ -2741,15 +2787,15 @@ function renderTopicOrderPreview() {
   
   container.className = 'topic-order-preview' + (isCollapsed ? ' is-collapsed' : '');
   
-  // Lọc theo danh mục
-  let categoryTopics = allTopicsForPrereq.filter(t => t.category === categoryInput);
+  // Filter by courseId ONLY
+  let courseTopics = allTopicsForPrereq.filter(t => t.courseId === courseId);
   
   // Loại bỏ bài đang chỉnh sửa khỏi danh sách (để ghép nó vào vị trí mới)
   if (isEditMode && editingTopicId) {
-    categoryTopics = categoryTopics.filter(t => t.topicId !== editingTopicId);
+    courseTopics = courseTopics.filter(t => t.topicId !== editingTopicId);
   }
   
-  let previewList = categoryTopics.map(t => {
+  let previewList = courseTopics.map(t => {
      return {
        ...t,
        parsedOrder: parseInt(t.order) || 999
@@ -2798,7 +2844,8 @@ function renderTopicOrderPreview() {
   
   previewList.sort((a, b) => a.parsedOrder - b.parsedOrder);
   
-  titleEl.textContent = `THỨ TỰ BÀI HỌC — ${categoryInput.toUpperCase()}`;
+  const selectedCourseTitle = courseInput.options && courseInput.selectedIndex > 0 ? courseInput.options[courseInput.selectedIndex].text : courseId;
+  titleEl.textContent = `THỨ TỰ BÀI HỌC — ${selectedCourseTitle.toUpperCase()}`;
   countEl.textContent = `${previewList.length} bài`;
   
   let html = '';
@@ -2826,7 +2873,11 @@ function renderTopicOrderPreview() {
 
 function resetForm() {
   document.getElementById('topicId').value = 'TPC_' + new Date().getTime();
-  document.getElementById('topicCourseId').value = '';
+  const courseEl = document.getElementById('topicCourseId');
+  if (courseEl) {
+    courseEl.dataset.selectedValue = '';
+    courseEl.value = '';
+  }
   document.getElementById('topicTitle').value = '';
   document.getElementById('topicCategory').value = '';
   document.getElementById('topicDescription').value = '';
