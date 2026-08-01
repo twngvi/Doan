@@ -3868,30 +3868,30 @@ function showLoginSuccessScreen(user, redirectPage) {
   const doRedirect = () => {
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.5s ease';
+    
+    // Chạy các tác vụ nặng (ghi lịch sử, streak...) ở chế độ nền TRƯỚC KHI reload
+    if (typeof google !== "undefined" && google.script && user && user.email) {
+      google.script.run
+        .withFailureHandler(function (e) { console.warn("Post login tasks failed:", e); })
+        .runPostLoginTasks({
+          userId: user.userId,
+          email: user.email
+        });
+    }
+
     setTimeout(() => {
       if (document.body.contains(overlay)) {
         document.body.removeChild(overlay);
       }
       
-      // Mở trang
-      showPage(targetPage, {}, false);
-      if (targetPage === "page-dashboard" && typeof loadDashboardData === "function") {
-        try { loadDashboardData(); } catch(e) {}
-      }
-      
-      // Bật session infrastructure sau khi chuyển trang
-      if (typeof startSessionInfrastructure === "function") {
-        startSessionInfrastructure();
-      }
-      
-      // Chạy các tác vụ nặng (ghi lịch sử, streak...) ở chế độ nền
-      if (typeof google !== "undefined" && google.script && user && user.email) {
-        google.script.run
-          .withFailureHandler(function (e) { console.warn("Post login tasks failed:", e); })
-          .runPostLoginTasks({
-            userId: user.userId,
-            email: user.email
-          });
+      // Full page reload để khôi phục toàn bộ session data và trigger các logic khởi tạo của app
+      try {
+        const cleanTargetPage = targetPage.replace('page-', '');
+        const url = new URL(window.top.location.href);
+        url.searchParams.set('page', cleanTargetPage);
+        window.top.location.href = url.toString();
+      } catch (e) {
+        window.location.reload();
       }
     }, 500);
   };
