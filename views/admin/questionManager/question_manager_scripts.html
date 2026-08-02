@@ -1,4 +1,6 @@
 <script>
+let qmCourses = [];
+let qmSelectedCourseId = "";
 let qmTopics = [];
 let qmCurrentQuestions = [];
 let qmQuestionLoadSequence = 0;
@@ -39,6 +41,7 @@ function initQuestionManager() {
     qmLoadTopics();
   }
   
+  qmLoadCourseFilter();
   qmCheckGeminiKeyStatus();
   
   // Set up observer in case user navigates away and comes back
@@ -111,7 +114,7 @@ function qmLoadTopics(showTopicList = true, forceReload = false) {
 
   if (!forceReload && cacheStillValid) {
     if (showTopicList) {
-      qmRenderTopicCards(qmTopics);
+      qmApplyTopicListFilters();
       qmShowTopicListView();
     }
     return;
@@ -137,7 +140,7 @@ function qmLoadTopics(showTopicList = true, forceReload = false) {
         qmTopicsLoadedAt = Date.now();
         qmTopics = response.topics;
         if (showTopicList) {
-          qmRenderTopicCards(qmTopics);
+          qmApplyTopicListFilters();
           qmShowTopicListView();
         }
         return;
@@ -193,16 +196,19 @@ function qmRenderTopicCards(topicsList) {
 
   grid.innerHTML = "";
 
-  if (!Array.isArray(topicsList) || topicsList.length === 0) {
-    grid.innerHTML = `
-      <div class="qm-topic-grid-empty">
-        <span class="material-symbols-sharp">search_off</span>
-        <strong>Không tìm thấy Topic</strong>
-        <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
-      </div>
-    `;
-    return;
-  }
+    if (!Array.isArray(topicsList) || topicsList.length === 0) {
+      grid.innerHTML = `
+        <div class="qm-topic-grid-empty">
+          <span class="material-symbols-sharp">search_off</span>
+          <strong>Không tìm thấy Topic</strong>
+          <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
+        </div>
+      `;
+      grid.style.display = "block";
+      return;
+    }
+    
+    grid.style.display = "";
 
   const fragment = document.createDocumentFragment();
 
@@ -332,20 +338,107 @@ function qmGetSelectedTopicId() {
   return qmSelectedTopicIdStr;
 }
 
+function qmLoadCourseFilter() {
+  const select = document.getElementById("qmCourseFilter");
+  if (!select) return;
+
+  select.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function (response) {
+      const courses = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.courses)
+          ? response.courses
+          : [];
+
+      qmCourses = courses;
+      select.innerHTML = "";
+
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Chọn khóa học để xem Topic";
+      select.appendChild(placeholder);
+
+      courses.forEach(function (course) {
+        const courseId = String(course.courseId || course.id || "").trim();
+        const title = String(course.title || course.name || "Khóa học").trim();
+
+        if (!courseId) return;
+
+        const option = document.createElement("option");
+        option.value = courseId;
+        option.textContent = title;
+        select.appendChild(option);
+      });
+
+      select.disabled = false;
+      qmApplyTopicListFilters();
+    })
+    .withFailureHandler(function () {
+      select.disabled = true;
+      select.innerHTML = '<option value="">Không tải được khóa học</option>';
+    })
+    .getAllCoursesForAdmin();
+}
+
+function qmOnCourseFilterChange() {
+  const select = document.getElementById("qmCourseFilter");
+  const box = document.getElementById("qmCourseFilterBox");
+
+  qmSelectedCourseId = String(select?.value || "").trim();
+
+  if (box) {
+    box.classList.toggle("is-selected", Boolean(qmSelectedCourseId));
+  }
+
+  qmApplyTopicListFilters();
+}
+
 function qmOnTopicCardSearch() {
+  qmApplyTopicListFilters();
+}
+
+function qmApplyTopicListFilters() {
+  const grid = document.getElementById("qmTopicGrid");
+  if (!grid) return;
+
+  if (!qmSelectedCourseId) {
+    qmRenderCourseRequiredState();
+    return;
+  }
+
   const input = document.getElementById("qmTopicCardSearchInput");
-  if (!input) return;
-  const keyword = input.value.trim().toLowerCase();
-  
-  const filteredTopics = qmTopics.filter(topic => {
-    return (
+  const keyword = String(input?.value || "").trim().toLowerCase();
+
+  const filtered = qmTopics.filter(function (topic) {
+    const topicCourseId = String(topic.courseId || "").trim();
+    const matchesCourse = topicCourseId === qmSelectedCourseId;
+
+    const matchesKeyword =
+      !keyword ||
       String(topic.title || "").toLowerCase().includes(keyword) ||
       String(topic.description || "").toLowerCase().includes(keyword) ||
-      String(topic.category || "").toLowerCase().includes(keyword)
-    );
+      String(topic.category || "").toLowerCase().includes(keyword);
+
+    return matchesCourse && matchesKeyword;
   });
 
-  qmRenderTopicCards(filteredTopics);
+  qmRenderTopicCards(filtered);
+}
+
+function qmRenderCourseRequiredState() {
+  const grid = document.getElementById("qmTopicGrid");
+  if (!grid) return;
+
+  grid.innerHTML = `
+    <div class="qm-topic-grid-empty">
+      <span class="material-symbols-sharp">school</span>
+      <strong>Vui lòng chọn khóa học</strong>
+      <p>Chọn một khóa học phía trên để hiển thị các Topic Quiz tương ứng.</p>
+    </div>
+  `;
+  grid.style.display = "block";
 }
 
 function qmShowTopicListView() {
@@ -445,7 +538,7 @@ function qmBackToTopicList() {
   }
 
   if (qmTopics.length > 0) {
-    qmRenderTopicCards(qmTopics);
+    qmApplyTopicListFilters();
   } else {
     qmLoadTopics(true);
   }

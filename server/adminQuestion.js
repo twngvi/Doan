@@ -76,6 +76,7 @@ function adminGetTopicsWithQuizStatus() {
         title: topic.title,
         description: topic.description,
         category: topic.category,
+        courseId: topic.courseId,
         quizStatus: topic.quizStatus,
         quizXpReward: topic.quizXpReward,
         questionStats: stats

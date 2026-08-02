@@ -1,4 +1,6 @@
 <script>
+  let mcCourses = [];
+  let mcSelectedCourseId = "";
   let mcTopics = [];
   let mcCurrentCards = [];
   let mcFilterStatus = 'all';
@@ -35,6 +37,7 @@
       mcLoadTopics();
     }
 
+    mcLoadCourseFilter();
     mcCheckGeminiKeyStatus();
 
     // Set up observer in case user navigates away and comes back
@@ -102,7 +105,7 @@
           ? response.topics
           : [];
 
-        mcRenderTopicCards(mcTopics);
+        mcApplyTopicListFilters();
       })
       .withFailureHandler(function (error) {
         mcHideTopicListLoading();
@@ -125,8 +128,11 @@
           <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
         </div>
       `;
+      grid.style.display = "block";
       return;
     }
+    
+    grid.style.display = "";
 
     const fragment = document.createDocumentFragment();
 
@@ -315,7 +321,7 @@
     if (clearSearchBtn) clearSearchBtn.style.display = "none";
 
     if (mcTopics.length > 0) {
-      mcRenderTopicCards(mcTopics);
+      mcApplyTopicListFilters();
     } else {
       mcLoadTopics(true);
     }
@@ -329,28 +335,106 @@
 
   let mcTopicSearchTimer = null;
 
+  function mcLoadCourseFilter() {
+    const select = document.getElementById("mcCourseFilter");
+    if (!select) return;
+    select.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        const courses = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.courses)
+            ? response.courses
+            : [];
+
+        mcCourses = courses;
+        select.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Chọn khóa học để xem Topic";
+        select.appendChild(placeholder);
+
+        courses.forEach(function (course) {
+          const courseId = String(course.courseId || course.id || "").trim();
+          const title = String(course.title || course.name || "Khóa học").trim();
+          if (!courseId) return;
+
+          const option = document.createElement("option");
+          option.value = courseId;
+          option.textContent = title;
+          select.appendChild(option);
+        });
+
+        select.disabled = false;
+        mcApplyTopicListFilters();
+      })
+      .withFailureHandler(function () {
+        select.disabled = true;
+        select.innerHTML = '<option value="">Không tải được khóa học</option>';
+      })
+      .getAllCoursesForAdmin();
+  }
+
+  function mcOnCourseFilterChange() {
+    const select = document.getElementById("mcCourseFilter");
+    const box = document.getElementById("mcCourseFilterBox");
+
+    mcSelectedCourseId = String(select?.value || "").trim();
+
+    if (box) {
+      box.classList.toggle("is-selected", Boolean(mcSelectedCourseId));
+    }
+    mcApplyTopicListFilters();
+  }
+
   function mcOnTopicCardSearch() {
     clearTimeout(mcTopicSearchTimer);
-
     mcTopicSearchTimer = setTimeout(function () {
-      const input = document.getElementById("mcTopicCardSearchInput");
-      const keyword = String(input?.value || "")
-        .trim()
-        .toLowerCase();
-
-      if (!keyword) {
-        mcRenderTopicCards(mcTopics);
-        return;
-      }
-
-      const filtered = mcTopics.filter(function (topic) {
-        return String(topic.title || "")
-          .toLowerCase()
-          .includes(keyword);
-      });
-
-      mcRenderTopicCards(filtered);
+      mcApplyTopicListFilters();
     }, 150);
+  }
+
+  function mcApplyTopicListFilters() {
+    const grid = document.getElementById("mcTopicGrid");
+    if (!grid) return;
+
+    if (!mcSelectedCourseId) {
+      mcRenderCourseRequiredState();
+      return;
+    }
+
+    const input = document.getElementById("mcTopicCardSearchInput");
+    const keyword = String(input?.value || "").trim().toLowerCase();
+
+    const filtered = mcTopics.filter(function (topic) {
+      const topicCourseId = String(topic.courseId || "").trim();
+      const matchesCourse = topicCourseId === mcSelectedCourseId;
+      const matchesKeyword =
+        !keyword ||
+        String(topic.title || "").toLowerCase().includes(keyword) ||
+        String(topic.description || "").toLowerCase().includes(keyword) ||
+        String(topic.category || "").toLowerCase().includes(keyword);
+
+      return matchesCourse && matchesKeyword;
+    });
+
+    mcRenderTopicCards(filtered);
+  }
+
+  function mcRenderCourseRequiredState() {
+    const grid = document.getElementById("mcTopicGrid");
+    if (!grid) return;
+
+    grid.innerHTML = `
+      <div class="mc-topic-grid-empty">
+        <span class="material-symbols-sharp">school</span>
+        <strong>Vui lòng chọn khóa học</strong>
+        <p>Chọn một khóa học phía trên để hiển thị các Topic Matching tương ứng.</p>
+      </div>
+    `;
+    grid.style.display = "block";
   }
 
   function mcGetSelectedTopicId() {
@@ -1082,29 +1166,43 @@
     const icon = document.getElementById("mcGeminiKeyIcon");
     const text = document.getElementById("mcGeminiKeyText");
 
-    if (!btn) return;
+    if (!btn || !icon || !text) return;
 
-    btn.style.opacity = '0.5';
+    btn.classList.add("is-checking");
+    btn.classList.remove("is-ready", "is-error");
 
     google.script.run
-      .withSuccessHandler((res) => {
-        btn.style.opacity = '1';
-        if (res && res.success && res.hasKey && res.isValid) {
-          btn.style.background = '#dcfce7';
-          btn.style.color = '#166534';
-          btn.style.borderColor = '#bbf7d0';
-          icon.textContent = 'key';
-          text.textContent = 'Gemini Key Sẵn Sàng';
+      .withSuccessHandler(function (res) {
+        btn.classList.remove("is-checking");
+
+        const isReady =
+          res &&
+          res.success &&
+          res.hasKey &&
+          res.isValid;
+
+        btn.classList.toggle("is-ready", isReady);
+        btn.classList.toggle("is-error", !isReady);
+
+        if (isReady) {
+          icon.textContent = "key";
+          text.textContent = "Gemini Key Sẵn Sàng";
         } else {
-          btn.style.background = '#fee2e2';
-          btn.style.color = '#b91c1c';
-          btn.style.borderColor = '#fecaca';
-          icon.textContent = 'key_off';
-          text.textContent = res ? (res.hasKey ? 'Key Lỗi/Hết Hạn' : 'Thiếu Gemini Key') : 'Thiếu Gemini Key';
+          icon.textContent = "key_off";
+
+          text.textContent = res
+            ? res.hasKey
+              ? "Key Lỗi/Hết Hạn"
+              : "Thiếu Gemini Key"
+            : "Thiếu Gemini Key";
         }
       })
-      .withFailureHandler(() => {
-        btn.style.opacity = '1';
+      .withFailureHandler(function () {
+        btn.classList.remove("is-checking");
+        btn.classList.add("is-error");
+
+        icon.textContent = "key_off";
+        text.textContent = "Không kiểm tra được Key";
       })
       .getUserGeminiKeyStatus(null);
   }
