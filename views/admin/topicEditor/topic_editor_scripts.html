@@ -1691,13 +1691,12 @@ async function publishTopic() {
           // Show success message with doc link - use simple alert if dialog fails
           setTimeout(function() {
             try {
-              var message = '✅ Topic đã được publish thành công!\n\n' +
-                '📄 Doc ID: ' + result.docId + '\n' +
-                '🔗 Link: ' + result.docUrl + '\n\n' +
-                'Topic đã được thêm vào MasterDB.';
+              var message = '🎉 Bài học "' + title + '" đã được tạo và lưu thành công!\n\n' +
+                'Bạn có thể xem trước nội dung hoặc chỉnh sửa thêm nếu cần.\n\n' +
+                '🔗 Link Google Doc lưu trữ: ' + result.docUrl;
 
               if (typeof window.showAppAlert === 'function') {
-                window.showAppAlert(message, { title: 'Publish thành công', confirmText: 'Đã hiểu' })
+                window.showAppAlert(message, { title: 'Lưu bài học thành công', confirmText: 'Đã hiểu' })
                   .then(function() {
                     askCreateNew();
                   })
@@ -1717,12 +1716,18 @@ async function publishTopic() {
             function askCreateNew() {
               try {
                 if (typeof window.showAppConfirm === 'function') {
-                  window.showAppConfirm('Bạn có muốn tạo topic mới?', {
-                    title: 'Tạo topic mới',
+                  window.showAppConfirm('Bạn có muốn tiếp tục tạo bài học mới không?', {
+                    title: 'Tạo bài học mới',
                     confirmText: 'Tạo mới',
-                    cancelText: 'Không'
+                    cancelText: 'Trở về danh sách'
                   }).then(function(shouldCreateNew) {
-                    if (shouldCreateNew) resetForm();
+                    if (shouldCreateNew) {
+                      resetForm();
+                    } else {
+                      if (typeof goBackToAdmin === 'function') {
+                        goBackToAdmin();
+                      }
+                    }
                   }).catch(function(e) {
                     console.warn('showAppConfirm error:', e);
                   });
