@@ -372,7 +372,7 @@
       return;
     }
 
-    if (prefetchedMindmap) {
+    if (prefetchedMindmap && !forceRegenerate) {
       renderMindmapContent(prefetchedMindmap);
       return;
     }
@@ -381,11 +381,39 @@
     document.getElementById("mindmap-loading").style.display = "block";
     document.getElementById("mindmap-error").style.display = "none";
     document.getElementById("mindmap-content").style.display = "none";
+    document.querySelector("#mindmap-loading .quiz-loading-text").textContent = "Đang tải Sơ đồ tư duy...";
+    document.querySelector("#mindmap-loading .quiz-loading-hint").textContent = "Đang lấy dữ liệu từ hệ thống";
 
     google.script.run
       .withSuccessHandler(function (response) {
-        document.getElementById("mindmap-loading").style.display = "none";
+        if (response && response.success && response.data) {
+          document.getElementById("mindmap-loading").style.display = "none";
+          let mindmapData = response.data;
+          if (typeof mindmapData === "string") {
+            try { mindmapData = JSON.parse(mindmapData); } catch(e) {}
+          }
+          renderMindmapContent(mindmapData);
+        } else {
+          // Fallback to User AI Generation
+          console.log("No admin mindmap found, generating via User AI...");
+          generateMindmapViaUserAI();
+        }
+      })
+      .withFailureHandler(function (error) {
+        // Fallback to User AI Generation
+        console.log("Error loading admin mindmap, generating via User AI...");
+        generateMindmapViaUserAI();
+      })
+      .getPublishedMindmap(currentLessonData.topicId);
+  }
 
+  function generateMindmapViaUserAI() {
+    document.querySelector("#mindmap-loading .quiz-loading-text").textContent = "🧠 AI đang tạo Mindmap...";
+    document.querySelector("#mindmap-loading .quiz-loading-hint").textContent = "Quá trình này có thể mất 10-30 giây";
+    
+    google.script.run
+      .withSuccessHandler(function(response) {
+        document.getElementById("mindmap-loading").style.display = "none";
         if (response && response.success && response.data) {
           let mindmapData = response.data;
           if (typeof mindmapData === "string") {
@@ -393,14 +421,14 @@
           }
           renderMindmapContent(mindmapData);
         } else {
-          showMindmapError(response?.message || "Không thể tải Mindmap.");
+          showMindmapError(response?.message || "Không thể tải Sơ đồ tư duy (AI)");
         }
       })
-      .withFailureHandler(function (error) {
+      .withFailureHandler(function(error) {
         document.getElementById("mindmap-loading").style.display = "none";
-        showMindmapError(error?.message || "Lỗi kết nối server");
+        showMindmapError(error?.message || "Lỗi kết nối server (AI)");
       })
-      .getPublishedMindmap(currentLessonData.topicId);
+      .generateUserMindmap(currentLessonData.topicId);
   }
 
   function renderMindmapContent(mindmapData) {

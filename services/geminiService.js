@@ -294,14 +294,29 @@ const GeminiService = {
    */
   getApiKey: function (userContext) {
     try {
-      const user = this.resolveAuthenticatedUser(userContext);
-      const record = this._findUserKeyRecord(user.userId);
-      if (!record || !record.values[4]) {
-        return null;
+      let apiKey = null;
+
+      // 1. Thử lấy Key cá nhân của User
+      try {
+        const user = this.resolveAuthenticatedUser(userContext);
+        const record = this._findUserKeyRecord(user.userId);
+        if (record && record.values[4]) {
+          const decrypted = this._decryptApiKey(record.values[4]);
+          apiKey = this._normalizeApiKey(decrypted);
+        }
+      } catch (e) {
+        Logger.log("Bỏ qua lỗi lấy key cá nhân (có thể do Admin gọi trực tiếp): " + e.toString());
       }
 
-      const decrypted = this._decryptApiKey(record.values[4]);
-      return this._normalizeApiKey(decrypted) || null;
+      // 2. Nếu không có Key cá nhân, fallback về Key hệ thống (Admin)
+      if (!apiKey) {
+        const systemKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+        if (systemKey) {
+          apiKey = this._normalizeApiKey(systemKey);
+        }
+      }
+
+      return apiKey || null;
     } catch (error) {
       Logger.log("Error getting API key: " + error.toString());
       return null;

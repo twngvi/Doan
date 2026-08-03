@@ -1929,6 +1929,8 @@ function populateEditForm(data) {
   console.log('[TopicEditor] Edit form populated successfully');
   
   renderTopicOrderPreview();
+  showAdminMindmapSection();
+  loadExistingMindmap(topic.topicId);
 }
 
 /**
@@ -3529,4 +3531,196 @@ window.showUnifiedTopicEditorLoader = showUnifiedTopicEditorLoader;
 window.showUnifiedTopicEditorOverlay = showUnifiedTopicEditorOverlay;
 window.hideUnifiedTopicEditorLoader = hideUnifiedTopicEditorLoader;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
+// ========================================
+// MINDMAP ADMIN LOGIC
+// ========================================
+
+let adminMarkmapObj = null;
+
+function showAdminMindmapSection() {
+  const section = document.getElementById('adminMindmapSection');
+  if (section) section.style.display = 'block';
+}
+
+function renderAdminMindmap(markdown) {
+  if (!window.markmap) {
+    showToast('Thư viện Markmap chưa tải xong', 'error');
+    return;
+  }
+  
+  const { Transformer, Markmap, loadCSS, loadJS } = window.markmap;
+  const transformer = new Transformer();
+  
+  const { root, features } = transformer.transform(markdown);
+  const { styles, scripts } = transformer.getUsedAssets(features);
+  
+  if (styles) loadCSS(styles);
+  if (scripts) loadJS(scripts, { getMarkmap: () => window.markmap });
+  
+  // MUST show the containers BEFORE calling Markmap.create so it can compute dimensions
+  document.getElementById('mindmapPreviewArea').style.display = 'block';
+  document.getElementById('mindmapEditArea').style.display = 'block';
+  document.getElementById('btnSaveMindmap').style.display = 'inline-block';
+  document.getElementById('mindmapRawMarkdown').value = markdown;
+
+  const svg = document.getElementById('adminMindmapSvg');
+  if (!svg) return;
+  svg.innerHTML = '';
+  
+  adminMarkmapObj = Markmap.create(svg, {
+    autoFit: true,
+    color: (node) => {
+      // Basic color scheme
+      const depthColors = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#673ab7'];
+      return depthColors[node.depth % depthColors.length];
+    }
+  }, root);
+  
+  // Try to fit again after a slight delay for proper sizing
+  setTimeout(() => fitMindmap(), 100);
+}
+
+function zoomMindmapIn() {
+  if (adminMarkmapObj) {
+    adminMarkmapObj.rescale(1.2);
+  }
+}
+
+function zoomMindmapOut() {
+  if (adminMarkmapObj) {
+    adminMarkmapObj.rescale(0.8);
+  }
+}
+
+function fitMindmap() {
+  if (adminMarkmapObj) {
+    adminMarkmapObj.fit();
+  }
+}
+
+function generateMindmap() {
+  const topicId = document.getElementById('topicId').value;
+  let content = document.getElementById('contentEditor').innerText;
+  
+  if (!content || content.trim().length < 50) {
+    showToast('Nội dung bài học quá ngắn để tạo sơ đồ tư duy. Vui lòng soạn thảo bài học trước.', 'warning');
+    return;
+  }
+  
+  showUnifiedTopicEditorLoader('Đang phân tích nội dung và tạo Sơ đồ tư duy bằng AI...');
+  
+  // Add artificial delay for loading state visibility
+  setTimeout(() => {
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideUnifiedTopicEditorLoader();
+        if (response && response.success) {
+          renderAdminMindmap(response.mindmapMarkdown);
+          showToast('Tạo sơ đồ tư duy thành công!', 'success');
+          document.getElementById('mindmapStatusText').textContent = 'Chưa lưu';
+          document.getElementById('mindmapStatusText').style.color = '#eab308'; // yellow-500
+        } else {
+          showToast(response.message || 'Lỗi khi tạo sơ đồ tư duy', 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideUnifiedTopicEditorLoader();
+        showToast('Lỗi kết nối server: ' + error.message, 'error');
+      })
+      .generateAdminMindmap(topicId, content, null);
+  }, 500);
+}
+
+function editMindmapWithPrompt() {
+  const promptInput = document.getElementById('mindmapPromptInput');
+  const prompt = promptInput.value.trim();
+  
+  if (!prompt) {
+    showToast('Vui lòng nhập lệnh chỉnh sửa', 'warning');
+    return;
+  }
+  
+  const topicId = document.getElementById('topicId').value;
+  const currentMarkdown = document.getElementById('mindmapRawMarkdown').value;
+  
+  if (!currentMarkdown) {
+    showToast('Chưa có sơ đồ tư duy để chỉnh sửa', 'warning');
+    return;
+  }
+  
+  showUnifiedTopicEditorLoader('Đang chỉnh sửa Sơ đồ tư duy theo yêu cầu...');
+  
+  setTimeout(() => {
+    google.script.run
+      .withSuccessHandler(function(response) {
+        hideUnifiedTopicEditorLoader();
+        if (response && response.success) {
+          renderAdminMindmap(response.mindmapMarkdown);
+          promptInput.value = ''; // clear input
+          showToast('Cập nhật sơ đồ tư duy thành công!', 'success');
+          document.getElementById('mindmapStatusText').textContent = 'Đã chỉnh sửa, chưa lưu';
+          document.getElementById('mindmapStatusText').style.color = '#eab308';
+        } else {
+          showToast(response.message || 'Lỗi khi chỉnh sửa sơ đồ tư duy', 'error');
+        }
+      })
+      .withFailureHandler(function(error) {
+        hideUnifiedTopicEditorLoader();
+        showToast('Lỗi kết nối server: ' + error.message, 'error');
+      })
+      .generateAdminMindmap(topicId, currentMarkdown, prompt);
+  }, 500);
+}
+
+function saveMindmap() {
+  const topicId = document.getElementById('topicId').value;
+  const markdown = document.getElementById('mindmapRawMarkdown').value;
+  
+  if (!markdown) {
+    showToast('Không có dữ liệu Mindmap để lưu', 'warning');
+    return;
+  }
+  
+  showUnifiedTopicEditorLoader('Đang lưu Sơ đồ tư duy...');
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideUnifiedTopicEditorLoader();
+      if (response && response.success) {
+        showToast('Lưu sơ đồ tư duy thành công!', 'success');
+        document.getElementById('mindmapStatusText').textContent = 'Đã lưu';
+        document.getElementById('mindmapStatusText').style.color = '#22c55e'; // green-500
+      } else {
+        showToast(response.message || 'Lỗi khi lưu sơ đồ tư duy', 'error');
+      }
+    })
+    .withFailureHandler(function(error) {
+      hideUnifiedTopicEditorLoader();
+      showToast('Lỗi kết nối server: ' + error.message, 'error');
+    })
+    .saveAdminMindmap(topicId, markdown);
+}
+
+function loadExistingMindmap(topicId) {
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success && response.markdown) {
+        renderAdminMindmap(response.markdown);
+        document.getElementById('mindmapStatusText').textContent = 'Đã tải từ CSDL';
+        document.getElementById('mindmapStatusText').style.color = '#3b82f6'; // blue-500
+      }
+    })
+    .getTopicMindmap(topicId);
+}
+
+// Ensure mindmap window functions are exposed
+window.generateMindmap = generateMindmap;
+window.editMindmapWithPrompt = editMindmapWithPrompt;
+window.saveMindmap = saveMindmap;
+window.zoomMindmapIn = zoomMindmapIn;
+window.zoomMindmapOut = zoomMindmapOut;
+window.fitMindmap = fitMindmap;
+window.showAdminMindmapSection = showAdminMindmapSection;
+window.loadExistingMindmap = loadExistingMindmap;
+
 </script>

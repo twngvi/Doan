@@ -243,7 +243,6 @@
       </div>
     </div>
 
-    <!-- Content Editor (contenteditable) -->
     <div 
       class="content-editor" 
       id="contentEditor" 
@@ -251,6 +250,50 @@
       spellcheck="false"
       data-placeholder="Nhập nội dung bài học tại đây. Gợi ý: dùng H1/H2 để chia mục, chèn Example/Checkpoint để học viên dễ theo dõi."
     ></div>
+  </div>
+
+  <!-- Admin Mindmap Editor Section -->
+  <div class="editor-section" id="adminMindmapSection" style="margin-top: 20px;">
+    <div class="editor-section-title">
+      🧠 Sơ đồ tư duy (Mindmap)
+      <span class="badge" style="background: #e8f0fe; color: #1a73e8; font-size: 12px; padding: 2px 6px; border-radius: 4px; margin-left: 8px;">AI Generated</span>
+    </div>
+    
+    <div class="mindmap-admin-container" style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #fff;">
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <button class="btn btn-secondary" id="btnGenerateMindmap" onclick="generateMindmap()">
+          ✨ Tạo Mindmap bằng AI
+        </button>
+        <button class="btn btn-primary" id="btnSaveMindmap" onclick="saveMindmap()" style="display: none;">
+          💾 Lưu Mindmap
+        </button>
+        <span id="mindmapStatusText" style="margin-left: auto; align-self: center; font-size: 13px; color: #64748b;"></span>
+      </div>
+
+      <!-- Preview Area -->
+      <div id="mindmapPreviewArea" style="display: none; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; position: relative;">
+        <svg id="adminMindmapSvg" style="width: 100%; height: 400px;"></svg>
+        <div style="position: absolute; top: 10px; right: 10px; display: flex; gap: 5px;">
+           <button onclick="zoomMindmapIn()" style="background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; padding: 4px 8px;">+</button>
+           <button onclick="zoomMindmapOut()" style="background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; padding: 4px 8px;">-</button>
+           <button onclick="fitMindmap()" style="background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; padding: 4px 8px;">Fit</button>
+        </div>
+      </div>
+
+      <!-- Chat/Prompt Area -->
+      <div id="mindmapEditArea" style="display: none; margin-top: 15px;">
+        <label style="font-weight: 500; font-size: 14px; margin-bottom: 6px; display: block;">Chỉnh sửa bằng lệnh AI:</label>
+        <div style="display: flex; gap: 10px;">
+          <input type="text" id="mindmapPromptInput" placeholder="Ví dụ: Thêm một nhánh phụ về 'Biến cục bộ' vào phần 'Phạm vi biến'..." style="flex: 1; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;" onkeypress="if(event.key === 'Enter') editMindmapWithPrompt()">
+          <button class="btn btn-secondary" onclick="editMindmapWithPrompt()" id="btnSendMindmapPrompt">
+            Gửi lệnh
+          </button>
+        </div>
+      </div>
+      
+      <!-- Hidden textarea to store raw markdown -->
+      <textarea id="mindmapRawMarkdown" style="display: none;"></textarea>
+    </div>
   </div>
 
   <!-- Action Buttons -->
@@ -451,3 +494,8 @@
 
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
+
+<!-- Markmap Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.16"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.16"></script>

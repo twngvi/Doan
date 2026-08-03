@@ -6626,3 +6626,77 @@ function getPublishedMindmap(topicId) {
     };
   }
 }
+
+/**
+ * Tạo Mindmap bởi người dùng khi admin chưa tạo
+ * @param {string} topicId
+ * @param {object} userContext
+ */
+function generateUserMindmap(topicId, userContext) {
+  Logger.log("🧠 generateUserMindmap CALLED cho topic: " + topicId);
+  try {
+    const topicInfoRes = getTopicById(topicId);
+    if (!topicInfoRes || !topicInfoRes.success || !topicInfoRes.topic || !topicInfoRes.topic.contentDocId) {
+      throw new Error("Không có nội dung bài học để tạo Mindmap.");
+    }
+    
+    // Check API Key
+    var required = GeminiService.requireUserApiKey(userContext);
+    
+    const docResult = GeminiService.readGoogleDoc(topicInfoRes.topic.contentDocId);
+    if (!docResult.success) {
+      throw new Error("Không thể đọc nội dung tài liệu bài học: " + docResult.error);
+    }
+    
+    const topicContent = docResult.content;
+    const prompt = `Bạn là một chuyên gia giáo dục và thiết kế sơ đồ tư duy (Mindmap). 
+Từ nội dung bài học dưới đây, hãy tóm tắt và tạo một sơ đồ tư duy phân cấp rõ ràng.
+
+NỘI DUNG BÀI HỌC:
+${topicContent}
+
+YÊU CẦU ĐẦU RA:
+- Trả về kết quả dưới định dạng Markdown thuần túy (KHÔNG đóng gói trong khối code \`\`\`markdown ... \`\`\`).
+- Sử dụng cấu trúc danh sách (\`#\`, \`##\`, \`-\`, \`*\`) phù hợp với thư viện Markmap.
+- Bắt đầu bằng 1 tiêu đề mức 1 (\`# Tiêu đề bài học\`).
+- Trích xuất ý chính làm tiêu đề mức 2 (\`##\`), các chi tiết làm danh sách bullet (\`-\`).
+- Đảm bảo từ khóa ngắn gọn, súc tích (1-5 từ mỗi dòng nếu có thể).
+`;
+
+    const aiResult = GeminiService.callWithRetry(prompt, {
+      expectJson: false,
+      temperature: 0.7,
+      maxTokens: 3000,
+      topicId: topicId,
+      contentType: "mindmap_ai_user",
+    }, userContext);
+
+    if (!aiResult) {
+      return { success: false, message: "AI trả về dữ liệu rỗng. Vui lòng thử lại." };
+    }
+
+    let cleanResult = aiResult.toString().trim();
+    if (cleanResult.startsWith('```markdown')) {
+      cleanResult = cleanResult.replace(/^```markdown\n?/g, '');
+      if (cleanResult.endsWith('```')) {
+        cleanResult = cleanResult.substring(0, cleanResult.length - 3);
+      }
+    } else if (cleanResult.startsWith('```')) {
+      cleanResult = cleanResult.replace(/^```\n?/g, '');
+      if (cleanResult.endsWith('```')) {
+        cleanResult = cleanResult.substring(0, cleanResult.length - 3);
+      }
+    }
+
+    // Save to user's cache or memory if needed, but since it's on-the-fly for user, just return
+    return {
+      success: true,
+      data: JSON.stringify({ markdown: cleanResult }),
+      message: "Đã tạo Mindmap bằng AI cá nhân"
+    };
+    
+  } catch (error) {
+    Logger.log("❌ Lỗi generateUserMindmap: " + error.toString());
+    return { success: false, message: "Lỗi tạo Mindmap: " + error.message };
+  }
+}

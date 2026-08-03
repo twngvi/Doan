@@ -212,6 +212,45 @@
       });
     }
 
+    // AI Key Button & Modal
+    const aiKeyBtn = document.getElementById("adminAiKeyBtn");
+    if (aiKeyBtn) {
+      aiKeyBtn.addEventListener("click", showAdminAiKeyModal);
+    }
+
+    const aiKeyCancelBtn = document.getElementById("adminAiKeyCancelBtn");
+    if (aiKeyCancelBtn) {
+      aiKeyCancelBtn.addEventListener("click", hideAdminAiKeyModal);
+    }
+
+    const aiKeySaveBtn = document.getElementById("adminAiKeySaveBtn");
+    if (aiKeySaveBtn) {
+      aiKeySaveBtn.addEventListener("click", saveAdminAiKey);
+    }
+
+    const aiKeyOverlay = document.getElementById("adminAiKeyModalOverlay");
+    if (aiKeyOverlay) {
+      aiKeyOverlay.addEventListener("click", (e) => {
+        if (e.target === aiKeyOverlay) {
+          hideAdminAiKeyModal();
+        }
+      });
+    }
+    
+    const aiKeyToggleBtn = document.getElementById("adminAiKeyToggleVisibility");
+    const aiKeyInput = document.getElementById("adminAiKeyInput");
+    if (aiKeyToggleBtn && aiKeyInput) {
+      aiKeyToggleBtn.addEventListener("click", () => {
+        if (aiKeyInput.type === "password") {
+          aiKeyInput.type = "text";
+          aiKeyToggleBtn.textContent = "visibility_off";
+        } else {
+          aiKeyInput.type = "password";
+          aiKeyToggleBtn.textContent = "visibility";
+        }
+      });
+    }
+
     // Back to User Button
     const backBtn = document.getElementById("backToUserBtn");
     if (backBtn) {
@@ -355,6 +394,66 @@
     if (modal) {
       modal.classList.remove("show");
     }
+  }
+
+  function showAdminAiKeyModal() {
+    // Hide the avatar menu if open
+    const adminAvatarMenu = document.getElementById("adminAvatarMenu");
+    if (adminAvatarMenu) adminAvatarMenu.style.display = "none";
+
+    const modal = document.getElementById("adminAiKeyModalOverlay");
+    const input = document.getElementById("adminAiKeyInput");
+    if (modal) {
+      modal.classList.add("show");
+      if (input) {
+        input.value = "";
+        input.type = "password";
+        const toggleBtn = document.getElementById("adminAiKeyToggleVisibility");
+        if (toggleBtn) toggleBtn.textContent = "visibility";
+        input.focus();
+      }
+    }
+  }
+
+  function hideAdminAiKeyModal() {
+    const modal = document.getElementById("adminAiKeyModalOverlay");
+    if (modal) {
+      modal.classList.remove("show");
+    }
+  }
+
+  function saveAdminAiKey() {
+    const input = document.getElementById("adminAiKeyInput");
+    const saveBtn = document.getElementById("adminAiKeySaveBtn");
+    if (!input || !saveBtn) return;
+
+    const apiKey = input.value.trim();
+    if (!apiKey) {
+      if (typeof showToast === 'function') showToast("Vui lòng nhập API Key", "error");
+      return;
+    }
+
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = "Đang lưu...";
+    saveBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+        if (res && res.success) {
+          if (typeof showToast === 'function') showToast(res.message, "success");
+          hideAdminAiKeyModal();
+        } else {
+          if (typeof showToast === 'function') showToast(res?.message || "Có lỗi xảy ra", "error");
+        }
+      })
+      .withFailureHandler((err) => {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+        if (typeof showToast === 'function') showToast("Lỗi kết nối: " + err.message, "error");
+      })
+      .adminSaveGeminiApiKey(apiKey);
   }
 
   function handleAdminLogout() {
