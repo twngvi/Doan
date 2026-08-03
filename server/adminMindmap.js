@@ -46,12 +46,33 @@ Từ nội dung bài học dưới đây, hãy tóm tắt và tạo một sơ đ
 NỘI DUNG BÀI HỌC:
 ${topicContent}
 
-YÊU CẦU ĐẦU RA:
-- Trả về kết quả dưới định dạng Markdown thuần túy (KHÔNG đóng gói trong khối code \`\`\`markdown ... \`\`\`).
-- Sử dụng cấu trúc danh sách (\`#\`, \`##\`, \`-\`, \`*\`) phù hợp với thư viện Markmap.
-- Bắt đầu bằng 1 tiêu đề mức 1 (\`# Tiêu đề bài học\`).
-- Trích xuất ý chính làm tiêu đề mức 2 (\`##\`), các chi tiết làm danh sách bullet (\`-\`).
-- Đảm bảo từ khóa ngắn gọn, súc tích (1-5 từ mỗi dòng nếu có thể).
+Chỉ trả về Markdown hợp lệ, không sử dụng khối code Markdown.
+
+Cấu trúc bắt buộc:
+
+# Tên bài học
+
+## Nhánh chính 1
+- Ý cấp 2
+  - Ý cấp 3
+  - Ý cấp 3
+
+## Nhánh chính 2
+- Ý cấp 2
+  - Ý cấp 3
+- Ý cấp 2
+
+## Nhánh chính 3
+- Ý cấp 2
+  - Ý cấp 3
+
+Yêu cầu:
+- Có từ 4 đến 7 nhánh chính.
+- Mỗi nhánh chính có từ 2 đến 5 nhánh con.
+- Các nội dung quan trọng phải có thêm nhánh phụ cấp 3.
+- Nội dung mỗi node ngắn gọn, tối đa 12 từ.
+- Không tạo danh sách phẳng.
+- Không trả về lời giải thích ngoài Markdown.
 `;
     }
 

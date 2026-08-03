@@ -3531,11 +3531,68 @@ window.showUnifiedTopicEditorLoader = showUnifiedTopicEditorLoader;
 window.showUnifiedTopicEditorOverlay = showUnifiedTopicEditorOverlay;
 window.hideUnifiedTopicEditorLoader = hideUnifiedTopicEditorLoader;
 // Note: showLoading/hideLoading are NOT exposed to window to avoid conflicts with app's loading system
+
+function setMindmapButtonsLoading(isLoading) {
+  const buttonIds = [
+    'btnGenerateMindmap',
+    'btnSaveMindmap',
+    'btnSendMindmapPrompt'
+  ];
+
+  buttonIds.forEach(function(id) {
+    const button = document.getElementById(id);
+
+    if (!button) return;
+
+    button.disabled = isLoading;
+    button.classList.toggle('is-loading', isLoading);
+  });
+}
+
+function showMindmapLoading(message) {
+  setMindmapButtonsLoading(true);
+
+  /*
+   * Quan trọng:
+   * Dùng Overlay thay vì Loader thông thường.
+   * Overlay giữ trang Topic Editor hiển thị bên dưới.
+   */
+  showUnifiedTopicEditorOverlay(
+    message || 'Đang xử lý sơ đồ tư duy...'
+  );
+
+  document.body.classList.add('topic-editor-is-loading');
+}
+
+function hideMindmapLoading() {
+  hideUnifiedTopicEditorLoader();
+  setMindmapButtonsLoading(false);
+
+  document.body.classList.remove('topic-editor-is-loading');
+}
+
 // ========================================
 // MINDMAP ADMIN LOGIC
 // ========================================
 
 let adminMarkmapObj = null;
+
+const ADMIN_MINDMAP_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#d97706',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2'
+];
+
+function getAdminMindmapNodeColor(node) {
+  const depth = Number(node && node.depth) || 0;
+
+  return ADMIN_MINDMAP_COLORS[
+    depth % ADMIN_MINDMAP_COLORS.length
+  ];
+}
 
 function showAdminMindmapSection() {
   const section = document.getElementById('adminMindmapSection');
@@ -3543,92 +3600,351 @@ function showAdminMindmapSection() {
 }
 
 function renderAdminMindmap(markdown) {
-  if (!window.markmap) {
-    showToast('Thư viện Markmap chưa tải xong', 'error');
+  if (!markdown || !markdown.trim()) {
+    showToast(
+      'Dữ liệu Mindmap đang trống',
+      'warning'
+    );
     return;
   }
-  
-  const { Transformer, Markmap, loadCSS, loadJS } = window.markmap;
-  const transformer = new Transformer();
-  
-  const { root, features } = transformer.transform(markdown);
-  const { styles, scripts } = transformer.getUsedAssets(features);
-  
-  if (styles) loadCSS(styles);
-  if (scripts) loadJS(scripts, { getMarkmap: () => window.markmap });
-  
-  // MUST show the containers BEFORE calling Markmap.create so it can compute dimensions
-  document.getElementById('mindmapPreviewArea').style.display = 'block';
-  document.getElementById('mindmapEditArea').style.display = 'block';
-  document.getElementById('btnSaveMindmap').style.display = 'inline-block';
-  document.getElementById('mindmapRawMarkdown').value = markdown;
 
-  const svg = document.getElementById('adminMindmapSvg');
-  if (!svg) return;
-  svg.innerHTML = '';
-  
-  adminMarkmapObj = Markmap.create(svg, {
-    autoFit: true,
-    color: (node) => {
-      // Basic color scheme
-      const depthColors = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#673ab7'];
-      return depthColors[node.depth % depthColors.length];
+  if (!window.markmap) {
+    showToast(
+      'Thư viện Markmap chưa tải xong',
+      'error'
+    );
+    return;
+  }
+
+  const previewArea = document.getElementById(
+    'mindmapPreviewArea'
+  );
+
+  const editArea = document.getElementById(
+    'mindmapEditArea'
+  );
+
+  const saveButton = document.getElementById(
+    'btnSaveMindmap'
+  );
+
+  const markdownStorage = document.getElementById(
+    'mindmapRawMarkdown'
+  );
+
+  const svg = document.getElementById(
+    'adminMindmapSvg'
+  );
+
+  if (!previewArea || !svg) {
+    showToast(
+      'Không tìm thấy vùng hiển thị Mindmap',
+      'error'
+    );
+    return;
+  }
+
+  previewArea.style.display = 'block';
+
+  if (editArea) {
+    editArea.style.display = 'block';
+  }
+
+  if (saveButton) {
+    saveButton.style.display = 'inline-flex';
+  }
+
+  if (markdownStorage) {
+    markdownStorage.value = markdown;
+  }
+
+  const {
+    Transformer,
+    Markmap,
+    loadCSS,
+    loadJS
+  } = window.markmap;
+
+  try {
+    const transformer = new Transformer();
+
+    const transformed = transformer.transform(
+      markdown
+    );
+
+    const root = transformed.root;
+    const features = transformed.features;
+
+    const assets = transformer.getUsedAssets(
+      features
+    );
+
+    if (assets.styles) {
+      loadCSS(assets.styles);
     }
-  }, root);
-  
-  // Try to fit again after a slight delay for proper sizing
-  setTimeout(() => fitMindmap(), 100);
+
+    if (assets.scripts) {
+      loadJS(assets.scripts, {
+        getMarkmap: function() {
+          return window.markmap;
+        }
+      });
+    }
+
+    /*
+     * Hủy phiên bản cũ trước khi tạo lại.
+     * Tránh nhiều sự kiện zoom/pan chồng lên nhau.
+     */
+    if (
+      adminMarkmapObj &&
+      typeof adminMarkmapObj.destroy === 'function'
+    ) {
+      adminMarkmapObj.destroy();
+    }
+
+    svg.replaceChildren();
+
+    adminMarkmapObj = Markmap.create(
+      svg,
+      {
+        /*
+         * Không autoFit ngay lập tức vì container vừa
+         * chuyển từ display:none sang display:block.
+         */
+        autoFit: false,
+
+        duration: 350,
+
+        /* Thu phóng và kéo Mindmap */
+        zoom: true,
+        pan: true,
+
+        /*
+         * Hiển thị sẵn đến cấp 3.
+         * Các cấp sâu hơn có thể mở bằng nút tròn.
+         */
+        initialExpandLevel: 3,
+
+        /*
+         * false: chỉ đóng/mở nhánh đang chọn,
+         * giữ trạng thái của các nhánh con.
+         */
+        toggleRecursively: false,
+
+        fitRatio: 0.9,
+        maxInitialScale: 1.15,
+
+        /* Giới hạn chiều rộng từng nội dung */
+        maxWidth: 240,
+
+        nodeMinHeight: 38,
+        paddingX: 18,
+
+        /* Tạo khoảng trống cho khung và dây nối */
+        spacingHorizontal: 90,
+        spacingVertical: 18,
+
+        lineWidth: function(node) {
+          return Number(node.depth) <= 1
+            ? 3
+            : 2;
+        },
+
+        color: getAdminMindmapNodeColor
+      },
+      root
+    );
+
+    /*
+     * Chờ SVG và foreignObject tính xong kích thước
+     * rồi mới căn toàn bộ sơ đồ vào giữa.
+     */
+    requestAnimationFrame(function() {
+      setTimeout(function() {
+        decorateAdminMindmap();
+        fitMindmap();
+      }, 120);
+    });
+  } catch (error) {
+    console.error(
+      '[TopicEditor] Render Mindmap error:',
+      error
+    );
+
+    showToast(
+      'Không thể hiển thị Mindmap: ' +
+        (error && error.message
+          ? error.message
+          : 'Lỗi không xác định'),
+      'error'
+    );
+  }
+}
+
+function decorateAdminMindmap() {
+  const svg = document.getElementById(
+    'adminMindmapSvg'
+  );
+
+  if (!svg) return;
+
+  const nodeGroups = svg.querySelectorAll(
+    'g.markmap-node'
+  );
+
+  nodeGroups.forEach(function(group) {
+    const nodeData = group.__data__;
+
+    const nodeBox = group.querySelector(
+      '.markmap-foreign > div'
+    );
+
+    if (!nodeBox || !nodeData) return;
+
+    const depth = Number(nodeData.depth) || 0;
+
+    nodeBox.setAttribute(
+      'data-depth',
+      String(Math.min(depth, 5))
+    );
+
+    const hasChildren =
+      Array.isArray(nodeData.children) &&
+      nodeData.children.length > 0;
+
+    if (hasChildren) {
+      nodeBox.classList.add('has-children');
+      nodeBox.title =
+        'Bấm nút tròn để thu gọn hoặc mở rộng nhánh';
+    }
+  });
+
+  /*
+   * Làm dây nối rõ hơn nhưng vẫn giữ màu
+   * mà Markmap đã gán cho từng nhánh.
+   */
+  const links = svg.querySelectorAll(
+    '.markmap-link'
+  );
+
+  links.forEach(function(link) {
+    link.style.setProperty(
+      'stroke-width',
+      '2.25px'
+    );
+
+    link.style.setProperty(
+      'stroke-opacity',
+      '0.82'
+    );
+
+    link.style.setProperty(
+      'stroke-linecap',
+      'round'
+    );
+
+    link.style.setProperty(
+      'stroke-linejoin',
+      'round'
+    );
+  });
 }
 
 function zoomMindmapIn() {
-  if (adminMarkmapObj) {
-    adminMarkmapObj.rescale(1.2);
+  if (
+    !adminMarkmapObj ||
+    typeof adminMarkmapObj.rescale !== 'function'
+  ) {
+    return;
   }
+
+  adminMarkmapObj.rescale(1.25);
 }
 
 function zoomMindmapOut() {
-  if (adminMarkmapObj) {
-    adminMarkmapObj.rescale(0.8);
+  if (
+    !adminMarkmapObj ||
+    typeof adminMarkmapObj.rescale !== 'function'
+  ) {
+    return;
   }
+
+  adminMarkmapObj.rescale(0.8);
 }
 
 function fitMindmap() {
-  if (adminMarkmapObj) {
-    adminMarkmapObj.fit();
+  if (
+    !adminMarkmapObj ||
+    typeof adminMarkmapObj.fit !== 'function'
+  ) {
+    return;
   }
+
+  adminMarkmapObj.fit();
 }
 
 function generateMindmap() {
   const topicId = document.getElementById('topicId').value;
-  let content = document.getElementById('contentEditor').innerText;
-  
-  if (!content || content.trim().length < 50) {
-    showToast('Nội dung bài học quá ngắn để tạo sơ đồ tư duy. Vui lòng soạn thảo bài học trước.', 'warning');
+  const editor = document.getElementById('contentEditor');
+  const content = editor ? editor.innerText.trim() : '';
+
+  if (!content || content.length < 50) {
+    showToast(
+      'Nội dung bài học quá ngắn để tạo sơ đồ tư duy. Vui lòng soạn thảo bài học trước.',
+      'warning'
+    );
     return;
   }
-  
-  showUnifiedTopicEditorLoader('Đang phân tích nội dung và tạo Sơ đồ tư duy bằng AI...');
-  
-  // Add artificial delay for loading state visibility
-  setTimeout(() => {
-    google.script.run
-      .withSuccessHandler(function(response) {
-        hideUnifiedTopicEditorLoader();
-        if (response && response.success) {
-          renderAdminMindmap(response.mindmapMarkdown);
-          showToast('Tạo sơ đồ tư duy thành công!', 'success');
-          document.getElementById('mindmapStatusText').textContent = 'Chưa lưu';
-          document.getElementById('mindmapStatusText').style.color = '#eab308'; // yellow-500
-        } else {
-          showToast(response.message || 'Lỗi khi tạo sơ đồ tư duy', 'error');
+
+  showMindmapLoading(
+    'Đang phân tích nội dung và tạo Sơ đồ tư duy bằng AI...'
+  );
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideMindmapLoading();
+
+      if (
+        response &&
+        response.success &&
+        response.mindmapMarkdown
+      ) {
+        renderAdminMindmap(response.mindmapMarkdown);
+
+        showToast(
+          'Tạo sơ đồ tư duy thành công!',
+          'success'
+        );
+
+        const status = document.getElementById(
+          'mindmapStatusText'
+        );
+
+        if (status) {
+          status.textContent = 'Chưa lưu';
+          status.style.color = '#eab308';
         }
-      })
-      .withFailureHandler(function(error) {
-        hideUnifiedTopicEditorLoader();
-        showToast('Lỗi kết nối server: ' + error.message, 'error');
-      })
-      .generateAdminMindmap(topicId, content, null);
-  }, 500);
+      } else {
+        showToast(
+          response && response.message
+            ? response.message
+            : 'Không nhận được dữ liệu sơ đồ tư duy hợp lệ',
+          'error'
+        );
+      }
+    })
+    .withFailureHandler(function(error) {
+      hideMindmapLoading();
+
+      showToast(
+        'Lỗi kết nối server: ' +
+          (error && error.message
+            ? error.message
+            : 'Không xác định'),
+        'error'
+      );
+    })
+    .generateAdminMindmap(topicId, content, null);
 }
 
 function editMindmapWithPrompt() {
@@ -3648,55 +3964,99 @@ function editMindmapWithPrompt() {
     return;
   }
   
-  showUnifiedTopicEditorLoader('Đang chỉnh sửa Sơ đồ tư duy theo yêu cầu...');
-  
-  setTimeout(() => {
-    google.script.run
-      .withSuccessHandler(function(response) {
-        hideUnifiedTopicEditorLoader();
-        if (response && response.success) {
-          renderAdminMindmap(response.mindmapMarkdown);
-          promptInput.value = ''; // clear input
-          showToast('Cập nhật sơ đồ tư duy thành công!', 'success');
-          document.getElementById('mindmapStatusText').textContent = 'Đã chỉnh sửa, chưa lưu';
-          document.getElementById('mindmapStatusText').style.color = '#eab308';
-        } else {
-          showToast(response.message || 'Lỗi khi chỉnh sửa sơ đồ tư duy', 'error');
-        }
-      })
-      .withFailureHandler(function(error) {
-        hideUnifiedTopicEditorLoader();
-        showToast('Lỗi kết nối server: ' + error.message, 'error');
-      })
-      .generateAdminMindmap(topicId, currentMarkdown, prompt);
-  }, 500);
-}
-
-function saveMindmap() {
-  const topicId = document.getElementById('topicId').value;
-  const markdown = document.getElementById('mindmapRawMarkdown').value;
-  
-  if (!markdown) {
-    showToast('Không có dữ liệu Mindmap để lưu', 'warning');
-    return;
-  }
-  
-  showUnifiedTopicEditorLoader('Đang lưu Sơ đồ tư duy...');
+  showMindmapLoading('Đang chỉnh sửa Sơ đồ tư duy theo yêu cầu...');
   
   google.script.run
     .withSuccessHandler(function(response) {
-      hideUnifiedTopicEditorLoader();
+      hideMindmapLoading();
       if (response && response.success) {
-        showToast('Lưu sơ đồ tư duy thành công!', 'success');
-        document.getElementById('mindmapStatusText').textContent = 'Đã lưu';
-        document.getElementById('mindmapStatusText').style.color = '#22c55e'; // green-500
+        renderAdminMindmap(response.mindmapMarkdown);
+        promptInput.value = ''; // clear input
+        showToast('Cập nhật sơ đồ tư duy thành công!', 'success');
+        document.getElementById('mindmapStatusText').textContent = 'Đã chỉnh sửa, chưa lưu';
+        document.getElementById('mindmapStatusText').style.color = '#eab308';
       } else {
-        showToast(response.message || 'Lỗi khi lưu sơ đồ tư duy', 'error');
+        showToast(response.message || 'Lỗi khi chỉnh sửa sơ đồ tư duy', 'error');
       }
     })
     .withFailureHandler(function(error) {
-      hideUnifiedTopicEditorLoader();
+      hideMindmapLoading();
       showToast('Lỗi kết nối server: ' + error.message, 'error');
+    })
+    .generateAdminMindmap(topicId, currentMarkdown, prompt);
+}
+
+function saveMindmap() {
+  const topicIdEl = document.getElementById('topicId');
+  const markdownEl = document.getElementById(
+    'mindmapRawMarkdown'
+  );
+
+  const topicId = topicIdEl
+    ? topicIdEl.value.trim()
+    : '';
+
+  const markdown = markdownEl
+    ? markdownEl.value.trim()
+    : '';
+
+  if (!topicId) {
+    showToast(
+      'Không xác định được Topic ID',
+      'error'
+    );
+    return;
+  }
+
+  if (!markdown) {
+    showToast(
+      'Không có dữ liệu Mindmap để lưu',
+      'warning'
+    );
+    return;
+  }
+
+  showMindmapLoading(
+    'Đang lưu Sơ đồ tư duy...'
+  );
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideMindmapLoading();
+
+      if (response && response.success) {
+        showToast(
+          'Lưu sơ đồ tư duy thành công!',
+          'success'
+        );
+
+        const status = document.getElementById(
+          'mindmapStatusText'
+        );
+
+        if (status) {
+          status.textContent = 'Đã lưu';
+          status.style.color = '#22c55e';
+        }
+      } else {
+        showToast(
+          response && response.message
+            ? response.message
+            : 'Lỗi khi lưu sơ đồ tư duy',
+          'error'
+        );
+      }
+    })
+    .withFailureHandler(function(error) {
+      hideMindmapLoading();
+
+      showToast(
+        'Lỗi kết nối server: ' +
+          (error && error.message
+            ? error.message
+            : 'Không xác định'),
+        'error'
+      );
     })
     .saveAdminMindmap(topicId, markdown);
 }

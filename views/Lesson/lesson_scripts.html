@@ -252,8 +252,26 @@
     // Load AI content if not loaded yet
     if (tabName === "mindmap" && !aiContentLoaded.mindmap) {
       loadMindmap();
+    } else if (tabName === "mindmap" && aiContentLoaded.mindmap) {
+      /*
+       * Tab vừa từ display:none chuyển sang block.
+       * Cần fit lại để vùng click và nội dung khớp nhau.
+       */
+      requestAnimationFrame(function () {
+        setTimeout(function () {
+          fitStudentMindmap();
+        }, 30);
+      });
     } else if (tabName === "flashcards" && !aiContentLoaded.flashcards) {
       loadFlashcards();
+    }
+
+    const lessonPage = document.getElementById("page-lesson");
+    if (lessonPage) {
+      lessonPage.classList.toggle(
+        "mindmap-is-active",
+        tabName === "mindmap"
+      );
     }
   }
 
@@ -432,18 +450,50 @@
   }
 
   function renderMindmapContent(mindmapData) {
-    document.getElementById("mindmap-loading").style.display = "none";
-    renderMindmap(mindmapData);
-    document.getElementById("mindmap-content").style.display = "block";
-    aiContentLoaded.mindmap = true;
-
+    const loading = document.getElementById("mindmap-loading");
+    const errorBox = document.getElementById("mindmap-error");
+    const content = document.getElementById("mindmap-content");
     const printBtn = document.getElementById("mindmap-print-btn");
-    if (printBtn) printBtn.style.display = "flex";
     const mindmapActions = document.getElementById("mindmap-tab-actions");
-    if (mindmapActions) mindmapActions.style.display = "flex";
 
-    saveMindmapProgress();
-    // showToast("✅ Đã tải Mindmap", "success");
+    if (loading) {
+      loading.style.display = "none";
+    }
+
+    if (errorBox) {
+      errorBox.style.display = "none";
+    }
+
+    if (!content) {
+      showMindmapError("Không tìm thấy vùng hiển thị Mindmap");
+      return;
+    }
+
+    /*
+     * Quan trọng:
+     * Phải hiển thị container trước khi Markmap đo kích thước SVG.
+     */
+    content.style.display = "block";
+
+    requestAnimationFrame(function () {
+      const rendered = renderStudentMindmapLikeAdmin(mindmapData);
+
+      if (!rendered) {
+        return;
+      }
+
+      aiContentLoaded.mindmap = true;
+
+      if (printBtn) {
+        printBtn.style.display = "flex";
+      }
+
+      if (mindmapActions) {
+        mindmapActions.style.display = "flex";
+      }
+
+      saveMindmapProgress();
+    });
   }
 
   /**
@@ -514,290 +564,459 @@
     }
   }
 
-  // ========== SIMPLE TREE MINDMAP ==========
+  window.studentMarkmapObj = null;
 
-  // Color palette for branches
-  const branchColors = [
-    "purple",
-    "blue",
-    "green",
-    "pink",
-    "cyan",
-    "yellow",
-    "red",
-    "indigo",
+  let studentMindmapRenderVersion = 0;
+
+  const STUDENT_MINDMAP_COLORS = [
+    "#2563eb",
+    "#16a34a",
+    "#d97706",
+    "#dc2626",
+    "#7c3aed",
+    "#0891b2"
   ];
 
-  /**
-   * Render Simple Tree Mindmap
-   * Layout: Root (left) → Branches (middle) → Children (right)
-   * All content displayed at once, smooth curved connections
-   */
-  function renderMindmap(data) {
-    const treeContainer = document.getElementById("tree-container");
-    const connectionsLayer = document.getElementById("mindmap-connections");
+  function getStudentMindmapNodeColor(node) {
+    const depth = Number(node && node.depth) || 0;
 
-    // Handle if data is still a string
+    return STUDENT_MINDMAP_COLORS[
+      depth % STUDENT_MINDMAP_COLORS.length
+    ];
+  }
+
+  function getMindmapMarkdown(data) {
+    if (!data) {
+      return "";
+    }
+
+    /*
+     * Backend đôi khi có thể trả trực tiếp chuỗi Markdown.
+     */
     if (typeof data === "string") {
-      console.warn("⚠️ Mindmap data is string, attempting to parse");
+      const rawText = data.trim();
+
+      if (!rawText) {
+        return "";
+      }
+
       try {
-        data = JSON.parse(data);
-      } catch (e) {
-        console.error("❌ Cannot parse mindmap data:", e);
-        showMindmapError("Lỗi: Dữ liệu mindmap không hợp lệ");
-        return;
+        const parsed = JSON.parse(rawText);
+        return getMindmapMarkdown(parsed);
+      } catch (error) {
+        /*
+         * Không phải JSON thì xem như Markdown thuần.
+         */
+        return rawText;
       }
     }
 
-    // Validate data structure
-    if (!data || typeof data !== "object") {
-      console.error("❌ Invalid mindmap data structure:", data);
-      showMindmapError("Lỗi: Cấu trúc dữ liệu mindmap không hợp lệ");
-      return;
+    /*
+     * Hỗ trợ các tên thuộc tính có thể đang được backend sử dụng.
+     */
+    const markdown =
+      data.markdown ||
+      data.mindmapMarkdown ||
+      data.rawMarkdown ||
+      data.content ||
+      data.data?.markdown ||
+      data.data?.mindmapMarkdown;
+
+    if (typeof markdown === "string" && markdown.trim()) {
+      return markdown.trim();
     }
 
-    console.log("🌳 Rendering tree mindmap with data:", data);
+    /*
+     * Chuyển dữ liệu JSON cũ sang Markdown,
+     * để user vẫn luôn dùng Markmap thay vì giao diện cây cũ.
+     */
+    return convertLegacyMindmapToMarkdown(data);
+  }
 
-    // Clear containers
-    treeContainer.innerHTML = "";
-    connectionsLayer.innerHTML = "";
-
-    // 1. Markmap (Markdown) Rendering
-    if (data.markdown) {
-      connectionsLayer.style.display = "none";
-      
-      let markmapSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      markmapSvg.id = "markmap-svg-render";
-      markmapSvg.style.width = "100%";
-      markmapSvg.style.minHeight = "600px";
-      treeContainer.appendChild(markmapSvg);
-      
-      if (!window.markmap) {
-        showMindmapError("Lỗi: Thư viện Markmap chưa được tải.");
-        return;
-      }
-      
-      const { Transformer, Markmap, loadCSS, loadJS } = window.markmap;
-      const transformer = new Transformer();
-      const { root, features } = transformer.transform(data.markdown);
-      const { styles, scripts } = transformer.getUsedAssets(features);
-      
-      if (styles) loadCSS(styles);
-      if (scripts) loadJS(scripts, { getMarkmap: () => window.markmap });
-      
-      const mm = Markmap.create(markmapSvg, {
-        autoFit: true,
-        color: (node) => {
-          const depthColors = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#673ab7'];
-          return depthColors[node.depth % depthColors.length];
-        }
-      }, root);
-      
-      setTimeout(() => mm.fit(), 300);
-      return;
-    }
-
-    // 2. Fallback to Simple Tree Mindmap (JSON)
-    connectionsLayer.style.display = "block";
-    const rootTitle =
+  function convertLegacyMindmapToMarkdown(data) {
+    const title =
       data.title ||
       data.centralIdea ||
       currentLessonData?.topicTitle ||
       "Chủ đề chính";
 
-    const branches = data.branches || data.nodes || [];
+    const branches = Array.isArray(data.branches)
+      ? data.branches
+      : Array.isArray(data.nodes)
+        ? data.nodes
+        : [];
 
-    if (branches.length === 0) {
-      treeContainer.innerHTML = `
-        <div style="text-align: center; color: #64748b; padding: 2rem;">
-          <p>Không có dữ liệu mindmap</p>
-        </div>
-      `;
+    if (!branches.length) {
+      return "";
+    }
+
+    const lines = ["# " + normalizeMindmapText(title)];
+
+    function appendNodes(nodes, level) {
+      if (!Array.isArray(nodes)) {
+        return;
+      }
+
+      nodes.forEach(function (node) {
+        const text =
+          typeof node === "string"
+            ? node
+            : node.label ||
+              node.name ||
+              node.title ||
+              node.text ||
+              "";
+
+        if (!text) {
+          return;
+        }
+
+        lines.push(
+          "  ".repeat(level) +
+            "- " +
+            normalizeMindmapText(text)
+        );
+
+        if (
+          node &&
+          typeof node === "object" &&
+          Array.isArray(node.children)
+        ) {
+          appendNodes(node.children, level + 1);
+        }
+      });
+    }
+
+    appendNodes(branches, 0);
+
+    return lines.join("\n");
+  }
+
+  function normalizeMindmapText(value) {
+    return String(value || "")
+      .replace(/\r?\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function destroyStudentMindmap() {
+    studentMindmapRenderVersion++;
+
+    if (
+      window.studentMarkmapObj &&
+      typeof window.studentMarkmapObj.destroy === "function"
+    ) {
+      window.studentMarkmapObj.destroy();
+    }
+
+    window.studentMarkmapObj = null;
+
+    const svg = document.getElementById("studentMindmapSvg");
+
+    if (svg) {
+      svg.replaceChildren();
+    }
+  }
+
+  function renderStudentMindmapLikeAdmin(data) {
+    const markdown = getMindmapMarkdown(data);
+
+    if (!markdown) {
+      showMindmapError("Dữ liệu Mindmap đang trống");
+      return false;
+    }
+
+    if (!window.markmap) {
+      showMindmapError("Thư viện Markmap chưa được tải");
+      return false;
+    }
+
+    const content = document.getElementById("mindmap-content");
+    const previewArea = document.querySelector(
+      "#tab-mindmap .mindmap-preview-area"
+    );
+    const svg = document.getElementById("studentMindmapSvg");
+
+    if (!content || !previewArea || !svg) {
+      showMindmapError(
+        "Không tìm thấy vùng hiển thị Mindmap phía user"
+      );
+      return false;
+    }
+
+    /*
+     * Bắt buộc hiển thị trước khi Markmap.create chạy.
+     */
+    content.style.display = "block";
+    previewArea.style.display = "block";
+
+    const {
+      Transformer,
+      Markmap,
+      loadCSS,
+      loadJS
+    } = window.markmap;
+
+    const currentRenderVersion =
+      ++studentMindmapRenderVersion;
+
+    try {
+      const transformer = new Transformer();
+      const transformed = transformer.transform(markdown);
+      const root = transformed.root;
+      const features = transformed.features;
+      const assets = transformer.getUsedAssets(features);
+
+      if (assets.styles) {
+        loadCSS(assets.styles);
+      }
+
+      if (assets.scripts) {
+        loadJS(assets.scripts, {
+          getMarkmap: function () {
+            return window.markmap;
+          }
+        });
+      }
+
+      if (
+        window.studentMarkmapObj &&
+        typeof window.studentMarkmapObj.destroy === "function"
+      ) {
+        window.studentMarkmapObj.destroy();
+      }
+
+      svg.replaceChildren();
+
+      /*
+       * Cấu hình giữ giống admin.
+       */
+      window.studentMarkmapObj = Markmap.create(
+        svg,
+        {
+          autoFit: false,
+          duration: 350,
+
+          zoom: true,
+          pan: true,
+
+          initialExpandLevel: 3,
+          toggleRecursively: false,
+
+          fitRatio: 0.9,
+          maxInitialScale: 1.15,
+
+          maxWidth: 240,
+          nodeMinHeight: 38,
+          paddingX: 18,
+
+          spacingHorizontal: 90,
+          spacingVertical: 18,
+
+          lineWidth: function (node) {
+            return Number(node.depth) <= 1 ? 3 : 2;
+          },
+
+          color: getStudentMindmapNodeColor
+        },
+        root
+      );
+
+      requestAnimationFrame(function () {
+        setTimeout(function () {
+          /*
+           * Không để callback cũ tác động lên Mindmap mới
+           * khi người dùng đổi Topic quá nhanh.
+           */
+          if (
+            currentRenderVersion !==
+            studentMindmapRenderVersion
+          ) {
+            return;
+          }
+
+          decorateStudentMindmap();
+          fitStudentMindmap();
+        }, 120);
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        "[Lesson] Render student Mindmap error:",
+        error
+      );
+
+      showMindmapError(
+        "Không thể hiển thị Mindmap: " +
+          (error?.message || "Lỗi không xác định")
+      );
+
+      return false;
+    }
+  }
+
+  function decorateStudentMindmap() {
+    const svg = document.getElementById(
+      "studentMindmapSvg"
+    );
+
+    if (!svg) {
       return;
     }
 
-    // Build tree structure
-    // 1. Root node
-    const rootEl = document.createElement("div");
-    rootEl.className = "tree-root";
-    rootEl.innerHTML = `<div class="root-node" id="root-node">${rootTitle}</div>`;
-    treeContainer.appendChild(rootEl);
+    const nodeGroups = svg.querySelectorAll(
+      "g.markmap-node"
+    );
 
-    // 2. Branches column
-    const branchesEl = document.createElement("div");
-    branchesEl.className = "tree-branches";
+    nodeGroups.forEach(function (group) {
+      const nodeData = group.__data__;
+      const nodeContent = group.querySelector(
+        ".markmap-foreign > div"
+      );
+      const toggleCircle = group.querySelector(
+        ":scope > circle"
+      );
 
-    branches.forEach((branch, index) => {
-      const branchLabel = branch.label || branch.name || "Nhánh " + (index + 1);
-      const branchColor = branchColors[index % branchColors.length];
-      const children = branch.children || [];
-
-      // Create branch row — collapsed by default
-      const branchRow = document.createElement("div");
-      branchRow.className = "tree-branch collapsed";
-      branchRow.setAttribute("data-color", branchColor);
-      branchRow.setAttribute("data-index", index);
-
-      // Branch node — clickable to toggle children
-      const branchNodeEl = document.createElement("div");
-      branchNodeEl.className = "branch-node";
-      branchNodeEl.id = `branch-${index}`;
-      branchNodeEl.innerHTML =
-        `<span class="branch-label">${branchLabel}</span>` +
-        (children.length > 0
-          ? `<span class="branch-toggle-icon">▸</span>`
-          : "");
-
-      if (children.length > 0) {
-        branchNodeEl.style.cursor = "pointer";
-        branchNodeEl.addEventListener("click", function () {
-          const row = this.closest(".tree-branch");
-          const isCollapsed = row.classList.contains("collapsed");
-          row.classList.toggle("collapsed");
-          row.classList.toggle("expanded");
-          // Redraw connections after expand/collapse animation
-          setTimeout(() => drawTreeConnections(branches), 320);
-        });
-      }
-      branchRow.appendChild(branchNodeEl);
-
-      // Children column (hidden by default via CSS .collapsed)
-      if (children.length > 0) {
-        const childrenEl = document.createElement("div");
-        childrenEl.className = "branch-children";
-        childrenEl.id = `children-${index}`;
-
-        children.forEach((child, childIdx) => {
-          const childText =
-            typeof child === "string" ? child : child.label || child.name || "";
-
-          const childNode = document.createElement("div");
-          childNode.className = "child-node";
-          childNode.id = `child-${index}-${childIdx}`;
-          childNode.textContent = childText;
-          childrenEl.appendChild(childNode);
-        });
-
-        branchRow.appendChild(childrenEl);
+      if (!nodeContent || !nodeData) {
+        return;
       }
 
-      branchesEl.appendChild(branchRow);
+      const depth = Number(nodeData.depth) || 0;
+
+      nodeContent.setAttribute(
+        "data-depth",
+        String(Math.min(depth, 5))
+      );
+
+      const hasVisibleChildren =
+        Array.isArray(nodeData.children) &&
+        nodeData.children.length > 0;
+
+      const hasHiddenChildren =
+        Array.isArray(nodeData._children) &&
+        nodeData._children.length > 0;
+
+      const hasChildren =
+        hasVisibleChildren || hasHiddenChildren;
+
+      nodeContent.classList.toggle(
+        "has-children",
+        hasChildren
+      );
+
+      if (toggleCircle) {
+        toggleCircle.style.pointerEvents = "all";
+      }
+
+      /*
+       * Cho phép bấm vào nội dung node để kích hoạt
+       * vòng tròn đóng/mở của Markmap.
+       */
+      if (
+        hasChildren &&
+        toggleCircle &&
+        nodeContent.dataset.toggleBound !== "true"
+      ) {
+        nodeContent.dataset.toggleBound = "true";
+        nodeContent.title =
+          "Bấm để thu gọn hoặc mở rộng nhánh";
+
+        nodeContent.addEventListener(
+          "click",
+          function (event) {
+            /*
+             * Không đóng nhánh khi người dùng bấm link
+             * nằm trong nội dung node.
+             */
+            if (
+              event.target.closest &&
+              event.target.closest("a")
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            toggleCircle.dispatchEvent(
+              new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: window
+              })
+            );
+          }
+        );
+      }
     });
 
-    treeContainer.appendChild(branchesEl);
+    const links = svg.querySelectorAll(
+      "path.markmap-link"
+    );
 
-    // Draw initial connections (root→branch only, children hidden)
-    setTimeout(() => {
-      drawTreeConnections(branches);
-    }, 50);
-  }
-
-  /**
-   * Draw smooth curved connections between nodes
-   */
-  function drawTreeConnections(branches) {
-    const svg = document.getElementById("mindmap-connections");
-    const container = document.querySelector(".mindmap-tree");
-
-    if (!svg || !container) return;
-
-    svg.innerHTML = "";
-
-    // Get container bounds for relative positioning
-    const containerRect = container.getBoundingClientRect();
-
-    // Get root node position
-    const rootNode = document.getElementById("root-node");
-    if (!rootNode) return;
-
-    const rootRect = rootNode.getBoundingClientRect();
-    const rootX = rootRect.right - containerRect.left;
-    const rootCenterY = rootRect.top + rootRect.height / 2 - containerRect.top;
-
-    // Draw connections for each branch
-    branches.forEach((branch, index) => {
-      const branchNode = document.getElementById(`branch-${index}`);
-      if (!branchNode) return;
-
-      const branchRect = branchNode.getBoundingClientRect();
-      const branchX = branchRect.left - containerRect.left;
-      const branchCenterY =
-        branchRect.top + branchRect.height / 2 - containerRect.top;
-
-      // Get color for this branch
-      const branchColor = branchColors[index % branchColors.length];
-      const lineColor = getLineColor(branchColor);
-
-      // Draw root → branch curved line
-      const rootPath = createCurvedPath(
-        rootX,
-        rootCenterY,
-        branchX,
-        branchCenterY,
-        lineColor,
-        2,
-        "root-branch",
+    links.forEach(function (link) {
+      link.style.setProperty(
+        "stroke-width",
+        "2.25px"
       );
-      svg.appendChild(rootPath);
 
-      // Draw branch → children connections only if expanded
-      const branchEl = document.querySelector(
-        `.tree-branch[data-index="${index}"]`,
+      link.style.setProperty(
+        "stroke-opacity",
+        "0.82"
       );
-      const isExpanded = branchEl && !branchEl.classList.contains("collapsed");
 
-      if (isExpanded) {
-        const children = branch.children || [];
-        children.forEach((child, childIdx) => {
-          const childNode = document.getElementById(
-            `child-${index}-${childIdx}`,
-          );
-          if (!childNode) return;
+      link.style.setProperty(
+        "stroke-linecap",
+        "round"
+      );
 
-          const childRect = childNode.getBoundingClientRect();
-          const branchRightX = branchRect.right - containerRect.left;
-          const childX = childRect.left - containerRect.left;
-          const childCenterY =
-            childRect.top + childRect.height / 2 - containerRect.top;
-
-          const childPath = createCurvedPath(
-            branchRightX,
-            branchCenterY,
-            childX,
-            childCenterY,
-            lineColor,
-            1.5,
-            "branch-child",
-          );
-          svg.appendChild(childPath);
-        });
-      }
+      link.style.setProperty(
+        "stroke-linejoin",
+        "round"
+      );
     });
   }
 
-  /**
-   * Create a smooth curved SVG path
-   */
-  function createCurvedPath(x1, y1, x2, y2, color, strokeWidth, className) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  function zoomStudentMindmapIn() {
+    if (
+      !window.studentMarkmapObj ||
+      typeof window.studentMarkmapObj.rescale !==
+        "function"
+    ) {
+      return;
+    }
 
-    // Control point offset for smooth S-curve
-    const cpOffset = (x2 - x1) * 0.5;
-
-    // Path: start → curve → end
-    const d = `M ${x1} ${y1} C ${x1 + cpOffset} ${y1}, ${
-      x2 - cpOffset
-    } ${y2}, ${x2} ${y2}`;
-
-    path.setAttribute("d", d);
-    path.setAttribute("stroke", color);
-    path.setAttribute("stroke-width", strokeWidth);
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke-linecap", "round");
-    path.setAttribute("class", `tree-line ${className}`);
-
-    return path;
+    window.studentMarkmapObj.rescale(1.25);
   }
+
+  function zoomStudentMindmapOut() {
+    if (
+      !window.studentMarkmapObj ||
+      typeof window.studentMarkmapObj.rescale !==
+        "function"
+    ) {
+      return;
+    }
+
+    window.studentMarkmapObj.rescale(0.8);
+  }
+
+  function fitStudentMindmap() {
+    if (
+      !window.studentMarkmapObj ||
+      typeof window.studentMarkmapObj.fit !==
+        "function"
+    ) {
+      return;
+    }
+
+    window.studentMarkmapObj.fit();
+  }
+
+  window.zoomStudentMindmapIn = zoomStudentMindmapIn;
+  window.zoomStudentMindmapOut = zoomStudentMindmapOut;
+  window.fitStudentMindmap = fitStudentMindmap;
 
   /**
    * Print/Export Mindmap as Image
@@ -917,63 +1136,7 @@
     }
   }
 
-  /**
-   * Get line color based on branch color name
-   */
-  function getLineColor(colorName) {
-    const colorMap = {
-      purple: "#a78bfa",
-      blue: "#93c5fd",
-      green: "#86efac",
-      pink: "#f9a8d4",
-      cyan: "#67e8f9",
-      yellow: "#fde047",
-      red: "#fca5a5",
-      indigo: "#a5b4fc",
-    };
-    return colorMap[colorName] || "#94a3b8";
-  }
 
-  /**
-   * Redraw connections on window resize
-   */
-  let resizeTimeout;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      // Get branches from current tree
-      const branchEls = document.querySelectorAll(".tree-branch");
-      if (branchEls.length > 0) {
-        // Reconstruct branches data for redraw
-        const branches = Array.from(branchEls).map((el, idx) => {
-          const childrenContainer = el.querySelector(".branch-children");
-          const childNodes = childrenContainer
-            ? childrenContainer.querySelectorAll(".child-node")
-            : [];
-          return {
-            children: Array.from(childNodes).map(() => ({})),
-          };
-        });
-        drawTreeConnections(branches);
-      }
-    }, 100);
-  });
-
-  // Legacy functions (keep for compatibility but they do nothing)
-  function resetMindmapView() {
-    console.log("Tree mindmap - no reset needed");
-  }
-  function fitToScreen() {
-    console.log("Tree mindmap - auto-fits");
-  }
-  function setZoom() {
-    console.log("Tree mindmap - no zoom");
-  }
-
-  // Make functions global
-  window.resetMindmapView = resetMindmapView;
-  window.fitToScreen = fitToScreen;
-  window.setZoom = setZoom;
 
   // ========== RENDER FUNCTIONS ==========
 
