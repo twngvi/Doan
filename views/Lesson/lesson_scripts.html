@@ -558,19 +558,54 @@
 
     console.log("🌳 Rendering tree mindmap with data:", data);
 
-    // Get root title
+    // Clear containers
+    treeContainer.innerHTML = "";
+    connectionsLayer.innerHTML = "";
+
+    // 1. Markmap (Markdown) Rendering
+    if (data.markdown) {
+      connectionsLayer.style.display = "none";
+      
+      let markmapSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      markmapSvg.id = "markmap-svg-render";
+      markmapSvg.style.width = "100%";
+      markmapSvg.style.minHeight = "600px";
+      treeContainer.appendChild(markmapSvg);
+      
+      if (!window.markmap) {
+        showMindmapError("Lỗi: Thư viện Markmap chưa được tải.");
+        return;
+      }
+      
+      const { Transformer, Markmap, loadCSS, loadJS } = window.markmap;
+      const transformer = new Transformer();
+      const { root, features } = transformer.transform(data.markdown);
+      const { styles, scripts } = transformer.getUsedAssets(features);
+      
+      if (styles) loadCSS(styles);
+      if (scripts) loadJS(scripts, { getMarkmap: () => window.markmap });
+      
+      const mm = Markmap.create(markmapSvg, {
+        autoFit: true,
+        color: (node) => {
+          const depthColors = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#673ab7'];
+          return depthColors[node.depth % depthColors.length];
+        }
+      }, root);
+      
+      setTimeout(() => mm.fit(), 300);
+      return;
+    }
+
+    // 2. Fallback to Simple Tree Mindmap (JSON)
+    connectionsLayer.style.display = "block";
     const rootTitle =
       data.title ||
       data.centralIdea ||
       currentLessonData?.topicTitle ||
       "Chủ đề chính";
 
-    // Get branches
     const branches = data.branches || data.nodes || [];
-
-    // Clear containers
-    treeContainer.innerHTML = "";
-    connectionsLayer.innerHTML = "";
 
     if (branches.length === 0) {
       treeContainer.innerHTML = `

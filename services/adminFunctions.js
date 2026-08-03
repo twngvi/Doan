@@ -3747,7 +3747,8 @@ function decodeHtmlEntities(text) {
 }
 
 function getTopicContentChecklist_(topicId) {
-  const allTopics = getAllTopicsIncludingHidden();
+  const topicsResult = getAllTopicsIncludingHidden();
+  const allTopics = topicsResult && topicsResult.topics ? topicsResult.topics : [];
   const topic = allTopics.find(t => String(t.topicId) === String(topicId));
   if (!topic) return { LT: false, MM: false, QZ: false, MC: false };
   return {
