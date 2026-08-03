@@ -1479,50 +1479,21 @@ function getAllTopicsForAdmin() {
       return { success: false, message: "Không có quyền admin" };
     }
 
-    const sheet = getSheet("Topics");
-    if (!sheet) return { success: false, message: "Không tìm thấy cơ sở dữ liệu Topics" };
-
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const topicIdIdx = headers.indexOf("topicId");
-    let isHiddenIdx = headers.indexOf("isHidden");
-
-    if (topicIdIdx === -1) {
-      return { success: false, message: "Cấu trúc dữ liệu không hợp lệ (thiếu topicId)" };
+    const topicsResult = getAllTopicsIncludingHidden();
+    if (!topicsResult.success) {
+        return topicsResult;
     }
-
-    if (isHiddenIdx === -1) {
-      isHiddenIdx = headers.length;
-      sheet.getRange(1, isHiddenIdx + 1).setValue("isHidden");
-    }
-
-    const topics = [];
-
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const topicId = row[topicIdIdx];
-      
-      if (!topicId) continue;
-
-      const topicData = {};
-      headers.forEach(function(header, idx) {
-        topicData[header] = row[idx];
-      });
-      
-      topicData.isHidden = (topicData.isHidden === true || String(topicData.isHidden).toLowerCase() === "true");
-      
-      topics.push(topicData);
-    }
-
+    
     return {
       success: true,
-      data: topics
+      data: topicsResult.topics
     };
   } catch (error) {
-    Logger.log("Error getting all topics for admin: " + error.toString());
-    return { success: false, message: error.toString() };
+    Logger.log("Error in getAllTopicsForAdmin: " + error.toString());
+    return { success: false, message: "Lỗi tải danh sách chủ đề: " + error.toString() };
   }
 }
+
 
 // ========================================
 // LESSONS MANAGEMENT
