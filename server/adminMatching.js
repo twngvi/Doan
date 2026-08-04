@@ -852,7 +852,7 @@ function adminGenerateMatchingCardsByAI(topicId) {
     }
 
     // 4. Call Gemini AI directly with a custom prompt
-    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất 30 thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
+    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất 10 thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
 
 === NỘI DUNG BÀI HỌC ===
 ${docResult.content}
@@ -877,8 +877,8 @@ Trả về CHÍNH XÁC định dạng JSON sau:
 }
 
 YÊU CẦU QUAN TRỌNG:
-- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 30 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 30 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP. NỘI DUNG GIỮA CÁC THẺ CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
-- PHẢI phân bổ độ khó theo đúng tỷ lệ: 70% thẻ "easy", 20% thẻ "medium", 10% thẻ "hard". (Ví dụ: tạo 30 thẻ thì cần 21 thẻ easy, 6 thẻ medium, 3 thẻ hard).
+- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 10 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 10 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP. NỘI DUNG GIỮA CÁC THẺ CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
+- PHẢI phân bổ độ khó theo đúng tỷ lệ: 70% thẻ "easy", 20% thẻ "medium", 10% thẻ "hard". (Ví dụ: tạo 10 thẻ thì cần 7 thẻ easy, 2 thẻ medium, 1 thẻ hard).
 - term: Là cụm từ cốt lõi, không diễn giải dài dòng.
 - CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.`;
 
