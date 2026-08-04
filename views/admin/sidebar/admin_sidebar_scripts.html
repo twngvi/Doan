@@ -1592,4 +1592,84 @@
       p.style.transition = "transform 0.4s ease";
     });
   });
+
+  /* ==========================================================================
+     CUSTOM DROPDOWN UI LOGIC
+     ========================================================================== */
+  function renderCustomSelect(selectId) {
+    const originalSelect = document.getElementById(selectId);
+    if (!originalSelect) return;
+
+    // Check if we already wrapped this select
+    let wrapper = originalSelect.parentElement.querySelector('.teco-custom-select');
+    if (wrapper) {
+      wrapper.remove(); // Re-render if it exists
+    }
+    
+    // Hide original select but keep it for logic
+    originalSelect.style.opacity = '0';
+    originalSelect.style.position = 'absolute';
+    originalSelect.style.pointerEvents = 'none';
+    originalSelect.style.zIndex = '-1';
+
+    // Create wrapper
+    wrapper = document.createElement('div');
+    wrapper.className = 'teco-custom-select';
+
+    // Create Header (shows selected value)
+    const header = document.createElement('div');
+    header.className = 'teco-select-header';
+    const selectedOption = originalSelect.options[originalSelect.selectedIndex];
+    header.textContent = selectedOption ? selectedOption.textContent : 'Chọn giá trị...';
+    
+    // Create Options Container
+    const optionsContainer = document.createElement('div');
+    optionsContainer.className = 'teco-select-options';
+
+    // Populate Options
+    Array.from(originalSelect.options).forEach((opt, index) => {
+      const item = document.createElement('div');
+      item.className = 'teco-option-item';
+      if (opt.selected) item.classList.add('is-selected');
+      item.textContent = opt.textContent;
+
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Update original select
+        originalSelect.selectedIndex = index;
+        // Trigger change event for original select
+        originalSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        // Update UI
+        header.textContent = opt.textContent;
+        optionsContainer.querySelectorAll('.teco-option-item').forEach(i => i.classList.remove('is-selected'));
+        item.classList.add('is-selected');
+        // Close dropdown
+        optionsContainer.classList.remove('is-open');
+      });
+
+      optionsContainer.appendChild(item);
+    });
+
+    // Toggle logic
+    header.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = optionsContainer.classList.contains('is-open');
+      // Close all other dropdowns
+      document.querySelectorAll('.teco-select-options').forEach(o => o.classList.remove('is-open'));
+      if (!isOpen) {
+        optionsContainer.classList.add('is-open');
+      }
+    });
+
+    wrapper.appendChild(header);
+    wrapper.appendChild(optionsContainer);
+
+    // Insert wrapper before original select
+    originalSelect.parentElement.insertBefore(wrapper, originalSelect);
+  }
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.teco-select-options').forEach(o => o.classList.remove('is-open'));
+  });
 </script>
