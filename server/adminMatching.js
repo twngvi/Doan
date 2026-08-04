@@ -841,7 +841,7 @@ function adminGenerateMatchingCardsByAI(topicId) {
     if (existingCardsResult.success && existingCardsResult.cards && existingCardsResult.cards.length > 0) {
       existingTermsText = existingCardsResult.cards
         .filter(c => c.term)
-        .map(c => `- ${c.term}`)
+        .map((c, idx) => `${idx + 1}. ${c.term}: ${c.shortDefinition || c.definition || ""}`)
         .join("\n");
     }
 
@@ -852,14 +852,15 @@ function adminGenerateMatchingCardsByAI(topicId) {
     }
 
     // 4. Call Gemini AI directly with a custom prompt
-    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất 10 thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
+    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất các thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
 
 === NỘI DUNG BÀI HỌC ===
 ${docResult.content}
 === KẾT THÚC ===
 
-KHÔNG tạo các thuật ngữ trùng lặp với danh sách đã có sau đây:
+=== DANH SÁCH THẺ ĐÃ TỒN TẠI (TUYỆT ĐỐI KHÔNG ĐƯỢC TRÙNG) ===
 ${existingTermsText}
+=== KẾT THÚC DANH SÁCH THẺ CŨ ===
 
 Trả về CHÍNH XÁC định dạng JSON sau:
 {
@@ -876,22 +877,30 @@ Trả về CHÍNH XÁC định dạng JSON sau:
   ]
 }
 
-YÊU CẦU QUAN TRỌNG:
-- LUÔN LUÔN cố gắng tạo CHÍNH XÁC 10 thẻ chất lượng nhất. Nếu không đủ nội dung để tạo 10 thẻ mới, hãy tạo tối đa có thể nhưng TUYỆT ĐỐI KHÔNG TRÙNG LẶP. NỘI DUNG GIỮA CÁC THẺ CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
-- PHẢI phân bổ độ khó theo đúng tỷ lệ: 70% thẻ "easy", 20% thẻ "medium", 10% thẻ "hard". (Ví dụ: tạo 10 thẻ thì cần 7 thẻ easy, 2 thẻ medium, 1 thẻ hard).
+YÊU CẦU CỰC KỲ QUAN TRỌNG:
+- Cố gắng tạo TỐI ĐA 30 thẻ mới.
+- Bắt buộc phân bổ độ khó (nếu đủ 30 thẻ) theo đúng số lượng sau: 18 thẻ "easy" (dễ), 8 thẻ "medium" (trung bình), 4 thẻ "hard" (khó). Nếu không đủ 30 thẻ, hãy giữ tỷ lệ độ khó tương đương.
+- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH THẺ ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các thẻ có thuật ngữ (term) hoặc nội dung trùng lặp với các thẻ đã tồn tại. MỖI LẦN TẠO PHẢI LÀ CÁC THẺ KHÁC BIỆT HOÀN TOÀN.
+- NỘI DUNG GIỮA CÁC THẺ MỚI CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
+- Nếu tài liệu đã được khai thác hết và KHÔNG THỂ tạo thêm bất kỳ thẻ KHÁC BIỆT nào nữa, hãy trả về mảng "cards" rỗng [].
 - term: Là cụm từ cốt lõi, không diễn giải dài dòng.
-- CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.`;
+- CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.
+- CHỈ dùng kiến thức trong tài liệu, KHÔNG tạo thuật ngữ không có trong tài liệu.`;
 
     const aiResult = GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.7,
-      maxTokens: 5000,
+      maxTokens: 20000,
       topicId: topicId,
       contentType: "matching_cards_ai_admin",
     }, userContext);
 
     if (!aiResult || !aiResult.cards || !Array.isArray(aiResult.cards)) {
       return { success: false, message: "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại." };
+    }
+
+    if (aiResult.cards.length === 0) {
+      return { success: false, message: "Không thể tạo thêm thẻ mới. Nội dung tài liệu đã được khai thác hết để tránh trùng lặp." };
     }
 
     const existingTermsSet = new Set();
