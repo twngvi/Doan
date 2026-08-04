@@ -482,6 +482,10 @@ const GeminiService = {
       },
     };
 
+    if (config.expectJson) {
+      payload.generationConfig.responseMimeType = "application/json";
+    }
+
     const options = {
       method: "post",
       contentType: "application/json",
@@ -617,13 +621,15 @@ const GeminiService = {
     // Try parse as JSON if expected
     if (config.expectJson) {
       try {
-        // Tìm JSON trong response (có thể có text trước/sau)
         const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
         if (jsonMatch) {
           return JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("Không tìm thấy JSON object trong response");
         }
       } catch (e) {
-        Logger.log("Could not parse as JSON, returning raw text");
+        let snippet = text.substring(0, 150);
+        throw new Error("Lỗi parse JSON từ AI (" + e.message + "). Data: " + snippet);
       }
     }
 

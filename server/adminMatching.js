@@ -385,7 +385,7 @@ function createMatchingTermCard(data) {
     const now = new Date();
     const adminEmail = Session.getActiveUser().getEmail() || "admin";
 
-    const topicResult = getTopicById(data.topicId);
+    const topicResult = getTopicById(data.topicId, true);
     const topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
 
     const cardId = generateId("MTC");
@@ -469,7 +469,7 @@ function updateMatchingTermCard(cardId, data) {
     let topicId = data.topicId !== undefined ? data.topicId : currentRow[headers.indexOf("topicId")];
     let topicTitle = currentRow[headers.indexOf("topicTitle")];
     if (data.topicId !== undefined && data.topicId !== currentRow[headers.indexOf("topicId")]) {
-      const topicResult = getTopicById(topicId);
+      const topicResult = getTopicById(topicId, true);
       topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
     }
 
@@ -550,7 +550,7 @@ function bulkSaveMatchingTermCards(cards) {
 
         let topicTitle = card.topicTitle || "";
         if (!topicTitle && card.topicId) {
-          const topicResult = getTopicById(card.topicId);
+          const topicResult = getTopicById(card.topicId, true);
           topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
         }
 
@@ -586,7 +586,7 @@ function bulkSaveMatchingTermCards(cards) {
           let topicTitle = currentRow[headers.indexOf("topicTitle")];
 
           if (card.topicId !== undefined && card.topicId !== currentRow[headers.indexOf("topicId")]) {
-            const topicResult = getTopicById(card.topicId);
+            const topicResult = getTopicById(card.topicId, true);
             topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
           }
 
@@ -822,7 +822,7 @@ function approveMatchingTermCards(cardIds) {
 function adminGenerateMatchingCardsByAI(topicId) {
   try {
     // 1. Get Topic Info
-    const topicResult = getTopicById(topicId);
+    const topicResult = getTopicById(topicId, true);
     if (!topicResult.success || !topicResult.topic) {
       return { success: false, message: "Topic not found" };
     }

@@ -12,7 +12,7 @@ function generateAdminMindmap(topicId, topicContent, customPrompt, userContext) 
   try {
     if (!topicContent) {
       // Nếu không truyền content trực tiếp, thử đọc từ doc
-      const topicInfoRes = getTopicById(topicId);
+      const topicInfoRes = getTopicById(topicId, true);
       if (topicInfoRes && topicInfoRes.success && topicInfoRes.topic && topicInfoRes.topic.contentDocId) {
         const docResult = GeminiService.readGoogleDoc(topicInfoRes.topic.contentDocId);
         if (docResult.success) {

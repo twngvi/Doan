@@ -483,17 +483,18 @@ function getTopicsByJourney(journey) {
 /**
  * Get single topic by ID
  */
-function getTopicById(topicId) {
+function getTopicById(topicId, includeHidden = false) {
   try {
     Logger.log("Getting topic: " + topicId);
 
-    const result = getAllTopics();
+    const result = includeHidden ? getAllTopicsIncludingHidden() : getAllTopics();
 
     if (!result.success) {
       return result;
     }
 
-    const topic = result.topics.find((t) => t.topicId === topicId);
+    const searchId = String(topicId).trim();
+    const topic = result.topics.find((t) => t.topicId === searchId);
 
     if (!topic) {
       return {

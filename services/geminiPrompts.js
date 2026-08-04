@@ -224,7 +224,7 @@ Các khái niệm cần tập trung: {focusConcepts}
 Trả về CHÍNH XÁC format JSON sau:
 {
   "quizTitle": "Tên bài quiz",
-  "totalQuestions": 30,
+  "totalQuestions": 10,
   "questions": [
     {
       "id": "Q001",
@@ -243,12 +243,15 @@ Trả về CHÍNH XÁC format JSON sau:
 }
 
 YÊU CẦU CỰC KỲ QUAN TRỌNG:
-- Tạo CHÍNH XÁC 30 câu hỏi (KHÔNG ĐƯỢC ÍT HƠN, KHÔNG ĐƯỢC NHIỀU HƠN).
-- Bắt buộc phân bổ độ khó theo đúng số lượng sau: 15 câu easy (dễ), 9 câu medium (trung bình), 6 câu hard (khó).
-- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các câu hỏi có ý tưởng hoặc cách hỏi trùng lặp với các câu hỏi đã tồn tại. Nếu tài liệu không đủ ý để tạo 30 câu mới, hãy đi sâu vào chi tiết hoặc đặt tình huống (scenario).
+- Tạo CHÍNH XÁC 10 câu hỏi (KHÔNG ĐƯỢC ÍT HƠN, KHÔNG ĐƯỢC NHIỀU HƠN).
+- Bắt buộc phân bổ độ khó theo đúng số lượng sau: 5 câu easy (dễ), 3 câu medium (trung bình), 2 câu hard (khó).
+- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các câu hỏi có ý tưởng hoặc cách hỏi trùng lặp với các câu hỏi đã tồn tại. Nếu tài liệu không đủ ý để tạo 10 câu mới, hãy đi sâu vào chi tiết hoặc đặt tình huống (scenario).
 - Mỗi câu hỏi phải là DUY NHẤT, không trùng lặp nội dung với câu khác trong bộ này.
 
-LƯU Ý FORMAT:
+LƯU Ý FORMAT JSON CỰC KỲ NGHIÊM NGẶT:
+- TUYỆT ĐỐI KHÔNG bỏ sót dấu phẩy (,) ngăn cách giữa các đối tượng trong mảng "questions".
+- TUYỆT ĐỐI KHÔNG dùng dấu nháy kép (") bên trong một chuỗi, phải sử dụng dấu nháy đơn (') hoặc thoát bằng \".
+- Cú pháp JSON phải hoàn hảo 100%.
 - "options" phải là mảng 4 chuỗi (không phải object)
 - "correctAnswer" là số từ 0-3 (index của đáp án đúng, không phải chữ A/B/C/D)
 - Ví dụ: correctAnswer = 0 nghĩa là đáp án đầu tiên đúng
@@ -474,7 +477,7 @@ const ContentGenerator = {
     const result = GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.3, // Thấp để có kết quả nhất quán
-      maxTokens: 2048,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "document_analysis",
     }, userContext);
@@ -497,7 +500,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.5,
-      maxTokens: 3000,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "mindmap",
     }, userContext);
@@ -518,7 +521,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.5,
-      maxTokens: 2500,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "infographic",
     }, userContext);
@@ -548,7 +551,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.6,
-      maxTokens: 4000,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "flashcards",
     }, userContext);
@@ -655,7 +658,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.5,
-      maxTokens: 5000,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "lesson_summary",
     }, userContext);
@@ -689,7 +692,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.6,
-      maxTokens: 3000,
+      maxTokens: 8192,
       topicId: requestMeta?.topicId || "",
       contentType: "matching",
     }, userContext);

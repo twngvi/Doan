@@ -115,7 +115,7 @@ function adminUpdateTopicQuizStatus(topicId, newStatus) {
     let updated = false;
     
     for (let i = 1; i < data.length; i++) {
-      if (data[i][topicIdCol] === topicId) {
+      if (String(data[i][topicIdCol]).trim() === String(topicId).trim()) {
         if (quizStatusCol >= 0) {
           topicSheet.getRange(i + 1, quizStatusCol + 1).setValue(newStatus);
           updated = true;
@@ -195,9 +195,9 @@ function adminUpdateTopicReward(topicId, rewardType, newReward) {
 function adminGenerateQuestionsByAI(topicId) {
   try {
     // 1. Get Topic Info
-    const topicResult = getTopicById(topicId);
+    const topicResult = getTopicById(topicId, true);
     if (!topicResult.success || !topicResult.topic) {
-      return { success: false, message: "Topic not found" };
+      return { success: false, message: "Topic not found for id: '" + topicId + "' - reason: " + (topicResult.message || "Unknown") };
     }
     const topic = topicResult.topic;
     
@@ -275,7 +275,9 @@ function adminGenerateQuestionsByAI(topicId) {
         questions: latestQuestionsResult.success ? latestQuestionsResult.questions : formattedQuestions
       };
     } else {
-      return { success: false, message: "AI trả về dữ liệu không hợp lệ" };
+      let rawText = typeof questionsResult === "string" ? questionsResult : JSON.stringify(questionsResult);
+      if (rawText && rawText.length > 200) rawText = rawText.substring(0, 200) + "...";
+      return { success: false, message: "AI trả về dữ liệu không hợp lệ: " + rawText };
     }
   } catch (error) {
     Logger.log("Error in adminGenerateQuestionsByAI: " + error.toString());
@@ -340,7 +342,7 @@ function adminSaveQuestions(topicId, questions) {
     const adminEmail = Session.getActiveUser().getEmail() || "admin";
     
     // Track new questions vs updates
-    const topicResult = getTopicById(topicId);
+    const topicResult = getTopicById(topicId, true);
     const topicTitle = topicResult.success && topicResult.topic ? topicResult.topic.title : "";
     
     // Prepare column indices and auto-add missing columns
@@ -509,7 +511,7 @@ function getApprovedQuestionsForTopic(topicId) {
     
     const questions = [];
     for (let i = 1; i < data.length; i++) {
-      if (data[i][topicIdCol] === topicId && data[i][statusCol] === "approved") {
+      if (String(data[i][topicIdCol]).trim() === String(topicId).trim() && data[i][statusCol] === "approved") {
         const q = {};
         headers.forEach((h, idx) => {
           let val = data[i][idx];
