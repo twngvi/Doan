@@ -224,7 +224,7 @@ Các khái niệm cần tập trung: {focusConcepts}
 Trả về CHÍNH XÁC format JSON sau:
 {
   "quizTitle": "Tên bài quiz",
-  "totalQuestions": 10,
+  "totalQuestions": 30,
   "questions": [
     {
       "id": "Q001",
@@ -243,9 +243,10 @@ Trả về CHÍNH XÁC format JSON sau:
 }
 
 YÊU CẦU CỰC KỲ QUAN TRỌNG:
-- Tạo CHÍNH XÁC 10 câu hỏi (KHÔNG ĐƯỢC ÍT HƠN, KHÔNG ĐƯỢC NHIỀU HƠN).
-- Bắt buộc phân bổ độ khó theo đúng số lượng sau: 5 câu easy (dễ), 3 câu medium (trung bình), 2 câu hard (khó).
-- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các câu hỏi có ý tưởng hoặc cách hỏi trùng lặp với các câu hỏi đã tồn tại. Nếu tài liệu không đủ ý để tạo 10 câu mới, hãy đi sâu vào chi tiết hoặc đặt tình huống (scenario).
+- Cố gắng tạo TỐI ĐA 30 câu hỏi mới.
+- Bắt buộc phân bổ độ khó (nếu đủ 30 câu) theo đúng số lượng sau: 18 câu easy (dễ), 8 câu medium (trung bình), 4 câu hard (khó). Nếu không đủ 30 câu, hãy giữ tỷ lệ độ khó tương đương.
+- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH CÂU HỎI ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các câu hỏi có ý tưởng hoặc cách hỏi trùng lặp với các câu hỏi đã tồn tại. MỖI LẦN TẠO PHẢI LÀ CÁC CÂU HỎI KHÁC BIỆT.
+- Nếu tài liệu đã được khai thác hết và KHÔNG THỂ tạo thêm bất kỳ câu hỏi KHÁC BIỆT nào nữa, hãy trả về mảng "questions" rỗng [].
 - Mỗi câu hỏi phải là DUY NHẤT, không trùng lặp nội dung với câu khác trong bộ này.
 
 LƯU Ý FORMAT JSON CỰC KỲ NGHIÊM NGẶT:
@@ -582,7 +583,7 @@ const ContentGenerator = {
     return GeminiService.callWithRetry(prompt, {
       expectJson: true,
       temperature: 0.7,
-      maxTokens: 8000,
+      maxTokens: 30000,
       model: AI_CONFIG.GEMINI_MODEL_ADVANCED, // Dùng model mạnh hơn
       topicId: requestMeta?.topicId || "",
       contentType: "questions",

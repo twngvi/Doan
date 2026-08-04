@@ -241,6 +241,10 @@ function adminGenerateQuestionsByAI(topicId) {
     
     // Format the response for the admin UI
     if (questionsResult && questionsResult.questions) {
+      if (questionsResult.questions.length === 0) {
+        return { success: false, message: "Không thể tạo thêm câu hỏi mới. Nội dung tài liệu đã được khai thác hết để tránh trùng lặp." };
+      }
+      
       // Map to the format we need in DB
       const formattedQuestions = questionsResult.questions.map((q, index) => ({
         questionId: "TEMP_" + Date.now() + "_" + index, // Dùng questionId để adminSaveQuestions nhận diện là câu mới
