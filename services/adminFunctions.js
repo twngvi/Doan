@@ -4190,6 +4190,7 @@ function getTopicForEdit(topicId) {
       order: topicRow[headers.indexOf("order")] || 999,
       iconUrl: topicRow[headers.indexOf("iconUrl")] || "",
       estimatedTime: topicRow[headers.indexOf("estimatedTime")] || "",
+      courseId: headers.indexOf("courseId") >= 0 ? (topicRow[headers.indexOf("courseId")] || "") : "",
       
       prerequisiteTopics:
         headers.indexOf("prerequisiteTopics") >= 0
@@ -4387,6 +4388,7 @@ function getTopicForEdit(topicId) {
       order: topicRow[headers.indexOf("order")] || 999,
       iconUrl: topicRow[headers.indexOf("iconUrl")] || "",
       estimatedTime: topicRow[headers.indexOf("estimatedTime")] || "",
+      courseId: headers.indexOf("courseId") >= 0 ? (topicRow[headers.indexOf("courseId")] || "") : "",
       
       prerequisiteTopics:
         headers.indexOf("prerequisiteTopics") >= 0
