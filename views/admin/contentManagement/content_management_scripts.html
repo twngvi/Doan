@@ -1697,6 +1697,78 @@ function closeDeleteModal() {
   topicToDelete = null;
 }
 
+// Delete course
+let courseToDelete = null;
+
+function deleteCourse(courseId, courseTitle) {
+  courseToDelete = courseId;
+  document.getElementById('delete-course-name').textContent = courseTitle;
+  document.getElementById('cm-delete-course-modal').style.display = 'flex';
+}
+
+function closeDeleteCourseModal() {
+  document.getElementById('cm-delete-course-modal').style.display = 'none';
+  courseToDelete = null;
+}
+
+function confirmDeleteCourse() {
+  if (!courseToDelete) return;
+  const deletingCourseId = courseToDelete;
+
+  const deleteBtn = document.getElementById('btn-confirm-delete-course');
+  const originalBtnHtml = deleteBtn.innerHTML;
+  deleteBtn.disabled = true;
+  deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = originalBtnHtml;
+      closeDeleteCourseModal();
+
+      if (result && result.success) {
+        markTopicsDataChanged();
+        if (window.globalTopicsCache) {
+          window.globalTopicsCache.data = null;
+          window.globalTopicsCache.progress = null;
+          window.globalTopicsCache.lastLoadTime = 0;
+        }
+
+        loadCoursesList();
+        loadTopicsList();
+
+        if (typeof showNotification === 'function') {
+          showNotification(result.message || 'Đã xóa khóa học thành công!', 'success');
+        } else {
+          alert(result.message || 'Đã xóa khóa học thành công!');
+        }
+      } else {
+        if (typeof showNotification === 'function') {
+          showNotification(result?.message || 'Không thể xóa khóa học', 'error');
+        } else {
+          alert(result?.message || 'Không thể xóa khóa học');
+        }
+      }
+
+      courseToDelete = null;
+    })
+    .withFailureHandler(function(error) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = originalBtnHtml;
+      closeDeleteCourseModal();
+
+      console.error('[ContentManagement] Delete course failed:', error);
+      if (typeof showNotification === 'function') {
+        showNotification('Lỗi khi xóa khóa học: ' + (error?.message || error), 'error');
+      } else {
+        alert('Lỗi khi xóa khóa học: ' + (error?.message || error));
+      }
+
+      courseToDelete = null;
+    })
+    .deleteCourseAndTopics(deletingCourseId);
+}
+
 // ===== Mobile Action Modal =====
 function openMobileActionModal(topicId, event) {
   // Only trigger on mobile/tablet widths
@@ -1856,21 +1928,21 @@ function refreshTopicsList(e) {
 // ===== Helper Functions =====
 function showLoading(show) {
   const loadingEl = document.getElementById('cm-loading-state');
-  const tableEl = document.querySelector('.cm-table');
+  const tableWrapperEl = document.getElementById('cm-table-view');
   const cardsGridEl = document.getElementById('cm-cards-grid');
   const emptyStateEl = document.getElementById('cm-empty-state');
   const paginationEl = document.getElementById('cm-pagination');
 
   if (show) {
     if (loadingEl) loadingEl.style.display = 'flex';
-    if (tableEl) tableEl.style.display = 'none';
+    if (tableWrapperEl) tableWrapperEl.style.display = 'none';
     if (cardsGridEl) cardsGridEl.style.display = 'none';
     if (emptyStateEl) emptyStateEl.style.display = 'none';
     if (paginationEl) paginationEl.style.display = 'none';
   } else {
     if (loadingEl) loadingEl.style.display = 'none';
-    if (tableEl) tableEl.style.display = '';
-    if (cardsGridEl) cardsGridEl.style.display = '';
+    if (tableWrapperEl && currentView === 'table') tableWrapperEl.style.display = 'block';
+    if (cardsGridEl && currentView === 'cards') cardsGridEl.style.display = 'grid';
   }
 }
 
@@ -2066,23 +2138,32 @@ function renderCoursesView() {
       const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
       
       const isPublished = course.status === 'published';
-      const isHidden = course.status === 'hidden';
-      const statusText = isPublished ? 'Đang hiển thị' : (isHidden ? 'Đang ẩn' : 'Bản nháp');
-      const statusColor = isPublished ? '#10b981' : (isHidden ? '#ef4444' : '#f59e0b');
-      const statusBg = isPublished ? '#d1fae5' : (isHidden ? '#fee2e2' : '#fef3c7');
+      const isHidden = !isPublished; // Treat draft as hidden too
+      const statusText = isPublished ? 'Đang hiển thị' : 'Đang ẩn';
+      const statusColor = isPublished ? '#10b981' : '#ef4444';
+      const statusBg = isPublished ? '#d1fae5' : '#fee2e2';
 
       html += `
         <div class="cm-course-card" style="background: white; border-radius: 16px; padding: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; position: relative; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; min-height: 330px;" onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.05)'">
           
           <div style="height: 170px; width: 100%; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; position: relative; flex-shrink: 0;">
             ${!course.thumbnailUrl ? '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #4f46e5;"><span class="material-symbols-sharp" style="font-size: 48px; opacity: 0.5;">school</span></div>' : ''}
-            <div style="position: absolute; top: 12px; left: 12px; background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="position: absolute; top: 12px; left: 12px; background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s;" onclick="toggleCourseStatus('${safeCourseId}', event)" title="Chuyển trạng thái" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
               <div style="width: 6px; height: 6px; border-radius: 50%; background: ${statusColor};"></div>
               ${statusText}
+              <span class="material-symbols-sharp" style="font-size: 14px; margin-left: 2px;">swap_horiz</span>
             </div>
-            <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Sửa" style="position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; padding: 0; background: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
-              <span class="material-symbols-sharp" style="font-size: 18px; color: #4f46e5;">edit</span>
-            </button>
+            
+            <div style="position: absolute; top: 12px; right: 12px; display: flex; gap: 6px;">
+              <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Sửa" style="width: 32px; height: 32px; padding: 0; background: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
+                <span class="material-symbols-sharp" style="font-size: 18px; color: #4f46e5;">edit</span>
+              </button>
+              ${isHidden ? `
+              <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); deleteCourse('${safeCourseId}', '${safeName}')" title="Xóa" style="width: 32px; height: 32px; padding: 0; background: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='white'">
+                <span class="material-symbols-sharp" style="font-size: 18px; color: #ef4444;">delete</span>
+              </button>
+              ` : ''}
+            </div>
           </div>
           
           <div style="padding: 14px; flex: 1; display: flex; flex-direction: column;">
@@ -2135,15 +2216,22 @@ function renderCoursesView() {
       const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
       
       const isPublished = course.status === 'published';
-      const isHidden = course.status === 'hidden';
-      const statusText = isPublished ? 'Đang hiển thị' : (isHidden ? 'Đang ẩn' : 'Bản nháp');
-      const statusClass = isPublished ? 'status-active' : (isHidden ? 'status-locked' : 'status-draft');
+      const isHidden = !isPublished;
+      const statusText = isPublished ? 'Đang hiển thị' : 'Đang ẩn';
+      const statusClass = isPublished ? 'status-active' : 'status-locked';
+      
+      const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
       
       html += `
         <tr onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" style="cursor: pointer;">
+          <td style="width: 15%;">
+            <div style="width: 120px; height: 68px; border-radius: 8px; overflow: hidden; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center;">
+              ${!course.thumbnailUrl ? '<span class="material-symbols-sharp" style="font-size: 24px; color: #4f46e5; opacity: 0.5;">school</span>' : ''}
+            </div>
+          </td>
           <td>
             <div class="topic-info">
-              <span class="topic-name">${escapeHtml(course.title)}</span>
+              <span class="topic-name" style="font-weight: 600; font-size: 15px; color: #1e293b;">${escapeHtml(course.title)}</span>
             </div>
           </td>
           <td>
@@ -2153,12 +2241,22 @@ function renderCoursesView() {
           </td>
           <td class="align-center">${course.totalTopics || 0} bài học</td>
           <td>
-            <span class="status-badge ${statusClass}">${statusText}</span>
+            <span class="status-badge ${statusClass} interactive" onclick="toggleCourseStatus('${safeCourseId}', event)" title="Chuyển trạng thái">
+              ${statusText}
+              <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
+            </span>
           </td>
-          <td class="align-right actions-cell">
-            <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Chỉnh sửa">
-              <span class="material-symbols-sharp">edit</span>
-            </button>
+          <td class="actions-cell">
+            <div class="action-buttons" style="justify-content: flex-start; gap: 8px;">
+              <button class="action-btn edit" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Chỉnh sửa">
+                <span class="material-symbols-sharp">edit</span>
+              </button>
+              ${isHidden ? `
+              <button class="action-btn delete" onclick="event.stopPropagation(); deleteCourse('${safeCourseId}', '${safeName}')" title="Xóa">
+                <span class="material-symbols-sharp">delete</span>
+              </button>
+              ` : ''}
+            </div>
           </td>
         </tr>
       `;
@@ -2201,8 +2299,8 @@ function applyCourseFilters(searchTerm) {
     const matchesSearch = !searchTerm || title.includes(searchTerm);
     const matchesLevel = !levelFilter || String(course.level || '').trim() === levelFilter;
     
-    // Default to 'draft' if missing
-    const courseStatus = String(course.status || 'draft').trim(); 
+    // Default to 'hidden' if not published
+    const courseStatus = course.status === 'published' ? 'published' : 'hidden'; 
     const matchesStatus = !statusFilter || courseStatus === statusFilter;
     
     return matchesSearch && matchesLevel && matchesStatus;
@@ -2792,6 +2890,158 @@ async function handleCourseSubmit(event) {
   }
 }
 
+
+// ===== Course Status Toggle Modal =====
+let courseToToggleStatus = null;
+
+function toggleCourseStatus(courseId, event) {
+  if (event) event.stopPropagation();
+  
+  const course = allCourses.find(c => String(c.courseId) === String(courseId));
+  if (!course) return;
+  
+  const isCurrentlyPublished = course.status === 'published';
+  const newStatus = isCurrentlyPublished ? 'hidden' : 'published';
+  
+  courseToToggleStatus = {
+    id: courseId,
+    title: course.title,
+    newStatus: newStatus
+  };
+  
+  const modal = document.getElementById('cm-course-status-modal');
+  const heading = document.getElementById('course-status-modal-heading');
+  const titleEl = document.getElementById('course-status-title');
+  const iconWrap = document.getElementById('course-status-modal-icon-wrap');
+  const icon = document.getElementById('course-status-modal-icon');
+  const note = document.getElementById('course-status-modal-note');
+  const confirmBtn = document.getElementById('course-status-confirm-btn');
+  const learnerCountContainer = document.getElementById('course-status-learner-count');
+  const countText = document.getElementById('course-status-count-text');
+  const spinner = document.getElementById('course-status-spinner');
+  
+  titleEl.textContent = course.title;
+  
+  if (newStatus === 'published') {
+    heading.textContent = 'Hiển thị khóa học';
+    iconWrap.className = 'cm-status-icon-wrap success';
+    icon.textContent = 'visibility';
+    note.className = 'cm-status-note success';
+    note.innerHTML = 'Khóa học này sẽ được <strong>hiển thị</strong> và học viên có thể truy cập được. Bạn có chắc chắn không?';
+    confirmBtn.className = 'cm-btn cm-btn-primary';
+    confirmBtn.innerHTML = '<span class="material-symbols-sharp">visibility</span> Xác nhận hiển thị';
+    learnerCountContainer.style.display = 'none'; // No need to check learners if publishing
+  } else {
+    heading.textContent = 'Ẩn khóa học';
+    iconWrap.className = 'cm-status-icon-wrap danger';
+    icon.textContent = 'visibility_off';
+    note.className = 'cm-status-note danger';
+    note.innerHTML = 'Khóa học này sẽ bị <strong>ẩn</strong>. Học viên đang học sẽ không nhìn thấy khóa học này nữa. Bạn có chắc chắn không?';
+    confirmBtn.className = 'cm-btn cm-btn-danger';
+    confirmBtn.innerHTML = '<span class="material-symbols-sharp">visibility_off</span> Xác nhận ẩn';
+    learnerCountContainer.style.display = 'flex';
+    countText.textContent = 'Đang kiểm tra số lượng học viên...';
+    spinner.style.display = 'block';
+    
+    // Fetch learner count
+    if (typeof callAppsScript === 'function') {
+      callAppsScript('getCourseLearnerCount', courseId)
+        .then(res => {
+          spinner.style.display = 'none';
+          if (res && res.success) {
+            countText.innerHTML = `Hiện có <strong>${res.count} người</strong> đã và đang tham gia khóa học này.`;
+          } else {
+            countText.textContent = 'Không thể lấy số lượng học viên.';
+          }
+        })
+        .catch(err => {
+          spinner.style.display = 'none';
+          countText.textContent = 'Lỗi khi kiểm tra học viên.';
+        });
+    } else {
+      google.script.run
+        .withSuccessHandler(res => {
+          spinner.style.display = 'none';
+          if (res && res.success) {
+            countText.innerHTML = `Hiện có <strong>${res.count} người</strong> đã và đang tham gia khóa học này.`;
+          } else {
+            countText.textContent = 'Không thể lấy số lượng học viên.';
+          }
+        })
+        .withFailureHandler(err => {
+          spinner.style.display = 'none';
+          countText.textContent = 'Lỗi khi kiểm tra học viên.';
+        })
+        .getCourseLearnerCount(courseId);
+    }
+  }
+  
+  modal.style.display = 'flex';
+}
+
+function closeCourseStatusModal() {
+  document.getElementById('cm-course-status-modal').style.display = 'none';
+  courseToToggleStatus = null;
+}
+
+function confirmToggleCourseStatus() {
+  if (!courseToToggleStatus) return;
+  
+  const courseId = courseToToggleStatus.id;
+  const newStatus = courseToToggleStatus.newStatus;
+  const confirmBtn = document.getElementById('course-status-confirm-btn');
+  const originalHtml = confirmBtn.innerHTML;
+  
+  confirmBtn.disabled = true;
+  confirmBtn.innerHTML = '<span class="material-symbols-sharp cm-spin">progress_activity</span> Đang xử lý...';
+  
+  const course = allCourses.find(c => String(c.courseId) === String(courseId));
+  if (!course) return;
+  
+  const courseData = { ...course };
+  courseData.status = newStatus;
+  
+  if (typeof callAppsScript === 'function') {
+    callAppsScript('updateCourse', courseId, courseData)
+      .then(res => {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHtml;
+        closeCourseStatusModal();
+        if (res && res.success) {
+          if (typeof showNotification === 'function') showNotification('Đã cập nhật trạng thái', 'success');
+          loadCoursesList();
+        } else {
+          if (typeof showNotification === 'function') showNotification('Lỗi: ' + (res?.message || 'Không thể cập nhật'), 'error');
+        }
+      })
+      .catch(err => {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHtml;
+        closeCourseStatusModal();
+        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
+      });
+  } else {
+    google.script.run
+      .withSuccessHandler(res => {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHtml;
+        closeCourseStatusModal();
+        if (res && res.success) {
+          if (typeof showNotification === 'function') showNotification('Đã cập nhật trạng thái', 'success');
+          loadCoursesList();
+        } else {
+          if (typeof showNotification === 'function') showNotification('Lỗi: ' + (res?.message || 'Không thể cập nhật'), 'error');
+        }
+      })
+      .withFailureHandler(err => {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHtml;
+        closeCourseStatusModal();
+        if (typeof showNotification === 'function') showNotification('Lỗi kết nối', 'error');
+      })
+      .updateCourse(courseId, courseData);
+  }
+}
 
 // ===== Auto-init when page shown =====
 window.initcontentmanagement = initContentManagement;

@@ -724,6 +724,40 @@ function getAdminOnlineUsersData() {
  * L뿯½뿯½뿯½y d뿯½뿯½뿯½ li뿯½뿯½‡u th뿯½뿯½‘ng k뿯½뿯½ h뿯½뿯½뿯½c t뿯½뿯½뿯½p/ng뿯½뿯½뿯½뿯½뿯½i ch뿯½뿯½i cho trang Admin User Stats.
  * Tr뿯½뿯½뿯½ v뿯½뿯½뿯½ format t뿯½뿯½뿯½뿯½ng th뿯½뿯½ch v뿯½뿯½›i views/admin/userStats/user_stats_scripts.html
  */
+function getCourseLearnerCount(courseId) {
+  try {
+    const adminContext = getCurrentAdminContext();
+    if (!adminContext || !adminContext.success) return { success: false, message: "No admin auth" };
+    
+    // Đọc nhanh từ cache nếu có
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "COURSE_LEARNER_COUNT_" + courseId;
+    const cached = cache.get(cacheKey);
+    if (cached) return { success: true, count: parseInt(cached, 10) };
+    
+    // Gọi tạm getAdminUserLearningStats để đếm
+    const stats = getAdminUserLearningStats({ maxUsers: 200 });
+    if (!stats || !stats.success) return { success: false, count: 0 };
+    
+    let count = 0;
+    stats.data.forEach(function(user) {
+      let learning = false;
+      if (user.lessons) {
+        user.lessons.forEach(function(l) { if (String(l.courseId) === String(courseId)) learning = true; });
+      }
+      if (user.attempts) {
+        user.attempts.forEach(function(a) { if (String(a.courseId) === String(courseId)) learning = true; });
+      }
+      if (learning) count++;
+    });
+    
+    cache.put(cacheKey, count.toString(), 600);
+    return { success: true, count: count };
+  } catch (e) {
+    return { success: false, count: 0 };
+  }
+}
+
 function getAdminUserLearningStats(options) {
   try {
     const adminContext = getCurrentAdminContext();
