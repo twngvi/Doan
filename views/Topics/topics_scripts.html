@@ -11,9 +11,16 @@
     let allCourses = [];
     let currentViewMode = "courses"; // "courses" or "topics"
     let currentCourseId = null;
-    let coursesLoaded = false; // Flag to track if courses API call completed
+    let coursesLoaded = false;
     let currentFilter = "all";
     let currentView = "grid";
+    
+    // ⭐ Course Filter State
+    let courseFilterState = {
+      keyword: "",
+      level: "all",
+      sort: "default"
+    };
     let selectedTopic = null;
     let userProgress = {};
 
@@ -388,6 +395,8 @@
         renderCourses();
         const coursesGridEl = document.getElementById('coursesGrid');
         if (coursesGridEl) coursesGridEl.style.display = 'grid';
+        const coursesFilterBarEl = document.getElementById('coursesFilterBar');
+        if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'flex';
         document.getElementById('topicsGrid').style.display = 'none';
         document.getElementById('topicsJourney').style.display = 'none';
         document.getElementById('topicsEmpty').style.display = 'none';
@@ -808,7 +817,49 @@
         return;
       }
       
-      allCourses.forEach(course => {
+      // Lọc và sắp xếp khóa học dựa trên courseFilterState
+      let filteredCourses = [...allCourses];
+      
+      if (courseFilterState.keyword) {
+        filteredCourses = filteredCourses.filter(course => {
+          const title = convertVietnamese(course.title || '');
+          const desc = convertVietnamese(course.description || course.shortDescription || '');
+          const code = convertVietnamese(course.courseCode || course.category || '');
+          const level = convertVietnamese(course.level || '');
+          return title.includes(courseFilterState.keyword) || 
+                 desc.includes(courseFilterState.keyword) || 
+                 code.includes(courseFilterState.keyword) ||
+                 level.includes(courseFilterState.keyword);
+        });
+      }
+      
+      if (courseFilterState.level !== 'all') {
+        filteredCourses = filteredCourses.filter(course => {
+          const courseLevel = String(course.level || '').toLowerCase();
+          return courseLevel === courseFilterState.level.toLowerCase();
+        });
+      }
+      
+      if (courseFilterState.sort !== 'default') {
+        filteredCourses.sort((a, b) => {
+          if (courseFilterState.sort === 'name_asc') return (a.title || '').localeCompare(b.title || '');
+          if (courseFilterState.sort === 'name_desc') return (b.title || '').localeCompare(a.title || '');
+          
+          const aCount = allTopics.filter(t => t.courseId === a.courseId).length;
+          const bCount = allTopics.filter(t => t.courseId === b.courseId).length;
+          
+          if (courseFilterState.sort === 'lessons_asc') return aCount - bCount;
+          if (courseFilterState.sort === 'lessons_desc') return bCount - aCount;
+          return 0;
+        });
+      }
+      
+      if (filteredCourses.length === 0) {
+        container.innerHTML = '<div style="padding: 24px; color: var(--text-muted); grid-column: 1/-1; text-align: center;">Không tìm thấy khóa học phù hợp.</div>';
+        return;
+      }
+      
+      filteredCourses.forEach(course => {
         const card = document.createElement('div');
         card.className = 'course-card';
         card.onclick = () => openCourse(course.courseId);
@@ -819,9 +870,11 @@
         const topicsCount = allTopics.filter(t => t.courseId === course.courseId).length;
         
         card.innerHTML = `
-          <img src="${imgUrl}" alt="${escapeHtml(course.title)}" class="course-card-image" onerror="this.src='https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop'">
+          <div class="course-card-image-wrapper">
+            <img src="${imgUrl}" alt="${escapeHtml(course.title)}" class="course-card-image" onerror="this.src='https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop'">
+          </div>
           <div class="course-card-content">
-            ${course.category ? `<div class="course-card-category">${escapeHtml(course.category)}</div>` : ''}
+            ${(course.courseCode || course.category) ? `<div class="course-card-category">${escapeHtml(course.courseCode || course.category)}</div>` : ''}
             <h3 class="course-card-title">${escapeHtml(course.title)}</h3>
             <div class="course-card-desc">${escapeHtml(course.shortDescription || course.description || '')}</div>
             <div class="course-card-footer">
@@ -851,8 +904,15 @@
       currentViewMode = 'topics';
       
       document.getElementById('coursesGrid').style.display = 'none';
+      const coursesFilterBarEl = document.getElementById('coursesFilterBar');
+      if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'none';
+      
       document.getElementById('btnBackToCourses').style.display = 'flex';
       document.getElementById('topicsHeaderControls').style.display = 'flex';
+      
+      // Xóa input tìm kiếm khi chuyển từ Khóa học -> Topic
+      const searchInput = document.getElementById('searchTopics');
+      if (searchInput) searchInput.value = '';
       
       // Filter and render topics for this course
       searchTopics('');
@@ -863,11 +923,20 @@
       currentViewMode = 'courses';
       
       document.getElementById('coursesGrid').style.display = 'grid';
+      const coursesFilterBarEl = document.getElementById('coursesFilterBar');
+      if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'flex';
+      
       document.getElementById('topicsGrid').style.display = 'none';
       document.getElementById('topicsJourney').style.display = 'none';
       document.getElementById('topicsEmpty').style.display = 'none';
       document.getElementById('btnBackToCourses').style.display = 'none';
       document.getElementById('topicsHeaderControls').style.display = 'none';
+      
+      // Khôi phục giá trị tìm kiếm cũ của khóa học (nếu có)
+      const searchInput = document.getElementById('searchTopics');
+      if (searchInput) searchInput.value = courseFilterState.keyword_raw || '';
+      
+      renderCourses();
     }
 
     function loadCourses() {
@@ -908,6 +977,33 @@
     window.goBackToCourses = goBackToCourses;
     window.loadCourses = loadCourses;
 
+    // Helper: chuẩn hóa tiếng Việt
+    function convertVietnamese(str) {
+      if (!str) return '';
+      str = String(str).toLowerCase().trim();
+      str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+      str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+      str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+      str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+      str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+      str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+      str = str.replace(/đ/g, "d");
+      // Some system encode vietnamese combining accent as individual utf-8 characters
+      str = str.replace(/\u0300|\u0301|\u0303|\u0309|\u0323/g, ""); // Huyền sắc hỏi ngã nặng 
+      str = str.replace(/\u02C6|\u0306|\u031B/g, ""); // Â, Ê, Ă, Ơ, Ư
+      return str.replace(/\s+/g, ' '); // Loại bỏ khoảng trắng thừa
+    }
+
+    window.applyCourseFilter = function() {
+      const levelFilter = document.getElementById('courseLevelFilter');
+      const sortSelect = document.getElementById('courseSortSelect');
+      
+      if (levelFilter) courseFilterState.level = levelFilter.value;
+      if (sortSelect) courseFilterState.sort = sortSelect.value;
+      
+      renderCourses();
+    };
+
     // ========================================
     // FILTER & SEARCH
     // ========================================
@@ -937,6 +1033,14 @@
     }
 
     function searchTopics(query) {
+      if (currentViewMode === 'courses') {
+        const rawValue = String(query || '');
+        courseFilterState.keyword_raw = rawValue;
+        courseFilterState.keyword = convertVietnamese(rawValue);
+        renderCourses();
+        return;
+      }
+      
       const searchValue = String(query || '').trim().toLowerCase();
 
       let baseTopics =

@@ -139,10 +139,22 @@ function loadCoursesList() {
   const cardsView = document.getElementById('cm-course-cards-view');
   const tableView = document.getElementById('cm-course-table-view');
   if (loading) {
-    loading.style.display = 'block';
+    loading.style.display = 'flex';
+    loading.style.position = 'fixed';
+    loading.style.top = '0';
+    loading.style.left = '0';
+    loading.style.width = '100vw';
+    loading.style.height = '100vh';
+    loading.style.backgroundColor = 'rgba(15, 23, 42, 0.4)';
+    loading.style.backdropFilter = 'blur(4px)';
+    loading.style.zIndex = '9999';
+    loading.style.padding = '0';
+    loading.style.alignItems = 'center';
+    loading.style.justifyContent = 'center';
+    
+    const inner = loading.querySelector('.admin-loading-container');
+    if (inner) inner.style.background = 'transparent';
   }
-  if (cardsView) cardsView.style.display = 'none';
-  if (tableView) tableView.style.display = 'none';
 
   google.script.run
     .withSuccessHandler(function(response) {
@@ -170,11 +182,9 @@ function loadCoursesList() {
       console.error('[ContentManagement] Failed to load courses:', error);
       if (loading) {
         loading.style.display = 'none';
+        loading.style.position = '';
+        loading.style.backdropFilter = '';
       }
-      const cardsView = document.getElementById('cm-course-cards-view');
-      const tableView = document.getElementById('cm-course-table-view');
-      if (currentCourseView === 'cards' && cardsView) cardsView.style.display = 'block';
-      if (currentCourseView === 'table' && tableView) tableView.style.display = 'block';
       if (typeof showNotification === 'function') {
         showNotification('Lỗi khi tải danh sách khóa học', 'error');
       }
@@ -1681,8 +1691,12 @@ function copyPreviewCode(btn) {
 // Edit topic
 function editTopic(topicId) {
   console.log('[ContentManagement] Edit topic:', topicId);
-  localStorage.setItem('editTopicId', topicId);
-  showAdminPage('page-topic-editor');
+  if (typeof window.loadAndEditTopic === 'function') {
+    window.loadAndEditTopic(topicId);
+  } else {
+    localStorage.setItem('editTopicId', topicId);
+    showAdminPage('page-topic-editor');
+  }
 }
 
 // Delete topic
@@ -1934,15 +1948,33 @@ function showLoading(show) {
   const paginationEl = document.getElementById('cm-pagination');
 
   if (show) {
-    if (loadingEl) loadingEl.style.display = 'flex';
-    if (tableWrapperEl) tableWrapperEl.style.display = 'none';
-    if (cardsGridEl) cardsGridEl.style.display = 'none';
+    if (loadingEl) {
+      loadingEl.style.display = 'flex';
+      loadingEl.style.position = 'fixed';
+      loadingEl.style.top = '0';
+      loadingEl.style.left = '0';
+      loadingEl.style.width = '100vw';
+      loadingEl.style.height = '100vh';
+      loadingEl.style.backgroundColor = 'rgba(15, 23, 42, 0.4)';
+      loadingEl.style.backdropFilter = 'blur(4px)';
+      loadingEl.style.zIndex = '9999';
+      loadingEl.style.padding = '0';
+      loadingEl.style.alignItems = 'center';
+      loadingEl.style.justifyContent = 'center';
+      
+      const inner = loadingEl.querySelector('.admin-loading-container');
+      if (inner) inner.style.background = 'transparent';
+    }
+    // Không ẩn table/cards khi load để tạo cảm giác popup mờ trên nền hiện tại
     if (emptyStateEl) emptyStateEl.style.display = 'none';
-    if (paginationEl) paginationEl.style.display = 'none';
   } else {
-    if (loadingEl) loadingEl.style.display = 'none';
-    if (tableWrapperEl && currentView === 'table') tableWrapperEl.style.display = 'block';
-    if (cardsGridEl && currentView === 'cards') cardsGridEl.style.display = 'grid';
+    if (loadingEl) {
+      loadingEl.style.display = 'none';
+      loadingEl.style.position = '';
+      loadingEl.style.backdropFilter = '';
+    }
+    if (tableWrapperEl && currentView === 'table' && isDataLoaded && filteredTopics.length > 0) tableWrapperEl.style.display = 'block';
+    if (cardsGridEl && currentView === 'cards' && isDataLoaded && filteredTopics.length > 0) cardsGridEl.style.display = 'grid';
   }
 }
 
@@ -2223,31 +2255,39 @@ function renderCoursesView() {
       const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
       
       html += `
-        <tr onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" style="cursor: pointer;">
-          <td style="width: 15%;">
-            <div style="width: 120px; height: 68px; border-radius: 8px; overflow: hidden; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center;">
-              ${!course.thumbnailUrl ? '<span class="material-symbols-sharp" style="font-size: 24px; color: #4f46e5; opacity: 0.5;">school</span>' : ''}
-            </div>
-          </td>
+        <tr data-course-id="${course.courseId}" onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" style="cursor: pointer;">
+          <td><strong>${filteredCourses.indexOf(course) + 1}</strong></td>
           <td>
             <div class="topic-info">
-              <span class="topic-name" style="font-weight: 600; font-size: 15px; color: #1e293b;">${escapeHtml(course.title)}</span>
+              <div class="topic-icon">
+                ${course.thumbnailUrl 
+                  ? `<img src="${course.thumbnailUrl}" alt="${escapeHtml(course.title)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                     <span class="material-symbols-sharp" style="display: none;">school</span>`
+                  : '<span class="material-symbols-sharp">school</span>'
+                }
+              </div>
+              <div class="topic-details">
+                <h4>${escapeHtml(course.title)}</h4>
+                <p title="${escapeHtml(course.description || course.shortDescription || '')}">
+                  ${escapeHtml(course.description || course.shortDescription || 'Chưa có mô tả')}
+                </p>
+              </div>
             </div>
           </td>
           <td>
-            <span style="font-size: 12px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: 500;">
+            <span class="category-badge filter-category-5" title="${escapeHtml(course.level || 'Chưa phân loại')}">
               ${escapeHtml(course.level || 'Chưa phân loại')}
             </span>
           </td>
           <td class="align-center">${course.totalTopics || 0} bài học</td>
           <td>
-            <span class="status-badge ${statusClass} interactive" onclick="toggleCourseStatus('${safeCourseId}', event)" title="Chuyển trạng thái">
+            <span class="status-badge ${statusClass} interactive" onclick="event.stopPropagation(); toggleCourseStatus('${safeCourseId}', event)" title="Chuyển trạng thái">
               ${statusText}
               <span class="material-symbols-sharp status-swap-icon">swap_horiz</span>
             </span>
           </td>
           <td class="actions-cell">
-            <div class="action-buttons" style="justify-content: flex-start; gap: 8px;">
+            <div class="action-buttons">
               <button class="action-btn edit" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Chỉnh sửa">
                 <span class="material-symbols-sharp">edit</span>
               </button>

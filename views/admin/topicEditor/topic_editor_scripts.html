@@ -105,6 +105,7 @@ function ensureTableSizePicker() {
 // ========================================
 
 let topicEditorInitialized = false;
+window.isTopicEditorDirty = false;
 
 function initTopicEditorPage() {
 
@@ -154,12 +155,21 @@ function initializeTopicEditor() {
     document.execCommand('insertText', false, text);
   });
 
-  // Keep a fresh caret range so toolbar actions can restore it reliably.
   ['keyup', 'mouseup', 'input', 'focus'].forEach(function(evt) {
     editor.addEventListener(evt, function() {
       saveSelection();
+      window.isTopicEditorDirty = true;
     });
   });
+
+  const container = document.getElementById('topic-editor-container');
+  if (container) {
+    container.addEventListener('input', function(e) {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+        window.isTopicEditorDirty = true;
+      }
+    });
+  }
 
   document.addEventListener('selectionchange', function() {
     const selection = window.getSelection();
@@ -1823,6 +1833,11 @@ function initEditMode() {
 
   // Update UI for edit mode
   updateTopicEditorHeader('edit');
+  
+  // Đánh dấu form chưa bị chỉnh sửa
+  setTimeout(() => {
+    window.isTopicEditorDirty = false;
+  }, 100);
 
   var btnPublish = document.getElementById('btnPublish');
   var btnUpdate = document.getElementById('btnUpdate');
@@ -1846,7 +1861,17 @@ function initEditMode() {
     showTopicEditorLoading('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
   }
 
-  // Load topic data
+  // Nếu đã được load sẵn từ loadAndEditTopic (để tránh nền trắng)
+  if (window.__preloadedTopicEditData) {
+    if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
+    hideTopicEditorLoading();
+    populateEditForm(window.__preloadedTopicEditData);
+    localStorage.removeItem('editTopicId');
+    window.__preloadedTopicEditData = null;
+    return;
+  }
+
+  // Load topic data (fallback nếu truy cập trực tiếp)
   google.script.run
     .withSuccessHandler(function(result) {
       if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
@@ -1865,6 +1890,58 @@ function initEditMode() {
     })
     .getTopicForEdit(editTopicId);
 }
+
+// Function expose global cho phép bấm edit từ trang list mà không chuyển trang ngay lập tức
+window.loadAndEditTopic = function(topicId) {
+  if (typeof showLoading === 'function') {
+    const loadingText = document.querySelector('#cm-loading-state .admin-loading-text');
+    if (loadingText) {
+      loadingText.dataset.originalText = loadingText.textContent;
+      loadingText.textContent = '\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...';
+    }
+    showLoading(true);
+  } else if (typeof showUnifiedTopicEditorLoader === 'function') {
+    showUnifiedTopicEditorLoader('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+  } else if (typeof showTopicEditorLoading === 'function') {
+    showTopicEditorLoading('\u0110ang t\u1ea3i b\u00e0i h\u1ecdc...');
+  }
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (typeof showLoading === 'function') {
+        showLoading(false);
+        const loadingText = document.querySelector('#cm-loading-state .admin-loading-text');
+        if (loadingText && loadingText.dataset.originalText) {
+          loadingText.textContent = loadingText.dataset.originalText;
+        }
+      }
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
+      if (typeof hideTopicEditorLoading === 'function') hideTopicEditorLoading();
+      
+      if (result && result.success && result.data) {
+        window.__preloadedTopicEditData = result.data;
+        localStorage.setItem('editTopicId', topicId);
+        showAdminPage('page-topic-editor');
+      } else {
+        if (typeof showToast === 'function') showToast('L\u1ed7i: ' + (result ? result.message : 'Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u'), 'error');
+        else alert('Lỗi tải bài học');
+      }
+    })
+    .withFailureHandler(function(error) {
+      if (typeof showLoading === 'function') {
+        showLoading(false);
+        const loadingText = document.querySelector('#cm-loading-state .admin-loading-text');
+        if (loadingText && loadingText.dataset.originalText) {
+          loadingText.textContent = loadingText.dataset.originalText;
+        }
+      }
+      if (typeof hideUnifiedTopicEditorLoader === 'function') hideUnifiedTopicEditorLoader();
+      if (typeof hideTopicEditorLoading === 'function') hideTopicEditorLoading();
+      if (typeof showToast === 'function') showToast('L\u1ed7i: ' + (error ? error.message : error), 'error');
+      else alert('Lỗi tải bài học');
+    })
+    .getTopicForEdit(topicId);
+};
 
 /**
  * Populate form fields with topic data for editing
@@ -1946,6 +2023,10 @@ function populateEditForm(data) {
   renderTopicOrderPreview();
   showAdminMindmapSection();
   loadExistingMindmap(topic.topicId);
+  
+  setTimeout(() => {
+    window.isTopicEditorDirty = false;
+  }, 100);
 }
 
 /**
@@ -3174,17 +3255,16 @@ function showToast(message, type) {
 }
 
 async function goBackToAdmin() {
-  // Check if there's unsaved content
-  const content = document.getElementById('contentEditor').innerHTML.trim();
-  if (content && content !== '<br>' && content !== '<p><br></p>') {
+  // Check if there's unsaved content ONLY if form is dirty
+  if (window.isTopicEditorDirty) {
     const shouldLeave =
       typeof window.showAppConfirm === 'function'
-        ? await window.showAppConfirm('Bạn có nội dung chưa lưu. Bạn có chắc muốn thoát?', {
+        ? await window.showAppConfirm('Bạn có thay đổi chưa lưu. Bạn có chắc muốn thoát?', {
             title: 'Xác nhận thoát',
             confirmText: 'Thoát',
             cancelText: 'Ở lại'
           })
-        : confirm('Bạn có nội dung chưa lưu. Bạn có chắc muốn thoát?');
+        : confirm('Bạn có thay đổi chưa lưu. Bạn có chắc muốn thoát?');
     if (!shouldLeave) {
       return;
     }
