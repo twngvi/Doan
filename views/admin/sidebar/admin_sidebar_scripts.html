@@ -170,10 +170,27 @@
 
     // Navigation Items
     document.querySelectorAll(".admin-sidebar .nav-item").forEach((item) => {
-      item.addEventListener("click", (e) => {
+      item.addEventListener("click", async (e) => {
         e.preventDefault();
         const page = item.dataset.page;
         if (page) {
+          // Check for unsaved topic editor changes
+          if (window.isTopicEditorDirty && document.body.classList.contains("is-topic-editor-page")) {
+            const shouldLeave = typeof window.showAppConfirm === 'function'
+              ? await window.showAppConfirm('Bạn có thay đổi chưa lưu. Bạn có chắc muốn thoát?', {
+                  title: 'Xác nhận thoát',
+                  confirmText: 'Thoát',
+                  cancelText: 'Ở lại'
+                })
+              : confirm('Bạn có thay đổi chưa lưu. Bạn có chắc muốn thoát?');
+            
+            if (!shouldLeave) return;
+            
+            // Clean up before leaving
+            window.isTopicEditorDirty = false;
+            if (typeof resetForm === 'function') resetForm();
+          }
+
           showAdminPage(page);
           setActiveNavItem(item);
 
