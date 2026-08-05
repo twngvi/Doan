@@ -760,7 +760,7 @@ function getAdminUserLearningStats(options) {
       createdAt: usersHeaders.indexOf("createdAt"),
     };
 
-    const topicTitleMap = getAdminTopicTitleMap_();
+    const topicInfoMap = getAdminTopicInfoMap_();
     const result = [];
     const totalTopicsInDb = getAdminTotalTopicsCount_();
 
@@ -789,7 +789,7 @@ function getAdminUserLearningStats(options) {
         (userCols.username >= 0 && row[userCols.username]) ||
         email ||
         userId ||
-        "Ng뿯½뿯½뿯½뿯½뿯½i d뿯½뿯½ng";
+        "Người dùng";
       const progressSheetId =
         userCols.progressSheetId >= 0 && row[userCols.progressSheetId]
           ? String(row[userCols.progressSheetId]).trim()
@@ -841,7 +841,10 @@ function getAdminUserLearningStats(options) {
 
             const topicTitleFromRow =
               tpCols.topicTitle >= 0 ? String(tpRow[tpCols.topicTitle] || "").trim() : "";
-            const topicTitle = topicTitleFromRow || topicTitleMap[topicId] || topicId;
+            const topicInfo = topicInfoMap[topicId] || {};
+            const topicTitle = topicTitleFromRow || topicInfo.title || topicId;
+            const courseId = topicInfo.courseId || "";
+            const courseTitle = topicInfo.courseTitle || courseId;
 
             let progressPercent = 0;
             if (tpCols.lessonCompleted >= 0) {
@@ -858,6 +861,8 @@ function getAdminUserLearningStats(options) {
             lessonMap[topicId] = {
               lessonId: topicId,
               lessonTitle: topicTitle,
+              courseId: courseId,
+              courseTitle: courseTitle,
               progressPercent: progressPercent,
               attemptCount: 0,
               avgScore: 0,
@@ -895,7 +900,10 @@ function getAdminUserLearningStats(options) {
                 ? String(qRow[qCols.topicId]).trim()
                 : "";
             const rowTopicTitle = qCols.topicTitle >= 0 ? String(qRow[qCols.topicTitle] || "").trim() : "";
-            const topicTitle = rowTopicTitle || topicTitleMap[topicId] || topicId || "Quiz";
+            const topicInfo = topicInfoMap[topicId] || {};
+            const topicTitle = rowTopicTitle || topicInfo.title || topicId || "Quiz";
+            const courseId = topicInfo.courseId || "";
+            const courseTitle = topicInfo.courseTitle || courseId;
 
             const percentage =
               qCols.percentage >= 0
@@ -925,6 +933,8 @@ function getAdminUserLearningStats(options) {
               detailRaw:
                 qCols.questionDetails >= 0 ? qRow[qCols.questionDetails] : null,
               completedAt: completedAtIso,
+              courseId: courseId,
+              courseTitle: courseTitle,
             });
 
             if (topicId) {
@@ -932,6 +942,8 @@ function getAdminUserLearningStats(options) {
                 lessonMap[topicId] = {
                   lessonId: topicId,
                   lessonTitle: topicTitle,
+                  courseId: courseId,
+                  courseTitle: courseTitle,
                   progressPercent: 0,
                   attemptCount: 0,
                   avgScore: 0,
@@ -1000,7 +1012,10 @@ function getAdminUserLearningStats(options) {
                 ? String(mRow[mCols.topicId]).trim()
                 : "";
             const rowTopicTitle = mCols.topicTitle >= 0 ? String(mRow[mCols.topicTitle] || "").trim() : "";
-            const topicTitle = rowTopicTitle || topicTitleMap[topicId] || topicId || "Matching";
+            const topicInfo = topicInfoMap[topicId] || {};
+            const topicTitle = rowTopicTitle || topicInfo.title || topicId || "Matching";
+            const courseId = topicInfo.courseId || "";
+            const courseTitle = topicInfo.courseTitle || courseId;
             const accuracy = mCols.accuracy >= 0 ? clampAdminPercent_(mRow[mCols.accuracy]) : 0;
             const totalPairs = mCols.totalPairs >= 0 ? Math.max(0, parseInt(mRow[mCols.totalPairs], 10) || 0) : 0;
             const correctPairs = mCols.correctPairs >= 0 ? Math.max(0, parseInt(mRow[mCols.correctPairs], 10) || 0) : 0;
@@ -1021,6 +1036,8 @@ function getAdminUserLearningStats(options) {
               accuracy: accuracy,
               detailRaw: mCols.pairDetails >= 0 ? mRow[mCols.pairDetails] : null,
               completedAt: playedAtIso,
+              courseId: courseId,
+              courseTitle: courseTitle,
             });
 
             if (topicId) {
@@ -1028,6 +1045,8 @@ function getAdminUserLearningStats(options) {
                 lessonMap[topicId] = {
                   lessonId: topicId,
                   lessonTitle: topicTitle,
+                  courseId: courseId,
+                  courseTitle: courseTitle,
                   progressPercent: 0,
                   attemptCount: 0,
                   avgScore: 0,
@@ -1172,7 +1191,7 @@ function getAdminTotalTopicsCount_() {
   }
 }
 
-function getAdminTopicTitleMap_() {
+function getAdminTopicInfoMap_() {
   const map = {};
 
   try {
@@ -1183,17 +1202,45 @@ function getAdminTopicTitleMap_() {
     const headers = data[0];
     const topicIdCol = headers.indexOf("topicId");
     const titleCol = headers.indexOf("title");
+    const courseIdCol = headers.indexOf("courseId");
+    
+    const courseTitleMap = getAdminCourseTitleMap_();
 
     for (let i = 1; i < data.length; i++) {
       const topicId = topicIdCol >= 0 ? String(data[i][topicIdCol] || "").trim() : "";
       if (!topicId) continue;
       const title = titleCol >= 0 ? String(data[i][titleCol] || "").trim() : "";
-      map[topicId] = title || topicId;
+      const courseId = courseIdCol >= 0 ? String(data[i][courseIdCol] || "").trim() : "";
+      const courseTitle = courseTitleMap[courseId] || courseId;
+      map[topicId] = { title: title || topicId, courseId: courseId, courseTitle: courseTitle };
     }
   } catch (error) {
-    Logger.log("Error building topic map: " + error.toString());
+    Logger.log("Error building topic info map: " + error.toString());
   }
 
+  return map;
+}
+
+function getAdminCourseTitleMap_() {
+  const map = {};
+  try {
+    const coursesSheet = getSheet("Courses");
+    if (!coursesSheet || coursesSheet.getLastRow() <= 1) return map;
+
+    const data = coursesSheet.getDataRange().getValues();
+    const headers = data[0];
+    const idCol = headers.indexOf("courseId");
+    const titleCol = headers.indexOf("title");
+
+    for (let i = 1; i < data.length; i++) {
+      const courseId = idCol >= 0 ? String(data[i][idCol] || "").trim() : "";
+      if (!courseId) continue;
+      const title = titleCol >= 0 ? String(data[i][titleCol] || "").trim() : "";
+      map[courseId] = title || courseId;
+    }
+  } catch (error) {
+    Logger.log("Error building course title map: " + error.toString());
+  }
   return map;
 }
 

@@ -8,6 +8,7 @@
     users: [],
     filteredUsers: [],
     selectedUserId: null,
+    selectedCourseByUser: {},
     selectedLessonByUser: {},
     searchQuery: '',
     sortBy: 'progress-desc',
@@ -273,7 +274,6 @@
         <button class="user-list-item ${isActive ? 'active' : ''}" type="button" data-user-id="${escapeHtml(user.id)}">
           <div class="user-item-main">
             <h4 class="user-item-name">${escapeHtml(user.name)}</h4>
-            <span class="user-item-chip">${stats.overallProgress}%</span>
           </div>
           <p class="user-item-email">${escapeHtml(user.email || '')}</p>
         </button>
@@ -331,6 +331,10 @@
       </div>
       <div class="summary-stats-group">
         <article class="summary-card">
+          <p class="summary-label">Khóa học</p>
+          <p class="summary-value">${summary.totalCoursesJoined}</p>
+        </article>
+        <article class="summary-card">
           <p class="summary-label">Bài đã học</p>
           <p class="summary-value">${summary.learnedLessons}</p>
         </article>
@@ -349,47 +353,129 @@
     }
   }
 
+  function resolveCourseTitleUserStats(courseId) {
+    if (typeof allCourses !== 'undefined' && Array.isArray(allCourses)) {
+      const course = allCourses.find(c => String(c.id || c.courseId) === String(courseId));
+      if (course) return course.title || course.name;
+    }
+    return courseId || 'Khóa học không rõ';
+  }
+
   function renderLessonProgress(user) {
     const container = document.getElementById('userStatsLessonProgressList');
+    const title = document.querySelector('.detail-section-title');
     if (!container) return;
 
     const lessons = Array.isArray(user.lessons) ? user.lessons : [];
     if (!lessons.length) {
-      container.innerHTML = '<div class="lesson-progress-item"><p class="lesson-meta">Chưa có dữ liệu bài học</p></div>';
+      if (title) title.textContent = 'Khóa học';
+      container.innerHTML = '<div class="lesson-progress-item"><p class="lesson-meta">Chưa có dữ liệu học tập</p></div>';
       closeTopicLearningHistoryModal();
       return;
     }
 
-    const selectedKey = userStatsState.selectedLessonByUser[user.id] || getLessonKey(lessons[0]);
-    if (!userStatsState.selectedLessonByUser[user.id]) {
-      userStatsState.selectedLessonByUser[user.id] = selectedKey;
-    }
+    const courseMap = {};
+    lessons.forEach(lesson => {
+      const cId = lesson.courseId || 'unknown';
+      if (!courseMap[cId]) {
+        courseMap[cId] = {
+          courseId: cId,
+          courseTitle: cId === 'unknown' ? 'Khác' : (lesson.courseTitle || resolveCourseTitleUserStats(cId)),
+          lessons: [],
+          totalProgress: 0,
+        };
+      }
+      courseMap[cId].lessons.push(lesson);
+      courseMap[cId].totalProgress += normalizePercent(lesson.progressPercent);
+    });
+    
+    const courses = Object.values(courseMap);
+    const activeCourseId = userStatsState.selectedCourseByUser[user.id];
 
-    container.innerHTML = lessons.map((lesson) => {
-      const progress = normalizePercent(lesson.progressPercent);
-      const lessonKey = getLessonKey(lesson);
-      const isSelected = lessonKey === userStatsState.selectedLessonByUser[user.id];
-      return `
-        <button class="lesson-progress-item lesson-progress-button ${isSelected ? 'active' : ''}" type="button" data-lesson-key="${escapeHtml(lessonKey)}">
-          <div class="lesson-progress-top">
-            <p class="lesson-name">${escapeHtml(lesson.lessonTitle || lesson.lessonId || 'Bài học')}</p>
-            <p class="lesson-meta">${progress}%</p>
-          </div>
-          <div class="progress-track">
-            <div class="progress-fill" style="width: ${progress}%;"></div>
-          </div>
+    if (!activeCourseId || !courseMap[activeCourseId]) {
+      if (title) title.textContent = 'Khóa học đã tham gia';
+      
+      container.innerHTML = courses.map((course) => {
+        const avgProgress = course.lessons.length ? Math.round(course.totalProgress / course.lessons.length) : 0;
+        return `
+          <button class="lesson-progress-item course-progress-button" type="button" data-course-id="${escapeHtml(course.courseId)}">
+            <div class="lesson-progress-top">
+              <p class="lesson-name">${escapeHtml(course.courseTitle)}</p>
+              <p class="lesson-meta">${avgProgress}% (${course.lessons.length} bài)</p>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${avgProgress}%;"></div>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      container.querySelectorAll('.course-progress-button').forEach((item) => {
+        item.addEventListener('click', () => {
+          userStatsState.selectedCourseByUser[user.id] = item.dataset.courseId;
+          renderLessonProgress(user);
+        });
+      });
+      closeTopicLearningHistoryModal();
+
+    } else {
+      const currentCourse = courseMap[activeCourseId];
+      if (title) title.textContent = currentCourse ? `Bài học: ${currentCourse.courseTitle}` : 'Bài học';
+
+      const backBtnHtml = `
+        <button class="cm-btn cm-btn-secondary" id="userStatsBackToCoursesBtn" style="margin-bottom: 12px; font-size: 13px; padding: 8px 12px; width: auto; align-self: flex-start;">
+          <span class="material-symbols-sharp" style="font-size: 16px;">arrow_back</span> Quay lại
         </button>
       `;
-    }).join('');
 
-    container.querySelectorAll('.lesson-progress-button').forEach((item) => {
-      item.addEventListener('click', () => {
-        userStatsState.selectedLessonByUser[user.id] = item.dataset.lessonKey || '';
-        renderLessonProgress(user);
-        const selectedLesson = lessons.find((lesson) => getLessonKey(lesson) === userStatsState.selectedLessonByUser[user.id]) || lessons[0];
-        openTopicLearningHistoryModal(user, selectedLesson);
+      const courseLessons = currentCourse ? currentCourse.lessons : [];
+      
+      const validLessonKey = courseLessons.some(l => getLessonKey(l) === userStatsState.selectedLessonByUser[user.id]);
+      if (!validLessonKey && courseLessons.length > 0) {
+        userStatsState.selectedLessonByUser[user.id] = getLessonKey(courseLessons[0]);
+      }
+
+      const lessonsHtml = courseLessons.map((lesson) => {
+        const progress = normalizePercent(lesson.progressPercent);
+        const lessonKey = getLessonKey(lesson);
+        const isSelected = lessonKey === userStatsState.selectedLessonByUser[user.id];
+        return `
+          <button class="lesson-progress-item lesson-progress-button ${isSelected ? 'active' : ''}" type="button" data-lesson-key="${escapeHtml(lessonKey)}">
+            <div class="lesson-progress-top">
+              <p class="lesson-name">${escapeHtml(lesson.lessonTitle || lesson.lessonId || 'Bài học')}</p>
+              <p class="lesson-meta">${progress}%</p>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${progress}%;"></div>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      container.innerHTML = '<div style="display: flex; flex-direction: column;">' + backBtnHtml + lessonsHtml + '</div>';
+
+      const backBtn = document.getElementById('userStatsBackToCoursesBtn');
+      if (backBtn) {
+        backBtn.addEventListener('click', () => {
+          userStatsState.selectedCourseByUser[user.id] = null;
+          renderLessonProgress(user);
+        });
+      }
+
+      container.querySelectorAll('.lesson-progress-button').forEach((item) => {
+        item.addEventListener('click', () => {
+          userStatsState.selectedLessonByUser[user.id] = item.dataset.lessonKey || '';
+          renderLessonProgress(user);
+          const selectedLesson = courseLessons.find((lesson) => getLessonKey(lesson) === userStatsState.selectedLessonByUser[user.id]) || courseLessons[0];
+          openTopicLearningHistoryModal(user, selectedLesson);
+        });
       });
-    });
+      
+      const selectedLesson = courseLessons.find((lesson) => getLessonKey(lesson) === userStatsState.selectedLessonByUser[user.id]);
+      if (selectedLesson) {
+        openTopicLearningHistoryModal(user, selectedLesson);
+      }
+    }
   }
 
   function openTopicLearningHistoryModal(user, lesson) {
@@ -655,7 +741,12 @@
       ? Math.round(lessons.reduce((sum, item) => sum + normalizePercent(item.progressPercent), 0) / lessons.length)
       : 0;
 
+    const coursesSet = new Set();
+    lessons.forEach(l => { if (l.courseId) coursesSet.add(l.courseId); });
     const attempts = Array.isArray(user.attempts) ? user.attempts : [];
+    attempts.forEach(a => { if (a.courseId) coursesSet.add(a.courseId); });
+    const totalCoursesJoined = coursesSet.size;
+
     const countableAttempts = attempts.filter((attempt) => isCountableUserAttempt(attempt));
     const avgQuizScore = countableAttempts.length
       ? Math.round((countableAttempts.reduce((sum, attempt) => sum + Number(attempt.score || 0), 0) / countableAttempts.length) * 100) / 100
@@ -663,6 +754,7 @@
 
     return {
       learnedLessons,
+      totalCoursesJoined,
       overallProgress,
       totalAttempts: countableAttempts.length,
       avgQuizScore,
