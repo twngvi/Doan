@@ -111,8 +111,12 @@ function loadCategories() {
 // ===== Load Courses List =====
 function loadCoursesList() {
   const loading = document.getElementById('cm-courses-loading-state');
+  const grid = document.getElementById('cm-courses-grid');
   if (loading) {
     loading.style.display = 'block';
+  }
+  if (grid) {
+    grid.style.display = 'none';
   }
 
   google.script.run
@@ -133,6 +137,9 @@ function loadCoursesList() {
       console.error('[ContentManagement] Failed to load courses:', error);
       if (loading) {
         loading.style.display = 'none';
+      }
+      if (grid) {
+        grid.style.display = '';
       }
       if (typeof showNotification === 'function') {
         showNotification('Lỗi khi tải danh sách khóa học', 'error');
@@ -1815,11 +1822,21 @@ function refreshTopicsList(e) {
 // ===== Helper Functions =====
 function showLoading(show) {
   const loadingEl = document.getElementById('cm-loading-state');
+  const tableEl = document.querySelector('.cm-table');
+  const cardsGridEl = document.getElementById('cm-cards-grid');
+  const emptyStateEl = document.getElementById('cm-empty-state');
+  const paginationEl = document.getElementById('cm-pagination');
 
   if (show) {
-    loadingEl.style.display = 'flex';
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (tableEl) tableEl.style.display = 'none';
+    if (cardsGridEl) cardsGridEl.style.display = 'none';
+    if (emptyStateEl) emptyStateEl.style.display = 'none';
+    if (paginationEl) paginationEl.style.display = 'none';
   } else {
-    loadingEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (tableEl) tableEl.style.display = '';
+    if (cardsGridEl) cardsGridEl.style.display = '';
   }
 }
 
@@ -1941,9 +1958,11 @@ function renderCoursesView() {
   const coursesGrid = document.getElementById('cm-courses-grid');
   const loadingState = document.getElementById('cm-courses-loading-state');
   
+  if (loadingState) loadingState.style.display = 'none';
+  
   if (!coursesGrid) return;
   
-  if (loadingState) loadingState.style.display = 'none';
+  coursesGrid.style.display = '';
   coursesGrid.innerHTML = '';
   
   allCourses = allCourses
