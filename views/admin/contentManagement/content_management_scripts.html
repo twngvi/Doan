@@ -4,11 +4,13 @@
 // State variables
 let allTopics = [];
 let allCourses = [];
+let filteredCourses = [];
 let filteredTopics = [];
 let currentPage = 1;
 const itemsPerPage = 10;
 let topicToDelete = null;
 let currentView = 'table'; // 'table' or 'cards'
+let currentCourseView = 'cards';
 let categoriesList = [];
 let isDataLoaded = false; // Flag để track data đã load chưa
 const TOPICS_DATA_CHANGED_KEY = 'topics_data_changed_at';
@@ -60,11 +62,34 @@ function initContentManagement() {
     document.getElementById('cm-cards-view').style.display = savedView === 'cards' ? 'block' : 'none';
   }
 
+  const savedCourseView = localStorage.getItem('cm-course-view-preference');
+  if (savedCourseView && (savedCourseView === 'table' || savedCourseView === 'cards')) {
+    currentCourseView = savedCourseView;
+    const tableBtn = document.getElementById('course-view-table-btn');
+    const cardsBtn = document.getElementById('course-view-cards-btn');
+    const tableView = document.getElementById('cm-course-table-view');
+    const cardsView = document.getElementById('cm-course-cards-view');
+    if (tableBtn) tableBtn.classList.toggle('active', savedCourseView === 'table');
+    if (cardsBtn) cardsBtn.classList.toggle('active', savedCourseView === 'cards');
+    if (tableView) tableView.style.display = savedCourseView === 'table' ? 'block' : 'none';
+    if (cardsView) cardsView.style.display = savedCourseView === 'cards' ? 'block' : 'none';
+  }
+
   // Setup search input events
   const searchInput = document.getElementById('cm-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', function() {
       const clearBtn = document.getElementById('cm-search-clear');
+      if (clearBtn) {
+        clearBtn.style.display = this.value ? 'flex' : 'none';
+      }
+    });
+  }
+
+  const courseSearchInput = document.getElementById('cm-course-search-input');
+  if (courseSearchInput) {
+    courseSearchInput.addEventListener('input', function() {
+      const clearBtn = document.getElementById('cm-course-search-clear');
       if (clearBtn) {
         clearBtn.style.display = this.value ? 'flex' : 'none';
       }
@@ -111,18 +136,19 @@ function loadCategories() {
 // ===== Load Courses List =====
 function loadCoursesList() {
   const loading = document.getElementById('cm-courses-loading-state');
-  const grid = document.getElementById('cm-courses-grid');
+  const cardsView = document.getElementById('cm-course-cards-view');
+  const tableView = document.getElementById('cm-course-table-view');
   if (loading) {
     loading.style.display = 'block';
   }
-  if (grid) {
-    grid.style.display = 'none';
-  }
+  if (cardsView) cardsView.style.display = 'none';
+  if (tableView) tableView.style.display = 'none';
 
   google.script.run
     .withSuccessHandler(function(response) {
       if (!response || response.success !== true) {
         allCourses = [];
+        filteredCourses = [];
         if (typeof showNotification === 'function') {
           showNotification(response ? response.message : 'Không thể tải danh sách khóa học', 'error');
         }
@@ -131,6 +157,13 @@ function loadCoursesList() {
       }
       
       allCourses = Array.isArray(response.courses) ? response.courses : [];
+      
+      // Khởi tạo filteredCourses và sort theo order
+      filteredCourses = allCourses.slice().sort(function(a, b) {
+        return (Number(a.order) || 999) - (Number(b.order) || 999);
+      });
+      
+      updateCourseStats();
       renderCoursesView();
     })
     .withFailureHandler(function(error) {
@@ -138,9 +171,10 @@ function loadCoursesList() {
       if (loading) {
         loading.style.display = 'none';
       }
-      if (grid) {
-        grid.style.display = '';
-      }
+      const cardsView = document.getElementById('cm-course-cards-view');
+      const tableView = document.getElementById('cm-course-table-view');
+      if (currentCourseView === 'cards' && cardsView) cardsView.style.display = 'block';
+      if (currentCourseView === 'table' && tableView) tableView.style.display = 'block';
       if (typeof showNotification === 'function') {
         showNotification('Lỗi khi tải danh sách khóa học', 'error');
       }
@@ -1954,85 +1988,231 @@ window.renderCMPreviewTopicSwitcherList = renderCMPreviewTopicSwitcherList;
 
 // ===== Course View Logic =====
 
+function switchCourseView(view) {
+  if (currentCourseView === view) return;
+  
+  currentCourseView = view;
+  
+  // Update buttons
+  const tableBtn = document.getElementById('course-view-table-btn');
+  const cardsBtn = document.getElementById('course-view-cards-btn');
+  if (tableBtn) tableBtn.classList.toggle('active', view === 'table');
+  if (cardsBtn) cardsBtn.classList.toggle('active', view === 'cards');
+  
+  // Save preference
+  localStorage.setItem('cm-course-view-preference', view);
+  
+  // Re-render
+  renderCoursesView();
+}
+
+function refreshCoursesList(event) {
+  if (event) {
+    const refreshBtn = event.currentTarget;
+    const icon = refreshBtn.querySelector('.material-symbols-sharp');
+    if (icon) {
+      icon.style.animation = 'spin 0.5s ease';
+      setTimeout(() => {
+        icon.style.animation = '';
+      }, 500);
+    }
+  }
+  loadCoursesList();
+}
+
+function updateCourseStats() {
+  const total = allCourses.length;
+  const active = allCourses.filter(c => c.status === 'published').length;
+  const draft = allCourses.filter(c => !c.status || c.status === 'draft').length;
+  const locked = allCourses.filter(c => c.status === 'hidden').length;
+  
+  const elTotal = document.getElementById('stat-total-courses');
+  const elActive = document.getElementById('stat-active-courses');
+  const elDraft = document.getElementById('stat-draft-courses');
+  const elLocked = document.getElementById('stat-locked-courses');
+  
+  if (elTotal) elTotal.innerText = total;
+  if (elActive) elActive.innerText = active;
+  if (elDraft) elDraft.innerText = draft;
+  if (elLocked) elLocked.innerText = locked;
+}
+
 function renderCoursesView() {
   const coursesGrid = document.getElementById('cm-courses-grid');
+  const tableBody = document.getElementById('cm-courses-table-body');
   const loadingState = document.getElementById('cm-courses-loading-state');
+  const cardsView = document.getElementById('cm-course-cards-view');
+  const tableView = document.getElementById('cm-course-table-view');
   
   if (loadingState) loadingState.style.display = 'none';
   
-  if (!coursesGrid) return;
-  
-  coursesGrid.style.display = '';
-  coursesGrid.innerHTML = '';
-  
-  allCourses = allCourses
-    .slice()
-    .sort(function(a, b) {
-      return (Number(a.order) || 999) - (Number(b.order) || 999);
-    });
-  
-  if (allCourses.length === 0) {
-    coursesGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--theme-text-muted);">Chưa có khóa học nào.</div>';
-    return;
-  }
-
-  let html = '';
-  allCourses.forEach(course => {
-    const safeName = String(course.title).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
-    const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  if (currentCourseView === 'cards') {
+    if (tableView) tableView.style.display = 'none';
+    if (cardsView) cardsView.style.display = 'block';
+    if (!coursesGrid) return;
     
-    const isPublished = course.status === 'published';
-    const isHidden = course.status === 'hidden';
-    const statusText = isPublished ? 'Đang hiển thị' : (isHidden ? 'Đang ẩn' : 'Bản nháp');
-    const statusColor = isPublished ? '#10b981' : (isHidden ? '#ef4444' : '#f59e0b');
-    const statusBg = isPublished ? '#d1fae5' : (isHidden ? '#fee2e2' : '#fef3c7');
+    coursesGrid.style.display = '';
+    coursesGrid.innerHTML = '';
+    
+    if (filteredCourses.length === 0) {
+      coursesGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--theme-text-muted);">Không tìm thấy khóa học nào phù hợp.</div>';
+      return;
+    }
 
-    html += `
-      <div class="cm-course-card" style="background: white; border-radius: 16px; padding: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; position: relative; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; min-height: 330px;" onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.05)'">
-        
-        <div style="height: 170px; width: 100%; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; position: relative; flex-shrink: 0;">
-          ${!course.thumbnailUrl ? '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #4f46e5;"><span class="material-symbols-sharp" style="font-size: 48px; opacity: 0.5;">school</span></div>' : ''}
-          <div style="position: absolute; top: 12px; left: 12px; background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <div style="width: 6px; height: 6px; border-radius: 50%; background: ${statusColor};"></div>
-            ${statusText}
-          </div>
-          <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Sửa" style="position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; padding: 0; background: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
-            <span class="material-symbols-sharp" style="font-size: 18px; color: #4f46e5;">edit</span>
-          </button>
-        </div>
-        
-        <div style="padding: 14px; flex: 1; display: flex; flex-direction: column;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-            <h3 class="cm-course-title" style="margin: 0; font-size: 17px; font-weight: 700; color: #1e293b; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">${escapeHtml(course.title)}</h3>
+    let html = '';
+    filteredCourses.forEach(course => {
+      const safeName = String(course.title).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
+      const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      
+      const isPublished = course.status === 'published';
+      const isHidden = course.status === 'hidden';
+      const statusText = isPublished ? 'Đang hiển thị' : (isHidden ? 'Đang ẩn' : 'Bản nháp');
+      const statusColor = isPublished ? '#10b981' : (isHidden ? '#ef4444' : '#f59e0b');
+      const statusBg = isPublished ? '#d1fae5' : (isHidden ? '#fee2e2' : '#fef3c7');
+
+      html += `
+        <div class="cm-course-card" style="background: white; border-radius: 16px; padding: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; position: relative; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; min-height: 330px;" onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.05)'">
+          
+          <div style="height: 170px; width: 100%; background: #eef2ff url('${thumbUrl}') center/cover no-repeat; position: relative; flex-shrink: 0;">
+            ${!course.thumbnailUrl ? '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #4f46e5;"><span class="material-symbols-sharp" style="font-size: 48px; opacity: 0.5;">school</span></div>' : ''}
+            <div style="position: absolute; top: 12px; left: 12px; background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <div style="width: 6px; height: 6px; border-radius: 50%; background: ${statusColor};"></div>
+              ${statusText}
+            </div>
+            <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Sửa" style="position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; padding: 0; background: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
+              <span class="material-symbols-sharp" style="font-size: 18px; color: #4f46e5;">edit</span>
+            </button>
           </div>
           
-          <div style="margin-bottom: auto;">
-            <span style="font-size: 12px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: 500;">${escapeHtml(course.level || 'Chưa phân loại')}</span>
-          </div>
-          
-          <div class="cm-course-stats" style="display: flex; justify-content: space-between; font-size: 12.5px; color: #64748b; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f1f5f9;">
-            <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px;">
-              <span class="material-symbols-sharp" style="font-size: 16px; color: #6366f1;">library_books</span>
-              <span style="font-weight: 600; color: #334155;">${course.totalTopics}</span> Bài học
+          <div style="padding: 14px; flex: 1; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+              <h3 class="cm-course-title" style="margin: 0; font-size: 17px; font-weight: 700; color: #1e293b; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">${escapeHtml(course.title)}</h3>
             </div>
-            <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px;">
-              <span class="material-symbols-sharp" style="font-size: 16px; color: #10b981;">check_circle</span>
-              <span style="font-weight: 600; color: #334155;">${course.publishedTopics}</span> Đã xuất bản
+            
+            <div style="margin-bottom: auto;">
+              <span style="font-size: 12px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: 500;">${escapeHtml(course.level || 'Chưa phân loại')}</span>
+            </div>
+            
+            <div class="cm-course-stats" style="display: flex; justify-content: space-between; font-size: 12.5px; color: #64748b; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f1f5f9;">
+              <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px;">
+                <span class="material-symbols-sharp" style="font-size: 16px; color: #6366f1;">library_books</span>
+                <span style="font-weight: 600; color: #334155;">${course.totalTopics || 0}</span> Bài học
+              </div>
+              <div class="cm-course-stat-item" style="display: flex; align-items: center; gap: 4px;">
+                <span class="material-symbols-sharp" style="font-size: 16px; color: #10b981;">check_circle</span>
+                <span style="font-weight: 600; color: #334155;">${course.publishedTopics || 0}</span> Đã xuất bản
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    });
+    
+    coursesGrid.innerHTML = html;
+    
+    // Áp dụng CSS dạng lưới
+    coursesGrid.style.display = 'grid';
+    coursesGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+    coursesGrid.style.gap = '16px';
+    coursesGrid.style.padding = '16px';
+  } else {
+    // Table view
+    if (cardsView) cardsView.style.display = 'none';
+    if (tableView) tableView.style.display = 'block';
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = '';
+    
+    if (filteredCourses.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="5" class="empty-state" style="text-align: center; padding: 40px; color: var(--theme-text-muted);">Không tìm thấy khóa học nào phù hợp.</td></tr>';
+      return;
+    }
+    
+    let html = '';
+    filteredCourses.forEach(course => {
+      const safeName = String(course.title).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const safeCourseId = String(course.courseId || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      
+      const isPublished = course.status === 'published';
+      const isHidden = course.status === 'hidden';
+      const statusText = isPublished ? 'Đang hiển thị' : (isHidden ? 'Đang ẩn' : 'Bản nháp');
+      const statusClass = isPublished ? 'status-active' : (isHidden ? 'status-locked' : 'status-draft');
+      
+      html += `
+        <tr onclick="showTopicsForCourse('${safeCourseId}', '${safeName}')" style="cursor: pointer;">
+          <td>
+            <div class="topic-info">
+              <span class="topic-name">${escapeHtml(course.title)}</span>
+            </div>
+          </td>
+          <td>
+            <span style="font-size: 12px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: 500;">
+              ${escapeHtml(course.level || 'Chưa phân loại')}
+            </span>
+          </td>
+          <td class="align-center">${course.totalTopics || 0} bài học</td>
+          <td>
+            <span class="status-badge ${statusClass}">${statusText}</span>
+          </td>
+          <td class="align-right actions-cell">
+            <button class="cm-btn cm-btn-icon" onclick="event.stopPropagation(); openCourseModal('${safeCourseId}')" title="Chỉnh sửa">
+              <span class="material-symbols-sharp">edit</span>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+    tableBody.innerHTML = html;
+  }
+}
+
+// ===== Search & Filter Courses =====
+function handleSearchCourses() {
+  const searchTerm = document.getElementById('cm-course-search-input').value.toLowerCase().trim();
+  applyCourseFilters(searchTerm);
+}
+
+function handleCourseFilterChange() {
+  const searchTerm = document.getElementById('cm-course-search-input').value.toLowerCase().trim();
+  applyCourseFilters(searchTerm);
+}
+
+function clearCourseSearch() {
+  const input = document.getElementById('cm-course-search-input');
+  if (input) {
+    input.value = '';
+    const clearBtn = document.getElementById('cm-course-search-clear');
+    if (clearBtn) clearBtn.style.display = 'none';
+    applyCourseFilters('');
+  }
+}
+
+function applyCourseFilters(searchTerm) {
+  const levelEl = document.getElementById('cm-course-level-filter');
+  const statusEl = document.getElementById('cm-course-status-filter');
+  
+  const levelFilter = levelEl ? levelEl.value : '';
+  const statusFilter = statusEl ? statusEl.value : '';
+
+  filteredCourses = allCourses.filter(course => {
+    const title = String(course.title || '').toLowerCase();
+    
+    const matchesSearch = !searchTerm || title.includes(searchTerm);
+    const matchesLevel = !levelFilter || String(course.level || '').trim() === levelFilter;
+    
+    // Default to 'draft' if missing
+    const courseStatus = String(course.status || 'draft').trim(); 
+    const matchesStatus = !statusFilter || courseStatus === statusFilter;
+    
+    return matchesSearch && matchesLevel && matchesStatus;
   });
-  
-  coursesGrid.innerHTML = html;
-  
-  // Áp dụng CSS dạng lưới
-  coursesGrid.style.display = 'grid';
-  coursesGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
-  coursesGrid.style.gap = '16px';
-  coursesGrid.style.padding = '16px';
+
+  filteredCourses.sort(function(a, b) {
+    return (Number(a.order) || 999) - (Number(b.order) || 999);
+  });
+
+  renderCoursesView();
 }
 
 function showTopicsForCourse(courseId, courseTitle) {
