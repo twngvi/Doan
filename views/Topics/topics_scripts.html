@@ -899,6 +899,29 @@
       });
     }
 
+    function updateTopicsCourseContext(course) {
+      const contextEl = document.getElementById("topicsCourseContext");
+      const backBtn = document.getElementById("btnBackToCourses");
+      const controlsEl = document.getElementById("topicsHeaderControls");
+      const courseNameEl = document.getElementById("topicsCurrentCourseName");
+
+      if (!contextEl || !courseNameEl) {
+        return;
+      }
+
+      if (!course) {
+        contextEl.style.display = "none";
+        if (backBtn) backBtn.style.display = "none";
+        courseNameEl.textContent = "Khóa học";
+        return;
+      }
+
+      courseNameEl.textContent = String(course.title || course.courseTitle || "Khóa học").trim();
+      contextEl.style.display = "flex";
+      if (backBtn) backBtn.style.display = "inline-flex";
+      if (controlsEl) controlsEl.style.display = "flex";
+    }
+
     function openCourse(courseId) {
       currentCourseId = courseId;
       currentViewMode = 'topics';
@@ -907,8 +930,10 @@
       const coursesFilterBarEl = document.getElementById('coursesFilterBar');
       if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'none';
       
-      document.getElementById('btnBackToCourses').style.display = 'flex';
-      document.getElementById('topicsHeaderControls').style.display = 'flex';
+      const selectedCourse = allCourses.find(function (course) {
+        return String(course.courseId) === String(courseId);
+      });
+      updateTopicsCourseContext(selectedCourse);
       
       // Xóa input tìm kiếm khi chuyển từ Khóa học -> Topic
       const searchInput = document.getElementById('searchTopics');
@@ -929,7 +954,7 @@
       document.getElementById('topicsGrid').style.display = 'none';
       document.getElementById('topicsJourney').style.display = 'none';
       document.getElementById('topicsEmpty').style.display = 'none';
-      document.getElementById('btnBackToCourses').style.display = 'none';
+      updateTopicsCourseContext(null);
       document.getElementById('topicsHeaderControls').style.display = 'none';
       
       // Khôi phục giá trị tìm kiếm cũ của khóa học (nếu có)
