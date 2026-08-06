@@ -2852,7 +2852,11 @@ function uploadImageToDrive(base64Data, fileName, mimeType) {
     const file = folder.createFile(blob);
     
     // Set permissions - anyone with link can view
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (sharingError) {
+      Logger.log("Warning: Could not set sharing permissions on file: " + sharingError.toString());
+    }
     
     // Get direct image URL - s뿯½뿯½뿯½ d뿯½뿯½뿯½ng format lh3.googleusercontent.com 뿯½‘뿯½뿯½뿯ƽ embed t뿯½뿯½‘t h뿯½뿯½n
     const fileId = file.getId();

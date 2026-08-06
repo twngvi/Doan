@@ -248,12 +248,18 @@
         allTopics = globalCache.data;
         topicsCache = globalCache.data;
         lastLoadTime = globalCache.lastLoadTime;
-        filteredTopics = [...allTopics];
 
         // Use cached progress for instant render, then refresh from server
         userProgress = mergeLocalStorageProgress(globalCache.progress || {});
         progressCache = userProgress;
-        renderTopics();
+        
+        if (currentViewMode === 'courses') {
+          renderCourses();
+          goBackToCourses();
+        } else {
+          const searchInput = document.getElementById('searchTopics');
+          searchTopics(searchInput ? searchInput.value : '');
+        }
         updateProgressStats();
         hideLoadingState();
 
@@ -268,7 +274,6 @@
           "✅ Using LOCAL cached topics data, refreshing progress...",
         );
         allTopics = topicsCache;
-        filteredTopics = [...allTopics];
 
         // Use cached progress for instant render, then refresh from server
         userProgress = mergeLocalStorageProgress(progressCache || {});
@@ -276,7 +281,8 @@
           renderCourses();
           goBackToCourses();
         } else {
-          renderTopics();
+          const searchInput = document.getElementById('searchTopics');
+          searchTopics(searchInput ? searchInput.value : '');
         }
         updateProgressStats();
         hideLoadingState();
@@ -295,7 +301,6 @@
           var result = localStoreCache.data;
           
           allTopics = result.topics || [];
-          filteredTopics = [...allTopics];
           
           let serverProgress = result.progress || {};
           userProgress = mergeLocalStorageProgress(serverProgress, { serverAuthoritative: true });
@@ -308,7 +313,8 @@
             renderCourses();
             goBackToCourses();
           } else {
-            renderTopics();
+            const searchInput = document.getElementById('searchTopics');
+            searchTopics(searchInput ? searchInput.value : '');
           }
           updateProgressStats();
           hideLoadingState();
@@ -350,7 +356,6 @@
       }
 
       allTopics = result.topics || [];
-      filteredTopics = [...allTopics];
       
       // ⭐ Extract courses from the same API response
       if (result.courses && result.courses.length > 0) {
@@ -403,7 +408,8 @@
         document.getElementById('btnBackToCourses').style.display = 'none';
         document.getElementById('topicsHeaderControls').style.display = 'none';
       } else {
-        renderTopics();
+        const searchInput = document.getElementById('searchTopics');
+        searchTopics(searchInput ? searchInput.value : '');
       }
       updateProgressStats();
       hideLoadingState();
