@@ -18,9 +18,25 @@
     // ⭐ Course Filter State
     let courseFilterState = {
       keyword: "",
+      keyword_raw: "",
       level: "all",
-      sort: "default"
+
+      // Mặc định đưa khóa học đã truy cập gần đây lên đầu
+      sort: "recent",
+
+      // false: hiển thị tất cả
+      // true: chỉ hiển thị khóa học yêu thích
+      favoritesOnly: false
     };
+
+    // Lưu trạng thái yêu thích và thời gian học gần đây
+    let coursePreferences = {
+      favorites: {},
+      recent: {}
+    };
+
+    // Theo dõi tài khoản nào đã được tải tùy chọn
+    let loadedCoursePreferencesKey = "";
     let selectedTopic = null;
     let userProgress = {};
 
@@ -804,11 +820,163 @@
     }
 
     // ========================================
+    // COURSE PREFERENCES
+    // Yêu thích + học gần đây
+    // ========================================
+
+    function normalizeCourseId(courseId) {
+      if (courseId === null || courseId === undefined) {
+        return "";
+      }
+      return String(courseId).trim();
+    }
+
+    function getCoursePreferencesStorageKey() {
+      const currentUser = window.currentUser || {};
+      const userKey = String(
+        currentUser.userId ||
+        currentUser.email ||
+        "guest"
+      )
+        .trim()
+        .toLowerCase();
+      return "doan:course-preferences:" + userKey + ":v1";
+    }
+
+    /**
+     * Tải trạng thái yêu thích và gần đây từ localStorage.
+     * Dữ liệu được tách riêng theo từng tài khoản.
+     */
+    function ensureCoursePreferencesLoaded() {
+      const storageKey = getCoursePreferencesStorageKey();
+
+      // Đã tải đúng tài khoản thì không cần đọc lại
+      if (loadedCoursePreferencesKey === storageKey) {
+        return;
+      }
+
+      coursePreferences = {
+        favorites: {},
+        recent: {}
+      };
+
+      try {
+        const rawData = localStorage.getItem(storageKey);
+        if (rawData) {
+          const parsedData = JSON.parse(rawData);
+          if (parsedData && typeof parsedData === "object") {
+            coursePreferences.favorites =
+              parsedData.favorites &&
+              typeof parsedData.favorites === "object"
+                ? parsedData.favorites
+                : {};
+            coursePreferences.recent =
+              parsedData.recent &&
+              typeof parsedData.recent === "object"
+                ? parsedData.recent
+                : {};
+          }
+        }
+      } catch (error) {
+        console.warn("Không thể đọc tùy chọn khóa học:", error);
+        coursePreferences = {
+          favorites: {},
+          recent: {}
+        };
+      }
+
+      loadedCoursePreferencesKey = storageKey;
+    }
+
+    /**
+     * Lưu trạng thái xuống localStorage.
+     */
+    function saveCoursePreferences() {
+      ensureCoursePreferencesLoaded();
+      try {
+        localStorage.setItem(
+          getCoursePreferencesStorageKey(),
+          JSON.stringify(coursePreferences)
+        );
+      } catch (error) {
+        console.warn("Không thể lưu tùy chọn khóa học:", error);
+      }
+    }
+
+    /**
+     * Kiểm tra một khóa học đã được yêu thích hay chưa.
+     */
+    function isCourseFavorite(courseId) {
+      ensureCoursePreferencesLoaded();
+      const normalizedId = normalizeCourseId(courseId);
+      return coursePreferences.favorites[normalizedId] === true;
+    }
+
+    /**
+     * Lấy thời gian học gần đây của khóa học.
+     */
+    function getCourseRecentTime(courseId) {
+      ensureCoursePreferencesLoaded();
+      const normalizedId = normalizeCourseId(courseId);
+      const recentTime = coursePreferences.recent[normalizedId];
+      const numericTime = Number(recentTime);
+      return Number.isFinite(numericTime) ? numericTime : 0;
+    }
+
+    /**
+     * Ghi nhận khóa học vừa được mở hoặc vừa được học.
+     */
+    function markCourseRecentlyStudied(courseId) {
+      ensureCoursePreferencesLoaded();
+      const normalizedId = normalizeCourseId(courseId);
+      if (!normalizedId) return;
+      coursePreferences.recent[normalizedId] = Date.now();
+      saveCoursePreferences();
+    }
+
+    /**
+     * Nhấn nút tim trên card.
+     */
+    window.toggleCourseFavorite = function (courseId, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      ensureCoursePreferencesLoaded();
+      const normalizedId = normalizeCourseId(courseId);
+      if (!normalizedId) return;
+
+      if (coursePreferences.favorites[normalizedId] === true) {
+        delete coursePreferences.favorites[normalizedId];
+      } else {
+        coursePreferences.favorites[normalizedId] = true;
+      }
+      saveCoursePreferences();
+      // Vẽ lại card để cập nhật màu trái tim
+      renderCourses();
+    };
+
+    /**
+     * Bật/tắt bộ lọc yêu thích.
+     */
+    window.toggleFavoriteCourseFilter = function () {
+      courseFilterState.favoritesOnly = !courseFilterState.favoritesOnly;
+      const favoriteFilterButton = document.getElementById("courseFavoriteFilter");
+      if (favoriteFilterButton) {
+        favoriteFilterButton.classList.toggle("active", courseFilterState.favoritesOnly);
+        favoriteFilterButton.setAttribute("aria-pressed", String(courseFilterState.favoritesOnly));
+      }
+      renderCourses();
+    };
+
+    // ========================================
     // COURSES LOGIC
     // ========================================
     function renderCourses() {
       const container = document.getElementById('coursesGrid');
       if (!container) return;
+      
+      ensureCoursePreferencesLoaded();
       
       container.innerHTML = '';
       
@@ -825,6 +993,19 @@
       
       // Lọc và sắp xếp khóa học dựa trên courseFilterState
       let filteredCourses = [...allCourses];
+      
+      // Tính số bài học một lần để tránh filter lặp lại
+      const topicCountByCourse = allTopics.reduce(
+        function (countMap, topic) {
+          const courseId = normalizeCourseId(topic.courseId);
+          if (!courseId) {
+            return countMap;
+          }
+          countMap[courseId] = (countMap[courseId] || 0) + 1;
+          return countMap;
+        },
+        {}
+      );
       
       if (courseFilterState.keyword) {
         filteredCourses = filteredCourses.filter(course => {
@@ -845,39 +1026,128 @@
           return courseLevel === courseFilterState.level.toLowerCase();
         });
       }
-      
-      if (courseFilterState.sort !== 'default') {
-        filteredCourses.sort((a, b) => {
-          if (courseFilterState.sort === 'name_asc') return (a.title || '').localeCompare(b.title || '');
-          if (courseFilterState.sort === 'name_desc') return (b.title || '').localeCompare(a.title || '');
-          
-          const aCount = allTopics.filter(t => t.courseId === a.courseId).length;
-          const bCount = allTopics.filter(t => t.courseId === b.courseId).length;
-          
-          if (courseFilterState.sort === 'lessons_asc') return aCount - bCount;
-          if (courseFilterState.sort === 'lessons_desc') return bCount - aCount;
-          return 0;
+
+      // Chỉ hiển thị khóa học đã thả tim
+      if (courseFilterState.favoritesOnly) {
+        filteredCourses = filteredCourses.filter(function (course) {
+          return isCourseFavorite(course.courseId);
         });
       }
       
+      filteredCourses.sort(function (a, b) {
+        const sortMode = courseFilterState.sort;
+
+        const titleA = String(a.title || "");
+        const titleB = String(b.title || "");
+
+        // Hàm so sánh tên hỗ trợ tiếng Việt
+        const compareByName = function () {
+          return titleA.localeCompare(
+            titleB,
+            "vi",
+            {
+              sensitivity: "base"
+            }
+          );
+        };
+
+        // Khóa học vừa học hoặc vừa mở sẽ nằm trước
+        if (sortMode === "recent") {
+          const recentA = getCourseRecentTime(a.courseId);
+          const recentB = getCourseRecentTime(b.courseId);
+
+          if (recentA !== recentB) {
+            return recentB - recentA;
+          }
+
+          // Các khóa học chưa học có recent = 0,
+          // tiếp tục sắp xếp A–Z
+          return compareByName();
+        }
+
+        if (sortMode === "name_asc") {
+          return compareByName();
+        }
+
+        if (sortMode === "name_desc") {
+          return titleB.localeCompare(
+            titleA,
+            "vi",
+            {
+              sensitivity: "base"
+            }
+          );
+        }
+
+        const courseIdA = normalizeCourseId(a.courseId);
+        const courseIdB = normalizeCourseId(b.courseId);
+
+        const lessonCountA = topicCountByCourse[courseIdA] || 0;
+        const lessonCountB = topicCountByCourse[courseIdB] || 0;
+
+        if (sortMode === "lessons_asc") {
+          return lessonCountA - lessonCountB;
+        }
+
+        if (sortMode === "lessons_desc") {
+          return lessonCountB - lessonCountA;
+        }
+
+        return 0;
+      });
+      
       if (filteredCourses.length === 0) {
-        container.innerHTML = '<div style="padding: 24px; color: var(--text-muted); grid-column: 1/-1; text-align: center;">Không tìm thấy khóa học phù hợp.</div>';
+        const emptyMessage =
+          courseFilterState.favoritesOnly
+            ? "Bạn chưa có khóa học yêu thích."
+            : "Không tìm thấy khóa học phù hợp.";
+
+        container.innerHTML = `
+          <div class="courses-empty-state">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+            <p>${emptyMessage}</p>
+          </div>
+        `;
         return;
       }
       
-      filteredCourses.forEach(course => {
-        const card = document.createElement('div');
-        card.className = 'course-card';
-        card.onclick = () => openCourse(course.courseId);
+      filteredCourses.forEach(function (course) {
+        const courseId = normalizeCourseId(course.courseId);
+        const favorite = isCourseFavorite(courseId);
+        const recentTime = getCourseRecentTime(courseId);
+        
+        const card = document.createElement("div");
+        card.className = "course-card" + (favorite ? " is-favorite" : "");
+        card.dataset.courseId = courseId;
+        
+        card.onclick = function () {
+          openCourse(courseId);
+        };
         
         const imgUrl = course.thumbnailUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop';
-        
-        // Count topics in this course
-        const topicsCount = allTopics.filter(t => t.courseId === course.courseId).length;
+        const topicsCount = topicCountByCourse[courseId] || 0;
         
         card.innerHTML = `
           <div class="course-card-image-wrapper">
             <img src="${imgUrl}" alt="${escapeHtml(course.title)}" class="course-card-image" onerror="this.src='https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop'">
+            <button
+              type="button"
+              class="course-favorite-btn ${favorite ? "is-active" : ""}"
+              aria-pressed="${favorite}"
+              aria-label="${favorite ? "Bỏ khỏi yêu thích" : "Thêm vào yêu thích"}"
+              title="${favorite ? "Bỏ khỏi yêu thích" : "Thêm vào yêu thích"}"
+            >
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path>
+              </svg>
+            </button>
+            ${
+              recentTime > 0
+                ? `<span class="course-recent-badge">Học gần đây</span>`
+                : ""
+            }
           </div>
           <div class="course-card-content">
             ${(course.courseCode || course.category) ? `<div class="course-card-category">${escapeHtml(course.courseCode || course.category)}</div>` : ''}
@@ -901,6 +1171,16 @@
             </div>
           </div>
         `;
+        
+        const favoriteButton = card.querySelector(".course-favorite-btn");
+        if (favoriteButton) {
+          favoriteButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            window.toggleCourseFavorite(courseId, event);
+          });
+        }
+        
         container.appendChild(card);
       });
     }
@@ -929,6 +1209,9 @@
     }
 
     function openCourse(courseId) {
+      // Ghi nhận thời gian người dùng mở khóa học
+      markCourseRecentlyStudied(courseId);
+
       currentCourseId = courseId;
       currentViewMode = 'topics';
       
@@ -1025,13 +1308,27 @@
       return str.replace(/\s+/g, ' '); // Loại bỏ khoảng trắng thừa
     }
 
-    window.applyCourseFilter = function() {
-      const levelFilter = document.getElementById('courseLevelFilter');
-      const sortSelect = document.getElementById('courseSortSelect');
-      
-      if (levelFilter) courseFilterState.level = levelFilter.value;
-      if (sortSelect) courseFilterState.sort = sortSelect.value;
-      
+    window.applyCourseFilter = function () {
+      const levelFilter =
+        document.getElementById(
+          "courseLevelFilter"
+        );
+
+      const sortSelect =
+        document.getElementById(
+          "courseSortSelect"
+        );
+
+      if (levelFilter) {
+        courseFilterState.level =
+          levelFilter.value;
+      }
+
+      if (sortSelect) {
+        courseFilterState.sort =
+          sortSelect.value;
+      }
+
       renderCourses();
     };
 
@@ -1564,6 +1861,10 @@
      * ⭐ Navigate to Lesson page (NEW)
      */
     function navigateToLesson(topic) {
+      if (topic && topic.courseId) {
+        markCourseRecentlyStudied(topic.courseId);
+      }
+
       console.log(
         "🔍 ==================== NAVIGATE TO LESSON ====================",
       );
@@ -1598,6 +1899,7 @@
       // Save to recent activities
       if (typeof window.saveRecentActivity === "function") {
         window.saveRecentActivity({
+          courseId: topic.courseId,
           topicId: topic.topicId,
           topicTitle: topic.title,
           activityType: "view",
@@ -1615,9 +1917,14 @@
      * Navigate to Quiz directly (no lesson)
      */
     function navigateToQuiz(topic) {
+      if (topic && topic.courseId) {
+        markCourseRecentlyStudied(topic.courseId);
+      }
+
       // Save to recent activities
       if (typeof window.saveRecentActivity === "function") {
         window.saveRecentActivity({
+          courseId: topic.courseId,
           topicId: topic.topicId,
           topicTitle: topic.title,
           activityType: "quiz",
@@ -1635,9 +1942,14 @@
      * Navigate to Matching Game
      */
     function navigateToMatching(topic) {
+      if (topic && topic.courseId) {
+        markCourseRecentlyStudied(topic.courseId);
+      }
+
       // Save to recent activities
       if (typeof window.saveRecentActivity === "function") {
         window.saveRecentActivity({
+          courseId: topic.courseId,
           topicId: topic.topicId,
           topicTitle: topic.title,
           activityType: "matching",
