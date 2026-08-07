@@ -2274,25 +2274,43 @@
     // ========================================
     // UI STATE MANAGEMENT
     // ========================================
-    function showLoadingState() {
-      // Hiện in-page loading spinner
-      const loading = document.getElementById("topicsLoading");
-      if (loading) {
-        loading.style.display = "flex";
+    function showDataRegionLoading(regionId, message) {
+      const region = document.getElementById(regionId);
+      if (!region) return;
+      const title = region.querySelector('.data-loading-title');
+      const loading = region.querySelector('.data-region-loading');
+      if (title && message) {
+        title.textContent = message;
       }
-      // Ẩn các container khác
-      document.getElementById("topicsGrid").style.display = "none";
-      document.getElementById("topicsJourney").style.display = "none";
+      region.classList.add('is-loading');
+      if (loading) {
+        loading.setAttribute('aria-hidden', 'false');
+      }
+    }
+
+    function hideDataRegionLoading(regionId) {
+      const region = document.getElementById(regionId);
+      if (!region) return;
+      const loading = region.querySelector('.data-region-loading');
+      region.classList.remove('is-loading');
+      if (loading) {
+        loading.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    function showLoadingState() {
+      if (typeof currentViewMode !== 'undefined' && currentViewMode === 'courses') {
+        showDataRegionLoading('courseDataRegion', 'Đang tải danh sách khóa học...');
+      } else {
+        showDataRegionLoading('topicDataRegion', 'Đang tải danh sách Topic...');
+      }
       document.getElementById("topicsError").style.display = "none";
       document.getElementById("topicsEmpty").style.display = "none";
     }
 
     function hideLoadingState() {
-      // Ẩn in-page loading spinner
-      const loading = document.getElementById("topicsLoading");
-      if (loading) {
-        loading.style.display = "none";
-      }
+      hideDataRegionLoading('courseDataRegion');
+      hideDataRegionLoading('topicDataRegion');
     }
 
     function showErrorState(message) {
