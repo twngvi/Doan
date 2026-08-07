@@ -133,60 +133,84 @@ function loadCategories() {
     .getTopicCategories();
 }
 
+function setCoursesLoading(show) {
+  const wrapper = document.getElementById(
+    'cm-courses-view-wrapper'
+  );
+
+  const loading = document.getElementById(
+    'cm-courses-loading-state'
+  );
+
+  if (wrapper) {
+    wrapper.classList.toggle(
+      'is-list-loading',
+      show
+    );
+  }
+
+  if (loading) {
+    loading.style.display = show ? 'flex' : 'none';
+  }
+}
+
 // ===== Load Courses List =====
 function loadCoursesList() {
-  const loading = document.getElementById('cm-courses-loading-state');
-  const cardsView = document.getElementById('cm-course-cards-view');
-  const tableView = document.getElementById('cm-course-table-view');
-  if (loading) {
-    loading.style.display = 'flex';
-    loading.style.position = 'fixed';
-    loading.style.top = '0';
-    loading.style.left = '0';
-    loading.style.width = '100vw';
-    loading.style.height = '100vh';
-    loading.style.backgroundColor = 'rgba(15, 23, 42, 0.4)';
-    loading.style.backdropFilter = 'blur(4px)';
-    loading.style.zIndex = '9999';
-    loading.style.padding = '0';
-    loading.style.alignItems = 'center';
-    loading.style.justifyContent = 'center';
-    
-    const inner = loading.querySelector('.admin-loading-container');
-    if (inner) inner.style.background = 'transparent';
-  }
+  setCoursesLoading(true);
 
   google.script.run
     .withSuccessHandler(function(response) {
       if (!response || response.success !== true) {
         allCourses = [];
         filteredCourses = [];
-        if (typeof showNotification === 'function') {
-          showNotification(response ? response.message : 'Không thể tải danh sách khóa học', 'error');
-        }
+
+        setCoursesLoading(false);
         renderCoursesView();
+
+        if (typeof showNotification === 'function') {
+          showNotification(
+            response
+              ? response.message
+              : 'Không thể tải danh sách khóa học',
+            'error'
+          );
+        }
+
         return;
       }
-      
-      allCourses = Array.isArray(response.courses) ? response.courses : [];
-      
-      // Khởi tạo filteredCourses và sort theo order
-      filteredCourses = allCourses.slice().sort(function(a, b) {
-        return (Number(a.order) || 999) - (Number(b.order) || 999);
-      });
-      
+
+      allCourses = Array.isArray(response.courses)
+        ? response.courses
+        : [];
+
+      filteredCourses = allCourses
+        .slice()
+        .sort(function(a, b) {
+          return (
+            (Number(a.order) || 999) -
+            (Number(b.order) || 999)
+          );
+        });
+
       updateCourseStats();
+
+      /* Load xong mới hiện danh sách */
+      setCoursesLoading(false);
       renderCoursesView();
     })
     .withFailureHandler(function(error) {
-      console.error('[ContentManagement] Failed to load courses:', error);
-      if (loading) {
-        loading.style.display = 'none';
-        loading.style.position = '';
-        loading.style.backdropFilter = '';
-      }
+      console.error(
+        '[ContentManagement] Failed to load courses:',
+        error
+      );
+
+      setCoursesLoading(false);
+
       if (typeof showNotification === 'function') {
-        showNotification('Lỗi khi tải danh sách khóa học', 'error');
+        showNotification(
+          'Lỗi khi tải danh sách khóa học',
+          'error'
+        );
       }
     })
     .getAllCoursesForAdmin();
@@ -1941,40 +1965,43 @@ function refreshTopicsList(e) {
 
 // ===== Helper Functions =====
 function showLoading(show) {
-  const loadingEl = document.getElementById('cm-loading-state');
-  const tableWrapperEl = document.getElementById('cm-table-view');
-  const cardsGridEl = document.getElementById('cm-cards-grid');
-  const emptyStateEl = document.getElementById('cm-empty-state');
-  const paginationEl = document.getElementById('cm-pagination');
+  const wrapper = document.getElementById(
+    'cm-topics-view-wrapper'
+  );
+
+  const loadingEl = document.getElementById(
+    'cm-loading-state'
+  );
+
+  const emptyStateEl = document.getElementById(
+    'cm-empty-state'
+  );
+
+  const paginationEl = document.getElementById(
+    'cm-pagination'
+  );
+
+  if (wrapper) {
+    wrapper.classList.toggle(
+      'is-list-loading',
+      show
+    );
+  }
+
+  if (loadingEl) {
+    loadingEl.style.display = show
+      ? 'flex'
+      : 'none';
+  }
 
   if (show) {
-    if (loadingEl) {
-      loadingEl.style.display = 'flex';
-      loadingEl.style.position = 'fixed';
-      loadingEl.style.top = '0';
-      loadingEl.style.left = '0';
-      loadingEl.style.width = '100vw';
-      loadingEl.style.height = '100vh';
-      loadingEl.style.backgroundColor = 'rgba(15, 23, 42, 0.4)';
-      loadingEl.style.backdropFilter = 'blur(4px)';
-      loadingEl.style.zIndex = '9999';
-      loadingEl.style.padding = '0';
-      loadingEl.style.alignItems = 'center';
-      loadingEl.style.justifyContent = 'center';
-      
-      const inner = loadingEl.querySelector('.admin-loading-container');
-      if (inner) inner.style.background = 'transparent';
+    if (emptyStateEl) {
+      emptyStateEl.style.display = 'none';
     }
-    // Không ẩn table/cards khi load để tạo cảm giác popup mờ trên nền hiện tại
-    if (emptyStateEl) emptyStateEl.style.display = 'none';
-  } else {
-    if (loadingEl) {
-      loadingEl.style.display = 'none';
-      loadingEl.style.position = '';
-      loadingEl.style.backdropFilter = '';
+
+    if (paginationEl) {
+      paginationEl.style.display = 'none';
     }
-    if (tableWrapperEl && currentView === 'table' && isDataLoaded && filteredTopics.length > 0) tableWrapperEl.style.display = 'block';
-    if (cardsGridEl && currentView === 'cards' && isDataLoaded && filteredTopics.length > 0) cardsGridEl.style.display = 'grid';
   }
 }
 
@@ -2144,11 +2171,8 @@ function updateCourseStats() {
 function renderCoursesView() {
   const coursesGrid = document.getElementById('cm-courses-grid');
   const tableBody = document.getElementById('cm-courses-table-body');
-  const loadingState = document.getElementById('cm-courses-loading-state');
   const cardsView = document.getElementById('cm-course-cards-view');
   const tableView = document.getElementById('cm-course-table-view');
-  
-  if (loadingState) loadingState.style.display = 'none';
   
   if (currentCourseView === 'cards') {
     if (tableView) tableView.style.display = 'none';
