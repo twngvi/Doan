@@ -12,6 +12,14 @@
     selectedStatsType: '',
     selectedStatsKey: '',
     selectedLearnerId: '',
+    searchQuery: '',
+    courseRows: [],
+    coursePage: 1,
+    topicPage: 1,
+    matchingPage: 1,
+    itemsPerPage: 10,
+    lineChartInstance: null,
+    barChartInstance: null
   };
 
   function initCourseStatsPage() {
@@ -55,6 +63,7 @@
     const rangeSelect = document.getElementById('courseStatsRangeSelect');
     const topicTableBody = document.getElementById('courseStatsTopicTableBody');
     const matchingTableBody = document.getElementById('courseStatsMatchingTableBody');
+    const courseTableBody = document.getElementById('courseStatsCourseTableBody');
     const topicLearnerSortBtn = document.getElementById('courseStatsTopicLearnerSortBtn');
     const matchingSortBtn = document.getElementById('courseStatsMatchingSortBtn');
     const closeTopicUsersBtn = document.getElementById('courseStatsTopicUsersCloseBtn');
@@ -62,6 +71,10 @@
     const topicUsersList = document.getElementById('courseStatsTopicUsersList');
     const closeAttemptDetailBtn = document.getElementById('courseStatsAttemptDetailCloseBtn');
     const attemptDetailBackdrop = document.getElementById('courseStatsAttemptDetailBackdrop');
+    const searchInput = document.getElementById('courseStatsSearchInput');
+
+    const closeCourseTopicsBtn = document.getElementById('courseStatsCourseTopicsCloseBtn');
+    const courseTopicsBackdrop = document.getElementById('courseStatsCourseTopicsBackdrop');
 
     renderCurrentTimeframeLabel(courseStatsState.timeRange);
     renderCourseStatsSortIndicators();
@@ -70,10 +83,13 @@
       rangeSelect.value = courseStatsState.timeRange;
       rangeSelect.addEventListener('change', (event) => {
         courseStatsState.timeRange = String(event.target.value || '30');
+        courseStatsState.topicPage = 1;
+        courseStatsState.matchingPage = 1;
         renderCurrentTimeframeLabel(courseStatsState.timeRange);
         const aggregated = aggregateCourseStats(courseStatsState.users, courseStatsState.timeRange);
         courseStatsState.topicRows = aggregated.topicRows;
         courseStatsState.matchingRows = aggregated.matchingRows;
+        courseStatsState.courseRows = aggregated.courseRows;
         ensureSelectedStatsExists();
         renderAllCourseStats(aggregated);
       });
@@ -82,6 +98,20 @@
     if (refreshBtn) {
       refreshBtn.addEventListener('click', loadCourseStatsData);
     }
+    
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        courseStatsState.searchQuery = e.target.value.toLowerCase().trim();
+        courseStatsState.topicPage = 1;
+        courseStatsState.matchingPage = 1;
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+    
+
 
     if (topicLearnerSortBtn) {
       topicLearnerSortBtn.addEventListener('click', () => {
@@ -129,6 +159,22 @@
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
           matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
+        });
+      });
+    }
+
+    if (courseTableBody) {
+      courseTableBody.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-stats-key][data-stats-type]');
+        if (!row) return;
+
+        courseStatsState.selectedStatsType = String(row.dataset.statsType || '');
+        courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
         });
       });
     }
@@ -141,6 +187,19 @@
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
           matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
+        });
+      });
+    }
+
+    if (closeCourseTopicsBtn) {
+      closeCourseTopicsBtn.addEventListener('click', () => {
+        courseStatsState.selectedStatsType = '';
+        courseStatsState.selectedStatsKey = '';
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
         });
       });
     }
@@ -153,6 +212,19 @@
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
           matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
+        });
+      });
+    }
+
+    if (courseTopicsBackdrop) {
+      courseTopicsBackdrop.addEventListener('click', () => {
+        courseStatsState.selectedStatsType = '';
+        courseStatsState.selectedStatsKey = '';
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
         });
       });
     }
@@ -192,6 +264,7 @@
       renderCourseStatsTables({
         topicRows: courseStatsState.topicRows,
         matchingRows: courseStatsState.matchingRows,
+        courseRows: courseStatsState.courseRows,
       });
     });
   }
@@ -209,6 +282,7 @@
       const aggregated = aggregateCourseStats(users, courseStatsState.timeRange);
       courseStatsState.topicRows = aggregated.topicRows;
       courseStatsState.matchingRows = aggregated.matchingRows;
+      courseStatsState.courseRows = aggregated.courseRows;
       ensureSelectedStatsExists();
 
       renderAllCourseStats(aggregated);
@@ -217,8 +291,9 @@
       courseStatsState.users = [];
       courseStatsState.topicRows = [];
       courseStatsState.matchingRows = [];
+      courseStatsState.courseRows = [];
       courseStatsState.totalTopicsInDb = 0;
-      renderAllCourseStats({ topicRows: [], matchingRows: [] });
+      renderAllCourseStats({ topicRows: [], matchingRows: [], courseRows: [] });
     } finally {
       setCourseStatsLoading(false);
     }
@@ -238,22 +313,34 @@
   function aggregateCourseStats(users, timeRange) {
     const topicMap = {};
     const matchingMap = {};
+    const courseMap = {};
     const windowStart = getWindowStartDate(timeRange);
 
     users.forEach((user) => {
       const userId = String(user.id || user.email || Math.random());
       const learnerMeta = getCourseStatsLearnerMeta(user, userId);
       const engagedTopicKeys = {};
+      const engagedCourseKeys = {};
 
       const lessons = Array.isArray(user.lessons) ? user.lessons : [];
       lessons.forEach((lesson) => {
         const key = resolveCourseStatsKey(lesson.lessonId, lesson.lessonTitle);
         if (!key) return;
 
+        const courseKey = resolveCourseStatsKey(lesson.courseId, lesson.courseTitle);
         const item = getOrCreateStatItem(topicMap, key, lesson.lessonTitle || lesson.lessonId || 'Topic');
+        if (courseKey) item.courseKey = courseKey;
+        
         const hasProgress = Number(lesson.progressPercent || 0) > 0;
         if (windowStart === null && hasProgress) {
           engagedTopicKeys[key] = true;
+        }
+
+        if (courseKey) {
+          getOrCreateStatItem(courseMap, courseKey, lesson.courseTitle || lesson.courseId || 'Course');
+          if (windowStart === null && hasProgress) {
+            engagedCourseKeys[courseKey] = true;
+          }
         }
       });
 
@@ -265,10 +352,19 @@
         const key = resolveCourseStatsKey(attempt.lessonId, attempt.lessonTitle);
         if (!key) return;
 
+        const courseKey = resolveCourseStatsKey(attempt.courseId, attempt.courseTitle);
         const item = getOrCreateStatItem(topicMap, key, attempt.lessonTitle || attempt.lessonId || 'Topic');
+        if (courseKey) item.courseKey = courseKey;
         item.playCount += 1;
         const learnerDetail = getOrCreateCourseStatsLearnerDetail(item, userId, learnerMeta);
         learnerDetail.totalAttempts += 1;
+        
+        const score = Number(attempt.scorePercent || attempt.score || attempt.bestScore || 0);
+        if (score > 0) {
+          learnerDetail.totalScore += score;
+          learnerDetail.scoreCount += 1;
+        }
+
         if (isCourseStatsQuizOrMatchingAttempt(attempt)) {
           item.quizMatchingAttemptCount += 1;
           learnerDetail.quizMatchingCount += 1;
@@ -278,6 +374,26 @@
           text: buildCourseStatsAttemptEventText(attempt),
         });
         engagedTopicKeys[key] = true;
+
+        if (courseKey) {
+          const cItem = getOrCreateStatItem(courseMap, courseKey, attempt.courseTitle || attempt.courseId || 'Course');
+          cItem.playCount += 1;
+          const cLearnerDetail = getOrCreateCourseStatsLearnerDetail(cItem, userId, learnerMeta);
+          cLearnerDetail.totalAttempts += 1;
+          if (score > 0) {
+            cLearnerDetail.totalScore += score;
+            cLearnerDetail.scoreCount += 1;
+          }
+          if (isCourseStatsQuizOrMatchingAttempt(attempt)) {
+            cItem.quizMatchingAttemptCount += 1;
+            cLearnerDetail.quizMatchingCount += 1;
+          }
+          addCourseStatsLearnerEvent(cLearnerDetail, {
+            time: completedAt,
+            text: buildCourseStatsAttemptEventText(attempt),
+          });
+          engagedCourseKeys[courseKey] = true;
+        }
       });
 
       const plays = Array.isArray(user.plays) ? user.plays : [];
@@ -291,7 +407,9 @@
         const playCount = Math.max(0, Number(play.playCount || 0));
         const title = play.topicTitle || play.topicId || 'Topic';
 
+        const courseKey = resolveCourseStatsKey(play.courseId, play.courseTitle);
         const topicItem = getOrCreateStatItem(topicMap, key, title);
+        if (courseKey) topicItem.courseKey = courseKey;
         topicItem.playCount += playCount;
         const topicLearnerDetail = getOrCreateCourseStatsLearnerDetail(topicItem, userId, learnerMeta);
         topicLearnerDetail.totalPlays += playCount;
@@ -319,11 +437,30 @@
             });
           }
         }
+
+        if (courseKey) {
+          const cItem = getOrCreateStatItem(courseMap, courseKey, play.courseTitle || play.courseId || 'Course');
+          cItem.playCount += playCount;
+          const cLearnerDetail = getOrCreateCourseStatsLearnerDetail(cItem, userId, learnerMeta);
+          cLearnerDetail.totalPlays += playCount;
+          if (playCount > 0) {
+            addCourseStatsLearnerEvent(cLearnerDetail, {
+              time: playedAt,
+              text: buildCourseStatsPlayEventText(play, playCount),
+            });
+            engagedCourseKeys[courseKey] = true;
+          }
+        }
       });
 
       Object.keys(engagedTopicKeys).forEach((key) => {
         if (topicMap[key]) {
           getOrCreateCourseStatsLearnerDetail(topicMap[key], userId, learnerMeta);
+        }
+      });
+      Object.keys(engagedCourseKeys).forEach((key) => {
+        if (courseMap[key]) {
+          getOrCreateCourseStatsLearnerDetail(courseMap[key], userId, learnerMeta);
         }
       });
     });
@@ -337,10 +474,12 @@
 
     const topicRows = finalizeCourseStatsRows(topicMap);
     const matchingRows = finalizeCourseStatsRows(matchingMap);
+    const courseRows = finalizeCourseStatsRows(courseMap);
 
     return {
       topicRows,
       matchingRows,
+      courseRows,
       topTopic: topicRows[0] || null,
       topMatching: matchingRows[0] || null,
       topicsWithLearners: topicRows.filter((item) => item.learnerCount > 0).length,
@@ -349,6 +488,7 @@
 
   function renderAllCourseStats(aggregated) {
     renderCourseStatsSummary(aggregated);
+    renderCourseStatsCharts(aggregated);
     renderCourseStatsTables(aggregated);
     consumePendingCourseStatsSearchTarget();
   }
@@ -375,6 +515,7 @@
         return {
           key,
           title: item.title,
+          courseKey: item.courseKey || '',
           playCount: Math.max(0, Number(item.playCount || 0)),
           learnerCount: Object.keys(item.learners || {}).length,
           learners: Object.keys(item.learners || {}).map((learnerId) => {
@@ -386,6 +527,9 @@
               totalAttempts: Math.max(0, Number(learner.totalAttempts || 0)),
               totalPlays: Math.max(0, Number(learner.totalPlays || 0)),
               quizMatchingCount: Math.max(0, Number(learner.quizMatchingCount || 0)),
+              totalScore: Math.max(0, Number(learner.totalScore || 0)),
+              scoreCount: Math.max(0, Number(learner.scoreCount || 0)),
+              avgScore: Math.max(0, Number(learner.scoreCount || 0)) > 0 ? Math.round(learner.totalScore / learner.scoreCount) : 0,
               lastLearnedAt: learner.lastLearnedAt || '',
               events: Array.isArray(learner.events) ? learner.events.slice(0, 8) : [],
             };
@@ -404,33 +548,115 @@
   }
 
   function renderCourseStatsSummary(aggregated) {
+    const totalUsers = (courseStatsState.users || []).length;
+    setTextContent('courseStatsTotalUsers', totalUsers);
+
     const learnedTopics = Number(aggregated.topicsWithLearners || 0);
-    const totalTopicsInDb = Math.max(0, Number(courseStatsState.totalTopicsInDb || 0));
-    const totalDisplay = totalTopicsInDb > 0 ? totalTopicsInDb : Number((aggregated.topicRows || []).length);
-    setTextContent('courseStatsTotalTopics', `${learnedTopics}/${totalDisplay}`);
-    setTextContent('courseStatsTopTopic', formatTopCourseStatsText(aggregated.topTopic));
-    setTextContent('courseStatsTopMatching', formatTopCourseStatsText(aggregated.topMatching));
+    const learnedCourses = (aggregated.courseRows || []).filter(item => item.learnerCount > 0).length;
+    
+    setTextContent('courseStatsTotalCourses', learnedCourses);
+    setTextContent('courseStatsTotalTopicsCount', learnedTopics);
   }
 
   function renderCourseStatsTables(aggregated) {
-    const topicRowsRaw = Array.isArray(aggregated.topicRows) ? aggregated.topicRows : [];
-    const matchingRowsRaw = Array.isArray(aggregated.matchingRows) ? aggregated.matchingRows : [];
+    let topicRowsRaw = Array.isArray(aggregated.topicRows) ? aggregated.topicRows : [];
+    let matchingRowsRaw = Array.isArray(aggregated.matchingRows) ? aggregated.matchingRows : [];
+    let courseRowsRaw = Array.isArray(aggregated.courseRows) ? aggregated.courseRows : [];
+    
+    // Apply search filter
+    if (courseStatsState.searchQuery) {
+      const q = courseStatsState.searchQuery;
+      topicRowsRaw = topicRowsRaw.filter(r => r.title.toLowerCase().includes(q));
+      matchingRowsRaw = matchingRowsRaw.filter(r => r.title.toLowerCase().includes(q));
+      courseRowsRaw = courseRowsRaw.filter(r => r.title.toLowerCase().includes(q));
+    }
+    
     const topicRows = sortTopicRowsByLearner(topicRowsRaw, courseStatsState.topicLearnerSortOrder);
     const matchingRows = sortCourseStatsRows(matchingRowsRaw, courseStatsState.matchingSortOrder);
+    // Use matchingSortOrder for course rows too, or we can use a separate one. Let's use topicLearnerSortOrder (learners desc).
+    const courseRows = sortTopicRowsByLearner(courseRowsRaw, courseStatsState.topicLearnerSortOrder);
 
-    setTextContent('courseStatsTopicCount', `${topicRowsRaw.length} topic`);
-    setTextContent('courseStatsMatchingCount', `${matchingRowsRaw.length} quiz`);
+    setTextContent('courseStatsTopicCount', `${topicRows.length} topic`);
+    setTextContent('courseStatsMatchingCount', `${matchingRows.length} quiz`);
+    
+    const courseCountEl = document.getElementById('courseStatsCourseCount');
+    if (courseCountEl) courseCountEl.textContent = `${courseRows.length} khóa học`;
+    
     renderCourseStatsSortIndicators();
+    
+    // Pagination slicing
+    const maxTopics = courseStatsState.topicPage * courseStatsState.itemsPerPage;
+    const minTopics = maxTopics - courseStatsState.itemsPerPage;
+    const pagedTopicRows = topicRows.slice(minTopics, maxTopics);
+    
+    const maxMatching = courseStatsState.matchingPage * courseStatsState.itemsPerPage;
+    const minMatching = maxMatching - courseStatsState.itemsPerPage;
+    const pagedMatchingRows = matchingRows.slice(minMatching, maxMatching);
 
-    renderCourseStatsTable('courseStatsTopicTableBody', topicRows, { selectableType: 'topic' });
-    renderCourseStatsTable('courseStatsMatchingTableBody', matchingRows, { selectableType: 'matching' });
-    renderSelectedStatLearners(topicRows, matchingRows);
+    const maxCourses = courseStatsState.coursePage * courseStatsState.itemsPerPage;
+    const minCourses = maxCourses - courseStatsState.itemsPerPage;
+    const pagedCourseRows = courseRows.slice(minCourses, maxCourses);
 
-    const hasData = topicRows.length > 0 || matchingRows.length > 0;
+    renderCourseStatsTable('courseStatsMatchingTableBody', pagedMatchingRows, { selectableType: 'matching' });
+    renderCourseStatsTable('courseStatsCourseTableBody', pagedCourseRows, { selectableType: 'course', totalUsers: courseStatsState.users.length });
+    
+    renderCourseStatsPagination('courseStatsMatchingPagination', matchingRows.length, courseStatsState.matchingPage, (p) => { courseStatsState.matchingPage = p; renderCourseStatsTables(aggregated); });
+    renderCourseStatsPagination('courseStatsCoursePagination', courseRows.length, courseStatsState.coursePage, (p) => { courseStatsState.coursePage = p; renderCourseStatsTables(aggregated); });
+    
+    // Store aggregated for modal
+    courseStatsState.aggregated = aggregated;
+    
+    renderSelectedStatLearners(topicRowsRaw, matchingRowsRaw, courseRowsRaw);
+
+    const hasData = topicRows.length > 0 || matchingRows.length > 0 || courseRows.length > 0 || courseStatsState.searchQuery;
     const emptyState = document.getElementById('courseStatsEmptyState');
     if (emptyState) {
       emptyState.style.display = hasData ? 'none' : 'block';
     }
+  }
+
+  function renderCourseStatsPagination(containerId, totalItems, currentPage, setPageCallback) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const totalPages = Math.ceil(totalItems / courseStatsState.itemsPerPage);
+    if (totalPages <= 1) {
+      container.innerHTML = '';
+      return;
+    }
+    
+    let html = '';
+    const maxButtons = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+    let endPage = startPage + maxButtons - 1;
+    
+    if (endPage > totalPages) {
+      endPage = totalPages;
+      startPage = Math.max(1, endPage - maxButtons + 1);
+    }
+    
+    if (currentPage > 1) {
+      html += `<button class="course-stats-page-btn" data-page="${currentPage - 1}">&lt;</button>`;
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      html += `<button class="course-stats-page-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    }
+    
+    if (currentPage < totalPages) {
+      html += `<button class="course-stats-page-btn" data-page="${currentPage + 1}">&gt;</button>`;
+    }
+    
+    container.innerHTML = html;
+    
+    container.querySelectorAll('.course-stats-page-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const page = parseInt(e.target.dataset.page);
+        if (page && page !== currentPage) {
+          setPageCallback(page);
+        }
+      });
+    });
   }
 
   function renderCourseStatsTable(tbodyId, rows, options) {
@@ -438,20 +664,28 @@
     if (!tbody) return;
 
     const selectableType = options && typeof options === 'object' ? String(options.selectableType || '') : '';
+    const totalUsers = options && options.totalUsers ? options.totalUsers : 0;
     const isSelectable = Boolean(selectableType);
 
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="${selectableType === 'topic' ? 2 : 3}">Chưa có dữ liệu</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${selectableType === 'topic' ? 3 : 3}">Chưa có dữ liệu</td></tr>`;
       return;
     }
 
-    if (selectableType === 'topic') {
+    if (selectableType === 'topic' || selectableType === 'course') {
       tbody.innerHTML = rows.map((row) => {
         const isSelected = row.key === courseStatsState.selectedStatsKey && selectableType === courseStatsState.selectedStatsType;
+        const percent = totalUsers > 0 ? Math.round((row.learnerCount / totalUsers) * 100) : 0;
         return `
           <tr data-stats-key="${escapeCourseStatsHtml(row.key)}" data-stats-type="${escapeCourseStatsHtml(selectableType)}" class="${isSelected ? 'is-selected' : ''}">
             <td>${escapeCourseStatsHtml(row.title)}</td>
             <td>${Number(row.learnerCount || 0)}</td>
+            <td>
+               <div style="display:flex; align-items:center; gap: 8px;">
+                 <span style="font-size:0.85rem; width: 35px;">${percent}%</span>
+                 <div class="course-stats-progress-bg"><div class="course-stats-progress-fill" style="width: ${percent}%;"></div></div>
+               </div>
+            </td>
           </tr>
         `;
       }).join('');
@@ -530,7 +764,7 @@
     }
   }
 
-  function renderSelectedStatLearners(topicRows, matchingRows) {
+  function renderSelectedStatLearners(topicRows, matchingRows, courseRows) {
     const panel = document.getElementById('courseStatsTopicUsersPanel');
     const title = document.getElementById('courseStatsTopicUsersTitle');
     const subtitle = document.getElementById('courseStatsTopicUsersSubtitle');
@@ -539,14 +773,27 @@
 
     if (!courseStatsState.selectedStatsKey || !courseStatsState.selectedStatsType) {
       panel.style.display = 'none';
+      const courseTopicsPanel = document.getElementById('courseStatsCourseTopicsPanel');
+      if (courseTopicsPanel) courseTopicsPanel.style.display = 'none';
       closeCourseStatsAttemptDetailModal();
       document.body.classList.remove('course-stats-modal-open');
       return;
     }
 
-    const selectedRows = courseStatsState.selectedStatsType === 'matching' ? matchingRows : topicRows;
+    let selectedRows = topicRows;
+    if (courseStatsState.selectedStatsType === 'matching') selectedRows = matchingRows;
+    
+    // NẾU LÀ COURSE -> Gọi hàm riêng, không dùng hàm này
+    if (courseStatsState.selectedStatsType === 'course') {
+      panel.style.display = 'none';
+      closeCourseStatsAttemptDetailModal();
+      document.body.classList.remove('course-stats-modal-open');
+      renderSelectedCourseTopics(courseStatsState.aggregated.courseRows, courseStatsState.aggregated.topicRows);
+      return;
+    }
+    
     const selectedItem = (selectedRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
-    const topicSourceItem = (topicRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
+    const topicSourceItem = (courseStatsState.selectedStatsType === 'course' ? courseRows : topicRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
     if (!selectedItem) {
       panel.style.display = 'none';
       closeCourseStatsAttemptDetailModal();
@@ -561,9 +808,36 @@
     }
     panel.style.display = 'flex';
     document.body.classList.add('course-stats-modal-open');
+    
     title.textContent = courseStatsState.selectedStatsType === 'matching'
-      ? `${learners.length} người dùng đã chơi Matching: ${selectedItem.title}`
-      : `${learners.length} người dùng đã học topic: ${selectedItem.title}`;
+         ? `Người dùng chơi Matching: ${selectedItem.title}`
+         : `Người dùng học topic: ${selectedItem.title}`;
+    
+    // Render KPIs
+    const kpiContainer = document.getElementById('courseStatsDeepDiveKpis');
+    if (kpiContainer) {
+       kpiContainer.style.display = 'grid';
+       
+       const totalSystemUsers = courseStatsState.users.length;
+       const participationRate = totalSystemUsers > 0 ? Math.round((learners.length / totalSystemUsers) * 100) : 0;
+       
+       let totalTopicScore = 0;
+       let totalTopicScoreCount = 0;
+       let totalTopicPlays = 0;
+       
+       learners.forEach(l => {
+          totalTopicScore += l.totalScore || 0;
+          totalTopicScoreCount += l.scoreCount || 0;
+          totalTopicPlays += (l.totalAttempts || 0) + (l.totalPlays || 0);
+       });
+       
+       const avgTopicScore = totalTopicScoreCount > 0 ? Math.round(totalTopicScore / totalTopicScoreCount) : 0;
+       
+       setTextContent('ddKpiParticipation', `${participationRate}%`);
+       setTextContent('ddKpiAvgScore', `${avgTopicScore}%`);
+       setTextContent('ddKpiTotalPlays', totalTopicPlays);
+    }
+    
     subtitle.textContent = '';
     subtitle.style.display = 'none';
 
@@ -581,18 +855,39 @@
         : null;
       const countSource = topicLearner || learner;
       const totalActionCount = Math.max(0, Number(countSource.quizMatchingCount || 0));
-      const leftMatchingText = `${learner.name || 'Người dùng'} (${totalActionCount} lần làm bài)`;
+      const leftMatchingText = `${learner.name || 'Người dùng'} (${totalActionCount} lần)`;
       const rowClasses = isMatchingPanel ? 'course-stats-topic-user-item is-clickable' : 'course-stats-topic-user-item';
       const rowAttrs = isMatchingPanel
         ? `data-learner-id="${escapeCourseStatsHtml(learner.id || '')}" role="button" tabindex="0" aria-label="Xem chi tiết lần làm bài của ${escapeCourseStatsHtml(learner.name || 'Người dùng')}"`
         : '';
+        
+      // Phân loại (Categorize)
+      let badgeHtml = '';
+      let avgText = '';
+      if (!isMatchingPanel && learner.scoreCount > 0) {
+        avgText = ` - ĐTB: ${learner.avgScore}%`;
+        if (learner.avgScore >= 80) {
+           badgeHtml = '<span class="course-stats-badge high">Tích cực</span>';
+        } else if (learner.avgScore < 50 || learner.totalAttempts > 3) {
+           badgeHtml = '<span class="course-stats-badge low">Chật vật</span>';
+        } else {
+           badgeHtml = '<span class="course-stats-badge medium">Bình thường</span>';
+        }
+      } else if (isMatchingPanel) {
+        if (totalActionCount > 5) badgeHtml = '<span class="course-stats-badge high">Tích cực</span>';
+        else badgeHtml = '<span class="course-stats-badge medium">Bình thường</span>';
+      }
+
       return `
         <article class="${rowClasses}" ${rowAttrs}>
           <div class="course-stats-topic-user-left">
             <p class="course-stats-topic-user-name">${escapeCourseStatsHtml(isMatchingPanel ? leftMatchingText : (learner.name || 'Người dùng'))}</p>
-            ${isMatchingPanel ? '' : `<p class="course-stats-topic-user-email">${escapeCourseStatsHtml(learner.email || '-')}</p>`}
+            ${isMatchingPanel ? '' : `<p class="course-stats-topic-user-email">${escapeCourseStatsHtml(learner.email || '-')}${escapeCourseStatsHtml(avgText)}</p>`}
           </div>
-          <p class="course-stats-topic-user-time">${learner.lastLearnedAt ? escapeCourseStatsHtml(formatCourseStatsTimeDateLabel(learner.lastLearnedAt)) : 'Thời gian: -, ngày: -'}</p>
+          <div style="display:flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+            <p class="course-stats-topic-user-time" style="margin:0;">${learner.lastLearnedAt ? escapeCourseStatsHtml(formatCourseStatsTimeDateLabel(learner.lastLearnedAt)) : 'Thời gian: -, ngày: -'}</p>
+            ${badgeHtml}
+          </div>
         </article>
       `;
     }).join('');
@@ -607,9 +902,9 @@
 
     const selectedRows = courseStatsState.selectedStatsType === 'matching'
       ? courseStatsState.matchingRows
-      : courseStatsState.topicRows;
+      : (courseStatsState.selectedStatsType === 'course' ? courseStatsState.courseRows : courseStatsState.topicRows);
     const selectedItem = (selectedRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
-    const topicSourceItem = (courseStatsState.topicRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
+    const topicSourceItem = (courseStatsState.selectedStatsType === 'course' ? courseStatsState.courseRows : courseStatsState.topicRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
     if (!selectedItem || !Array.isArray(selectedItem.learners)) return;
 
     const selectedLearner = selectedItem.learners.find((item) => String(item.id || '') === String(learnerId || ''));
@@ -717,10 +1012,11 @@
   function ensureSelectedStatsExists() {
     if (!courseStatsState.selectedStatsType || !courseStatsState.selectedStatsKey) return;
 
-    const targetRows = courseStatsState.selectedStatsType === 'matching'
-      ? courseStatsState.matchingRows
-      : courseStatsState.topicRows;
-    const exists = targetRows.some((row) => row.key === courseStatsState.selectedStatsKey);
+    let targetRows = courseStatsState.topicRows;
+    if (courseStatsState.selectedStatsType === 'matching') targetRows = courseStatsState.matchingRows;
+    else if (courseStatsState.selectedStatsType === 'course') targetRows = courseStatsState.courseRows;
+    
+    const exists = targetRows && targetRows.some((row) => row.key === courseStatsState.selectedStatsKey);
     if (!exists) {
       courseStatsState.selectedStatsType = '';
       courseStatsState.selectedStatsKey = '';
@@ -746,6 +1042,8 @@
         totalAttempts: 0,
         totalPlays: 0,
         quizMatchingCount: 0,
+        totalScore: 0,
+        scoreCount: 0,
         lastLearnedAt: '',
         events: [],
       };
@@ -806,10 +1104,14 @@
 
   function setCourseStatsLoading(isLoading) {
     const loading = document.getElementById('courseStatsLoadingState');
-    const sections = document.querySelectorAll('.course-stats-summary, .course-stats-tables-grid');
+    const sections = document.querySelectorAll('.course-stats-header, .course-stats-summary, .course-stats-charts-grid, .course-stats-tables-grid');
 
     if (loading) {
-      loading.style.display = isLoading ? 'block' : 'none';
+      loading.style.display = isLoading ? 'flex' : 'none';
+      if (isLoading) {
+        loading.style.height = '100%';
+        loading.style.flex = '1';
+      }
     }
 
     sections.forEach((section) => {
@@ -818,22 +1120,27 @@
         return;
       }
 
-      if (section.classList.contains('course-stats-summary')) {
+      if (section.classList.contains('course-stats-header')) {
+        section.style.display = 'flex';
+      } else if (section.classList.contains('course-stats-summary') || section.classList.contains('course-stats-charts-grid') || section.classList.contains('course-stats-tables-grid')) {
         section.style.display = 'grid';
-        return;
+      } else {
+        section.style.display = 'block';
       }
-
-      section.style.display = section.classList.contains('course-stats-tables-grid') ? 'grid' : 'block';
     });
 
     if (isLoading) {
       const panel = document.getElementById('courseStatsTopicUsersPanel');
       const detailPanel = document.getElementById('courseStatsAttemptDetailPanel');
+      const courseTopicsPanel = document.getElementById('courseStatsCourseTopicsPanel');
       if (panel) {
         panel.style.display = 'none';
       }
       if (detailPanel) {
         detailPanel.style.display = 'none';
+      }
+      if (courseTopicsPanel) {
+        courseTopicsPanel.style.display = 'none';
       }
       courseStatsState.selectedLearnerId = '';
       document.body.classList.remove('course-stats-modal-open');
@@ -865,6 +1172,54 @@
   function formatTopCourseStatsText(item) {
     if (!item) return '-';
     return `${item.title} (${item.playCount} lượt)`;
+  }
+
+  function renderSelectedCourseTopics(courseRows, topicRows) {
+    const panel = document.getElementById('courseStatsCourseTopicsPanel');
+    const title = document.getElementById('courseStatsCourseTopicsTitle');
+    const subtitle = document.getElementById('courseStatsCourseTopicsSubtitle');
+    const tbody = document.getElementById('courseStatsCourseTopicsTableBody');
+    if (!panel || !title || !subtitle || !tbody) return;
+
+    if (!courseStatsState.selectedStatsKey || courseStatsState.selectedStatsType !== 'course') {
+      panel.style.display = 'none';
+      return;
+    }
+
+    const selectedCourse = (courseRows || []).find((item) => item.key === courseStatsState.selectedStatsKey);
+    if (!selectedCourse) {
+      panel.style.display = 'none';
+      return;
+    }
+
+    const courseTopics = (topicRows || []).filter(topic => topic.courseKey === selectedCourse.key);
+    
+    panel.style.display = 'flex';
+    document.body.classList.add('course-stats-modal-open');
+    title.textContent = `Các bài học: ${selectedCourse.title}`;
+    subtitle.textContent = `${courseTopics.length} topic`;
+
+    const totalUsers = courseStatsState.users.length;
+    if (courseTopics.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3">Chưa có bài học nào.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = courseTopics.map(row => {
+      const percent = totalUsers > 0 ? Math.round((row.learnerCount / totalUsers) * 100) : 0;
+      return `
+        <tr>
+          <td>${escapeCourseStatsHtml(row.title)}</td>
+          <td>${Number(row.learnerCount || 0)}</td>
+          <td>
+             <div style="display:flex; align-items:center; gap: 8px;">
+               <span style="font-size:0.85rem; width: 35px;">${percent}%</span>
+               <div class="course-stats-progress-bg"><div class="course-stats-progress-fill" style="width: ${percent}%;"></div></div>
+             </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function formatCourseStatsDateTime(value) {
@@ -1018,6 +1373,110 @@
       window.__adminCourseStatsSearchTarget = null;
     }
   }
+
+  // --- CHART LOGIC ---
+  function renderCourseStatsCharts(aggregated) {
+    if (typeof Chart === 'undefined') return;
+
+    if (courseStatsState.lineChartInstance) courseStatsState.lineChartInstance.destroy();
+    if (courseStatsState.barChartInstance) courseStatsState.barChartInstance.destroy();
+
+    const lineCtx = document.getElementById('courseStatsActivityLineChart');
+    const barCtx = document.getElementById('courseStatsTopTopicsBarChart');
+    if (!lineCtx || !barCtx) return;
+    
+    // Process Data for Line Chart (Activity over time)
+    const dateMap = {};
+    const windowStart = getWindowStartDate(courseStatsState.timeRange);
+    
+    courseStatsState.users.forEach(user => {
+      const allEvents = [];
+      if (Array.isArray(user.attempts)) {
+        user.attempts.forEach(a => {
+          const date = parseCourseStatsDate(a.completedAt);
+          if (isDateInWindow(date, windowStart)) allEvents.push(date);
+        });
+      }
+      if (Array.isArray(user.plays)) {
+        user.plays.forEach(p => {
+          const date = parseCourseStatsDate(p.playedAt);
+          if (isDateInWindow(date, windowStart)) {
+            for(let i = 0; i < (p.playCount || 1); i++) allEvents.push(date);
+          }
+        });
+      }
+      
+      allEvents.forEach(date => {
+        if (!date) return;
+        const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+      });
+    });
+
+    const sortedDates = Object.keys(dateMap).sort();
+    const lineLabels = sortedDates.map(d => {
+       const [y, m, day] = d.split('-');
+       return `${day}/${m}`;
+    });
+    const lineData = sortedDates.map(d => dateMap[d]);
+
+    courseStatsState.lineChartInstance = new Chart(lineCtx, {
+      type: 'line',
+      data: {
+        labels: lineLabels,
+        datasets: [{
+          label: 'Lượt tham gia / làm bài',
+          data: lineData,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15, 118, 110, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+
+    // Process Data for Bar Chart (Top 5 Topics by PlayCount)
+    const topTopics = [...(aggregated.topicRows || [])].sort((a,b) => b.playCount - a.playCount).slice(0, 5);
+    
+    courseStatsState.barChartInstance = new Chart(barCtx, {
+      type: 'bar',
+      data: {
+        labels: topTopics.map(t => t.title.length > 20 ? t.title.substring(0,20)+'...' : t.title),
+        datasets: [{
+          label: 'Lượt tương tác',
+          data: topTopics.map(t => t.playCount),
+          backgroundColor: '#0ea5e9',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+  }
+
+
 
   window.selectCourseStatsEntryByTopic = selectCourseStatsEntryByTopic;
 </script>
