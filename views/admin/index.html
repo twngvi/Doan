@@ -36,62 +36,15 @@
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               </div>
-              <div class="header-text admin-unified-header-text">
-                <h1 class="page-title admin-unified-header-title">Tổng quan</h1>
-                <p class="page-subtitle">Theo dõi người học, hoạt động và hiệu quả hệ thống</p>
+              <div class="header-text admin-unified-header-text dashboard-header-text">
+                <h2 class="page-title admin-unified-header-title">Tổng quan</h2>
               </div>
             </div>
           </div>
 
           <!-- Dashboard Groups Section -->
           <div class="dashboard-groups-container">
-            <!-- Group 1: Tổng quan người học -->
-            <div class="dashboard-group dashboard-group--learners">
-              <div class="group-header">
-                <div class="group-icon">
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                </div>
-                <h2><span class="group-number">01</span> Tổng quan người học</h2>
-              </div>
-              <div class="stats-cards-row">
-                <div class="stat-card stat-card--total">
-                  <div class="stat-card-content">
-                    <span class="stat-card-value" id="valTotalLearners">0</span>
-                    <span class="stat-card-label">Tổng người học</span>
-                  </div>
-                </div>
-                <div class="stat-card stat-card--active">
-                  <div class="stat-card-content">
-                    <span class="stat-card-value" id="valActiveToday">0</span>
-                    <span class="stat-card-label">Hoạt động hôm nay</span>
-                  </div>
-                </div>
-                <div class="stat-card stat-card--weekly">
-                  <div class="stat-card-content">
-                    <span class="stat-card-value" id="valActive7Days">0</span>
-                    <span class="stat-card-label">Hoạt động 7 ngày</span>
-                  </div>
-                </div>
-                <div class="stat-card stat-card--locked">
-                  <div class="stat-card-content">
-                    <span class="stat-card-value" id="valDisabled">0</span>
-                    <span class="stat-card-label">Tài khoản bị khóa</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
 
             <!-- Online Users List -->
             <div class="online-users-section">
@@ -143,58 +96,68 @@
                     <button class="filter-btn" data-filter="offline">Offline</button>
                     <button class="filter-btn" data-filter="disabled">Bị khóa</button>
                   </div>
-                  <button class="refresh-btn" onclick="refreshOnlineUsers()">
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <polyline points="23 4 23 10 17 10" />
-                      <polyline points="1 20 1 14 7 14" />
-                      <path
-                        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                      />
-                    </svg>
-                    <span>Làm mới</span>
+                  <button
+                    type="button"
+                    id="account-status-refresh-btn"
+                    class="account-status-refresh-btn"
+                    onclick="refreshAccountStatusList(event)"
+                    title="Làm mới danh sách trạng thái tài khoản"
+                    aria-label="Làm mới danh sách trạng thái tài khoản"
+                  >
+                    <span class="material-symbols-sharp">sync</span>
                   </button>
                 </div>
 
                 <div class="online-users-list" id="onlineUsersList">
-                  <div class="admin-loading-container" id="loadingState">
-                    <div class="admin-loading-popup">
-                      <div class="admin-loading-logo">
-                        <span class="logo-o">O</span>
-                        <div class="logo-dots">
-                          <div class="dot"></div>
-                          <div class="dot"></div>
-                          <div class="dot"></div>
+                  <div id="account-status-list-area" class="account-status-list-area">
+                    <div id="account-status-users">
+                      <div class="empty-state" id="emptyState" style="display: none">
+                        <svg
+                          width="64"
+                          height="64"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M8 15h8" />
+                          <circle cx="9" cy="9" r="1" />
+                          <circle cx="15" cy="9" r="1" />
+                        </svg>
+                        <p>Không có tài khoản phù hợp với bộ lọc</p>
+                      </div>
+                      <div class="users-grid" id="usersGrid"></div>
+                    </div>
+
+                    <div
+                      id="account-status-loading"
+                      class="dashboard-account-loading"
+                      style="display:none"
+                    >
+                      <div class="admin-loading-container">
+                        <div class="admin-loading-popup">
+                          <div class="admin-loading-logo">
+                            <span class="logo-o">O</span>
+
+                            <div class="logo-dots">
+                              <div class="dot"></div>
+                              <div class="dot"></div>
+                              <div class="dot"></div>
+                            </div>
+                          </div>
+
+                          <div class="admin-loading-text">
+                            Đang làm mới trạng thái tài khoản...
+                          </div>
+
+                          <div class="admin-loading-hint">
+                            Vui lòng chờ trong giây lát
+                          </div>
                         </div>
                       </div>
-                      <div class="admin-loading-text">Đang tải danh sách...</div>
                     </div>
                   </div>
-
-                  <div class="empty-state" id="emptyState" style="display: none">
-                    <svg
-                      width="64"
-                      height="64"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M8 15h8" />
-                      <circle cx="9" cy="9" r="1" />
-                      <circle cx="15" cy="9" r="1" />
-                    </svg>
-                    <p>Không có tài khoản phù hợp với bộ lọc</p>
-                  </div>
-
-                  <div class="users-grid" id="usersGrid"></div>
                 </div>
               </div>
             </div>

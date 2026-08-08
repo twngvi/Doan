@@ -2168,6 +2168,47 @@ function updateCourseStats() {
   if (elLocked) elLocked.innerText = locked;
 }
 
+function getCourseLevelUi(level) {
+  const value = String(level || '').trim().toLowerCase();
+
+  if (
+    value === 'beginner' ||
+    value.includes('người mới') ||
+    value.includes('cơ bản')
+  ) {
+    return {
+      className: 'level-beginner',
+      text: 'Người mới bắt đầu'
+    };
+  }
+
+  if (
+    value === 'intermediate' ||
+    value.includes('trung bình') ||
+    value.includes('trung cấp')
+  ) {
+    return {
+      className: 'level-intermediate',
+      text: 'Trung bình'
+    };
+  }
+
+  if (
+    value === 'advanced' ||
+    value.includes('nâng cao')
+  ) {
+    return {
+      className: 'level-advanced',
+      text: 'Nâng cao'
+    };
+  }
+
+  return {
+    className: 'level-unknown',
+    text: level || 'Chưa phân loại'
+  };
+}
+
 function renderCoursesView() {
   const coursesGrid = document.getElementById('cm-courses-grid');
   const tableBody = document.getElementById('cm-courses-table-body');
@@ -2262,7 +2303,7 @@ function renderCoursesView() {
     tableBody.innerHTML = '';
     
     if (filteredCourses.length === 0) {
-      tableBody.innerHTML = '<tr><td colspan="5" class="empty-state" style="text-align: center; padding: 40px; color: var(--theme-text-muted);">Không tìm thấy khóa học nào phù hợp.</td></tr>';
+      tableBody.innerHTML = '<tr><td colspan="6" class="empty-state" style="text-align: center; padding: 40px; color: var(--theme-text-muted);">Không tìm thấy khóa học nào phù hợp.</td></tr>';
       return;
     }
     
@@ -2274,7 +2315,8 @@ function renderCoursesView() {
       const isPublished = course.status === 'published';
       const isHidden = !isPublished;
       const statusText = isPublished ? 'Đang hiển thị' : 'Đang ẩn';
-      const statusClass = isPublished ? 'status-active' : 'status-locked';
+      const statusClass = isPublished ? 'active' : 'locked';
+      const levelUi = getCourseLevelUi(course.level);
       
       const thumbUrl = course.thumbnailUrl || 'https://via.placeholder.com/150';
       
@@ -2283,11 +2325,28 @@ function renderCoursesView() {
           <td><strong>${filteredCourses.indexOf(course) + 1}</strong></td>
           <td>
             <div class="topic-info">
-              <div class="topic-icon">
-                ${course.thumbnailUrl 
-                  ? `<img src="${course.thumbnailUrl}" alt="${escapeHtml(course.title)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                     <span class="material-symbols-sharp" style="display: none;">school</span>`
-                  : '<span class="material-symbols-sharp">school</span>'
+              <div class="course-table-thumbnail ${course.thumbnailUrl ? 'has-image' : 'is-placeholder'}">
+                ${course.thumbnailUrl
+                  ? `
+                    <img
+                      src="${course.thumbnailUrl}"
+                      alt="${escapeHtml(course.title)}"
+                      onerror="
+                        this.style.display='none';
+                        this.nextElementSibling.style.display='flex';
+                        this.parentElement.classList.remove('has-image');
+                        this.parentElement.classList.add('is-placeholder');
+                      "
+                    >
+                    <span class="material-symbols-sharp" style="display:none">
+                      school
+                    </span>
+                  `
+                  : `
+                    <span class="material-symbols-sharp">
+                      school
+                    </span>
+                  `
                 }
               </div>
               <div class="topic-details">
@@ -2299,17 +2358,26 @@ function renderCoursesView() {
             </div>
           </td>
           <td>
-            <span class="cm-category-badge category-${getCategoryClass(course.level || 'Chưa phân loại')}" title="${escapeHtml(course.level || 'Chưa phân loại')}">
-              ${escapeHtml(course.level || 'Chưa phân loại')}
+            <span
+              class="category-badge course-level-badge ${levelUi.className}"
+              title="${escapeHtml(levelUi.text)}"
+            >
+              ${escapeHtml(levelUi.text)}
             </span>
           </td>
           <td class="align-center">${course.totalTopics || 0} bài học</td>
           <td>
-            <div class="cm-status-badge ${statusClass}">
-              <span class="status-dot"></span>
+            <span
+              class="status-badge ${statusClass} interactive"
+              onclick="event.stopPropagation(); toggleCourseStatus('${safeCourseId}', event)"
+              title="Chuyển trạng thái"
+            >
               ${statusText}
-              <span class="material-symbols-sharp interactive" onclick="event.stopPropagation(); toggleCourseStatus('${safeCourseId}', event)" title="Chuyển trạng thái">swap_horiz</span>
-            </div>
+          
+              <span class="material-symbols-sharp status-swap-icon">
+                swap_horiz
+              </span>
+            </span>
           </td>
           <td class="actions-cell">
             <div class="action-buttons">

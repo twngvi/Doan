@@ -116,7 +116,7 @@
   // Load online users from server
   async function loadOnlineUsers() {
     if (!isOnlineStatsPageActive()) return;
-    showLoading(true);
+    setAccountStatusLoading(true);
     
     try {
       const result = await callAppsScript('getAdminOnlineUsersData');
@@ -141,7 +141,7 @@
       console.error('Error loading online users:', error);
       showError('Không thể tải danh sách người dùng');
     } finally {
-      showLoading(false);
+      setAccountStatusLoading(false);
     }
   }
 
@@ -560,9 +560,6 @@
     
     if (!grid) return;
     
-    // Always hide loading state when rendering users
-    if (loadingState) loadingState.style.display = 'none';
-    
     if (users.length === 0) {
       grid.innerHTML = '';
       grid.style.display = 'none';
@@ -837,44 +834,68 @@
     });
   }
 
-  // Show/hide loading state
-  function showLoading(show) {
-    const loadingState = document.getElementById('loadingState');
-    const usersGrid = document.getElementById('usersGrid');
-    const emptyState = document.getElementById('emptyState');
-    
-    if (show) {
-      if (loadingState) loadingState.style.display = 'flex';
-      if (usersGrid) usersGrid.style.display = 'none';
-      if (emptyState) emptyState.style.display = 'none';
-    } else {
-      if (loadingState) loadingState.style.display = 'none';
-      if (usersGrid && usersGrid.style.display === 'none' && usersGrid.innerHTML.trim() !== '') {
-        usersGrid.style.display = '';
-      }
-    }
-  }
-
   // Show error message
   function showError(message) {
     // You can implement a toast or notification system here
     console.error(message);
   }
 
-  // Refresh online users
-  function refreshOnlineUsers() {
-    closeUserActionMenu();
+  let isRefreshingAccountStatus = false;
 
-    const refreshBtn = document.querySelector('.refresh-btn svg');
-    if (refreshBtn) {
-      refreshBtn.style.transition = 'transform 0.5s ease';
-      refreshBtn.style.transform = 'rotate(360deg)';
-      setTimeout(() => {
-        refreshBtn.style.transform = 'rotate(0deg)';
-      }, 500);
+  function setAccountStatusLoading(show) {
+    const area = document.getElementById('account-status-list-area');
+    const button = document.getElementById('account-status-refresh-btn');
+
+    if (area) {
+      area.classList.toggle('is-loading', show);
     }
-    
-    loadOnlineUsers();
+
+    if (button) {
+      button.disabled = show;
+      button.classList.toggle('is-loading', show);
+    }
+  }
+
+  function refreshAccountStatusList(event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    if (isRefreshingAccountStatus) return;
+
+    isRefreshingAccountStatus = true;
+    setAccountStatusLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          onlineUsers = (result.data && result.data.users) ? result.data.users : [];
+          recentActivities = (result.data && result.data.activities) ? result.data.activities : [];
+          onlineSummary = {
+            totalOnline: Number((result.data && result.data.totalOnline) || 0),
+            activeNow: Number((result.data && result.data.activeNow) || 0),
+            idleUsers: Number((result.data && result.data.idleUsers) || 0),
+            offlineUsers: Number((result.data && result.data.offlineUsers) || 0),
+            disabledUsers: Number((result.data && result.data.disabledUsers) || 0),
+          };
+          updateStats();
+          filterAndRenderUsers();
+          renderActivityTimeline();
+        } else {
+          showError('Không thể làm mới danh sách trạng thái tài khoản');
+        }
+        isRefreshingAccountStatus = false;
+        setAccountStatusLoading(false);
+      })
+      .withFailureHandler(function(error) {
+        console.error('Không thể làm mới trạng thái tài khoản:', error);
+        showError('Không thể làm mới danh sách trạng thái tài khoản');
+        isRefreshingAccountStatus = false;
+        setAccountStatusLoading(false);
+      })
+      .getAdminOnlineUsersData();
+      
+    // Refresh charts data as well without blocking the list UI load
     loadDashboardCharts();
   }
 
@@ -935,7 +956,7 @@
       return;
     }
     
-    showLoading(true);
+    setAccountStatusLoading(true);
     try {
       const result = await callAppsScript('toggleUserBlockStatus', userId, isBlocked);
       if (result && result.success) {
