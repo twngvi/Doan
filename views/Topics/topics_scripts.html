@@ -981,8 +981,6 @@
       container.innerHTML = '';
       
       if (!coursesLoaded) {
-        // Still loading - show a loading indicator
-        container.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);"><div class="quiz-loading-logo" style="margin: 0 auto 12px;"><span class="logo-o">O</span><div class="logo-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>Đang tải khóa học...</div>';
         return;
       }
       
@@ -1215,6 +1213,19 @@
       currentCourseId = courseId;
       currentViewMode = 'topics';
       
+      const courseRegion = document.getElementById("courseDataRegion");
+      const topicRegion = document.getElementById("topicDataRegion");
+
+      hideDataRegionLoading("courseDataRegion");
+
+      if (courseRegion) {
+        courseRegion.style.display = "none";
+      }
+
+      if (topicRegion) {
+        topicRegion.style.display = "block";
+      }
+      
       document.getElementById('coursesGrid').style.display = 'none';
       const coursesFilterBarEl = document.getElementById('coursesFilterBar');
       if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'none';
@@ -1236,6 +1247,19 @@
       currentCourseId = null;
       currentViewMode = 'courses';
       
+      const courseRegion = document.getElementById("courseDataRegion");
+      const topicRegion = document.getElementById("topicDataRegion");
+
+      hideDataRegionLoading("topicDataRegion");
+
+      if (courseRegion) {
+        courseRegion.style.display = "block";
+      }
+
+      if (topicRegion) {
+        topicRegion.style.display = "none";
+      }
+      
       document.getElementById('coursesGrid').style.display = 'grid';
       const coursesFilterBarEl = document.getElementById('coursesFilterBar');
       if (coursesFilterBarEl) coursesFilterBarEl.style.display = 'flex';
@@ -1254,35 +1278,55 @@
     }
 
     function loadCourses() {
-      console.log('🔄 loadCourses: Starting...');
+      console.log("🔄 loadCourses: Starting...");
+
       coursesLoaded = false;
+
+      // Chỉ bật popup ở vùng danh sách khóa học
+      if (currentViewMode === "courses") {
+        showLoadingState("courses");
+      }
+
       google.script.run
-        .withSuccessHandler(function(result) {
-          console.log('✅ loadCourses: Server response:', JSON.stringify(result).substring(0, 200));
+        .withSuccessHandler(function (result) {
           coursesLoaded = true;
+
           if (result && result.success) {
             allCourses = result.courses || [];
-            console.log('✅ loadCourses: Got ' + allCourses.length + ' courses');
+
+            console.log(
+              "✅ loadCourses: Got " + allCourses.length + " courses"
+            );
           } else {
-            console.error('❌ loadCourses: Server returned error:', result && result.message);
+            console.error(
+              "❌ loadCourses: Server returned error:",
+              result && result.message
+            );
+
             allCourses = [];
           }
-          // Always re-render if we're in courses view
-          if (currentViewMode === 'courses') {
+
+          if (currentViewMode === "courses") {
+            // Card được render khi vẫn còn bị CSS loading che
             renderCourses();
             goBackToCourses();
-            hideLoadingState();
           }
+
+          // Render xong mới tắt popup
+          hideDataRegionLoading("courseDataRegion");
         })
-        .withFailureHandler(function(error) {
-          console.error('❌ loadCourses: FAILED:', error);
-          coursesLoaded = true; // Mark as loaded even on error so we show error state
+        .withFailureHandler(function (error) {
+          console.error("❌ loadCourses: FAILED:", error);
+
+          coursesLoaded = true;
           allCourses = [];
-          if (currentViewMode === 'courses') {
+
+          if (currentViewMode === "courses") {
             renderCourses();
             goBackToCourses();
-            hideLoadingState();
           }
+
+          hideDataRegionLoading("courseDataRegion");
         })
         .getCoursesForUserPage();
     }
@@ -2276,41 +2320,90 @@
     // ========================================
     function showDataRegionLoading(regionId, message) {
       const region = document.getElementById(regionId);
+
       if (!region) return;
-      const title = region.querySelector('.data-loading-title');
-      const loading = region.querySelector('.data-region-loading');
+
+      const title = region.querySelector(".data-loading-title");
+      const loading = region.querySelector(".data-region-loading");
+
       if (title && message) {
         title.textContent = message;
       }
-      region.classList.add('is-loading');
+
+      region.classList.add("is-loading");
+      region.setAttribute("aria-busy", "true");
+
       if (loading) {
-        loading.setAttribute('aria-hidden', 'false');
+        loading.setAttribute("aria-hidden", "false");
       }
     }
 
     function hideDataRegionLoading(regionId) {
       const region = document.getElementById(regionId);
+
       if (!region) return;
-      const loading = region.querySelector('.data-region-loading');
-      region.classList.remove('is-loading');
+
+      const loading = region.querySelector(".data-region-loading");
+
+      region.classList.remove("is-loading");
+      region.setAttribute("aria-busy", "false");
+
       if (loading) {
-        loading.setAttribute('aria-hidden', 'true');
+        loading.setAttribute("aria-hidden", "true");
       }
     }
 
-    function showLoadingState() {
-      if (typeof currentViewMode !== 'undefined' && currentViewMode === 'courses') {
-        showDataRegionLoading('courseDataRegion', 'Đang tải danh sách khóa học...');
+    function showLoadingState(mode) {
+      const loadingMode = mode || currentViewMode;
+      const isLoadingCourses = loadingMode === "courses";
+
+      const courseRegion = document.getElementById("courseDataRegion");
+      const topicRegion = document.getElementById("topicDataRegion");
+
+      // Xóa loading cũ để không xuất hiện đồng thời hai popup
+      hideDataRegionLoading("courseDataRegion");
+      hideDataRegionLoading("topicDataRegion");
+
+      if (isLoadingCourses) {
+        // Chỉ hiện vùng khóa học
+        if (courseRegion) {
+          courseRegion.style.display = "block";
+        }
+
+        if (topicRegion) {
+          topicRegion.style.display = "none";
+        }
+
+        showDataRegionLoading(
+          "courseDataRegion",
+          "Đang tải danh sách khóa học..."
+        );
       } else {
-        showDataRegionLoading('topicDataRegion', 'Đang tải danh sách Topic...');
+        // Chỉ hiện vùng Topic
+        if (courseRegion) {
+          courseRegion.style.display = "none";
+        }
+
+        if (topicRegion) {
+          topicRegion.style.display = "block";
+        }
+
+        showDataRegionLoading(
+          "topicDataRegion",
+          "Đang tải danh sách Topic..."
+        );
       }
-      document.getElementById("topicsError").style.display = "none";
-      document.getElementById("topicsEmpty").style.display = "none";
+
+      const error = document.getElementById("topicsError");
+      const empty = document.getElementById("topicsEmpty");
+
+      if (error) error.style.display = "none";
+      if (empty) empty.style.display = "none";
     }
 
     function hideLoadingState() {
-      hideDataRegionLoading('courseDataRegion');
-      hideDataRegionLoading('topicDataRegion');
+      hideDataRegionLoading("courseDataRegion");
+      hideDataRegionLoading("topicDataRegion");
     }
 
     function showErrorState(message) {
