@@ -16,8 +16,9 @@
     courseRows: [],
     coursePage: 1,
     topicPage: 1,
-    matchingPage: 1,
     itemsPerPage: 10,
+    quizRows: [],
+    quizSortOrder: 'desc',
     lineChartInstance: null,
     barChartInstance: null
   };
@@ -66,12 +67,14 @@
     const courseTableBody = document.getElementById('courseStatsCourseTableBody');
     const topicLearnerSortBtn = document.getElementById('courseStatsTopicLearnerSortBtn');
     const matchingSortBtn = document.getElementById('courseStatsMatchingSortBtn');
+    const quizSortBtn = document.getElementById('courseStatsQuizSortBtn');
     const closeTopicUsersBtn = document.getElementById('courseStatsTopicUsersCloseBtn');
     const topicUsersBackdrop = document.getElementById('courseStatsTopicUsersBackdrop');
     const topicUsersList = document.getElementById('courseStatsTopicUsersList');
     const closeAttemptDetailBtn = document.getElementById('courseStatsAttemptDetailCloseBtn');
     const attemptDetailBackdrop = document.getElementById('courseStatsAttemptDetailBackdrop');
     const searchInput = document.getElementById('courseStatsSearchInput');
+    const quizTableBody = document.getElementById('courseStatsQuizTableBody');
 
     const closeCourseTopicsBtn = document.getElementById('courseStatsCourseTopicsCloseBtn');
     const courseTopicsBackdrop = document.getElementById('courseStatsCourseTopicsBackdrop');
@@ -84,10 +87,10 @@
       rangeSelect.addEventListener('change', (event) => {
         courseStatsState.timeRange = String(event.target.value || '30');
         courseStatsState.topicPage = 1;
-        courseStatsState.matchingPage = 1;
         renderCurrentTimeframeLabel(courseStatsState.timeRange);
         const aggregated = aggregateCourseStats(courseStatsState.users, courseStatsState.timeRange);
         courseStatsState.topicRows = aggregated.topicRows;
+        courseStatsState.quizRows = aggregated.quizRows;
         courseStatsState.matchingRows = aggregated.matchingRows;
         courseStatsState.courseRows = aggregated.courseRows;
         ensureSelectedStatsExists();
@@ -103,9 +106,9 @@
       searchInput.addEventListener('input', (e) => {
         courseStatsState.searchQuery = e.target.value.toLowerCase().trim();
         courseStatsState.topicPage = 1;
-        courseStatsState.matchingPage = 1;
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
         });
       });
@@ -119,6 +122,7 @@
         renderCourseStatsSortIndicators();
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
         });
       });
@@ -130,6 +134,19 @@
         renderCourseStatsSortIndicators();
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
+          matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (quizSortBtn) {
+      quizSortBtn.addEventListener('click', () => {
+        courseStatsState.quizSortOrder = courseStatsState.quizSortOrder === 'desc' ? 'asc' : 'desc';
+        renderCourseStatsSortIndicators();
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
         });
       });
@@ -144,7 +161,24 @@
         courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
+        });
+      });
+    }
+
+    if (quizTableBody) {
+      quizTableBody.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-stats-key][data-stats-type]');
+        if (!row) return;
+
+        courseStatsState.selectedStatsType = String(row.dataset.statsType || '');
+        courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
+        renderCourseStatsTables({
+          topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
+          matchingRows: courseStatsState.matchingRows,
+          courseRows: courseStatsState.courseRows,
         });
       });
     }
@@ -158,6 +192,7 @@
         courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -173,6 +208,7 @@
         courseStatsState.selectedStatsKey = String(row.dataset.statsKey || '');
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -186,6 +222,7 @@
         courseStatsState.selectedStatsKey = '';
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -198,6 +235,7 @@
         courseStatsState.selectedStatsKey = '';
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -211,6 +249,7 @@
         courseStatsState.selectedStatsKey = '';
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -223,6 +262,7 @@
         courseStatsState.selectedStatsKey = '';
         renderCourseStatsTables({
           topicRows: courseStatsState.topicRows,
+          quizRows: courseStatsState.quizRows,
           matchingRows: courseStatsState.matchingRows,
           courseRows: courseStatsState.courseRows,
         });
@@ -231,7 +271,7 @@
 
     if (topicUsersList) {
       topicUsersList.addEventListener('click', (event) => {
-        if (courseStatsState.selectedStatsType !== 'matching') return;
+        if (courseStatsState.selectedStatsType !== 'matching' && courseStatsState.selectedStatsType !== 'quiz') return;
 
         const row = event.target.closest('.course-stats-topic-user-item[data-learner-id]');
         if (!row) return;
@@ -263,6 +303,7 @@
       courseStatsState.selectedStatsKey = '';
       renderCourseStatsTables({
         topicRows: courseStatsState.topicRows,
+        quizRows: courseStatsState.quizRows,
         matchingRows: courseStatsState.matchingRows,
         courseRows: courseStatsState.courseRows,
       });
@@ -281,6 +322,7 @@
 
       const aggregated = aggregateCourseStats(users, courseStatsState.timeRange);
       courseStatsState.topicRows = aggregated.topicRows;
+      courseStatsState.quizRows = aggregated.quizRows;
       courseStatsState.matchingRows = aggregated.matchingRows;
       courseStatsState.courseRows = aggregated.courseRows;
       ensureSelectedStatsExists();
@@ -290,10 +332,11 @@
       console.error('loadCourseStatsData error:', error);
       courseStatsState.users = [];
       courseStatsState.topicRows = [];
+      courseStatsState.quizRows = [];
       courseStatsState.matchingRows = [];
       courseStatsState.courseRows = [];
       courseStatsState.totalTopicsInDb = 0;
-      renderAllCourseStats({ topicRows: [], matchingRows: [], courseRows: [] });
+      renderAllCourseStats({ topicRows: [], quizRows: [], matchingRows: [], courseRows: [] });
     } finally {
       setCourseStatsLoading(false);
     }
@@ -313,6 +356,7 @@
   function aggregateCourseStats(users, timeRange) {
     const topicMap = {};
     const matchingMap = {};
+    const quizMap = {};
     const courseMap = {};
     const windowStart = getWindowStartDate(timeRange);
 
@@ -365,10 +409,29 @@
           learnerDetail.scoreCount += 1;
         }
 
-        if (isCourseStatsQuizOrMatchingAttempt(attempt)) {
+        const isQM = isCourseStatsQuizOrMatchingAttempt(attempt);
+        if (isQM) {
           item.quizMatchingAttemptCount += 1;
           learnerDetail.quizMatchingCount += 1;
         }
+        
+        const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
+        const quizMode = String(attempt && attempt.quizMode || '').trim().toLowerCase();
+        const isQuizAttempt = isQM && !(activityType === 'matching' || quizMode === 'matching');
+        
+        // Add to quizMap
+        if (isQuizAttempt) {
+          const quizItem = getOrCreateStatItem(quizMap, key, attempt.lessonTitle || attempt.lessonId || 'Topic');
+          if (courseKey) quizItem.courseKey = courseKey;
+          quizItem.playCount += 1;
+          const qLearnerDetail = getOrCreateCourseStatsLearnerDetail(quizItem, userId, learnerMeta);
+          qLearnerDetail.totalAttempts += 1;
+          addCourseStatsLearnerEvent(qLearnerDetail, {
+            time: completedAt,
+            text: buildCourseStatsAttemptEventText(attempt),
+          });
+        }
+
         addCourseStatsLearnerEvent(learnerDetail, {
           time: completedAt,
           text: buildCourseStatsAttemptEventText(attempt),
@@ -465,23 +528,17 @@
       });
     });
 
-    // Matching table keeps matching topics, but playCount only counts
-    // quiz attempts (review/instant) + matching attempts.
-    Object.keys(matchingMap).forEach((key) => {
-      if (!topicMap[key]) return;
-      matchingMap[key].playCount = Math.max(0, Number(topicMap[key].quizMatchingAttemptCount || 0));
-    });
-
-    const topicRows = finalizeCourseStatsRows(topicMap);
+    // Quiz table uses quizMap
+    const quizRows = finalizeCourseStatsRows(quizMap);
     const matchingRows = finalizeCourseStatsRows(matchingMap);
+    const topicRows = finalizeCourseStatsRows(topicMap);
     const courseRows = finalizeCourseStatsRows(courseMap);
 
     return {
       topicRows,
+      quizRows,
       matchingRows,
       courseRows,
-      topTopic: topicRows[0] || null,
-      topMatching: matchingRows[0] || null,
       topicsWithLearners: topicRows.filter((item) => item.learnerCount > 0).length,
     };
   }
@@ -560,6 +617,7 @@
 
   function renderCourseStatsTables(aggregated) {
     let topicRowsRaw = Array.isArray(aggregated.topicRows) ? aggregated.topicRows : [];
+    let quizRowsRaw = Array.isArray(aggregated.quizRows) ? aggregated.quizRows : [];
     let matchingRowsRaw = Array.isArray(aggregated.matchingRows) ? aggregated.matchingRows : [];
     let courseRowsRaw = Array.isArray(aggregated.courseRows) ? aggregated.courseRows : [];
     
@@ -567,48 +625,46 @@
     if (courseStatsState.searchQuery) {
       const q = courseStatsState.searchQuery;
       topicRowsRaw = topicRowsRaw.filter(r => r.title.toLowerCase().includes(q));
+      quizRowsRaw = quizRowsRaw.filter(r => r.title.toLowerCase().includes(q));
       matchingRowsRaw = matchingRowsRaw.filter(r => r.title.toLowerCase().includes(q));
       courseRowsRaw = courseRowsRaw.filter(r => r.title.toLowerCase().includes(q));
     }
     
     const topicRows = sortTopicRowsByLearner(topicRowsRaw, courseStatsState.topicLearnerSortOrder);
+    const quizRows = sortCourseStatsRows(quizRowsRaw, courseStatsState.quizSortOrder);
     const matchingRows = sortCourseStatsRows(matchingRowsRaw, courseStatsState.matchingSortOrder);
-    // Use matchingSortOrder for course rows too, or we can use a separate one. Let's use topicLearnerSortOrder (learners desc).
+    // Use topicLearnerSortOrder (learners desc) for courses.
     const courseRows = sortTopicRowsByLearner(courseRowsRaw, courseStatsState.topicLearnerSortOrder);
 
     setTextContent('courseStatsTopicCount', `${topicRows.length} topic`);
-    setTextContent('courseStatsMatchingCount', `${matchingRows.length} quiz`);
+    setTextContent('courseStatsQuizCount', `${quizRows.length} quiz`);
+    setTextContent('courseStatsMatchingCount', `${matchingRows.length} matching`);
     
     const courseCountEl = document.getElementById('courseStatsCourseCount');
     if (courseCountEl) courseCountEl.textContent = `${courseRows.length} khóa học`;
     
     renderCourseStatsSortIndicators();
     
-    // Pagination slicing
     const maxTopics = courseStatsState.topicPage * courseStatsState.itemsPerPage;
     const minTopics = maxTopics - courseStatsState.itemsPerPage;
     const pagedTopicRows = topicRows.slice(minTopics, maxTopics);
-    
-    const maxMatching = courseStatsState.matchingPage * courseStatsState.itemsPerPage;
-    const minMatching = maxMatching - courseStatsState.itemsPerPage;
-    const pagedMatchingRows = matchingRows.slice(minMatching, maxMatching);
 
     const maxCourses = courseStatsState.coursePage * courseStatsState.itemsPerPage;
     const minCourses = maxCourses - courseStatsState.itemsPerPage;
     const pagedCourseRows = courseRows.slice(minCourses, maxCourses);
 
-    renderCourseStatsTable('courseStatsMatchingTableBody', pagedMatchingRows, { selectableType: 'matching' });
+    renderCourseStatsTable('courseStatsQuizTableBody', quizRows, { selectableType: 'quiz' });
+    renderCourseStatsTable('courseStatsMatchingTableBody', matchingRows, { selectableType: 'matching' });
     renderCourseStatsTable('courseStatsCourseTableBody', pagedCourseRows, { selectableType: 'course', totalUsers: courseStatsState.users.length });
     
-    renderCourseStatsPagination('courseStatsMatchingPagination', matchingRows.length, courseStatsState.matchingPage, (p) => { courseStatsState.matchingPage = p; renderCourseStatsTables(aggregated); });
     renderCourseStatsPagination('courseStatsCoursePagination', courseRows.length, courseStatsState.coursePage, (p) => { courseStatsState.coursePage = p; renderCourseStatsTables(aggregated); });
     
     // Store aggregated for modal
     courseStatsState.aggregated = aggregated;
     
-    renderSelectedStatLearners(topicRowsRaw, matchingRowsRaw, courseRowsRaw);
+    renderSelectedStatLearners(topicRowsRaw, quizRowsRaw, matchingRowsRaw, courseRowsRaw);
 
-    const hasData = topicRows.length > 0 || matchingRows.length > 0 || courseRows.length > 0 || courseStatsState.searchQuery;
+    const hasData = topicRows.length > 0 || quizRows.length > 0 || matchingRows.length > 0 || courseRows.length > 0 || courseStatsState.searchQuery;
     const emptyState = document.getElementById('courseStatsEmptyState');
     if (emptyState) {
       emptyState.style.display = hasData ? 'none' : 'block';
@@ -743,17 +799,23 @@
   function renderCourseStatsSortIndicators() {
     const topicIcon = document.getElementById('courseStatsTopicLearnerSortIcon');
     const matchingIcon = document.getElementById('courseStatsMatchingSortIcon');
+    const quizIcon = document.getElementById('courseStatsQuizSortIcon');
     const topicSortBtn = document.getElementById('courseStatsTopicLearnerSortBtn');
     const matchingSortBtn = document.getElementById('courseStatsMatchingSortBtn');
+    const quizSortBtn = document.getElementById('courseStatsQuizSortBtn');
 
     const topicIsDesc = courseStatsState.topicLearnerSortOrder !== 'asc';
     const matchingIsDesc = courseStatsState.matchingSortOrder !== 'asc';
+    const quizIsDesc = courseStatsState.quizSortOrder !== 'asc';
 
     if (topicIcon) {
       topicIcon.textContent = topicIsDesc ? '↓' : '↑';
     }
     if (matchingIcon) {
       matchingIcon.textContent = matchingIsDesc ? '↓' : '↑';
+    }
+    if (quizIcon) {
+      quizIcon.textContent = quizIsDesc ? '↓' : '↑';
     }
 
     if (topicSortBtn) {
@@ -762,9 +824,12 @@
     if (matchingSortBtn) {
       matchingSortBtn.setAttribute('aria-label', matchingIsDesc ? 'Sắp xếp lượt chơi giảm dần' : 'Sắp xếp lượt chơi tăng dần');
     }
+    if (quizSortBtn) {
+      quizSortBtn.setAttribute('aria-label', quizIsDesc ? 'Sắp xếp lượt làm bài giảm dần' : 'Sắp xếp lượt làm bài tăng dần');
+    }
   }
 
-  function renderSelectedStatLearners(topicRows, matchingRows, courseRows) {
+  function renderSelectedStatLearners(topicRows, quizRows, matchingRows, courseRows) {
     const panel = document.getElementById('courseStatsTopicUsersPanel');
     const title = document.getElementById('courseStatsTopicUsersTitle');
     const subtitle = document.getElementById('courseStatsTopicUsersSubtitle');
@@ -782,6 +847,7 @@
 
     let selectedRows = topicRows;
     if (courseStatsState.selectedStatsType === 'matching') selectedRows = matchingRows;
+    if (courseStatsState.selectedStatsType === 'quiz') selectedRows = quizRows;
     
     // NẾU LÀ COURSE -> Gọi hàm riêng, không dùng hàm này
     if (courseStatsState.selectedStatsType === 'course') {
@@ -850,14 +916,24 @@
     }
 
     list.innerHTML = learners.map((learner) => {
-      const topicLearner = topicSourceItem && Array.isArray(topicSourceItem.learners)
-        ? topicSourceItem.learners.find((item) => String(item.id || '') === String(learner.id || ''))
-        : null;
-      const countSource = topicLearner || learner;
-      const totalActionCount = Math.max(0, Number(countSource.quizMatchingCount || 0));
-      const leftMatchingText = `${learner.name || 'Người dùng'} (${totalActionCount} lần)`;
-      const rowClasses = isMatchingPanel ? 'course-stats-topic-user-item is-clickable' : 'course-stats-topic-user-item';
-      const rowAttrs = isMatchingPanel
+      const isQuizPanel = courseStatsState.selectedStatsType === 'quiz';
+      
+      let totalActionCount = 0;
+      if (isMatchingPanel) totalActionCount = learner.totalPlays || 0;
+      else if (isQuizPanel) totalActionCount = learner.totalAttempts || 0;
+      else {
+        const topicLearner = topicSourceItem && Array.isArray(topicSourceItem.learners)
+          ? topicSourceItem.learners.find((item) => String(item.id || '') === String(learner.id || ''))
+          : null;
+        const countSource = topicLearner || learner;
+        totalActionCount = Math.max(0, Number(countSource.quizMatchingCount || 0));
+      }
+
+      const isQM = isMatchingPanel || isQuizPanel;
+      const titleText = isQM ? `${learner.name || 'Người dùng'} (${totalActionCount} lần)` : (learner.name || 'Người dùng');
+      
+      const rowClasses = isQM ? 'course-stats-topic-user-item is-clickable' : 'course-stats-topic-user-item';
+      const rowAttrs = isQM
         ? `data-learner-id="${escapeCourseStatsHtml(learner.id || '')}" role="button" tabindex="0" aria-label="Xem chi tiết lần làm bài của ${escapeCourseStatsHtml(learner.name || 'Người dùng')}"`
         : '';
         
@@ -881,7 +957,7 @@
       return `
         <article class="${rowClasses}" ${rowAttrs}>
           <div class="course-stats-topic-user-left">
-            <p class="course-stats-topic-user-name">${escapeCourseStatsHtml(isMatchingPanel ? leftMatchingText : (learner.name || 'Người dùng'))}</p>
+            <p class="course-stats-topic-user-name">${escapeCourseStatsHtml(titleText)}</p>
             ${isMatchingPanel ? '' : `<p class="course-stats-topic-user-email">${escapeCourseStatsHtml(learner.email || '-')}${escapeCourseStatsHtml(avgText)}</p>`}
           </div>
           <div style="display:flex; flex-direction: column; align-items: flex-end; gap: 4px;">
@@ -923,7 +999,9 @@
     );
 
     if (courseStatsState.selectedStatsType === 'matching') {
-      subtitle.textContent = `${learner.email || 'Không có email'} • ${detailAttempts.length} lần (quiz review/instant + matching)`;
+      subtitle.textContent = `${learner.email || 'Không có email'} • ${detailAttempts.length} lần chơi Matching`;
+    } else if (courseStatsState.selectedStatsType === 'quiz') {
+      subtitle.textContent = `${learner.email || 'Không có email'} • ${detailAttempts.length} lần làm Quiz`;
     } else {
       subtitle.textContent = `${learner.email || 'Không có email'} • ${detailAttempts.length} lần làm bài`;
     }
@@ -968,8 +1046,15 @@
         const key = resolveCourseStatsKey(attempt && attempt.lessonId, attempt && attempt.lessonTitle);
         if (!key || key !== normalizedKey) return false;
 
+        const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
+        const quizMode = String(attempt && attempt.quizMode || '').trim().toLowerCase();
+
         if (normalizedType === 'matching') {
-          return isCourseStatsQuizOrMatchingAttempt(attempt);
+          return activityType === 'matching' || quizMode === 'matching';
+        }
+
+        if (normalizedType === 'quiz') {
+          return activityType === 'quiz' && (quizMode === 'review' || quizMode === 'instant' || !quizMode);
         }
 
         return true;
@@ -987,18 +1072,19 @@
   function buildCourseStatsDetailedAttemptText(attempt) {
     const activityType = String(attempt && attempt.activityType || '').trim().toLowerCase();
     const quizMode = String(attempt && attempt.quizMode || '').trim().toLowerCase();
+    const courseTitle = attempt && attempt.courseTitle ? attempt.courseTitle : 'Khóa học không xác định';
+    const lessonTitle = attempt && attempt.lessonTitle ? attempt.lessonTitle : (attempt && attempt.lessonId ? attempt.lessonId : 'Bài học không xác định');
 
+    let baseText = 'Làm bài';
     if (activityType === 'matching' || quizMode === 'matching') {
-      return 'Matching • Làm bài';
+      baseText = 'Matching';
+    } else if (activityType === 'quiz') {
+      if (quizMode === 'review') baseText = 'Quiz Review';
+      else if (quizMode === 'instant') baseText = 'Quiz Instant';
+      else baseText = 'Quiz';
     }
 
-    if (activityType === 'quiz') {
-      if (quizMode === 'review') return 'Quiz Review • Làm bài';
-      if (quizMode === 'instant') return 'Quiz Instant • Làm bài';
-      return 'Quiz • Làm bài';
-    }
-
-    return buildCourseStatsAttemptEventText(attempt);
+    return `${baseText} • Bài: ${lessonTitle} (Khóa: ${courseTitle})`;
   }
 
   function closeCourseStatsAttemptDetailModal() {
@@ -1014,6 +1100,7 @@
 
     let targetRows = courseStatsState.topicRows;
     if (courseStatsState.selectedStatsType === 'matching') targetRows = courseStatsState.matchingRows;
+    else if (courseStatsState.selectedStatsType === 'quiz') targetRows = courseStatsState.quizRows;
     else if (courseStatsState.selectedStatsType === 'course') targetRows = courseStatsState.courseRows;
     
     const exists = targetRows && targetRows.some((row) => row.key === courseStatsState.selectedStatsKey);
