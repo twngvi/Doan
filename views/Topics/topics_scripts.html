@@ -1183,11 +1183,17 @@
       });
     }
 
+    window.refreshCourseList = function() {
+      // Ép tải lại danh sách
+      loadTopics(true);
+    };
+
     function updateTopicsCourseContext(course) {
       const contextEl = document.getElementById("topicsCourseContext");
       const backBtn = document.getElementById("btnBackToCourses");
       const controlsEl = document.getElementById("topicsHeaderControls");
       const courseNameEl = document.getElementById("topicsCurrentCourseName");
+      const refreshBtn = document.getElementById("courseRefreshBtn");
 
       if (!contextEl || !courseNameEl) {
         return;
@@ -1197,6 +1203,7 @@
         contextEl.style.display = "none";
         if (backBtn) backBtn.style.display = "none";
         courseNameEl.textContent = "Khóa học";
+        if (refreshBtn) refreshBtn.style.display = "inline-flex";
         return;
       }
 
@@ -1204,6 +1211,7 @@
       contextEl.style.display = "flex";
       if (backBtn) backBtn.style.display = "inline-flex";
       if (controlsEl) controlsEl.style.display = "flex";
+      if (refreshBtn) refreshBtn.style.display = "none";
     }
 
     function openCourse(courseId) {
@@ -1463,6 +1471,10 @@
         });
       }
 
+      // [THÊM]: Cập nhật lại số Topic đang hiển thị
+      updateProgressStats();
+      
+      // Render lại danh sách Topic mới
       renderTopics();
     }
 
@@ -2262,13 +2274,13 @@
     }
 
     function updateProgressStats() {
-      const completed = Object.values(userProgress).filter(
-        (p) => p.completed,
-      ).length;
+      // 1. Số Topic thực tế đang được hiển thị sau khi lọc
+      const visibleCount = filteredTopics.length;
 
-      const completedEl = document.getElementById("completedTopics");
-      if (completedEl) {
-        completedEl.textContent = completed + "/" + (allTopics ? allTopics.length : 0);
+      // 2. Cập nhật con số hiển thị
+      const visibleCountEl = document.getElementById("visibleTopicsCount");
+      if (visibleCountEl) {
+        visibleCountEl.textContent = visibleCount;
       }
     }
 
