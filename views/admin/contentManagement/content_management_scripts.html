@@ -1753,17 +1753,24 @@ function confirmDeleteCourse() {
   if (!courseToDelete) return;
   const deletingCourseId = courseToDelete;
 
-  const deleteBtn = document.getElementById('btn-confirm-delete-course');
-  const originalBtnHtml = deleteBtn.innerHTML;
-  deleteBtn.disabled = true;
-  deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
+  // 1. Đóng modal ngay lập tức
+  closeDeleteCourseModal();
 
+  // 2. Xóa lạc quan (Optimistic delete) khỏi giao diện
+  allCourses = allCourses.filter(c => c.courseId !== deletingCourseId);
+  filteredCourses = filteredCourses.filter(c => c.courseId !== deletingCourseId);
+  updateCourseStats();
+  renderCoursesView();
+  
+  // Đồng thời xóa các bài học của khóa này khỏi UI
+  allTopics = allTopics.filter(t => t.courseId !== deletingCourseId);
+  filteredTopics = filteredTopics.filter(t => t.courseId !== deletingCourseId);
+  updateStats();
+  renderContent();
+
+  // 3. Gọi server ngầm
   google.script.run
     .withSuccessHandler(function(result) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = originalBtnHtml;
-      closeDeleteCourseModal();
-
       if (result && result.success) {
         markTopicsDataChanged();
         if (window.globalTopicsCache) {
@@ -1771,38 +1778,23 @@ function confirmDeleteCourse() {
           window.globalTopicsCache.progress = null;
           window.globalTopicsCache.lastLoadTime = 0;
         }
-
+      } else {
+        // Rollback lại từ server nếu lỗi
         loadCoursesList();
         loadTopicsList();
-
-        if (typeof showNotification === 'function') {
-          showNotification(result.message || 'Đã xóa khóa học thành công!', 'success');
-        } else {
-          alert(result.message || 'Đã xóa khóa học thành công!');
-        }
-      } else {
         if (typeof showNotification === 'function') {
           showNotification(result?.message || 'Không thể xóa khóa học', 'error');
-        } else {
-          alert(result?.message || 'Không thể xóa khóa học');
         }
       }
-
-      courseToDelete = null;
     })
     .withFailureHandler(function(error) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = originalBtnHtml;
-      closeDeleteCourseModal();
-
+      // Rollback lại từ server nếu lỗi
+      loadCoursesList();
+      loadTopicsList();
       console.error('[ContentManagement] Delete course failed:', error);
       if (typeof showNotification === 'function') {
         showNotification('Lỗi khi xóa khóa học: ' + (error?.message || error), 'error');
-      } else {
-        alert('Lỗi khi xóa khóa học: ' + (error?.message || error));
       }
-
-      courseToDelete = null;
     })
     .deleteCourseAndTopics(deletingCourseId);
 }
@@ -1858,20 +1850,19 @@ function confirmDeleteTopic() {
   if (!topicToDelete) return;
   const deletingTopicId = topicToDelete;
 
-  const deleteBtn = document.querySelector('.cm-btn-danger');
-  const originalBtnHtml = deleteBtn.innerHTML;
-  deleteBtn.disabled = true;
-  deleteBtn.innerHTML = '<span class="material-symbols-sharp">hourglass_empty</span> Đang xóa...';
+  // 1. Đóng modal ngay lập tức
+  closeDeleteModal();
 
-  // Gọi API xóa topic và document
+  // 2. Xóa lạc quan (Optimistic delete) khỏi giao diện
+  allTopics = allTopics.filter(t => t.topicId !== deletingTopicId);
+  filteredTopics = filteredTopics.filter(t => t.topicId !== deletingTopicId);
+  updateStats();
+  renderContent();
+
+  // 3. Gọi server ngầm
   google.script.run
     .withSuccessHandler(function(result) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = originalBtnHtml;
-      closeDeleteModal();
-
       if (result && result.success) {
-        // Đồng bộ cache giữa các page để buộc Topics page reload từ DB
         markTopicsDataChanged();
         if (window.globalTopicsCache) {
           window.globalTopicsCache.data = null;
@@ -1879,45 +1870,26 @@ function confirmDeleteTopic() {
           window.globalTopicsCache.lastLoadTime = 0;
         }
 
-        // Reload lại data từ server để UI luôn khớp DB
-        loadTopicsList();
-        loadCoursesList();
-
-        // Hiển thị thông báo thành công
-        if (typeof showNotification === 'function') {
-          showNotification(result.message || 'Đã xóa bài học thành công!', 'success');
-        } else {
-          alert(result.message || 'Đã xóa bài học thành công!');
-        }
-
-        // Log nếu doc cũng bị xóa
         if (result.docDeleted) {
           console.log('[ContentManagement] Document cũng đã được chuyển vào thùng rác');
         }
       } else {
-        // Hiển thị lỗi
+        // Rollback lại từ server nếu lỗi
+        loadTopicsList();
+        loadCoursesList();
         if (typeof showNotification === 'function') {
           showNotification(result?.message || 'Không thể xóa bài học', 'error');
-        } else {
-          alert(result?.message || 'Không thể xóa bài học');
         }
       }
-
-      topicToDelete = null;
     })
     .withFailureHandler(function(error) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = originalBtnHtml;
-      closeDeleteModal();
-
+      // Rollback lại từ server nếu lỗi
+      loadTopicsList();
+      loadCoursesList();
       console.error('[ContentManagement] Delete failed:', error);
       if (typeof showNotification === 'function') {
         showNotification('Lỗi khi xóa bài học: ' + (error?.message || error), 'error');
-      } else {
-        alert('Lỗi khi xóa bài học: ' + (error?.message || error));
       }
-
-      topicToDelete = null;
     })
     .deleteTopicWithDoc(deletingTopicId);
 }

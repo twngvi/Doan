@@ -466,3 +466,89 @@ function authorizeCourseThumbnailDrive() {
     folderName: folderName
   };
 }
+
+/**
+ * Delete a course and all its topics
+ * @param {string} courseId - ID of the course to delete
+ */
+function deleteCourseAndTopics(courseId) {
+  try {
+    const auth = (typeof requireAdminContext_ === 'function') ? requireAdminContext_() : (typeof getCurrentAdminContext === 'function' ? getCurrentAdminContext() : {success: true});
+    if (!auth.success) return auth;
+
+    if (!courseId) return { success: false, message: "Thiếu courseId" };
+
+    // 1. Delete Topics
+    const topicsSheet = (typeof getSheet === 'function') ? getSheet("Topics") : SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Topics");
+    if (topicsSheet) {
+      const topicsData = topicsSheet.getDataRange().getValues();
+      const topicsHeaders = topicsData[0];
+      const t_courseIdIdx = topicsHeaders.indexOf("courseId");
+      const t_contentDocIdIdx = topicsHeaders.indexOf("contentDocId");
+      
+      if (t_courseIdIdx >= 0) {
+        // Collect topic rows to delete (from bottom to top)
+        let rowsToDelete = [];
+        let docsToTrash = [];
+        for (let i = topicsData.length - 1; i >= 1; i--) {
+          if (topicsData[i][t_courseIdIdx] === courseId) {
+            rowsToDelete.push(i + 1);
+            if (t_contentDocIdIdx >= 0 && topicsData[i][t_contentDocIdIdx]) {
+              docsToTrash.push(topicsData[i][t_contentDocIdIdx]);
+            }
+          }
+        }
+        
+        // Trash docs
+        docsToTrash.forEach(function(docId) {
+          try {
+            DriveApp.getFileById(docId).setTrashed(true);
+          } catch(e) {}
+        });
+        
+        // Delete rows (must delete from bottom to top so indices don't shift)
+        rowsToDelete.forEach(function(rIdx) {
+          topicsSheet.deleteRow(rIdx);
+        });
+      }
+    }
+    
+    // 2. Delete Course
+    const coursesSheet = (typeof getSheet === 'function') ? getSheet("Courses") : SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Courses");
+    if (!coursesSheet) return { success: false, message: "Không tìm thấy sheet Courses" };
+    
+    const coursesData = coursesSheet.getDataRange().getValues();
+    const coursesHeaders = coursesData[0];
+    const c_courseIdIdx = coursesHeaders.indexOf("courseId");
+    
+    if (c_courseIdIdx < 0) return { success: false, message: "Lỗi cấu trúc sheet Courses" };
+    
+    let courseRowIndex = -1;
+    let courseTitle = "";
+    const c_titleIdx = coursesHeaders.indexOf("title");
+    
+    for (let i = 1; i < coursesData.length; i++) {
+      if (coursesData[i][c_courseIdIdx] === courseId) {
+        courseRowIndex = i + 1;
+        if (c_titleIdx >= 0) {
+          courseTitle = coursesData[i][c_titleIdx];
+        }
+        break;
+      }
+    }
+    
+    if (courseRowIndex === -1) {
+      return { success: false, message: "Không tìm thấy khóa học để xóa" };
+    }
+    
+    coursesSheet.deleteRow(courseRowIndex);
+    
+    if (typeof clearCourseStructureCaches === 'function') clearCourseStructureCaches();
+    try { if (typeof clearTopicsCache === 'function') clearTopicsCache(); } catch (cacheError) {}
+    
+    return { success: true, message: "Đã xóa khóa học " + (courseTitle ? '"' + courseTitle + '"' : "") + " và các bài học bên trong thành công!" };
+  } catch(e) {
+    return { success: false, message: "Lỗi khi xóa khóa học: " + e.toString() };
+  }
+}
+
