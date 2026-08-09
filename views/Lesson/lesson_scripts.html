@@ -137,10 +137,51 @@
   let mindmapPrefetching = false;
 
   /**
+   * Reset all JS state variables to default values when switching topics.
+   * This prevents stale data (like miniquiz answers, completion state, or AI content)
+   * from the previous topic leaking into the newly opened topic.
+   */
+  function resetLessonState() {
+    scrollProgress = 0;
+    aiContentLoaded = {
+      mindmap: false,
+      flashcards: false,
+    };
+    flashcardsData = [];
+    fullFlashcardsData = [];
+    currentFlashcardIndex = 0;
+    progressSaved = {
+      lesson: false,
+      mindmap: false,
+      flashcards: false,
+    };
+    tabCompletion = {
+      lessonRead: false,
+      lessonQuiz: false,
+      mindmapViewed: false,
+      flashcardsDone: false,
+    };
+    prefetchedFlashcards = null;
+    flashcardsPrefetching = false;
+    prefetchedMindmap = null;
+    mindmapPrefetching = false;
+    
+    if (typeof miniQuizData !== 'undefined') miniQuizData = null;
+    if (typeof miniQuizAnswered !== 'undefined') miniQuizAnswered = 0;
+    if (typeof miniQuizLoaded !== 'undefined') miniQuizLoaded = false;
+    if (typeof miniQuizAttempts !== 'undefined') miniQuizAttempts = 0;
+
+    if (typeof resetAllLessonUI === 'function') {
+      resetAllLessonUI();
+    }
+  }
+
+  /**
    * Initialize lesson page
    */
   function initLessonPage() {
     console.log("🚀 Initializing Lesson Page");
+    resetLessonState();
 
     try {
       setupLessonHeaderMouseEffect();

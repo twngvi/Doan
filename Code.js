@@ -49,7 +49,7 @@ function doGet(e) {
 
     const htmlOutput = template
       .evaluate()
-      .setTitle("Doanv3 - Learning Management System")
+      .setTitle("TerraCode - Learning Management System")
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag("viewport", "width=device-width, initial-scale=1");
 
@@ -314,11 +314,11 @@ function testGetTopicContent() {
 
   Logger.log(
     "Result: " +
-      JSON.stringify({
-        success: result.success,
-        message: result.message,
-        contentLength: result.content ? result.content.length : 0,
-      }),
+    JSON.stringify({
+      success: result.success,
+      message: result.message,
+      contentLength: result.content ? result.content.length : 0,
+    }),
   );
 
   return result;
@@ -342,14 +342,14 @@ function testUpdateStudySettings_ID04() {
         reminderMode: 1
       }
     });
-    
+
     // Đọc thêm chi tiết
     const masterDbId = DB_CONFIG.SPREADSHEET_ID;
     const ss = SpreadsheetApp.openById(masterDbId);
     const usersSheet = ss.getSheetByName("Users");
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0];
-    
+
     throw new Error(JSON.stringify({
       updateResult: res,
       headers: headers,
@@ -366,15 +366,15 @@ function testInspectStudySettings() {
   const usersSheet = ss.getSheetByName("Users");
   const data = usersSheet.getDataRange().getValues();
   const headers = data[0];
-  
+
   const colsNeeded = ["dailyGoal", "emailReminderEnabled", "reminderTimes", "reminderMode"];
   let headerChanged = false;
   colsNeeded.forEach(col => {
     colIndexes[col] = headers.indexOf(col);
   });
-  
+
   const row5 = usersSheet.getRange(5, 1, 1, headers.length).getValues()[0];
-  
+
   throw new Error(JSON.stringify({
     headers: headers,
     colIndexes: colIndexes,

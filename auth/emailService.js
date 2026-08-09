@@ -9,8 +9,8 @@ const EMAIL_TYPE_CONFIG = {
   verification: {
     prefix: "[TERRACODE_VERIFY]",
     name: "Email xác thực tài khoản",
-    defaultSubject: "Mã xác thực tài khoản - Doanv3",
-    defaultBody: "Xin chào {{fullName}},\n\nCảm ơn bạn đã đăng ký tài khoản tại Doanv3!\n\nMã xác thực của bạn là: {{code}}\n\nVui lòng nhập mã này vào trang xác thực để kích hoạt tài khoản.\nMã này sẽ hết hạn sau 24 giờ.\n\nTrân trọng,\nĐội ngũ Doanv3",
+    defaultSubject: "Mã xác thực tài khoản - TerraCode",
+    defaultBody: "Xin chào {{fullName}},\n\nCảm ơn bạn đã đăng ký tài khoản tại TerraCode!\n\nMã xác thực của bạn là: {{code}}\n\nVui lòng nhập mã này vào trang xác thực để kích hoạt tài khoản.\nMã này sẽ hết hạn sau 24 giờ.\n\nTrân trọng,\nĐội ngũ TerraCode",
     demoVars: {
       "{{fullName}}": "Test User",
       "{{email}}": "test@example.com",
@@ -20,8 +20,8 @@ const EMAIL_TYPE_CONFIG = {
   password_reset: {
     prefix: "[TERRACODE_RESET]",
     name: "Email quên mật khẩu",
-    defaultSubject: "Mã xác thực reset mật khẩu - Doanv3",
-    defaultBody: "Xin chào {{fullName}},\n\nChúng tôi nhận được yêu cầu reset mật khẩu cho tài khoản của bạn.\n\nMã xác thực của bạn là: {{code}}\n\nMã này sẽ hết hạn sau 1 giờ.\n\nTrân trọng,\nĐội ngũ Doanv3",
+    defaultSubject: "Mã xác thực reset mật khẩu - TerraCode",
+    defaultBody: "Xin chào {{fullName}},\n\nChúng tôi nhận được yêu cầu reset mật khẩu cho tài khoản của bạn.\n\nMã xác thực của bạn là: {{code}}\n\nMã này sẽ hết hạn sau 1 giờ.\n\nTrân trọng,\nĐội ngũ TerraCode",
     demoVars: {
       "{{fullName}}": "Test User",
       "{{email}}": "test@example.com",
@@ -106,7 +106,7 @@ function adminListEmailDrafts(type) {
     drafts.forEach(function (draft) {
       const msg = draft.getMessage();
       const subject = msg.getSubject() || "";
-      
+
       if (subject.indexOf(config.prefix) !== -1) {
         result.push({
           id: draft.getId(),
@@ -158,7 +158,7 @@ function adminSaveDraftTemplate(draftId, type) {
       return { success: false, message: "Không có quyền truy cập" };
     }
     if (!draftId) return { success: false, message: "Thiếu draftId" };
-    
+
     const config = EMAIL_TYPE_CONFIG[type];
     const draft = GmailApp.getDraft(draftId);
     if (!draft) return { success: false, message: "Không tìm thấy bản nháp" };
@@ -192,7 +192,7 @@ function adminTestSendEmail(type) {
     }
     const userEmail = Session.getActiveUser().getEmail();
     const config = EMAIL_TYPE_CONFIG[type];
-    
+
     const template = getTemplateForSending(type, config.demoVars);
 
     MailApp.sendEmail({
@@ -267,7 +267,7 @@ function sendVerificationEmail(email, code, fullName) {
       to: email,
       subject: template.subject,
       body: template.body,
-      name: "Doanv3 System"
+      name: "TerraCode System"
     };
 
     if (template.htmlBody) options.htmlBody = template.htmlBody;
@@ -295,7 +295,7 @@ function sendPasswordResetCodeEmail(email, code, fullName) {
       to: email,
       subject: template.subject,
       body: template.body,
-      name: "Doanv3 System"
+      name: "TerraCode System"
     };
 
     if (template.htmlBody) options.htmlBody = template.htmlBody;
@@ -315,10 +315,10 @@ function sendStudyReminder(email, info) {
   try {
     let modeSubject = "";
     let modeBody = "";
-    
+
     if (info.mode === "escalating_final") {
-       modeSubject = `⚠️ Cảnh báo: Sắp đứt chuỗi Streak ${info.streak} ngày!`;
-       modeBody = `Chào ${info.fullName},\n\nChỉ còn vài giờ nữa là kết thúc ngày học hôm nay. Bạn hiện tại đã học được ${info.completedLessons}/${info.totalLessons} bài học.\nHãy hoàn thành ${info.remainingLessons} bài nữa để duy trì streak ${info.streak} ngày liên tiếp của bạn nhé!\n\nVào học ngay để không bỏ lỡ phần thưởng!`;
+      modeSubject = `⚠️ Cảnh báo: Sắp đứt chuỗi Streak ${info.streak} ngày!`;
+      modeBody = `Chào ${info.fullName},\n\nChỉ còn vài giờ nữa là kết thúc ngày học hôm nay. Bạn hiện tại đã học được ${info.completedLessons}/${info.totalLessons} bài học.\nHãy hoàn thành ${info.remainingLessons} bài nữa để duy trì streak ${info.streak} ngày liên tiếp của bạn nhé!\n\nVào học ngay để không bỏ lỡ phần thưởng!`;
     }
 
     const template = getTemplateForSending('study_reminder', {
@@ -335,15 +335,15 @@ function sendStudyReminder(email, info) {
 
     // Ưu tiên nội dung tuỳ chỉnh của mode nếu chưa có draft, nếu có draft thì gửi theo draft
     if (info.mode === "escalating_final" && !template.htmlBody) {
-       template.subject = modeSubject;
-       template.body = modeBody;
+      template.subject = modeSubject;
+      template.body = modeBody;
     }
 
     const options = {
       to: email,
       subject: template.subject,
       body: template.body,
-      name: "Doanv3 System"
+      name: "TerraCode System"
     };
 
     if (template.htmlBody) options.htmlBody = template.htmlBody;
@@ -357,5 +357,5 @@ function sendStudyReminder(email, info) {
 }
 
 function cronJobReminders() {
-   Logger.log("Running hourly cron job for study reminders...");
+  Logger.log("Running hourly cron job for study reminders...");
 }

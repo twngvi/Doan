@@ -1,4 +1,4 @@
-# Changelog - Doanv3 Database Restructure
+# Changelog - TerraCode Database Restructure
 
 ## [3.0.0] - 2025-11-30
 

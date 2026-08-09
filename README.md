@@ -1,8 +1,8 @@
-# 📚 Doanv3 - Hệ thống Học tập Thông minh
+# 📚 TerraCode - Hệ thống Học tập Thông minh
 
 ## 📋 Tổng quan dự án
 
-Doanv3 là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets với kiến trúc **2 tầng database**:
+TerraCode là một hệ thống học tập thông minh được xây dựng trên Google Apps Script và Google Sheets với kiến trúc **2 tầng database**:
 
 - ✅ **MASTER_DB**: Database tổng cho toàn hệ thống
 - ✅ **USER_DB**: Database cá nhân riêng cho từng user
