@@ -45,20 +45,32 @@ function createUserPersonalSheet(userId, username) {
       // Continue even if moving fails
     }
 
-    // Delete default sheet
-    const defaultSheet = userSpreadsheet.getSheets()[0];
-    if (defaultSheet && defaultSheet.getName() !== "Profile") {
+    // Danh sách các bảng không tự động tạo lại
+    const DO_NOT_CREATE = [
+      "AI_Evaluations", "Chat_History", "Error_Logs", "AI_Question_Pool", 
+      "Leaderboard", "User_Achievements", "User_Notebooks", "Achievements", 
+      "Answer_History", "User_Progress", "Code_Puzzles", "Challenges", 
+      "Admin_Pet_Level_Config", "Admin_Coop_Templates", "User_Farm",
+      "FriendRequests", "Friends", "Conversations", "Messages", "Feature_Activity_Logs"
+    ];
+
+    // Create all sheets
+    Object.values(USER_DB_CONFIG.SHEETS).forEach((sheetConfig) => {
+      if (!DO_NOT_CREATE.includes(sheetConfig.name)) {
+        createUserSheet(userSpreadsheet, sheetConfig);
+      }
+    });
+
+    // Delete default sheet AFTER other sheets are created
+    const sheets = userSpreadsheet.getSheets();
+    const defaultSheet = sheets.find(s => s.getName() === "Sheet1" || s.getName() === "Trang tính1" || s.getName() === "Trang tính 1");
+    if (defaultSheet && sheets.length > 1) {
       try {
         userSpreadsheet.deleteSheet(defaultSheet);
       } catch (e) {
         Logger.log("Could not delete default sheet: " + e.toString());
       }
     }
-
-    // Create all sheets
-    Object.values(USER_DB_CONFIG.SHEETS).forEach((sheetConfig) => {
-      createUserSheet(userSpreadsheet, sheetConfig);
-    });
 
     // Initialize Profile
     initializeUserProfile(userSpreadsheet, userId, username);

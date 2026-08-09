@@ -16,9 +16,9 @@ function getOrCreateDatabase() {
       try {
         const ss = SpreadsheetApp.openById(DB_CONFIG.SPREADSHEET_ID);
         Logger.log("Using hard-coded database ID: " + DB_CONFIG.SPREADSHEET_ID);
-        
-// Chat sheets removed
-        
+
+        // Chat sheets removed
+
         return ss;
       } catch (e) {
         Logger.log(
@@ -36,9 +36,9 @@ function getOrCreateDatabase() {
       try {
         ss = SpreadsheetApp.openById(cachedId);
         Logger.log("Found database from cache: " + cachedId);
-        
-// Chat sheets removed
-        
+
+        // Chat sheets removed
+
         return ss;
       } catch (e) {
         Logger.log("Cached ID invalid, searching again...");
@@ -104,16 +104,28 @@ function createAllSheets() {
     const sheetMap = {};
     existingSheets.forEach(s => sheetMap[s.getName()] = s);
 
-    // Delete default sheet if exists
-    const defaultSheet = sheetMap["Sheet1"];
-    if (defaultSheet && existingSheets.length > 1) {
-      try { spreadsheet.deleteSheet(defaultSheet); } catch(e) {}
-    }
+    // Danh sách các bảng không tự động tạo lại
+    const DO_NOT_CREATE = [
+      "AI_Evaluations", "Chat_History", "Error_Logs", "AI_Question_Pool", 
+      "Leaderboard", "User_Achievements", "User_Notebooks", "Achievements", 
+      "Answer_History", "User_Progress", "Code_Puzzles", "Challenges", 
+      "Admin_Pet_Level_Config", "Admin_Coop_Templates", "User_Farm",
+      "FriendRequests", "Friends", "Conversations", "Messages", "Feature_Activity_Logs"
+    ];
 
     // Create each sheet
     Object.values(DB_CONFIG.SHEETS).forEach((sheetConfig) => {
-      createSheet(spreadsheet, sheetConfig, sheetMap);
+      if (!DO_NOT_CREATE.includes(sheetConfig.name)) {
+        createSheet(spreadsheet, sheetConfig, sheetMap);
+      }
     });
+
+    // Delete default sheet if exists AFTER creating new ones
+    const currentSheets = spreadsheet.getSheets();
+    const defaultSheet = currentSheets.find(s => s.getName() === "Sheet1" || s.getName() === "Trang tính1" || s.getName() === "Trang tính 1");
+    if (defaultSheet && currentSheets.length > 1) {
+      try { spreadsheet.deleteSheet(defaultSheet); } catch (e) { }
+    }
 
     Logger.log("All sheets checked and created successfully!");
     return spreadsheet.getUrl();
@@ -156,7 +168,7 @@ function createSheet(spreadsheet, sheetConfig, sheetMap) {
     }
     try {
       sheet.setFrozenRows(1);
-    } catch (e) {}
+    } catch (e) { }
 
     return sheet;
   } catch (error) {
@@ -186,7 +198,7 @@ function updateSheetSchema(sheet, sheetConfig) {
       headerRange.setFontWeight("bold");
       headerRange.setBackground("#4285f4");
       headerRange.setFontColor("white");
-      try { sheet.setFrozenRows(1); } catch (e) {}
+      try { sheet.setFrozenRows(1); } catch (e) { }
       return;
     }
 
@@ -292,7 +304,7 @@ function processGoogleUserLogin(googleProfile, force = false) {
   let userRowIndex = -1;
   let existingUser = null;
   const headers = data[0] || [];
-  
+
   // Cột progressSheetId nằm ở index 18 (theo schema mới: userId(0)... progressSheetId(18))
   const PROGRESS_SHEET_COL_INDEX = headers.indexOf("progressSheetId") >= 0 ? headers.indexOf("progressSheetId") : 18;
 
@@ -325,14 +337,14 @@ function processGoogleUserLogin(googleProfile, force = false) {
 
     const activeSessionIdIndex = headers.indexOf("activeSessionId");
     const activeSessionUpdatedAtIndex = headers.indexOf("activeSessionUpdatedAt");
-    
+
     if (activeSessionIdIndex >= 0) {
       const currentActiveSession = existingUser[activeSessionIdIndex];
       let isSessionFresh = true;
       if (activeSessionUpdatedAtIndex >= 0) {
         const lastSeenValue = existingUser[activeSessionUpdatedAtIndex];
         const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-        const SESSION_STALE_MS = 90 * 1000; 
+        const SESSION_STALE_MS = 90 * 1000;
         isSessionFresh = !!lastSeenTime && Date.now() - lastSeenTime < SESSION_STALE_MS;
       }
 
@@ -361,8 +373,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
       sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
       now = new Date();
       const lastLoginCol = headers.indexOf("lastLogin");
-      if(lastLoginCol >= 0) userSheet.getRange(userRowIndex, lastLoginCol + 1).setValue(now);
-      
+      if (lastLoginCol >= 0) userSheet.getRange(userRowIndex, lastLoginCol + 1).setValue(now);
+
       if (activeSessionIdIndex >= 0) {
         userSheet.getRange(userRowIndex, activeSessionIdIndex + 1).setValue(sessionId);
       }
@@ -415,8 +427,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
       const sXpIdx = sHeaders.indexOf("totalXP");
       const sXqpIdx = sHeaders.indexOf("totalXQP");
 
-      for(let i=1; i<statsData.length; i++) {
-        if(statsData[i][0] === userId) {
+      for (let i = 1; i < statsData.length; i++) {
+        if (statsData[i][0] === userId) {
           if (sLevelIdx >= 0) level = parseInt(statsData[i][sLevelIdx]) || 1;
           if (sXpIdx >= 0) totalXP = parseInt(statsData[i][sXpIdx]) || 0;
           if (sXqpIdx >= 0) totalXQP = parseInt(statsData[i][sXqpIdx]) || 0;
@@ -429,9 +441,9 @@ function processGoogleUserLogin(googleProfile, force = false) {
       const petsData = petsSheet.getDataRange().getValues();
       const pHeaders = petsData[0] || [];
       const themeIdx = pHeaders.indexOf("theme");
-      
-      for(let i=1; i<petsData.length; i++) {
-        if(petsData[i][0] === userId) {
+
+      for (let i = 1; i < petsData.length; i++) {
+        if (petsData[i][0] === userId) {
           if (themeIdx >= 0) theme = String(petsData[i][themeIdx]) || "forest";
           break;
         }
@@ -487,21 +499,21 @@ function processGoogleUserLogin(googleProfile, force = false) {
     try {
       lock.waitLock(10000);
       sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
-      
+
       const activeSessionIdIndex = DB_CONFIG.SHEETS.USERS.columns.indexOf("activeSessionId");
       if (activeSessionIdIndex >= 0) {
-         while (newRow.length <= activeSessionIdIndex) newRow.push("");
-         newRow[activeSessionIdIndex] = sessionId;
+        while (newRow.length <= activeSessionIdIndex) newRow.push("");
+        newRow[activeSessionIdIndex] = sessionId;
       }
-      
+
       userSheet.appendRow(newRow);
-      
+
       // Tạo row cho User_Stats
       if (statsSheet) {
         const statsRow = [newUserId, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
         statsSheet.appendRow(statsRow);
       }
-      
+
       // Tạo row cho User_Pets
       if (petsSheet) {
         const petsRow = [newUserId, "forest", "NAMEPET", ""];
@@ -509,7 +521,7 @@ function processGoogleUserLogin(googleProfile, force = false) {
       }
     } catch (e) {
       Logger.log("Lock error for new user session: " + e.toString());
-      userSheet.appendRow(newRow); 
+      userSheet.appendRow(newRow);
     } finally {
       lock.releaseLock();
     }
@@ -539,54 +551,94 @@ function processGoogleUserLogin(googleProfile, force = false) {
 }
 
 
-/**
- * X�a c�c sheet tr?ng kh�ng c� d? li?u (ch? c� header) kh?i MASTER_DB
- * �?c bi?t l� c�c sheet li�n quan d?n Chat
- */
+
 function cleanupEmptySheets() {
   try {
     const ss = getOrCreateDatabase();
     const sheets = ss.getSheets();
     const chatSheetNames = [
-      "FriendRequests", 
-      "Friends", 
-      "Conversations", 
-      "Messages", 
+      "FriendRequests",
+      "Friends",
+      "Conversations",
+      "Messages",
       "Feature_Activity_Logs"
     ];
     let deletedCount = 0;
-    
-    // N?u db ch? c�n 1 sheet, Google Sheet kh�ng cho ph�p x�a
+
+    // 1. Cleanup MASTER_DB
     for (let i = 0; i < sheets.length; i++) {
       const sheet = sheets[i];
       const sheetName = sheet.getName();
       const lastRow = sheet.getLastRow();
-      
-      // N?u sheet tr?ng (lastRow <= 1 v� c� header)
-      if (lastRow <= 1) {
+
+      // Nếu sheet trống (lastRow <= 1 và có thể chỉ có header, hoặc hoàn toàn trống)
+      // Thêm điều kiện: xóa Sheet1 hoặc Trang tính1 mặc định nếu có
+      const isDefault = ["Sheet1", "Trang tính1", "Trang tính 1"].includes(sheetName);
+
+      if (lastRow <= 1 || isDefault) {
         if (ss.getSheets().length <= 1) {
-          Logger.log("Kh�ng th? x�a sheet cu?i c�ng: " + sheetName);
+          Logger.log("Không thể xóa sheet cuối cùng trong MASTER_DB: " + sheetName);
           break;
         }
-        
-        if (chatSheetNames.includes(sheetName)) {
-          Logger.log("�ang x�a sheet chat tr?ng: " + sheetName);
-          ss.deleteSheet(sheet);
-          deletedCount++;
-        } else {
-          Logger.log("�ang x�a sheet tr?ng: " + sheetName);
+
+        if (chatSheetNames.includes(sheetName) || isDefault || lastRow <= 1) {
+          Logger.log("Đang xóa sheet trống trong MASTER_DB: " + sheetName);
           ss.deleteSheet(sheet);
           deletedCount++;
         }
-      } else {
-        Logger.log("B? qua sheet c� n?i dung: " + sheetName + " (S? d�ng: " + lastRow + ")");
       }
     }
-    
-    Logger.log("Ho�n t?t d?n d?p. �� x�a " + deletedCount + " sheet tr?ng.");
-    return { success: true, message: "�� d?n d?p " + deletedCount + " sheet tr?ng." };
+
+    // 2. Cleanup USER_DBs
+    try {
+      const usersSheet = ss.getSheetByName("Users");
+      if (usersSheet) {
+        const data = usersSheet.getDataRange().getValues();
+        // Assuming progressSheetId is at index 18 based on schema (index 18 is 'progressSheetId')
+        const header = data[0];
+        const progressSheetIdIndex = header.indexOf("progressSheetId");
+
+        if (progressSheetIdIndex !== -1) {
+          for (let r = 1; r < data.length; r++) {
+            const progressSheetId = data[r][progressSheetIdIndex];
+            if (progressSheetId) {
+              try {
+                const userSs = SpreadsheetApp.openById(progressSheetId);
+                const userSheets = userSs.getSheets();
+
+                for (let j = 0; j < userSheets.length; j++) {
+                  const uSheet = userSheets[j];
+                  const uSheetName = uSheet.getName();
+                  const uLastRow = uSheet.getLastRow();
+                  const isUDefault = ["Sheet1", "Trang tính1", "Trang tính 1"].includes(uSheetName);
+
+                  if (uLastRow <= 1 || isUDefault) {
+                    if (userSs.getSheets().length <= 1) {
+                      break; // Cannot delete last sheet
+                    }
+                    // Xóa các sheet mặc định (Sheet1) HOẶC các sheet tính năng nhưng đang trống (chỉ có header lastRow <= 1)
+                    if (isUDefault || uLastRow <= 1) {
+                      Logger.log("Đang xóa sheet trống trong USER_DB " + progressSheetId + ": " + uSheetName);
+                      userSs.deleteSheet(uSheet);
+                      deletedCount++;
+                    }
+                  }
+                }
+              } catch (userErr) {
+                Logger.log("Không thể truy cập USER_DB " + progressSheetId + ": " + userErr);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log("Lỗi khi quét USER_DB: " + e.toString());
+    }
+
+    Logger.log("Hoàn tất dọn dẹp. Đã xóa " + deletedCount + " sheet trống.");
+    return { success: true, message: "Đã dọn dẹp " + deletedCount + " sheet trống." };
   } catch (error) {
-    Logger.log("L?i khi d?n d?p sheets: " + error.toString());
+    Logger.log("Lỗi khi dọn dẹp sheets: " + error.toString());
     return { success: false, message: error.toString() };
   }
 }
