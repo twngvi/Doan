@@ -2323,10 +2323,10 @@ function saveQuizResult(resultData) {
 
     Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
 
-    // Award topic completion XP for completed quiz attempts (not partial autosave).
+    // Award topic completion XP for completed quiz attempts (not partial autosave) that score >= 80%.
     const quizStatus = String(resultData.status || "complete").toLowerCase();
     let quizXPResult = null;
-    if (resultData.topicId && quizStatus !== "partial") {
+    if (resultData.topicId && quizStatus !== "partial" && resultData.percentage >= 80) {
       quizXPResult = awardTopicXPByEvent(userEmail, {
         topicId: resultData.topicId,
         eventId: "quiz_topic_completed:" + String(resultData.topicId).trim(),
@@ -2664,9 +2664,9 @@ function saveMatchingResult(resultData) {
     invalidateDashboardCachesByEmail(userEmail, false);
     Logger.log("✅ Matching result saved to personal sheet");
 
-    // Award topic completion XP for completed matching attempts.
+    // Award topic completion XP for completed matching attempts that score >= 80%.
     let matchingXPResult = null;
-    if (resultData.topicId && resultData.completed !== false) {
+    if (resultData.topicId && resultData.completed !== false && resultData.accuracy >= 80) {
       matchingXPResult = awardTopicXPByEvent(userEmail, {
         topicId: resultData.topicId,
         eventId:
@@ -2728,7 +2728,11 @@ function saveMatchingResult(resultData) {
       }
     } catch(e) {}
 
-    return { success: true, message: "Matching result saved" };
+    return {
+      success: true,
+      message: "Matching result saved",
+      xpResult: matchingXPResult || null,
+    };
   } catch (error) {
     Logger.log("❌ Error saving matching result: " + error.toString());
     return { success: false, message: error.toString() };
