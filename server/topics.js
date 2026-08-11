@@ -631,22 +631,25 @@ function getUserTopicProgress() {
           // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
           let progressPercent = 0;
           let completedCount = 0;
-          const totalActivities = 4; // lesson, mindmap, flashcards, miniQuiz
+          const totalActivities = 6; // lesson, mindmap, flashcards, miniQuiz, quiz, matching
           if (lessonDone) completedCount++;
           if (mindmapDone) completedCount++;
           if (flashcardsDone) completedCount++;
           if (miniQuizDone) completedCount++;
+          if (quizDone) completedCount++;
+          if (matchingDone) completedCount++;
           progressPercent = Math.round(
             (completedCount / totalActivities) * 100,
           );
 
           const topic = topicMap[topicId];
           const quizRequired = topic && topic.quizStatus === "active";
+          const matchingRequired = topic && topic.matchingStatus === "active";
 
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone),
+              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,

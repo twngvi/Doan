@@ -2355,7 +2355,7 @@ function saveQuizResult(resultData) {
     }
 
     // ⭐ Also update quizDone in Topic_Progress
-    if (resultData.topicId) {
+    if (resultData.topicId && resultData.percentage >= 80) {
       try {
         const userId = getUserIdByEmail(userEmail);
         if (userId) {
@@ -2696,7 +2696,7 @@ function saveMatchingResult(resultData) {
     }
 
     // Also update matchingDone in Topic_Progress
-    if (resultData.topicId) {
+    if (resultData.topicId && resultData.accuracy >= 80) {
       try {
         const userId = getUserIdByEmail(userEmail);
         if (userId) {
@@ -5810,6 +5810,8 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     const miniQuizDone =
       miniQuizCol >= 0 && isChecked(currentData[miniQuizCol]);
     const quizDone = quizCol >= 0 && isChecked(currentData[quizCol]);
+    const matchingCol = headers.indexOf("matchingDone");
+    const matchingDone = matchingCol >= 0 && isChecked(currentData[matchingCol]);
 
     // Check if topic has active quiz
     var topicsResult = getAllTopicsIncludingHidden();
@@ -5818,12 +5820,13 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
       topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
     }
     var quizRequired = topic && topic.quizStatus === "active";
+    var matchingRequired = topic && topic.matchingStatus === "active";
 
     // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards, và miniquiz nếu có)
     const theoryCompleted = lessonDone && mindmapDone && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
 
-    // Cập nhật status thành completed nếu lý thuyết 100% và (!quizRequired || quizDone)
-    if (theoryCompleted && (!quizRequired || quizDone)) {
+    // Cập nhật status thành completed nếu lý thuyết 100% và (!quizRequired || quizDone) và (!matchingRequired || matchingDone)
+    if (theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone)) {
       const statusCol = headers.indexOf("status");
       const completedAtCol = headers.indexOf("completedAt");
       if (statusCol >= 0)
@@ -6007,7 +6010,7 @@ function getLearningProgressForWeb() {
  */
 function calculateProgressPercent(row, headers) {
   let completed = 0;
-  const total = 4; // lesson, mindmap, flashcards, miniQuiz
+  const total = 6; // lesson, mindmap, flashcards, miniQuiz, quiz, matching
   const isChecked = function (v) {
     return v === 1 || v === true || v === "1" || v === "TRUE";
   };
@@ -6016,6 +6019,8 @@ function calculateProgressPercent(row, headers) {
   if (isChecked(row[headers.indexOf("mindmapViewed")])) completed++;
   if (isChecked(row[headers.indexOf("flashcardsCompleted")])) completed++;
   if (isChecked(row[headers.indexOf("miniQuizCompleted")])) completed++;
+  if (isChecked(row[headers.indexOf("quizDone")])) completed++;
+  if (isChecked(row[headers.indexOf("matchingDone")])) completed++;
 
   return Math.round((completed / total) * 100);
 }

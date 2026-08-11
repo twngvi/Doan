@@ -1438,9 +1438,13 @@
     // Update final progress bar
     updateDeckProgress();
 
-    // Mark flashcards as completed for overall progress
-    onAllFlashcardsViewed();
-    isFlashcardSessionComplete = true;
+    const isPassed = flashcardsData.length > 0 ? (learnedCount / flashcardsData.length >= 0.8) : true;
+    if (isPassed) {
+      onAllFlashcardsViewed();
+      isFlashcardSessionComplete = true;
+    } else {
+      isFlashcardSessionComplete = false;
+    }
 
     if (deckArea) {
       const skippedCount = flashcardsData.length - (learnedCount + reviewCount);
@@ -1449,10 +1453,10 @@
 
       deckArea.innerHTML = `
         <div class="deck-complete">
-          <div class="complete-icon">${isPerfect ? "🎉" : "💪"}</div>
-          <h3 class="complete-title">${isPerfect ? "Hoàn hảo!" : "Hoàn thành!"}</h3>
+          <div class="complete-icon">${isPerfect ? "🎉" : (isPassed ? "💪" : "⚠️")}</div>
+          <h3 class="complete-title">${isPerfect ? "Hoàn hảo!" : (isPassed ? "Hoàn thành!" : "Chưa đạt!")}</h3>
           <p style="opacity: 0.7; margin-bottom: 1rem;">
-            ${isPerfect ? "Bạn đã thuộc tất cả các thẻ!" : "Bạn đã xem hết tất cả các thẻ"}
+            ${isPassed ? "Bạn đã xem hết tất cả các thẻ" : "Bạn cần đạt 80% 'Đã thuộc' để hoàn thành bài học này."}
           </p>
           <div class="complete-stats">
             <div class="complete-stat learned">
@@ -2350,7 +2354,7 @@
       "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
     ).length;
     const totalCount = MINI_QUIZ_REQUIRED_QUESTIONS;
-    const passedQuiz = correctCount >= totalCount;
+    const passedQuiz = totalCount > 0 ? (correctCount / totalCount >= 0.8) : true;
 
     if (!tabCompletion.lessonQuiz) {
       var optimisticUsed = Number(window.currentMiniQuizAttempts || 0) + 1;
