@@ -3811,6 +3811,7 @@ function parseHtmlBlocks(html) {
 function stripHtml(html) {
   if (!html) return '';
   return html
+    .replace(/<\/(p|div)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
