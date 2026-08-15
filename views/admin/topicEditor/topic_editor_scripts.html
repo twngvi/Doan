@@ -995,7 +995,10 @@ function enhanceTopicEditorPreviewContent(container) {
   paragraphs.forEach(function(p) {
     const text = p.textContent.trim();
     const hasOnlyBr = p.children.length === 1 && p.children[0].tagName === "BR" && text === "";
-    if (text === "" || hasOnlyBr) {
+    const hasMedia = p.querySelector('img, iframe, video') !== null;
+    
+    // Protect paragraphs that contain media (like images) from being destroyed as spacers
+    if (!hasMedia && (text === "" || hasOnlyBr)) {
       p.classList.add("spacer");
       p.innerHTML = "&nbsp;";
     }
@@ -1093,7 +1096,7 @@ function cleanupVisualBlocksForPreview(html) {
   temp.innerHTML = html;
 
   // Remove all delete buttons
-  temp.querySelectorAll('.visual-block-delete').forEach(function(btn) {
+  temp.querySelectorAll('.visual-block-delete, .image-delete-btn').forEach(function(btn) {
     btn.remove();
   });
 
