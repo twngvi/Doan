@@ -5286,11 +5286,17 @@ sys.stderr = sys.__stderr__
         : getSortedTopicsFromCache();
     if (sorted.length === 0) return false;
 
-    const targetIndex = sorted.findIndex(function (topic) {
+    const targetTopic = sorted.find(function (topic) {
       return String(topic.topicId || "").trim() === safeTopicId;
     });
-    if (targetIndex < 0) return false;
 
+    if (!targetTopic) return false;
+
+    if (typeof targetTopic.unlocked === 'boolean') {
+      return targetTopic.unlocked;
+    }
+
+    const targetIndex = sorted.indexOf(targetTopic);
     return targetIndex === getNextUnlockableTopicIndex(sorted);
   }
 
@@ -5331,7 +5337,7 @@ sys.stderr = sys.__stderr__
           listEl.innerHTML =
             '<div class="topic-switcher-loading">Lỗi tải danh sách</div>';
         })
-        .getAllTopics();
+        .getTopicsForUserPage();
     }
 
     // Close dropdown when clicking outside

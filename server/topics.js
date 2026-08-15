@@ -81,7 +81,7 @@ function getAllTopicsIncludingHidden() {
       iconUrl: headers.indexOf("iconUrl"),
       estimatedTime: headers.indexOf("estimatedTime"),
       prerequisiteTopics: headers.indexOf("prerequisiteTopics"),
-      isLocked: headers.indexOf("isLocked"),
+      isLocked: headers.indexOf("isLocked") !== -1 ? headers.indexOf("isLocked") : headers.indexOf("IsLocked"),
       unlockCondition: headers.indexOf("unlockCondition"),
       createdBy: headers.indexOf("createdBy"),
       createdAt: headers.indexOf("createdAt"),
@@ -990,8 +990,12 @@ function getUnlockConditionObject(topic) {
   }
 
   // Điểm sửa quan trọng:
-  // Dù unlockCondition có tồn tại, vẫn ép prerequisiteTopicIds lấy từ nguồn chuẩn.
-  condition.prerequisiteTopicIds = ids;
+  // Dù unlockCondition có tồn tại, chỉ ép prerequisiteTopicIds nếu có IDs
+  if (ids.length > 0) {
+    condition.prerequisiteTopicIds = ids;
+  } else if (!condition.prerequisiteTopicIds || !Array.isArray(condition.prerequisiteTopicIds)) {
+    condition.prerequisiteTopicIds = [];
+  }
 
   if (!condition.mode) condition.mode = 'all';
   if (!condition.type) condition.type = 'complete_topic';
@@ -1081,14 +1085,14 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
   prereqIds.forEach(function(prereqId) {
     var prereqTopic = topicMap[prereqId];
 
-    // Chỉ bỏ qua đúng prerequisite đang bị ẩn.
-    // Không ảnh hưởng đến các prerequisite khác.
+    // Ghi nhận prerequisite đang bị ẩn nhưng KHÔNG BỎ QUA.
+    // Nếu bỏ qua, bài học phụ thuộc sẽ bị tự động mở khóa!
     if (prereqTopic && isTopicHidden(prereqTopic)) {
       ignoredHiddenPrerequisites.push({
         topicId: prereqId,
         title: prereqTopic.title || prereqId
       });
-      return;
+      // DO NOT return here, we still want to add it to visiblePrereqIds to enforce the lock.
     }
 
     // Nếu prerequisite không tồn tại trong DB thì KHÔNG nên auto mở.

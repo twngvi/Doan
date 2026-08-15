@@ -4696,6 +4696,15 @@ function updateTopicWithContent(topicId, topicData) {
       sheet.getRange(rowNum, orderCol + 1).setValue(newOrderValue);
     }
     
+    ["prerequisiteTopics", "unlockCondition", "isLocked"].forEach(function(colName) {
+      var colIndex = headers.indexOf(colName);
+      if (colIndex === -1) {
+        colIndex = headers.length;
+        sheet.getRange(1, colIndex + 1).setValue(colName);
+        headers.push(colName);
+      }
+    });
+
     var prereqCol = headers.indexOf("prerequisiteTopics");
     var unlockCol = headers.indexOf("unlockCondition");
     var isLockedCol = headers.indexOf("isLocked");
