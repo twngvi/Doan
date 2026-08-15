@@ -2391,8 +2391,9 @@ function normalizeLoadedTablesForEditor(editor) {
     table.classList.add('editor-content-table');
 
     var parent = table.parentElement;
+    var wrapper = parent;
     if (!parent || !parent.classList || !parent.classList.contains('editor-table-wrapper')) {
-      var wrapper = document.createElement('div');
+      wrapper = document.createElement('div');
       wrapper.className = 'editor-table-wrapper';
       table.parentNode.insertBefore(wrapper, table);
       wrapper.appendChild(table);
@@ -2409,6 +2410,29 @@ function normalizeLoadedTablesForEditor(editor) {
           th.innerHTML = td.innerHTML;
           td.parentNode.replaceChild(th, td);
         }
+      }
+    }
+
+    // Clean up multiple trailing empty paragraphs caused by auto-appending
+    // (preventing the issue where extra blank lines are added below tables on every edit)
+    var nextNode = wrapper.nextElementSibling;
+    var emptyParaCount = 0;
+    while (nextNode && nextNode.tagName === 'P') {
+      var text = (nextNode.textContent || '').trim();
+      var hasBr = nextNode.querySelector('br') !== null;
+      var isTrulyEmpty = text === '' && (!nextNode.children.length || (nextNode.children.length === 1 && hasBr));
+      
+      if (isTrulyEmpty) {
+        var toRemove = nextNode;
+        nextNode = nextNode.nextElementSibling;
+        
+        if (emptyParaCount >= 1) {
+          toRemove.remove();
+        } else {
+          emptyParaCount++;
+        }
+      } else {
+        break;
       }
     }
   }
