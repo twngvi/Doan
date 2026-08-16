@@ -1189,13 +1189,9 @@ function getTopicsForUserPage() {
     });
 
     visibleTopics.sort(function(a, b) {
-      var catA = normalizeCategoryName(a.category);
-      var catB = normalizeCategoryName(b.category);
-
-      if (catA !== catB) {
-        return catA.localeCompare(catB, 'vi');
+      if (a.order !== b.order) {
+        return (a.order || 999) - (b.order || 999);
       }
-
       return (a.rowIndex || 0) - (b.rowIndex || 0);
     });
 
