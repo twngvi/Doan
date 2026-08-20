@@ -3043,6 +3043,123 @@ function createTopicDocument(title, htmlContent) {
  * @param {string} html - N뿯½뿯½™i dung HTML (with block markers as text)
  * @param {Body} body - Body c뿯½뿯½뿯½a Google Doc
  */
+
+function extractFormatting(html) {
+  var text = "";
+  var formats = [];
+  var pos = 0;
+  
+  var tagRegex = /<\/?(b|strong|i|em|u)[^>]*>|<br\s*\/?>|<\/(p|div)>|&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;|&#x27;|&#x2F;|<[^>]+>/gi;
+  var lastIndex = 0;
+  var match;
+  
+  while ((match = tagRegex.exec(html)) !== null) {
+    if (match.index > lastIndex) {
+      var before = html.substring(lastIndex, match.index);
+      text += before;
+      pos += before.length;
+    }
+    
+    var tag = match[0].toLowerCase();
+    if (tag.indexOf('<b') === 0 || tag.indexOf('<strong') === 0) {
+      formats.push({ type: 'bold', start: pos, val: true });
+    } else if (tag === '</b>' || tag === '</strong>') {
+      formats.push({ type: 'bold', start: pos, val: false });
+    } else if (tag.indexOf('<i') === 0 || tag.indexOf('<em') === 0) {
+      formats.push({ type: 'italic', start: pos, val: true });
+    } else if (tag === '</i>' || tag === '</em>') {
+      formats.push({ type: 'italic', start: pos, val: false });
+    } else if (tag.indexOf('<u') === 0) {
+      formats.push({ type: 'underline', start: pos, val: true });
+    } else if (tag === '</u>') {
+      formats.push({ type: 'underline', start: pos, val: false });
+    } else if (tag.indexOf('<br') === 0 || tag === '</p>' || tag === '</div>') {
+      text += '\n'; pos++;
+    } else if (tag === '&nbsp;') {
+      text += ' '; pos++;
+    } else if (tag === '&amp;') {
+      text += '&'; pos++;
+    } else if (tag === '&lt;') {
+      text += '<'; pos++;
+    } else if (tag === '&gt;') {
+      text += '>'; pos++;
+    } else if (tag === '&quot;') {
+      text += '"'; pos++;
+    } else if (tag === '&#39;' || tag === '&#x27;') {
+      text += "'"; pos++;
+    } else if (tag === '&#x2f;') {
+      text += "/"; pos++;
+    } else {
+      // ignore other tags
+    }
+    
+    lastIndex = tagRegex.lastIndex;
+  }
+  
+  if (lastIndex < html.length) {
+    text += html.substring(lastIndex);
+  }
+  
+  var ranges = [];
+  var active = { bold: -1, italic: -1, underline: -1 };
+  
+  for (var i = 0; i < formats.length; i++) {
+    var f = formats[i];
+    if (f.val) {
+      if (active[f.type] === -1) active[f.type] = f.start;
+    } else {
+      if (active[f.type] !== -1) {
+        if (f.start > active[f.type]) {
+          ranges.push({ type: f.type, start: active[f.type], end: f.start - 1 });
+        }
+        active[f.type] = -1;
+      }
+    }
+  }
+  
+  return { text: text, ranges: ranges };
+}
+
+function appendFormattedParagraph(body, html) {
+  var extracted = extractFormatting(html);
+  if (!extracted.text) {
+    return body.appendParagraph("");
+  }
+  var paragraph = body.appendParagraph(extracted.text);
+  if (extracted.text.length > 0) {
+    var textElement = paragraph.editAsText();
+    for (var i = 0; i < extracted.ranges.length; i++) {
+      var range = extracted.ranges[i];
+      if (range.start <= range.end && range.end < extracted.text.length) {
+        if (range.type === 'bold') textElement.setBold(range.start, range.end, true);
+        else if (range.type === 'italic') textElement.setItalic(range.start, range.end, true);
+        else if (range.type === 'underline') textElement.setUnderline(range.start, range.end, true);
+      }
+    }
+  }
+  return paragraph;
+}
+
+function appendFormattedListItem(body, html) {
+  var extracted = extractFormatting(html);
+  if (!extracted.text) {
+    return body.appendListItem("");
+  }
+  var listItem = body.appendListItem(extracted.text);
+  if (extracted.text.length > 0) {
+    var textElement = listItem.editAsText();
+    for (var i = 0; i < extracted.ranges.length; i++) {
+      var range = extracted.ranges[i];
+      if (range.start <= range.end && range.end < extracted.text.length) {
+        if (range.type === 'bold') textElement.setBold(range.start, range.end, true);
+        else if (range.type === 'italic') textElement.setItalic(range.start, range.end, true);
+        else if (range.type === 'underline') textElement.setUnderline(range.start, range.end, true);
+      }
+    }
+  }
+  return listItem;
+}
+
 function convertHtmlToDocContent(html, body) {
   try {
     // Remove existing content
@@ -3126,31 +3243,32 @@ function convertHtmlToDocContent(html, body) {
 
         switch (block.type) {
           case 'h1':
-            var h1p = body.appendParagraph(block.text || '');
+            var h1p = appendFormattedParagraph(body, block.rawHtml || block.text || '');
             h1p.setHeading(DocumentApp.ParagraphHeading.HEADING1);
             break;
 
           case 'h2':
-            var h2p = body.appendParagraph(block.text || '');
+            var h2p = appendFormattedParagraph(body, block.rawHtml || block.text || '');
             h2p.setHeading(DocumentApp.ParagraphHeading.HEADING2);
             break;
 
           case 'h3':
-            var h3p = body.appendParagraph(block.text || '');
+            var h3p = appendFormattedParagraph(body, block.rawHtml || block.text || '');
             h3p.setHeading(DocumentApp.ParagraphHeading.HEADING3);
             break;
 
           case 'p':
           case 'div':
             if (block.text && block.text.trim()) {
-              body.appendParagraph(block.text);
+              appendFormattedParagraph(body, block.rawHtml || block.text);
             }
             break;
 
           case 'ul':
             if (block.items && block.items.length > 0) {
               for (var j = 0; j < block.items.length; j++) {
-                var uli = body.appendListItem(block.items[j]);
+                var rawItem = (block.rawItems && block.rawItems[j]) ? block.rawItems[j] : block.items[j];
+                var uli = appendFormattedListItem(body, rawItem);
                 uli.setGlyphType(DocumentApp.GlyphType.BULLET);
               }
             }
@@ -3159,7 +3277,8 @@ function convertHtmlToDocContent(html, body) {
           case 'ol':
             if (block.items && block.items.length > 0) {
               for (var j2 = 0; j2 < block.items.length; j2++) {
-                var oli = body.appendListItem(block.items[j2]);
+                var rawItem2 = (block.rawItems && block.rawItems[j2]) ? block.rawItems[j2] : block.items[j2];
+                var oli = appendFormattedListItem(body, rawItem2);
                 oli.setGlyphType(DocumentApp.GlyphType.NUMBER);
               }
             }
@@ -3246,7 +3365,7 @@ function convertHtmlToDocContent(html, body) {
 
           default:
             if (block.text && block.text.trim()) {
-              body.appendParagraph(block.text);
+              appendFormattedParagraph(body, block.rawHtml || block.text);
             }
         }
       }
@@ -3695,12 +3814,15 @@ function parseHtmlBlocks(html) {
       if (pattern.type === 'ul' || pattern.type === 'ol') {
         // Extract list items
         const items = [];
+        const rawItems = [];
         const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
         let liMatch;
         while ((liMatch = liRegex.exec(match[1])) !== null) {
           items.push(stripHtml(liMatch[1]));
+          rawItems.push(liMatch[1]);
         }
         matchData.items = items;
+        matchData.rawItems = rawItems;
       } else if (pattern.type === 'table') {
         const tableInnerHtml = match[1] || '';
         const rows = [];
@@ -3749,6 +3871,7 @@ function parseHtmlBlocks(html) {
         if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<div\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(pInnerHtml)) {
           continue;
         }
+        matchData.rawHtml = pInnerHtml;
         matchData.text = stripHtml(pInnerHtml);
       } else if (pattern.type === 'div') {
         const divInnerHtml = match[1] || "";
@@ -3756,8 +3879,10 @@ function parseHtmlBlocks(html) {
         if (/<img\b|<ul\b|<ol\b|<pre\b|<table\b|<h[1-6]\b|class=(["'])[^"']*\b(?:image-wrapper|code-block|callout|editor-table-wrapper)\b[^"']*\1/i.test(divInnerHtml)) {
           continue;
         }
+        matchData.rawHtml = divInnerHtml;
         matchData.text = stripHtml(divInnerHtml);
       } else {
+        matchData.rawHtml = match[1] || '';
         matchData.text = stripHtml(match[1] || '');
       }
       
