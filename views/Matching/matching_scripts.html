@@ -938,7 +938,10 @@
       .withFailureHandler(function (error) {
         console.warn("⚠️ Failed to load matching stats:", error);
       })
-      .getMatchingStatsPerTopic();
+      .getMatchingStatsPerTopic({
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   function loadMatchingValidCountsIfNeeded(forceRefresh) {
@@ -1618,7 +1621,10 @@
           emptyEl.textContent = "Không thể tải lịch sử chơi.";
         }
       })
-      .getMatchingHistoryByTopic(topicId, 50);
+      .getMatchingHistoryByTopic(topicId, 50, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   function formatMatchingModeLabel(rawModeKey) {
@@ -1764,7 +1770,10 @@
           }
           panel.innerHTML = '<p class="matching-history-inline-error">Không thể tải chi tiết lượt chơi.</p>';
         })
-        .getMatchingResultDetailById(resultId);
+        .getMatchingResultDetailById(resultId, {
+          email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+          sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+        });
 
       return;
     }
@@ -1788,7 +1797,10 @@
       .withFailureHandler(function () {
         body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
       })
-      .getMatchingResultDetailById(resultId);
+      .getMatchingResultDetailById(resultId, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   };
 
   window.closeMatchingHistoryDetail = function () {
@@ -3128,7 +3140,10 @@
             // Still notify dashboard even if activity log fails
             window.dispatchEvent(new Event("dashboard-needs-refresh"));
           })
-          .saveActivityLog(activityLogData);
+          .saveActivityLog(activityLogData, null, {
+            email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+            sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+          });
       })
       .withFailureHandler(function (error) {
         console.error("❌ Error saving matching result:", error);
@@ -3144,9 +3159,15 @@
             console.error("❌ Error saving matching activity log:", error2);
             window.dispatchEvent(new Event("dashboard-needs-refresh"));
           })
-          .saveActivityLog(activityLogData);
+          .saveActivityLog(activityLogData, null, {
+            email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+            sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+          });
       })
-      .saveMatchingResult(resultPayload);
+      .saveMatchingResult(resultPayload, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   // ===== SAVE NOTIFICATION =====

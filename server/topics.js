@@ -651,7 +651,7 @@ function getUserTopicProgress(authContext) {
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
+              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone,
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,

@@ -2205,13 +2205,15 @@ function updatePersonalProfilePoints(progressSheetId, totalXP, totalXQP) {
  * @param {object} resultData - Quiz result data
  * @returns {object} - {success, message}
  */
-function saveQuizResult(resultData) {
+function saveQuizResult(resultData, authContext) {
   try {
     Logger.log("=== SAVE QUIZ RESULT TO PERSONAL SHEET ===");
     Logger.log("Result data: " + JSON.stringify(resultData));
 
     // Get current user email
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       Logger.log("⚠️ No user email, cannot save to personal sheet");
       return { success: false, message: "User not logged in" };
@@ -2489,17 +2491,11 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
       var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1 || currentData[headers.indexOf("mindmapViewed")] === true;
       var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
       var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
+      var matchingCol = headers.indexOf("matchingDone");
+      var matchingDone = matchingCol >= 0 && (currentData[matchingCol] === 1 || currentData[matchingCol] === true);
       var quizDone = true; // quiz is now done too
 
-      // Check if topic has active quiz
-      var topicsResult = getAllTopicsIncludingHidden();
-      var topic = null;
-      if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
-        topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
-      }
-      var quizRequired = topic && topic.quizStatus === "active";
-
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone) {
         if (statusCol >= 0)
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
@@ -2580,12 +2576,14 @@ function getOrCreateMatchingResultsSheet(spreadsheet) {
  * @param {object} resultData - Matching result data
  * @returns {object} - {success, message}
  */
-function saveMatchingResult(resultData) {
+function saveMatchingResult(resultData, authContext) {
   try {
     Logger.log("=== SAVE MATCHING RESULT TO PERSONAL SHEET ===");
     Logger.log("Result data: " + JSON.stringify(resultData));
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       Logger.log("⚠️ No user email, cannot save to personal sheet");
       return { success: false, message: "User not logged in" };
@@ -2826,16 +2824,9 @@ function updateMatchingDoneInTopicProgress(userId, topicId) {
       var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
       var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
       var quizDone = currentData[headers.indexOf("quizDone")] === 1 || currentData[headers.indexOf("quizDone")] === true;
+      var matchingDone = true;
 
-      // Check if topic has active quiz
-      var topicsResult = getAllTopicsIncludingHidden();
-      var topic = null;
-      if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
-        topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
-      }
-      var quizRequired = topic && topic.quizStatus === "active";
-
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && (!quizRequired || quizDone)) {
+      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone) {
         if (statusCol >= 0)
           sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
         if (completedAtCol >= 0)
@@ -2876,9 +2867,14 @@ function getOrCreateActivityLogSheet(spreadsheet) {
  * Save an activity to the user's personal Activity_Log sheet
  * @param {object} data - { type: "Learning"|"MCQ"|"Matching", topicId, topicTitle, score?, totalQuestions?, percentage? }
  */
-function saveActivityLog(data, userEmailOverride) {
+function saveActivityLog(data, userEmailOverride, authContext) {
   try {
-    const userEmail = userEmailOverride || Session.getActiveUser().getEmail();
+    let userEmail = userEmailOverride;
+    if (!userEmail) {
+      userEmail = (typeof getVerifiedEmail === 'function' && authContext)
+                ? getVerifiedEmail(authContext)
+                : Session.getActiveUser().getEmail();
+    }
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in" };
     }
@@ -3843,9 +3839,11 @@ function verifyQuestCompletion(spreadsheet, questId, today, xpSheet) {
  * @param {number} limit - Max number of activities to return (default 10)
  * @returns {object} - { success, activities: [...] }
  */
-function getActivityLog(limit) {
+function getActivityLog(limit, authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", activities: [] };
     }
@@ -3919,9 +3917,11 @@ function getActivityLog(limit) {
  * Used by dashboard to show recent activity
  * @returns {object} - { success, results: [...] }
  */
-function getUserQuizResults() {
+function getUserQuizResults(authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", results: [] };
     }
@@ -3999,14 +3999,16 @@ function getUserQuizResults() {
  * @param {number=} limit
  * @returns {{success:boolean, history:Array, message?:string}}
  */
-function getQuizHistoryByTopic(topicId, limit) {
+function getQuizHistoryByTopic(topicId, limit, authContext) {
   try {
     const topicIdStr = String(topicId || "").trim();
     if (!topicIdStr) {
       return { success: false, message: "Thiếu topicId", history: [] };
     }
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", history: [] };
     }
@@ -4245,14 +4247,16 @@ function getQuizResultDetailById(resultId) {
  * @param {number=} limit
  * @returns {{success:boolean, history:Array, message?:string}}
  */
-function getMatchingHistoryByTopic(topicId, limit) {
+function getMatchingHistoryByTopic(topicId, limit, authContext) {
   try {
     const topicIdStr = String(topicId || "").trim();
     if (!topicIdStr) {
       return { success: false, message: "Thiếu topicId", history: [] };
     }
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", history: [] };
     }
@@ -4842,13 +4846,15 @@ function resetAllLearningData(userContext) {
  * @param {object} wrongData - Wrong answer data
  * @returns {object} - {success, message}
  */
-function saveWrongAnswer(wrongData) {
+function saveWrongAnswer(wrongData, authContext) {
   try {
     Logger.log("=== SAVE WRONG ANSWER TO PERSONAL SHEET ===");
     Logger.log("Wrong data: " + JSON.stringify(wrongData));
 
     // Get current user email
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext)
+                    ? getVerifiedEmail(authContext)
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       Logger.log("⚠️ No user email, cannot save to personal sheet");
       return { success: false, message: "User not logged in" };
@@ -4989,12 +4995,14 @@ function getWrongAnswersForTopic(topicId) {
  * @param {string} questionId - Question ID
  * @returns {object} - {success, message}
  */
-function markQuestionMastered(topicId, questionId) {
+function markQuestionMastered(topicId, questionId, authContext) {
   try {
     Logger.log("=== MARK QUESTION MASTERED IN PERSONAL SHEET ===");
 
     // Get current user email
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext)
+                    ? getVerifiedEmail(authContext)
+                    : Session.getActiveUser().getEmail();
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "User not logged in" };
     }
@@ -5128,9 +5136,11 @@ function saveMasteredQuestion(masteredData) {
  * @param {string} topicId - Topic ID
  * @returns {Array} - Array of mastered questionIds
  */
-function getMasteredQuestionIds(topicId) {
+function getMasteredQuestionIds(topicId, authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext)
+                    ? getVerifiedEmail(authContext)
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return [];
     }
@@ -5831,8 +5841,8 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards, và miniquiz nếu có)
     const theoryCompleted = lessonDone && mindmapDone && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
 
-    // Cập nhật status thành completed nếu lý thuyết 100% và (!quizRequired || quizDone) và (!matchingRequired || matchingDone)
-    if (theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone)) {
+    // Cập nhật status thành completed nếu lý thuyết 100%, quizDone và matchingDone
+    if (theoryCompleted && quizDone && matchingDone) {
       const statusCol = headers.indexOf("status");
       const completedAtCol = headers.indexOf("completedAt");
       if (statusCol >= 0)

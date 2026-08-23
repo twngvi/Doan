@@ -713,7 +713,10 @@
       .withFailureHandler(function (error) {
         console.warn("⚠️ Failed to load quiz stats:", error);
       })
-      .getQuizStatsPerTopic();
+      .getQuizStatsPerTopic({
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   /**
@@ -1464,7 +1467,10 @@
           emptyEl.textContent = "Không thể tải lịch sử chơi.";
         }
       })
-      .getQuizHistoryByTopic(topicId, 50);
+      .getQuizHistoryByTopic(topicId, 50, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   function renderQuizTopicHistory(history) {
@@ -1725,7 +1731,10 @@
           }
           panel.innerHTML = '<p class="mcq-history-inline-error">Không thể tải chi tiết lượt chơi.</p>';
         })
-        .getQuizResultDetailById(resultId);
+        .getQuizResultDetailById(resultId, {
+          email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+          sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+        });
 
       return;
     }
@@ -1752,7 +1761,10 @@
       .withFailureHandler(function () {
         body.innerHTML = "<p>Không thể tải chi tiết lượt chơi.</p>";
       })
-      .getQuizResultDetailById(resultId);
+      .getQuizResultDetailById(resultId, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   };
 
   window.closeQuizHistoryDetail = function () {
@@ -2158,7 +2170,10 @@
         masteredLoaded = true;
         tryProcessResults();
       })
-      .getMasteredQuestionIds(requestedTopicId);
+      .getMasteredQuestionIds(requestedTopicId, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
 
     // ⭐ PARALLEL 2: Load questions from DB
     google.script.run
@@ -3248,7 +3263,10 @@
         console.error("❌ Error saving mastered question:", err);
         saveMCQPendingAction("saveMasteredQuestion", masteredData);
       })
-      .saveMasteredQuestion(masteredData);
+      .saveMasteredQuestion(masteredData, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   /**
@@ -3294,7 +3312,10 @@
         console.error("❌ Error saving wrong answer:", err);
         saveMCQPendingAction("saveWrongAnswer", wrongData);
       })
-      .saveWrongAnswer(wrongData);
+      .saveWrongAnswer(wrongData, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   /**
@@ -3645,6 +3666,9 @@
             score: finalScore,
             totalQuestions: totalQuestions,
             percentage: percentage,
+          }, null, {
+            email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+            sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
           });
       }
     } catch (e) {
@@ -3945,7 +3969,10 @@
           "Không thể lưu kết quả: " + (error && error.message ? error.message : error)
         );
       })
-      .saveQuizResult(resultData);
+      .saveQuizResult(resultData, {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   /**
