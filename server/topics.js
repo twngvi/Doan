@@ -519,10 +519,12 @@ function getTopicById(topicId, includeHidden = false) {
 /**
  * Get user's progress for all topics
  */
-function getUserTopicProgress() {
+function getUserTopicProgress(authContext) {
   try {
     // ⭐ FIX: Use Session.getActiveUser() + getUserProgressSheetIdByEmail (working pattern)
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return {
         success: false,
@@ -1289,9 +1291,11 @@ function getTopicsForUserPage() {
 /**
  * Check if user can access a topic (unlock logic)
  */
-function checkTopicAccess(topicId) {
+function checkTopicAccess(topicId, authContext) {
   try {
-    var userEmail = Session.getActiveUser().getEmail();
+    var userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return {
         success: false,
@@ -1333,7 +1337,7 @@ function checkTopicAccess(topicId) {
       topicMap[String(t.topicId)] = t;
     });
 
-    var progressResult = getUserTopicProgress();
+    var progressResult = getUserTopicProgress(authContext);
     var progressMap =
       progressResult && progressResult.success
         ? progressResult.progress || {}

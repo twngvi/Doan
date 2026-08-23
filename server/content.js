@@ -6491,13 +6491,13 @@ function clearLessonHtmlCache(topicId) {
  * @param {string} topicId - ID của bài học
  * @returns {object} bundle data
  */
-function getLessonInitialBundle(topicId) {
+function getLessonInitialBundle(topicId, authContext) {
   try {
     Logger.log("=== GET LESSON INITIAL BUNDLE ===");
     Logger.log("Topic ID: " + topicId);
 
     // 1. Check access
-    const access = checkTopicAccess(topicId);
+    const access = checkTopicAccess(topicId, authContext);
     if (!access || !access.success || !access.unlocked) {
       return {
         success: false,
@@ -6547,7 +6547,7 @@ function getLessonInitialBundle(topicId) {
 
     // 4. Get Progress
     let progressData = null;
-    const progressResult = getUserTopicProgress();
+    const progressResult = getUserTopicProgress(authContext);
     if (progressResult && progressResult.success && progressResult.progress) {
       progressData = progressResult.progress[topicId] || null;
     }
