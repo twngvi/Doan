@@ -5529,14 +5529,16 @@ function getCardsForReview(topicId) {
  * @param {Object} progressData - Dữ liệu tiến trình
  * @returns {Object} - {success, message}
  */
-function saveLearningProgressForWeb(topicId, progressType, progressData) {
+function saveLearningProgressForWeb(topicId, progressType, progressData, authContext) {
   Logger.log("📚 saveLearningProgressForWeb CALLED");
   Logger.log("Args: topicId=" + topicId + ", type=" + progressType);
   Logger.log("Data: " + JSON.stringify(progressData));
 
   try {
-    // Lấy thông tin user hiện tại
-    const userEmail = Session.getActiveUser().getEmail();
+    // Lấy thông tin user hiện tại thông qua custom auth hoặc fallback
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: "User not authenticated" };
     }
@@ -5898,10 +5900,12 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
  * @param {string} topicId
  * @returns {Object} - {success, data}
  */
-function getTopicProgressForWeb(topicId) {
+function getTopicProgressForWeb(topicId, authContext) {
   Logger.log("📊 getTopicProgressForWeb CALLED for topic: " + topicId);
   try {
-    var userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail)
       return { success: false, message: "Not authenticated", data: null };
     var userId = getUserIdByEmail(userEmail);
@@ -5948,11 +5952,13 @@ function getTopicProgressForWeb(topicId) {
  * Lấy tiến trình học tập của user cho tất cả topics
  * @returns {Object} - {success, data: {topicId: progressData}}
  */
-function getLearningProgressForWeb() {
+function getLearningProgressForWeb(authContext) {
   Logger.log("📊 getLearningProgressForWeb CALLED");
 
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: "User not authenticated", data: {} };
     }

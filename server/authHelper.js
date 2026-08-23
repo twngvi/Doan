@@ -45,28 +45,3 @@ function getVerifiedEmail(authContext) {
   }
 }
 
-/**
- * Helper to get userId from email (since checkSession requires userId)
- */
-function getUserIdByEmail(email) {
-  try {
-    const usersSheet = getSheet("Users");
-    if (!usersSheet) return null;
-    
-    const data = usersSheet.getDataRange().getValues();
-    const headers = data[0];
-    const emailIndex = headers.indexOf("email");
-    const userIdIndex = headers.indexOf("userId");
-    
-    if (emailIndex === -1 || userIdIndex === -1) return null;
-    
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][emailIndex] === email) {
-        return data[i][userIdIndex];
-      }
-    }
-  } catch (e) {
-    Logger.log("Error in getUserIdByEmail: " + e.toString());
-  }
-  return null;
-}
