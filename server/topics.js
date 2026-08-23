@@ -1434,9 +1434,11 @@ function getTopicStatistics(topicId) {
  * Lấy số lượt làm Mini Quiz hôm nay
  * @param {string} topicId
  */
-function getMiniQuizAttempts(topicId) {
+function getMiniQuizAttempts(topicId, authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: "User not authenticated" };
     }
@@ -1460,9 +1462,11 @@ function getMiniQuizAttempts(topicId) {
  * Ghi nhận 1 lượt làm Mini Quiz hôm nay
  * @param {string} topicId
  */
-function recordMiniQuizAttempt(topicId) {
+function recordMiniQuizAttempt(topicId, authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function') 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: "User not authenticated" };
     }
