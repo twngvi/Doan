@@ -172,19 +172,24 @@
           merged[topicId].matchingDone =
             merged[topicId].matchingDone || localData.matchingDone || false;
 
-          // Recalculate progress percentage
           var count = 0;
           if (merged[topicId].lessonCompleted) count++;
           if (merged[topicId].mindmapViewed) count++;
           if (merged[topicId].flashcardsCompleted) count++;
-          if (merged[topicId].miniQuizCompleted) count++;
-          merged[topicId].progress = Math.round((count / 4) * 100);
-
+          
           var topic = allTopics.find(function(t) { return t.topicId === topicId; });
           var quizRequired = topic && topic.quizStatus === "active";
-          var quizDone = merged[topicId].quizDone === true;
-
-          merged[topicId].completed = (count === 4) && (!quizRequired || quizDone);
+          var matchingRequired = topic && topic.matchingStatus === "active";
+          var quizDone = merged[topicId].quizDone;
+          var matchingDone = merged[topicId].matchingDone;
+          
+          merged[topicId].completed = (count === 3) && (!quizRequired || quizDone) && (!matchingRequired || matchingDone);
+          
+          // Re-calculate progressPercent
+          var totalAct = 3;
+          if (quizRequired) { totalAct++; if (quizDone) count++; }
+          if (matchingRequired) { totalAct++; if (matchingDone) count++; }
+          merged[topicId].progress = Math.round((count / totalAct) * 100);
         }
       } catch (e) {
         console.warn("⚠️ Could not merge localStorage progress:", e);
@@ -1646,7 +1651,7 @@
         };
       }
 
-      const hasAnyProgress = !!(progress && Number(progress.progress || 0) > 0);
+      const hasAnyProgress = !!(progress && (Number(progress.progress || 0) > 0 || progress.status === 'in_progress'));
       return {
         label: hasAnyProgress ? "ĐANG HỌC" : "CHƯA HỌC",
         className: hasAnyProgress ? "topic-state-current" : "topic-state-new",
@@ -1682,8 +1687,7 @@
       return !!(
         progress.lessonCompleted &&
         progress.mindmapViewed &&
-        progress.flashcardsCompleted &&
-        progress.miniQuizCompleted
+        progress.flashcardsCompleted
       );
     }
 
@@ -1715,8 +1719,8 @@
 
       // Tooltip text cho lý thuyết
       const theoryTooltip = theoryDone
-        ? '✅ Đã hoàn thành lý thuyết (4/4)'
-        : '📖 Cần hoàn thành: Bài học + Mini Quiz + Mindmap + Flashcard (4/4)';
+        ? '✅ Đã hoàn thành lý thuyết (3/3)'
+        : '📖 Cần hoàn thành: Bài học + Mindmap + Flashcard (3/3)';
 
       // Quiz: đậm màu khi có lần chơi đạt ≥80%
       const quizPercent = getTopicQuizPercent(topicId);

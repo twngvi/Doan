@@ -629,29 +629,33 @@ function getUserTopicProgress(authContext) {
           const matchingDone =
             matchingDoneIdx >= 0 && isChecked(row[matchingDoneIdx]);
 
-          // ⭐ Calculate progress percentage based on 4 activities (25% each)
-          // 4 phần: Bài học, Mindmap, Flashcard, Mini Quiz
-          let progressPercent = 0;
-          let completedCount = 0;
-          const totalActivities = 6; // lesson, mindmap, flashcards, miniQuiz, quiz, matching
-          if (lessonDone) completedCount++;
-          if (mindmapDone) completedCount++;
-          if (flashcardsDone) completedCount++;
-          if (miniQuizDone) completedCount++;
-          if (quizDone) completedCount++;
-          if (matchingDone) completedCount++;
-          progressPercent = Math.round(
-            (completedCount / totalActivities) * 100,
-          );
-
           const topic = topicMap[topicId];
           const quizRequired = topic && topic.quizStatus === "active";
           const matchingRequired = topic && topic.matchingStatus === "active";
 
+          let progressPercent = 0;
+          let completedCount = 0;
+          let totalActivities = 3; // lesson, mindmap, flashcards
+          if (lessonDone) completedCount++;
+          if (mindmapDone) completedCount++;
+          if (flashcardsDone) completedCount++;
+          
+          if (quizRequired) {
+            totalActivities++;
+            if (quizDone) completedCount++;
+          }
+          if (matchingRequired) {
+            totalActivities++;
+            if (matchingDone) completedCount++;
+          }
+          progressPercent = Math.round(
+            (completedCount / totalActivities) * 100,
+          );
+
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone,
+              lessonDone && mindmapDone && flashcardsDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,

@@ -211,9 +211,19 @@
         if (merged[topicId].lessonCompleted) count++;
         if (merged[topicId].mindmapViewed) count++;
         if (merged[topicId].flashcardsCompleted) count++;
-        if (merged[topicId].miniQuizCompleted) count++;
-        merged[topicId].progress = Math.round((count / 4) * 100);
-        merged[topicId].completed = count === 4;
+        
+        var topic = allTopics.find(function(t) { return t.topicId === topicId; });
+        var quizRequired = topic && topic.quizStatus === "active";
+        var matchingRequired = topic && topic.matchingStatus === "active";
+        var quizDone = merged[topicId].quizDone;
+        var matchingDone = merged[topicId].matchingDone;
+        
+        merged[topicId].completed = (count === 3) && (!quizRequired || quizDone) && (!matchingRequired || matchingDone);
+        
+        var totalAct = 3;
+        if (quizRequired) { totalAct++; if (quizDone) count++; }
+        if (matchingRequired) { totalAct++; if (matchingDone) count++; }
+        merged[topicId].progress = Math.round((count / totalAct) * 100);
       }
     } catch (e) {
       console.warn("⚠️ Could not merge localStorage progress for MCQ:", e);

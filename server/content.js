@@ -5838,17 +5838,23 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     var quizRequired = topic && topic.quizStatus === "active";
     var matchingRequired = topic && topic.matchingStatus === "active";
 
-    // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards, và miniquiz nếu có)
-    const theoryCompleted = lessonDone && mindmapDone && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
+    // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards)
+    const theoryCompleted = lessonDone && mindmapDone && flashcardsDone;
 
     // Cập nhật status thành completed nếu lý thuyết 100%, quizDone và matchingDone
-    if (theoryCompleted && quizDone && matchingDone) {
+    if (theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone)) {
       const statusCol = headers.indexOf("status");
       const completedAtCol = headers.indexOf("completedAt");
       if (statusCol >= 0)
         sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
       if (completedAtCol >= 0 && !currentData[completedAtCol])
         sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+    } else {
+      // If they haven't completed it, make sure it stays "in_progress"
+      const statusCol = headers.indexOf("status");
+      if (statusCol >= 0 && currentData[statusCol] !== "in_progress") {
+        sheet.getRange(rowIndex, statusCol + 1).setValue("in_progress");
+      }
     }
 
     // ⭐ Trả thưởng XP Lý thuyết và ghi nhận Daily Quest khi học xong lý thuyết đạt 100%
