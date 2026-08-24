@@ -289,8 +289,8 @@
         showToast("Lỗi reset dữ liệu", "error");
       })
       .clearAllLearningData({
-        userId: user.userId,
-        email: user.email,
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
       });
   }
 
@@ -1478,10 +1478,13 @@
           confirmBtn.disabled = false;
           confirmBtn.innerHTML = originalText;
         }
-        console.error("❌ Reset error:", error);
-        showToast("❌ Lỗi kết nối server: " + error.message, "error");
+        console.error("Lỗi xóa dữ liệu:", error);
+        showToast("Lỗi kết nối máy chủ", "error");
       })
-      .clearAllLearningData();
+      .clearAllLearningData({
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
     // ===== METEOR SHOWER FOR PROFILE PAGE =====
@@ -2069,7 +2072,7 @@
           btn.disabled = false;
           btn.innerHTML = originalHtml;
         }
-        showToast("Lỗi đồng bộ lên server: " + (err.message || "Unknown"), "error");
+        showToast(err.message, "error");
       })
       .apiUpdateStudySettings({
         userId: profileData.userId || "",
