@@ -39,7 +39,7 @@ function getClientCodeArrangement(topicId) {
 /**
  * Fetch all published Code Arrangement games (global)
  */
-function getAllClientCodeArrangements() {
+function getAllClientCodeArrangements(authContext) {
   try {
     const ss = getOrCreateDatabase();
     const sheet = ss.getSheetByName("Code_Arrangement");
@@ -76,8 +76,8 @@ function getAllClientCodeArrangements() {
     // Fetch user progress for Code Arrangements
     let completedArrangements = [];
     try {
-      const userEmail = Session.getActiveUser().getEmail();
-      if (userEmail) {
+      const userEmail = (typeof getVerifiedEmail === 'function') ? getVerifiedEmail(authContext) : Session.getActiveUser().getEmail();
+      if (userEmail && userEmail !== "anonymous") {
         const userId = getUserIdByEmail(userEmail);
         if (userId) {
           const userSS = getUserSpreadsheet(userId);
@@ -111,10 +111,10 @@ function getAllClientCodeArrangements() {
  * @param {string} arrangementId 
  * @returns {Object} {success, message}
  */
-function saveCodeArrangementProgress(topicId, arrangementId) {
+function saveCodeArrangementProgress(topicId, arrangementId, authContext) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) return { success: false, message: "Not authenticated" };
+    const userEmail = (typeof getVerifiedEmail === 'function') ? getVerifiedEmail(authContext) : Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") return { success: false, message: "Not authenticated" };
     
     // getUserIdByEmail is in content.js
     const userId = getUserIdByEmail(userEmail);
@@ -199,14 +199,14 @@ function saveCodeArrangementProgress(topicId, arrangementId) {
  * @param {Array} games Array of {arrangementId, topicId} objects
  * @returns {Object} {success, message}
  */
-function syncBulkCodeArrangementProgress(games) {
+function syncBulkCodeArrangementProgress(games, authContext) {
   try {
     if (!games || !Array.isArray(games) || games.length === 0) {
       return { success: true, message: "No games to sync" };
     }
 
-    const userEmail = Session.getActiveUser().getEmail();
-    if (!userEmail) return { success: false, message: "Not authenticated" };
+    const userEmail = (typeof getVerifiedEmail === 'function') ? getVerifiedEmail(authContext) : Session.getActiveUser().getEmail();
+    if (!userEmail || userEmail === "anonymous") return { success: false, message: "Not authenticated" };
     
     const userId = getUserIdByEmail(userEmail);
     if (!userId) return { success: false, message: "User not found" };

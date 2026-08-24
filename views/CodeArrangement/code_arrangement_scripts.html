@@ -249,7 +249,10 @@
             `;
         }
       })
-      .getAllClientCodeArrangements();
+      .getAllClientCodeArrangements({
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   // ===== CA LOCAL STORAGE CACHE HELPERS =====
@@ -841,7 +844,11 @@
       showCompletedState();
       caCreateConfetti();
 
-      if (!isPreviewMode && currentTopicId && currentArrangementId) {
+      if (!isPreviewMode && currentArrangementId) {
+        const authContext = {
+          email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+          sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+        };
         google.script.run
           .withSuccessHandler(function(res) {
             console.log("Code Arrangement progress saved:", res);
@@ -852,7 +859,7 @@
           .withFailureHandler(function(err) {
             console.error("Failed to save progress:", err);
           })
-          .saveCodeArrangementProgress(currentTopicId, currentArrangementId);
+          .saveCodeArrangementProgress(currentTopicId, currentArrangementId, authContext);
       }
     } else {
       setCodeArrangementFeedback(
@@ -1061,6 +1068,10 @@
     
     if (unsyncedGames.length > 0) {
       console.log(`Syncing ${unsyncedGames.length} Code Arrangement games to database...`);
+      const authContext = {
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      };
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.success) {
@@ -1074,7 +1085,7 @@
         .withFailureHandler(function(err) {
           console.warn("Failed to sync code arrangement progress:", err);
         })
-        .syncBulkCodeArrangementProgress(unsyncedGames);
+        .syncBulkCodeArrangementProgress(unsyncedGames, authContext);
     }
   }
 
