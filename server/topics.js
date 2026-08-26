@@ -635,10 +635,16 @@ function getUserTopicProgress(authContext) {
 
           let progressPercent = 0;
           let completedCount = 0;
-          let totalActivities = 3; // lesson, mindmap, flashcards
+          let totalActivities = 4; // lesson, mindmap, flashcards, miniquiz
+          
           if (lessonDone) completedCount++;
-          if (mindmapDone) completedCount++;
+          if (topic && topic.hasMindmap === false) {
+             totalActivities--;
+          } else if (mindmapDone) {
+             completedCount++;
+          }
           if (flashcardsDone) completedCount++;
+          if (miniQuizDone) completedCount++;
           
           if (quizRequired) {
             totalActivities++;
@@ -655,7 +661,7 @@ function getUserTopicProgress(authContext) {
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
+              lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && miniQuizDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,
