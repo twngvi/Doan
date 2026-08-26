@@ -1683,10 +1683,10 @@
      * Điều kiện: lessonCompleted + mindmapViewed + flashcardsCompleted + miniQuizCompleted đều true.
      * (4/4 mục = 100% tiến độ lý thuyết)
      */
-    function isTopicTheoryFullyDone(progress) {
+    function isTopicTheoryFullyDone(progress, topic) {
       return !!(
         progress.lessonCompleted &&
-        progress.mindmapViewed &&
+        (!topic || !topic.hasMindmap || progress.mindmapViewed) &&
         progress.flashcardsCompleted
       );
     }
@@ -1714,39 +1714,57 @@
 
       // ===== LOGIC MÀU SẮC MỚI =====
       // Lý thuyết: đậm màu khi hoàn thành 100% (bài học + mindmap + flashcard)
-      const theoryDone = isTopicTheoryFullyDone(progress);
+      const theoryDone = isTopicTheoryFullyDone(progress, topic);
       const lessonClass = theoryDone ? 'completed-lesson' : 'unlocked-lesson';
 
       // Tooltip text cho lý thuyết
       const theoryTooltip = theoryDone
-        ? '✅ Đã hoàn thành lý thuyết (3/3)'
-        : '📖 Cần hoàn thành: Bài học + Mindmap + Flashcard (3/3)';
+        ? '✅ Đã hoàn thành lý thuyết'
+        : '📖 Cần hoàn thành: Bài học + Mindmap + Flashcard';
 
-      // Quiz: đậm màu khi có lần chơi đạt ≥80%
+      const theoryLabel = theoryDone ? `Lý thuyết <span style="font-size: 11px; margin-left: auto; padding-left: 6px; font-weight: bold;">✔️ HOÀN THÀNH</span>` : 'Lý thuyết';
+
+      // Quiz: đậm màu và hiện điểm khi có lần chơi đạt > 80% (hoặc server ghi nhận hoàn thành)
       const quizPercent = getTopicQuizPercent(topicId);
-      const quizHighScore = quizPercent >= 80;
+      const quizHighScore = quizPercent > 80 || progress.quizDone;
       const quizClass = quizHighScore ? 'completed-quiz' : 'unlocked-quiz';
-      const quizLabel = quizPercent > 0 ? `Chơi Quiz <span class="menu-score-tag">${quizPercent}%</span>` : 'Chơi Quiz';
+      
+      let quizLabel = 'Chơi Quiz';
+      if (quizHighScore) {
+        if (quizPercent > 0) {
+          quizLabel = `Chơi Quiz <span class="menu-score-tag">${quizPercent}%</span> <span style="font-size: 11px; margin-left: auto; padding-left: 6px; font-weight: bold;">✔️ HOÀN THÀNH</span>`;
+        } else {
+          quizLabel = `Chơi Quiz <span style="font-size: 11px; margin-left: auto; padding-left: 6px; font-weight: bold;">✔️ HOÀN THÀNH</span>`;
+        }
+      }
 
       // Tooltip text cho quiz
       const quizTooltip = quizHighScore
-        ? `✅ Điểm cao nhất: ${quizPercent}% (≥80%)`
+        ? `✅ Đã hoàn thành${quizPercent > 0 ? ' - Điểm cao nhất: ' + quizPercent + '%' : ''}`
         : quizPercent > 0
-          ? `📊 Điểm cao nhất: ${quizPercent}% (cần ≥80%)`
-          : '🎯 Chơi và đạt ≥80% để đổi màu';
+          ? `📊 Điểm cao nhất: ${quizPercent}% (cần >80% để hoàn thành)`
+          : '🎯 Chơi và đạt >80% để hoàn thành';
 
-      // Matching: đậm màu khi có lần chơi đạt ≥80%
+      // Matching: đậm màu và hiện điểm khi có lần chơi đạt > 80% (hoặc server ghi nhận hoàn thành)
       const matchingPercent = getTopicMatchingPercent(topicId);
-      const matchingHighScore = matchingPercent >= 80;
+      const matchingHighScore = matchingPercent > 80 || progress.matchingDone;
       const matchingClass = matchingHighScore ? 'completed-matching' : 'unlocked-matching';
-      const matchingLabel = matchingPercent > 0 ? `Matching <span class="menu-score-tag">${matchingPercent}%</span>` : 'Matching';
+      
+      let matchingLabel = 'Matching';
+      if (matchingHighScore) {
+        if (matchingPercent > 0) {
+          matchingLabel = `Matching <span class="menu-score-tag">${matchingPercent}%</span> <span style="font-size: 11px; margin-left: auto; padding-left: 6px; font-weight: bold;">✔️ HOÀN THÀNH</span>`;
+        } else {
+          matchingLabel = `Matching <span style="font-size: 11px; margin-left: auto; padding-left: 6px; font-weight: bold;">✔️ HOÀN THÀNH</span>`;
+        }
+      }
 
       // Tooltip text cho matching
       const matchingTooltip = matchingHighScore
-        ? `✅ Điểm cao nhất: ${matchingPercent}% (≥80%)`
+        ? `✅ Đã hoàn thành${matchingPercent > 0 ? ' - Điểm cao nhất: ' + matchingPercent + '%' : ''}`
         : matchingPercent > 0
-          ? `📊 Điểm cao nhất: ${matchingPercent}% (cần ≥80%)`
-          : '🎯 Chơi và đạt ≥80% để đổi màu';
+          ? `📊 Điểm cao nhất: ${matchingPercent}% (cần >80% để hoàn thành)`
+          : '🎯 Chơi và đạt >80% để hoàn thành';
 
       const menu = document.createElement('div');
       menu.className = 'topic-action-menu menu-right';
@@ -1789,15 +1807,15 @@
         </div>
         <div class="action-btn-item ${lessonClass}" title="${theoryTooltip}" onclick="window.startTopicDirect('${topicId}', 'lesson')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-          Lý thuyết
+          <span style="display: flex; align-items: center; width: 100%;">${theoryLabel}</span>
         </div>
         <div class="action-btn-item ${quizClass}" title="${quizTooltip}" onclick="window.startTopicDirect('${topicId}', 'quiz')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          ${quizLabel}
+          <span style="display: flex; align-items: center; width: 100%;">${quizLabel}</span>
         </div>
         <div class="action-btn-item ${matchingClass}" title="${matchingTooltip}" onclick="window.startTopicDirect('${topicId}', 'matching')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          ${matchingLabel}
+          <span style="display: flex; align-items: center; width: 100%;">${matchingLabel}</span>
         </div>
       `;
 
