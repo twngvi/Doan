@@ -6725,14 +6725,14 @@ function checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, c
     const quizDone = headers.indexOf("quizDone") >= 0 && isChecked(currentData[headers.indexOf("quizDone")]);
     const matchingDone = headers.indexOf("matchingDone") >= 0 && isChecked(currentData[headers.indexOf("matchingDone")]);
     
-    // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
-    const theoryCompleted = lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
-    
     var topicsResult = getAllTopicsIncludingHidden();
     var topic = null;
     if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
       topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
     }
+    
+    // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
+    const theoryCompleted = lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
     
     // Quiz and Matching are required if they exist for the topic
     var quizRequired = topic && (topic.quizStatus === "active" || topic.hasQuiz);

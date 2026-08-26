@@ -655,7 +655,7 @@ function getUserTopicProgress(authContext) {
           progress[topicId] = {
             topicId: topicId,
             completed:
-              lessonDone && mindmapDone && flashcardsDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
+              lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (!quizRequired || quizDone) && (!matchingRequired || matchingDone),
             progress: progressPercent,
             lessonCompleted: lessonDone,
             mindmapViewed: mindmapDone,
@@ -850,10 +850,12 @@ function grantTopicAccessForUser_(topicId, reason, prerequisiteIds) {
 /**
  * Update user's progress for a topic
  */
-function updateUserTopicProgress(topicId, progressData) {
+function updateUserTopicProgress(topicId, progressData, authContext) {
   try {
-    // ⭐ FIX: Use Session.getActiveUser() instead of broken getUserSession() call
-    const userEmail = Session.getActiveUser().getEmail();
+    // ⭐ FIX: Use authContext to get correct user email if available
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : Session.getActiveUser().getEmail();
     if (!userEmail) {
       return { success: false, message: "User not authenticated" };
     }
