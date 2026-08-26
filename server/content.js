@@ -2483,24 +2483,11 @@ function updateQuizDoneInTopicProgress(userId, topicId) {
       if (lastUpdatedCol >= 0)
         sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
 
-      // Check if ALL activities are now complete
+      // Check if ALL activities are now complete and update calendar
       var currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1 || currentData[headers.indexOf("lessonCompleted")] === true;
-      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1 || currentData[headers.indexOf("mindmapViewed")] === true;
-      var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
-      var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
-      var matchingCol = headers.indexOf("matchingDone");
-      var matchingDone = matchingCol >= 0 && (currentData[matchingCol] === 1 || currentData[matchingCol] === true);
-      var quizDone = true; // quiz is now done too
-
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone) {
-        if (statusCol >= 0)
-          sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
-        if (completedAtCol >= 0)
-          sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
-      }
+      checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, currentData);
 
       Logger.log("✅ Updated quizDone=1 in Topic_Progress for: " + topicId);
     }
@@ -2815,23 +2802,11 @@ function updateMatchingDoneInTopicProgress(userId, topicId) {
       if (lastUpdatedCol >= 0)
         sheet.getRange(rowIndex, lastUpdatedCol + 1).setValue(now);
 
-      // Check if ALL activities are now complete
+      // Check if ALL activities are now complete and update calendar
       var currentData = sheet
         .getRange(rowIndex, 1, 1, headers.length)
         .getValues()[0];
-      var lessonDone = currentData[headers.indexOf("lessonCompleted")] === 1 || currentData[headers.indexOf("lessonCompleted")] === true;
-      var mindmapDone = currentData[headers.indexOf("mindmapViewed")] === 1 || currentData[headers.indexOf("mindmapViewed")] === true;
-      var flashcardsDone = currentData[headers.indexOf("flashcardsCompleted")] === 1 || currentData[headers.indexOf("flashcardsCompleted")] === true;
-      var miniQuizDone = currentData[headers.indexOf("miniQuizCompleted")] === 1 || currentData[headers.indexOf("miniQuizCompleted")] === true;
-      var quizDone = currentData[headers.indexOf("quizDone")] === 1 || currentData[headers.indexOf("quizDone")] === true;
-      var matchingDone = true;
-
-      if (lessonDone && mindmapDone && flashcardsDone && miniQuizDone && quizDone && matchingDone) {
-        if (statusCol >= 0)
-          sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
-        if (completedAtCol >= 0)
-          sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
-      }
+      checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, currentData);
 
       Logger.log("✅ Updated matchingDone=1 in Topic_Progress for: " + topicId);
     }
@@ -5838,24 +5813,10 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     var quizRequired = topic && topic.quizStatus === "active";
     var matchingRequired = topic && topic.matchingStatus === "active";
 
-    // ⭐ Kiểm tra xem phần lý thuyết đã đạt 100% chưa (bài học, mindmap, flashcards)
-    const theoryCompleted = lessonDone && mindmapDone && flashcardsDone;
-
-    // Cập nhật status thành completed nếu lý thuyết 100%, quizDone và matchingDone
-    if (theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone)) {
-      const statusCol = headers.indexOf("status");
-      const completedAtCol = headers.indexOf("completedAt");
-      if (statusCol >= 0)
-        sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
-      if (completedAtCol >= 0 && !currentData[completedAtCol])
-        sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
-    } else {
-      // If they haven't completed it, make sure it stays "in_progress"
-      const statusCol = headers.indexOf("status");
-      if (statusCol >= 0 && currentData[statusCol] !== "in_progress") {
-        sheet.getRange(rowIndex, statusCol + 1).setValue("in_progress");
-      }
-    }
+    // ⭐ Gọi hàm kiểm tra tổng hợp để xử lý status và Lịch học
+    // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
+    const theoryCompleted = lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
+    checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, currentData);
 
     // ⭐ Trả thưởng XP Lý thuyết và ghi nhận Daily Quest khi học xong lý thuyết đạt 100%
     let learningXPResult = null;
@@ -6729,5 +6690,86 @@ YÊU CẦU ĐẦU RA:
   } catch (error) {
     Logger.log("❌ Lỗi generateUserMindmap: " + error.toString());
     return { success: false, message: "Lỗi tạo Mindmap: " + error.message };
+  }
+}
+
+/**
+ * Helper to check if a topic is completed and trigger calendar update
+ */
+function checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, currentData) {
+  try {
+    const isChecked = function (val) {
+      if (val === null || val === undefined) return false;
+      if (typeof val === "boolean") return val;
+      if (typeof val === "number") return val === 1;
+      var s = String(val).trim().toLowerCase();
+      return (
+        s === "1" ||
+        s === "true" ||
+        s === "hoàn thành" ||
+        s === "đã chơi" ||
+        s === "đã hoàn thành" ||
+        s === "x" ||
+        s === "yes"
+      );
+    };
+    
+    const lessonDone = headers.indexOf("lessonCompleted") >= 0 && isChecked(currentData[headers.indexOf("lessonCompleted")]);
+    const mindmapDone = headers.indexOf("mindmapViewed") >= 0 && isChecked(currentData[headers.indexOf("mindmapViewed")]);
+    const flashcardsDone = headers.indexOf("flashcardsCompleted") >= 0 && isChecked(currentData[headers.indexOf("flashcardsCompleted")]);
+    
+    // Add miniQuiz to theory completion!
+    const miniQuizCol = headers.indexOf("miniQuizCompleted");
+    const miniQuizDone = miniQuizCol >= 0 && isChecked(currentData[miniQuizCol]);
+    
+    const quizDone = headers.indexOf("quizDone") >= 0 && isChecked(currentData[headers.indexOf("quizDone")]);
+    const matchingDone = headers.indexOf("matchingDone") >= 0 && isChecked(currentData[headers.indexOf("matchingDone")]);
+    
+    // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
+    const theoryCompleted = lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
+    
+    var topicsResult = getAllTopicsIncludingHidden();
+    var topic = null;
+    if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
+      topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
+    }
+    
+    // Quiz and Matching are required if they exist for the topic
+    var quizRequired = topic && (topic.quizStatus === "active" || topic.hasQuiz);
+    var matchingRequired = topic && (topic.matchingStatus === "active" || topic.hasMatching);
+    
+    const isTopicCompleted = theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone);
+    
+    const statusCol = headers.indexOf("status");
+    const completedAtCol = headers.indexOf("completedAt");
+    const oldStatus = (statusCol >= 0) ? currentData[statusCol] : "not_started";
+    const now = new Date();
+    
+    if (isTopicCompleted) {
+      if (statusCol >= 0) sheet.getRange(rowIndex, statusCol + 1).setValue("completed");
+      if (completedAtCol >= 0 && !currentData[completedAtCol]) sheet.getRange(rowIndex, completedAtCol + 1).setValue(now);
+      
+      if (oldStatus !== "completed") {
+        const userEmail = getUserEmailById(userId);
+        if (userEmail && typeof apiRecordStudyCalendarDay === "function") {
+          apiRecordStudyCalendarDay({
+            userId: userId,
+            email: userEmail,
+            date: now.toISOString(),
+            addCompletedLessons: 1,
+            source: "topic_completed"
+          });
+          Logger.log("✅ Fired addCompletedLessons=1 for topic: " + topicId);
+        }
+      }
+    } else {
+      if (statusCol >= 0 && oldStatus !== "in_progress") {
+        sheet.getRange(rowIndex, statusCol + 1).setValue("in_progress");
+      }
+    }
+    return isTopicCompleted;
+  } catch(e) {
+    Logger.log("❌ Error in checkAndMarkTopicCompleted: " + e.toString());
+    return false;
   }
 }

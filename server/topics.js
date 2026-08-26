@@ -273,8 +273,8 @@ function getAllTopicsIncludingHidden() {
             ? String(row[col.contentDocUrl] || "")
             : "",
         quizStatus: quizStatusVal,
-        mindmapStatus: hasMindmap ? "ready" : "draft",
-        matchingStatus: hasMatching ? "ready" : "draft",
+        mindmapStatus: mindmapStatusVal || (hasMindmap ? "ready" : "draft"),
+        matchingStatus: matchingStatusVal || (hasMatching ? "ready" : "draft"),
         isHidden: isHiddenVal || statusColVal === "hidden",
         publishStatus: publishStatus,
         hasTheory: hasTheory,
@@ -663,7 +663,7 @@ function getUserTopicProgress(authContext) {
             quizDone: quizDone,
             miniQuizCompleted: miniQuizDone,
             matchingDone: matchingDone,
-            status: statusIdx >= 0 ? row[statusIdx] : "in_progress",
+            status: (statusIdx >= 0 && row[statusIdx]) ? String(row[statusIdx]).trim() : "not_started",
             completedAt: completedAtIdx >= 0 
               ? (row[completedAtIdx] instanceof Date ? row[completedAtIdx].toISOString() : row[completedAtIdx]) 
               : null,
@@ -1183,7 +1183,7 @@ function evaluateTopicUnlock(topic, progressMap, topicMap) {
 /**
  * Get topics with unlock and progress status evaluated on the server.
  */
-function getTopicsForUserPage() {
+function getTopicsForUserPage(authContext) {
   try {
     var allResult = getAllTopicsIncludingHidden();
     if (!allResult.success) return allResult;
@@ -1201,7 +1201,7 @@ function getTopicsForUserPage() {
       return (a.rowIndex || 0) - (b.rowIndex || 0);
     });
 
-    var progressResult = getUserTopicProgress();
+    var progressResult = getUserTopicProgress(authContext);
     var progressMap =
       progressResult && progressResult.success
         ? progressResult.progress || {}
