@@ -182,6 +182,27 @@
   function initLessonPage() {
     console.log("🚀 Initializing Lesson Page");
     resetLessonState();
+    
+    // Pre-fetch API Key status for instant Mini Quiz toggle
+    window.currentUserApiKeyStatus = null;
+    const userId = (window.currentUser && window.currentUser.userId) || 
+                   (window.currentUser && window.currentUser.email) || null;
+    if (userId && google && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          window.currentUserApiKeyStatus = res;
+          if (typeof updateMiniQuizReadyStatus === 'function') {
+            updateMiniQuizReadyStatus();
+          }
+        })
+        .withFailureHandler(function() {
+          window.currentUserApiKeyStatus = { hasKey: false }; // fallback
+          if (typeof updateMiniQuizReadyStatus === 'function') {
+            updateMiniQuizReadyStatus();
+          }
+        })
+        .getUserGeminiKeyStatus(userId);
+    }
 
     try {
       setupLessonHeaderMouseEffect();
@@ -2747,6 +2768,22 @@
     lockMiniQuizDropdown();
   }
 
+  function updateMiniQuizReadyStatus() {
+    const badge = document.getElementById("mini-quiz-status-badge");
+    const section = document.getElementById("mini-quiz-section");
+    if (!badge || !section || section.classList.contains("locked") || tabCompletion.lessonQuiz) return;
+    
+    if (window.currentUserApiKeyStatus && !window.currentUserApiKeyStatus.hasKey) {
+      badge.textContent = "Chưa sẵn sàng";
+      badge.style.color = "#ef4444"; // Đỏ nhạt/cảnh báo
+      badge.style.backgroundColor = "#fee2e2";
+    } else {
+      badge.textContent = "Sẵn sàng";
+      badge.style.color = "";
+      badge.style.backgroundColor = "";
+    }
+  }
+
   /**
    * Unlock the mini quiz dropdown after marking lesson as read
    */
@@ -2762,8 +2799,8 @@
     if (icon) icon.textContent = "📝";
     if (desc) desc.textContent = "Nhấn để mở Mini Quiz - 10 câu hỏi trắc nghiệm khách quan";
     if (badge && !tabCompletion.lessonQuiz) {
-      badge.textContent = "Sẵn sàng";
       badge.classList.add("ready");
+      updateMiniQuizReadyStatus();
     }
 
     // Auto-load mini quiz if not loaded yet
@@ -2798,6 +2835,97 @@
   /**
    * Toggle mini quiz dropdown open/close
    */
+  function showCustomApiKeyPrompt() {
+    // Xóa popup cũ nếu có
+    const existing = document.getElementById("custom-apikey-prompt");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "custom-apikey-prompt";
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+    overlay.style.zIndex = "99999";
+    overlay.style.display = "flex";
+    overlay.style.justifyContent = "center";
+    overlay.style.alignItems = "center";
+    overlay.style.animation = "fadeIn 0.2s ease-out";
+
+    const box = document.createElement("div");
+    box.style.background = "#fff";
+    box.style.padding = "24px";
+    box.style.borderRadius = "12px";
+    box.style.boxShadow = "0 10px 25px rgba(0,0,0,0.1)";
+    box.style.maxWidth = "400px";
+    box.style.width = "90%";
+    box.style.textAlign = "center";
+    box.style.fontFamily = "inherit";
+
+    const title = document.createElement("h3");
+    title.innerText = "Yêu cầu API Key";
+    title.style.margin = "0 0 12px 0";
+    title.style.color = "#1f2937";
+    title.style.fontSize = "1.25rem";
+
+    const desc = document.createElement("p");
+    desc.innerText = "Bạn cần cung cấp Gemini API Key cá nhân để hệ thống có thể tạo câu hỏi Mini Quiz riêng cho bạn. Bạn có muốn đi tới trang Hồ sơ để nhập Key không?";
+    desc.style.margin = "0 0 24px 0";
+    desc.style.color = "#4b5563";
+    desc.style.lineHeight = "1.5";
+    desc.style.fontSize = "0.95rem";
+
+    const btnGroup = document.createElement("div");
+    btnGroup.style.display = "flex";
+    btnGroup.style.justifyContent = "center";
+    btnGroup.style.gap = "12px";
+
+    const btnCancel = document.createElement("button");
+    btnCancel.innerText = "Không đồng ý";
+    btnCancel.style.padding = "10px 16px";
+    btnCancel.style.border = "none";
+    btnCancel.style.borderRadius = "6px";
+    btnCancel.style.background = "#f3f4f6";
+    btnCancel.style.color = "#4b5563";
+    btnCancel.style.cursor = "pointer";
+    btnCancel.style.fontWeight = "600";
+    btnCancel.style.transition = "background 0.2s";
+    btnCancel.onmouseover = () => btnCancel.style.background = "#e5e7eb";
+    btnCancel.onmouseout = () => btnCancel.style.background = "#f3f4f6";
+    btnCancel.onclick = () => overlay.remove();
+
+    const btnOk = document.createElement("button");
+    btnOk.innerText = "Đồng ý";
+    btnOk.style.padding = "10px 16px";
+    btnOk.style.border = "none";
+    btnOk.style.borderRadius = "6px";
+    btnOk.style.background = "#3b82f6";
+    btnOk.style.color = "white";
+    btnOk.style.cursor = "pointer";
+    btnOk.style.fontWeight = "600";
+    btnOk.style.transition = "background 0.2s";
+    btnOk.onmouseover = () => btnOk.style.background = "#2563eb";
+    btnOk.onmouseout = () => btnOk.style.background = "#3b82f6";
+    btnOk.onclick = () => {
+      overlay.remove();
+      if (typeof window.showPage === "function") {
+        window.showPage("page-profile");
+      }
+    };
+
+    btnGroup.appendChild(btnCancel);
+    btnGroup.appendChild(btnOk);
+
+    box.appendChild(title);
+    box.appendChild(desc);
+    box.appendChild(btnGroup);
+    overlay.appendChild(box);
+
+    document.body.appendChild(overlay);
+  }
+
   function toggleMiniQuizDropdown() {
     const section = document.getElementById("mini-quiz-section");
     const content = document.getElementById("mini-quiz-dropdown-content");
@@ -2809,8 +2937,53 @@
       content.classList.remove("open");
       section.classList.remove("expanded");
     } else {
-      content.classList.add("open");
-      section.classList.add("expanded");
+      // Sử dụng trạng thái đã tải trước (pre-fetched)
+      if (window.currentUserApiKeyStatus) {
+        if (window.currentUserApiKeyStatus.hasKey) {
+          content.classList.add("open");
+          section.classList.add("expanded");
+        } else {
+          showCustomApiKeyPrompt();
+        }
+      } else {
+        // Fallback: Nếu dữ liệu tải trước chưa kịp về (hiếm khi xảy ra), gọi server trực tiếp
+        const userId = (window.currentUser && window.currentUser.userId) || 
+                       (window.currentUser && window.currentUser.email) || null;
+                       
+        const btnTitle = document.getElementById("mini-quiz-toggle-desc");
+        const originalText = btnTitle ? btnTitle.textContent : "";
+        if (btnTitle) btnTitle.textContent = "Đang kiểm tra Key...";
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (btnTitle) btnTitle.textContent = originalText;
+            window.currentUserApiKeyStatus = response; // Lưu lại
+            
+            if (response && response.hasKey) {
+              content.classList.add("open");
+              section.classList.add("expanded");
+            } else {
+              showCustomApiKeyPrompt();
+            }
+          })
+          .withFailureHandler(function(error) {
+             if (btnTitle) btnTitle.textContent = originalText;
+             // Chỉ hiển thị lỗi đơn giản
+             const errDiv = document.createElement("div");
+             errDiv.style.position = "fixed";
+             errDiv.style.bottom = "20px";
+             errDiv.style.right = "20px";
+             errDiv.style.background = "#ef4444";
+             errDiv.style.color = "#fff";
+             errDiv.style.padding = "12px";
+             errDiv.style.borderRadius = "8px";
+             errDiv.style.zIndex = "9999";
+             errDiv.innerText = "Lỗi kiểm tra API Key: " + String(error);
+             document.body.appendChild(errDiv);
+             setTimeout(() => errDiv.remove(), 3000);
+          })
+          .getUserGeminiKeyStatus(userId);
+      }
     }
   }
 
