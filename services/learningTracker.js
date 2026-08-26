@@ -395,6 +395,7 @@ function dailyCheckin(userContext) {
     // Save check-in
     const now = new Date();
     checkinSheet.appendRow([today, now.toISOString()]);
+    SpreadsheetApp.flush(); // Ensure the appended row is visible to verifyQuestCompletion
     Logger.log("✅ Daily check-in saved for: " + today);
 
     // Also save to Login_History for streak calculation consistency
