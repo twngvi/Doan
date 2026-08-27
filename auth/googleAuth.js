@@ -26,11 +26,14 @@ function getGoogleOAuthRuntimeConfig() {
   const clientSecret = String(
     props.getProperty(GOOGLE_AUTH_CONFIG.CLIENT_SECRET_PROPERTY) || "",
   ).trim();
-  const redirectUri = String(
-    props.getProperty(GOOGLE_AUTH_CONFIG.REDIRECT_URI_PROPERTY) ||
-      GOOGLE_AUTH_CONFIG.REDIRECT_URI ||
-      "",
-  ).trim();
+  
+  // Luôn luôn lấy URL thực tế của môi trường đang chạy (để nếu chạy /exec thì nó sẽ trả về /exec)
+  // Bỏ qua Properties vì có thể người dùng vô tình lưu link /dev vào đó.
+  let redirectUri = ScriptApp.getService().getUrl();
+  // Đề phòng trường hợp URL bị thiếu đuôi (hiếm)
+  if (!redirectUri.endsWith('/exec') && !redirectUri.endsWith('/dev')) {
+    redirectUri += '/exec';
+  }
 
   if (!clientId) {
     throw new Error(
