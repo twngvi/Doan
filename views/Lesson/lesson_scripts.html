@@ -2388,7 +2388,7 @@
       "#mini-quiz-questions .mq-question.answered .mq-option.correct.selected",
     ).length;
     const totalCount = MINI_QUIZ_REQUIRED_QUESTIONS;
-    const passedQuiz = totalCount > 0 ? (correctCount / totalCount >= 0.8) : true;
+    const passedQuiz = totalCount > 0 ? (correctCount === totalCount) : true;
 
     if (!tabCompletion.lessonQuiz) {
       var optimisticUsed = Number(window.currentMiniQuizAttempts || 0) + 1;
@@ -3330,6 +3330,7 @@
    * Render mini quiz questions
    */
   function renderMiniQuizQuestions(questions) {
+    window.isMiniQuizSubmitted = false;
     const container = document.getElementById("mini-quiz-questions");
     if (!container) return;
     
@@ -3436,61 +3437,42 @@
 
       container.appendChild(qEl);
     });
+
+    // Add submit button container
+    var submitBtnContainer = document.createElement("div");
+    submitBtnContainer.className = "mq-submit-container";
+    submitBtnContainer.style.textAlign = "center";
+    submitBtnContainer.style.marginTop = "20px";
+    submitBtnContainer.innerHTML = '<button id="mini-quiz-submit-btn" class="btn-primary" style="display:none; padding: 10px 24px; font-size: 16px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" onclick="submitMiniQuizAnswers()">Nộp bài</button>';
+    container.appendChild(submitBtnContainer);
   }
 
   /**
    * Handle selecting a mini quiz option
    */
   function selectMiniQuizOption(optionEl, qIdx, optIdx) {
+    if (window.isMiniQuizSubmitted) return; // Không cho đổi sau khi nộp
+    
     var qEl = document.getElementById("mq-q-" + qIdx);
-    if (!qEl || qEl.dataset.answered === "true") return; // Already answered
+    if (!qEl) return;
 
-    // Mark as answered
-    qEl.dataset.answered = "true";
-    qEl.classList.add("answered");
-
-    var question = miniQuizData[qIdx];
-    var correctIdx = question.correctAnswer;
-    if (typeof correctIdx === "undefined") correctIdx = 0;
-
-    var isCorrect = optIdx === correctIdx;
-
-    // Show selection
-    optionEl.classList.add("selected");
-    if (isCorrect) {
-      optionEl.classList.add("correct");
-    } else {
-      optionEl.classList.add("incorrect");
-      // Highlight correct answer
-      var correctOpt = qEl.querySelector(
-        '.mq-option[data-idx="' + correctIdx + '"]',
-      );
-      if (correctOpt) correctOpt.classList.add("correct");
+    // Xóa selected ở các option khác trong cùng câu hỏi
+    var options = qEl.querySelectorAll('.mq-option');
+    options.forEach(opt => opt.classList.remove('selected'));
+    
+    // Đánh dấu option này được chọn
+    optionEl.classList.add('selected');
+    
+    // Nếu câu này chưa từng trả lời, đánh dấu đã trả lời
+    if (qEl.dataset.answered !== "true") {
+      qEl.dataset.answered = "true";
+      qEl.classList.add('answered');
     }
 
-    // Show explanation
-    var explainEl = document.getElementById("mq-explain-" + qIdx);
-    if (explainEl) {
-      var explanation =
-        question.explanation ||
-        "Đáp án đúng là: " +
-          (question.options[correctIdx]?.text ||
-            question.options[correctIdx] ||
-            "");
-      explainEl.innerHTML =
-        '<div class="mq-explain-header">' +
-        (isCorrect ? "✅ Chính xác!" : "❌ Chưa đúng") +
-        "</div>" +
-        '<div class="mq-explain-text">' +
-        explanation +
-        "</div>";
-      explainEl.style.display = "block";
-      explainEl.className =
-        "mq-explanation " + (isCorrect ? "correct" : "incorrect");
-    }
-
-    // Update progress
-    miniQuizAnswered++;
+    // Cập nhật số câu đã trả lời
+    var answeredCount = document.querySelectorAll('#mini-quiz-questions .mq-question.answered').length;
+    miniQuizAnswered = answeredCount;
+    
     var progressFill = document.getElementById("mq-progress-fill");
     var progressText = document.getElementById("mq-progress-text");
     var pct = Math.round((miniQuizAnswered / MINI_QUIZ_REQUIRED_QUESTIONS) * 100);
@@ -3502,13 +3484,76 @@
         MINI_QUIZ_REQUIRED_QUESTIONS +
         " câu đã trả lời";
 
-    // Check if all 10 answered
-    if (miniQuizAnswered >= MINI_QUIZ_REQUIRED_QUESTIONS) {
-      setTimeout(function () {
-        onMiniQuizCompleted();
-      }, 500);
+    // Hiện nút nộp bài nếu đã trả lời đủ
+    var submitBtn = document.getElementById("mini-quiz-submit-btn");
+    if (submitBtn) {
+      if (miniQuizAnswered >= MINI_QUIZ_REQUIRED_QUESTIONS) {
+        submitBtn.style.display = "inline-block";
+      } else {
+        submitBtn.style.display = "none";
+      }
     }
   }
+
+  window.submitMiniQuizAnswers = function() {
+    if (window.isMiniQuizSubmitted) return;
+    window.isMiniQuizSubmitted = true;
+    
+    var submitBtn = document.getElementById("mini-quiz-submit-btn");
+    if (submitBtn) submitBtn.style.display = "none";
+    
+    for (var qIdx = 0; qIdx < MINI_QUIZ_REQUIRED_QUESTIONS; qIdx++) {
+      var qEl = document.getElementById("mq-q-" + qIdx);
+      if (!qEl) continue;
+      
+      var question = miniQuizData[qIdx];
+      var correctIdx = typeof question.correctAnswer !== "undefined" ? question.correctAnswer : 0;
+      
+      var selectedOpt = qEl.querySelector('.mq-option.selected');
+      var optIdx = selectedOpt ? parseInt(selectedOpt.dataset.idx) : -1;
+      var isCorrect = (optIdx === correctIdx);
+      
+      if (selectedOpt) {
+        if (isCorrect) {
+          selectedOpt.classList.add("correct");
+        } else {
+          selectedOpt.classList.add("incorrect");
+        }
+      }
+      
+      // Highlight correct answer if user got it wrong
+      if (!isCorrect) {
+        var correctOpt = qEl.querySelector('.mq-option[data-idx="' + correctIdx + '"]');
+        if (correctOpt) correctOpt.classList.add("correct");
+      }
+      
+      // Hiển thị giải thích
+      var explainEl = document.getElementById("mq-explain-" + qIdx);
+      if (explainEl) {
+        var explanation =
+          question.explanation ||
+          "Đáp án đúng là: " +
+            (question.options[correctIdx]?.text ||
+              question.options[correctIdx] ||
+              "");
+        explainEl.innerHTML =
+          '<div class="mq-explain-header">' +
+          (isCorrect ? "✅ Chính xác!" : "❌ Chưa đúng") +
+          "</div>" +
+          '<div class="mq-explain-text">' +
+          explanation +
+          "</div>";
+        explainEl.style.display = "block";
+        explainEl.className =
+          "mq-explanation " + (isCorrect ? "correct" : "incorrect");
+      }
+    }
+    
+    // Gọi hàm hoàn thành
+    setTimeout(function() {
+      onMiniQuizCompleted();
+    }, 500);
+  };
 
   // Make functions globally available
   window.initLessonPage = initLessonPage;
