@@ -166,6 +166,11 @@
     prefetchedMindmap = null;
     mindmapPrefetching = false;
     
+    // Reset flashcard tracking variables to prevent state leakage
+    if (typeof learnedCount !== 'undefined') learnedCount = 0;
+    if (typeof reviewCount !== 'undefined') reviewCount = 0;
+    if (typeof flashcardResults !== 'undefined') flashcardResults = [];
+    
     if (typeof miniQuizData !== 'undefined') miniQuizData = null;
     if (typeof miniQuizAnswered !== 'undefined') miniQuizAnswered = 0;
     if (typeof miniQuizLoaded !== 'undefined') miniQuizLoaded = false;
@@ -613,16 +618,12 @@
       currentFlashcardIndex = 0;
       initDeckState(); // Initialize deck tracking
 
-      const totalEl = document.getElementById("flashcard-total");
-      if (totalEl) totalEl.textContent = flashcardsData.length;
-
-      renderCurrentFlashcard();
-
       const flashcardsContentEl = document.getElementById("flashcards-content");
       if (flashcardsContentEl) flashcardsContentEl.style.display = "flex";
       aiContentLoaded.flashcards = true;
-
-      setTimeout(() => { setupSwipeGestures(); }, 100);
+      
+      // Complete visual reset of the flashcard area
+      reloadFlashcardUI();
       // showToast("✅ Đã tải " + flashcardsData.length + " Flashcards", "success");
     } else {
       showFlashcardsError("Không có flashcard nào");
@@ -1322,6 +1323,26 @@
     reviewCount = 0;
     flashcardResults = new Array(flashcardsData.length).fill(null);
     isFlashcardSessionComplete = false;
+    
+    // Restore deck area display (unhide cards, hide completion screen)
+    const deckArea = document.getElementById("deck-area");
+    if (deckArea) {
+      const deckStack = deckArea.querySelector(".deck-stack");
+      const flashcardWrapper = deckArea.querySelector(".flashcard-wrapper");
+      const completeScreen = deckArea.querySelector(".deck-complete");
+      if (deckStack) deckStack.style.display = "";
+      if (flashcardWrapper) flashcardWrapper.style.display = "";
+      if (completeScreen) completeScreen.style.display = "none";
+    }
+
+    // Restore control elements
+    const deckActions = document.querySelector(".deck-actions");
+    const deckControls = document.querySelector(".deck-controls");
+    const keyboardHints = document.querySelector(".keyboard-hints");
+    if (deckActions) deckActions.style.display = "";
+    if (deckControls) deckControls.style.display = "";
+    if (keyboardHints) keyboardHints.style.display = "";
+    
     updateDeckProgress();
   }
 
@@ -1475,8 +1496,21 @@
       const hasReviewCards = reviewCount > 0;
       const isPerfect = reviewCount === 0 && skippedCount === 0;
 
-      deckArea.innerHTML = `
-        <div class="deck-complete">
+      // Hide flashcard elements instead of destroying them
+      const deckStack = deckArea.querySelector(".deck-stack");
+      const flashcardWrapper = deckArea.querySelector(".flashcard-wrapper");
+      if (deckStack) deckStack.style.display = "none";
+      if (flashcardWrapper) flashcardWrapper.style.display = "none";
+
+      let completeScreen = deckArea.querySelector(".deck-complete");
+      if (!completeScreen) {
+        completeScreen = document.createElement("div");
+        completeScreen.className = "deck-complete";
+        deckArea.appendChild(completeScreen);
+      }
+      
+      completeScreen.style.display = "block";
+      completeScreen.innerHTML = `
           <div class="complete-icon">${isPerfect ? "🎉" : (isPassed ? "💪" : "⚠️")}</div>
           <h3 class="complete-title">${isPerfect ? "Hoàn hảo!" : (isPassed ? "Hoàn thành!" : "Chưa đạt!")}</h3>
           <p style="opacity: 0.7; margin-bottom: 1rem;">
@@ -1516,7 +1550,6 @@
             `
             }
           </div>
-        </div>
       `;
 
       bindDeckCompleteActions();
