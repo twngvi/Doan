@@ -1451,10 +1451,13 @@
             return isCompleted;
           }
           if (currentStatusFilter === 'in_progress') {
-            return progressPercent > 0 && !isCompleted;
+            return progressPercent > 0 && !isCompleted && status !== 'locked';
           }
           if (currentStatusFilter === 'unplayed' || currentStatusFilter === 'available') {
-            return progressPercent === 0 && !isCompleted;
+            return progressPercent === 0 && !isCompleted && status !== 'locked';
+          }
+          if (currentStatusFilter === 'locked') {
+            return status === 'locked';
           }
           return true;
         });
@@ -1614,7 +1617,7 @@
       }
 
       const progress = userProgress[topic.topicId] || {};
-      if ((progress.status === 'completed')) {
+      if (progress.status === 'completed' || progress.completed === true) {
         return 'completed';
       }
 
