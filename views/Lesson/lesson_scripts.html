@@ -362,8 +362,8 @@
 
         renderLessonHtml(response.content);
         
-        // Restore progress state internally if needed, but loadSavedTopicProgress handles the UI
-        loadSavedTopicProgress(topicId);
+        // Restore progress state instantly from the bundle
+        loadSavedTopicProgress(topicId, response.progress || null);
 
         // Prefetch extra contents
         scheduleLessonExtrasPrefetch();
@@ -2576,65 +2576,43 @@
   /**
    * Load saved progress for this topic from backend and restore UI state
    */
-  function loadSavedTopicProgress(topicId) {
+  function loadSavedTopicProgress(topicId, serverProgressData) {
     if (!topicId) return;
     console.log("📊 Loading saved progress for topic:", topicId);
 
-    // ⭐ STEP 1: Restore from localStorage immediately (synchronous, no latency)
     var localData = loadLocalProgress(topicId);
-    if (localData) {
-      console.log("📦 Restoring from localStorage cache:", localData);
-      restoreTopicProgress({
-        lessonCompleted: localData.lessonRead || false,
-        miniQuizCompleted: localData.lessonQuiz || false,
-        mindmapViewed: localData.mindmapViewed || false,
-        flashcardsCompleted: localData.flashcardsDone || false,
-      });
-    }
 
-    // ⭐ STEP 2: Also fetch from server (source of truth) — merges on arrival
-    google.script.run
-      .withSuccessHandler(function (response) {
-        console.log("📊 Topic progress from server:", response);
-        if (response && response.success) {
-          if (response.data) {
-            // Merge: server true values always win over local false values
-            var merged = response.data;
-            if (localData) {
-              merged.lessonCompleted =
-                merged.lessonCompleted || localData.lessonRead || false;
-              merged.miniQuizCompleted =
-                merged.miniQuizCompleted || localData.lessonQuiz || false;
-              merged.mindmapViewed =
-                merged.mindmapViewed || localData.mindmapViewed || false;
-              merged.flashcardsCompleted =
-                merged.flashcardsCompleted || localData.flashcardsDone || false;
-            }
-            restoreTopicProgress(merged);
-            // Update localStorage with merged data
-            saveLocalProgress(topicId);
-          } else {
-            // Server has no topic progress (e.g. user reset all data) => remove stale local cache
-            clearLocalProgress(topicId);
-            tabCompletion = {
-              lessonRead: false,
-              lessonQuiz: false,
-              mindmapViewed: false,
-              flashcardsDone: false,
-            };
-            resetAllLessonUI();
-            console.log("🧹 Cleared stale local progress for topic:", topicId);
-          }
-        }
-      })
-      .withFailureHandler(function (error) {
-        console.warn("⚠️ Could not load topic progress from server:", error);
-        // localStorage data already restored above, so UI is correct
-      })
-      .getTopicProgressForWeb(topicId, {
-        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
-        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
-      });
+    if (serverProgressData) {
+      console.log("📊 Topic progress from server bundle:", serverProgressData);
+      var merged = Object.assign({}, serverProgressData);
+      if (localData) {
+        merged.lessonCompleted = merged.lessonCompleted || localData.lessonRead || false;
+        merged.miniQuizCompleted = merged.miniQuizCompleted || localData.lessonQuiz || false;
+        merged.mindmapViewed = merged.mindmapViewed || localData.mindmapViewed || false;
+        merged.flashcardsCompleted = merged.flashcardsCompleted || localData.flashcardsDone || false;
+      }
+      restoreTopicProgress(merged);
+      saveLocalProgress(topicId);
+    } else {
+      if (localData) {
+        console.log("📦 Restoring from localStorage cache:", localData);
+        restoreTopicProgress({
+          lessonCompleted: localData.lessonRead || false,
+          miniQuizCompleted: localData.lessonQuiz || false,
+          mindmapViewed: localData.mindmapViewed || false,
+          flashcardsCompleted: localData.flashcardsDone || false,
+        });
+      } else {
+        clearLocalProgress(topicId);
+        tabCompletion = {
+          lessonRead: false,
+          lessonQuiz: false,
+          mindmapViewed: false,
+          flashcardsDone: false,
+        };
+        resetAllLessonUI();
+      }
+    }
   }
 
   /**
