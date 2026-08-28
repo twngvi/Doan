@@ -1220,11 +1220,12 @@
 
   // ========== RENDER FUNCTIONS ==========
 
-  // Flashcard state variablesv
+  // Flashcard state variables
   let learnedCount = 0;
   let reviewCount = 0;
   let flashcardResults = []; // Track learned/review status for each card
   let isFlashcardSessionComplete = false;
+  let isFlashcardBusy = false;
 
   /**
    * Render current flashcard
@@ -1323,6 +1324,7 @@
     reviewCount = 0;
     flashcardResults = new Array(flashcardsData.length).fill(null);
     isFlashcardSessionComplete = false;
+    isFlashcardBusy = false;
     
     // Restore deck area display (unhide cards, hide completion screen)
     const deckArea = document.getElementById("deck-area");
@@ -1369,6 +1371,10 @@
   }
 
   function nextFlashcard() {
+    if (isFlashcardBusy) return;
+    if (!flashcardsData || flashcardsData.length === 0) return;
+    isFlashcardBusy = true;
+
     if (currentFlashcardIndex < flashcardsData.length - 1) {
       currentFlashcardIndex++;
       animateCardIn();
@@ -1376,9 +1382,16 @@
     } else {
       showDeckComplete();
     }
+    setTimeout(() => {
+      isFlashcardBusy = false;
+    }, 300);
   }
 
   function prevFlashcard() {
+    if (isFlashcardBusy) return;
+    if (!flashcardsData || flashcardsData.length === 0) return;
+    isFlashcardBusy = true;
+
     if (currentFlashcardIndex > 0) {
       currentFlashcardIndex--;
       animateCardIn();
@@ -1386,12 +1399,19 @@
     } else {
       showToast("Đây là thẻ đầu tiên!", "info");
     }
+    setTimeout(() => {
+      isFlashcardBusy = false;
+    }, 300);
   }
 
   /**
    * Mark current card as learned and go to next
    */
   function markAsLearned() {
+    if (isFlashcardBusy) return;
+    if (!flashcardsData || flashcardsData.length === 0) return;
+    isFlashcardBusy = true;
+
     if (flashcardResults[currentFlashcardIndex] !== "learned") {
       // Remove from review if it was there
       if (flashcardResults[currentFlashcardIndex] === "review") {
@@ -1411,6 +1431,7 @@
       } else {
         showDeckComplete();
       }
+      isFlashcardBusy = false;
     });
   }
 
@@ -1418,6 +1439,10 @@
    * Mark current card as review and go to next
    */
   function markAsReview() {
+    if (isFlashcardBusy) return;
+    if (!flashcardsData || flashcardsData.length === 0) return;
+    isFlashcardBusy = true;
+
     if (flashcardResults[currentFlashcardIndex] !== "review") {
       // Remove from learned if it was there
       if (flashcardResults[currentFlashcardIndex] === "learned") {
@@ -1437,6 +1462,7 @@
       } else {
         showDeckComplete();
       }
+      isFlashcardBusy = false;
     });
   }
 
@@ -1445,14 +1471,17 @@
    */
   function animateCardOut(direction, callback) {
     const wrapper = document.getElementById("flashcard-wrapper");
-    if (!wrapper) return callback && callback();
+    if (!wrapper) {
+      if (callback) callback();
+      return;
+    }
 
     wrapper.classList.add(direction === "right" ? "fly-right" : "fly-left");
 
     setTimeout(() => {
       wrapper.classList.remove("fly-right", "fly-left");
       if (callback) callback();
-    }, 500);
+    }, 320);
   }
 
   /**
@@ -1465,7 +1494,7 @@
     wrapper.classList.add("fly-in");
     setTimeout(() => {
       wrapper.classList.remove("fly-in");
-    }, 600);
+    }, 320);
   }
 
   /**
