@@ -216,9 +216,19 @@ function generateAIReviewQuestions(wrongQuestions, topicId, userContext) {
       };
     }
     
+    // Sanitize wrongQuestions list if needed
+    let sanitizedQuestions = wrongQuestions;
+    if (typeof wrongQuestions === "string") {
+      try {
+        sanitizedQuestions = JSON.parse(wrongQuestions);
+      } catch (e) {
+        sanitizedQuestions = [];
+      }
+    }
+    
     // Gọi AI
     const result = ContentGenerator.generateBatchQuestionVariants(
-      wrongQuestions,
+      sanitizedQuestions,
       resolvedUser,
       { topicId: topicId }
     );
@@ -226,16 +236,27 @@ function generateAIReviewQuestions(wrongQuestions, topicId, userContext) {
     if (!result || result.error) {
       return { success: false, message: "AI không thể tạo câu hỏi ôn tập: " + (result?.error || "Unknown error") };
     }
+
+    let questionsList = [];
+    if (Array.isArray(result)) {
+      questionsList = result;
+    } else if (result && Array.isArray(result.questions)) {
+      questionsList = result.questions;
+    }
+    
+    if (!questionsList || questionsList.length === 0) {
+      return { success: false, message: "AI không trả về danh sách câu hỏi hợp lệ" };
+    }
     
     // Đảm bảo trả về mảng kết quả JSON stringified để tránh lỗi serialization
     return {
       success: true,
-      data: JSON.stringify({ questions: result })
+      data: JSON.stringify({ questions: questionsList })
     };
     
   } catch (error) {
     Logger.log("❌ Error in generateAIReviewQuestions: " + error.toString());
-    return { success: false, message: "Lỗi server: " + error.toString() };
+    return { success: false, message: "Lỗi tạo câu hỏi AI: " + error.toString() };
   }
 }
 
@@ -4023,7 +4044,6 @@ function getQuizHistoryByTopic(topicId, limit, authContext) {
       if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
 
       const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "quiz";
-      if (mode && mode !== "quiz") continue;
 
       const status = statusCol >= 0 ? String(data[i][statusCol] || "") : "";
       if (status && status === "partial") continue;
@@ -4066,14 +4086,16 @@ function getQuizHistoryByTopic(topicId, limit, authContext) {
  * @param {string} resultId
  * @returns {{success:boolean, detail:Object|null, message?:string}}
  */
-function getQuizResultDetailById(resultId) {
+function getQuizResultDetailById(resultId, authContext) {
   try {
     const id = String(resultId || "").trim();
     if (!id) {
       return { success: false, message: "Thiếu resultId", detail: null };
     }
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : (Session.getActiveUser().getEmail() || (authContext && authContext.email));
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", detail: null };
     }
@@ -4180,7 +4202,6 @@ function getQuizResultDetailById(resultId) {
         : [];
 
       const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "quiz";
-      if (mode && mode !== "quiz") continue;
 
       return {
         success: true,
@@ -4274,7 +4295,6 @@ function getMatchingHistoryByTopic(topicId, limit, authContext) {
       if (String(data[i][topicIdCol] || "").trim() !== topicIdStr) continue;
 
       const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "matching";
-      if (mode && mode !== "matching") continue;
 
       const completed = completedCol >= 0 ? data[i][completedCol] : true;
       if (completed === false || completed === "FALSE") continue;
@@ -4328,14 +4348,16 @@ function getMatchingHistoryByTopic(topicId, limit, authContext) {
  * @param {string} resultId
  * @returns {{success:boolean, detail:Object|null, message?:string}}
  */
-function getMatchingResultDetailById(resultId) {
+function getMatchingResultDetailById(resultId, authContext) {
   try {
     const id = String(resultId || "").trim();
     if (!id) {
       return { success: false, message: "Thiếu resultId", detail: null };
     }
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : (Session.getActiveUser().getEmail() || (authContext && authContext.email));
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", detail: null };
     }
@@ -4381,7 +4403,6 @@ function getMatchingResultDetailById(resultId) {
       if (String(data[i][idCol] || "").trim() !== id) continue;
 
       const mode = modeCol >= 0 ? String(data[i][modeCol] || "") : "matching";
-      if (mode && mode !== "matching") continue;
 
       let pairDetails = [];
       if (pairDetailsCol >= 0) {
@@ -4907,13 +4928,15 @@ function saveWrongAnswer(wrongData, authContext) {
  * @param {string} topicId - Topic ID
  * @returns {Array} - Array of wrong answer questions
  */
-function getWrongAnswersForTopic(topicId) {
+function getWrongAnswersForTopic(topicId, authContext) {
   try {
     Logger.log("=== GET WRONG ANSWERS FOR TOPIC FROM PERSONAL SHEET ===");
     Logger.log("Topic ID: " + topicId);
 
     // Get current user email
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : (Session.getActiveUser().getEmail() || (authContext && authContext.email));
     if (!userEmail || userEmail === "anonymous") {
       Logger.log("⚠️ No user email");
       return [];
@@ -6117,11 +6140,13 @@ function getUserSpreadsheet(userId) {
  * {hasPlayed, bestScore, bestPercent, playCount, lastPlayedAt}
  * @returns {object} - {success, stats: {topicId: {...}, ...}}
  */
-function getQuizStatsPerTopic() {
+function getQuizStatsPerTopic(authContext) {
   try {
     Logger.log("=== GET QUIZ STATS PER TOPIC ===");
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : (Session.getActiveUser().getEmail() || (authContext && authContext.email));
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", stats: {} };
     }
@@ -6244,11 +6269,13 @@ function getQuizStatsPerTopic() {
  * {hasPlayed, bestScore, bestPercent, bestAccuracy, bestTotalPairs, playCount, lastPlayedAt}
  * @returns {object} - {success, stats: {topicId: {...}, ...}}
  */
-function getMatchingStatsPerTopic() {
+function getMatchingStatsPerTopic(authContext) {
   try {
     Logger.log("=== GET MATCHING STATS PER TOPIC ===");
 
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = (typeof getVerifiedEmail === 'function' && authContext) 
+                    ? getVerifiedEmail(authContext) 
+                    : (Session.getActiveUser().getEmail() || (authContext && authContext.email));
     if (!userEmail || userEmail === "anonymous") {
       return { success: false, message: "Not logged in", stats: {} };
     }

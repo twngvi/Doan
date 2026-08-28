@@ -656,7 +656,7 @@ function ADMIN_testAIContentCache() {
     contentDocId: "test_doc_id",
     contentType: "mindmap",
     generatedContent: { root: "Test", branches: [] },
-    geminiModel: "gemini-3.6-flash",
+    geminiModel: "gemini-1.5-flash",
     tokensUsed: 100,
     generationTime: 500,
     version: "v1",

@@ -197,7 +197,9 @@
     appendConsole('input', '> ' + val);
 
     var ws = getActiveWorkspaceState();
-    var chunk = val + '\n';
+    // Split spaces or commas so multi-value inputs (e.g. "10 5") work seamlessly for multiple input() calls
+    var parts = val.trim().split(/[\s,]+/);
+    var chunk = (parts.length > 1 ? parts.join('\n') : val) + '\n';
     ws.stdin = chunk;
     if (el.stdin) el.stdin.value = ws.stdin;
     ide.dirty = true;
@@ -250,7 +252,6 @@
     if (cmLoadPromise) return cmLoadPromise;
     cmLoadPromise = loadCss(CM_CDN + 'codemirror.min.css')
       .then(function () { return loadCss(CM_CDN + 'theme/dracula.min.css'); })
-      .then(function () { return loadCss(CM_CDN + 'theme/default.min.css'); })
       .then(function () { return loadScript(CM_CDN + 'codemirror.min.js'); })
       .then(function () {
         return Promise.all([
@@ -2145,5 +2146,6 @@
     run: function () { runCode(false); },
     export: function () { return deepClone(ide.state); }
   };
+  window.initCodePlaygroundPage = onPageShow;
 })();
 </script>

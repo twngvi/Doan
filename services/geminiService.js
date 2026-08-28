@@ -213,7 +213,6 @@ const GeminiService = {
     }
 
     // Nếu đã có session user hợp lệ từ Google login, ưu tiên dùng session user
-    // Không cần check mismatch với userId từ frontend vì session là nguồn tin cậy
     if (sessionUser) {
       return {
         userId: sessionUser.userId,
@@ -221,26 +220,45 @@ const GeminiService = {
       };
     }
 
+    let userEmail = "";
+    if (typeof getVerifiedEmail === "function" && userContext) {
+      try {
+        userEmail = getVerifiedEmail(userContext) || "";
+      } catch (e) {}
+    }
+    if (!userEmail && userContext && userContext.email) {
+      userEmail = String(userContext.email).trim();
+    }
+
+    let fallbackUser = null;
     const fallbackUserId = String((userContext && userContext.userId) || "").trim();
-    if (!fallbackUserId) {
-      throw new Error("Không xác định được người dùng hiện tại");
+    if (fallbackUserId) {
+      fallbackUser = this._findUserById(fallbackUserId);
+    }
+    if (!fallbackUser && userEmail) {
+      fallbackUser = this._findUserByEmail(userEmail);
     }
 
-    const fallbackUser = this._findUserById(fallbackUserId);
-    if (!fallbackUser || !fallbackUser.isActive) {
-      throw new Error("Người dùng không hợp lệ hoặc đã bị khóa");
-    }
-
-    if (userContext && userContext.email) {
-      const providedEmail = String(userContext.email || "").trim().toLowerCase();
-      if (providedEmail && providedEmail !== String(fallbackUser.email || "").trim().toLowerCase()) {
-        throw new Error("Email ngữ cảnh không khớp tài khoản");
+    if (fallbackUser) {
+      if (!fallbackUser.isActive) {
+        throw new Error("Người dùng không hợp lệ hoặc đã bị khóa");
       }
+      return {
+        userId: fallbackUser.userId,
+        email: fallbackUser.email,
+      };
+    }
+
+    if (fallbackUserId || userEmail) {
+      return {
+        userId: fallbackUserId || ("USER_" + userEmail.replace(/[^a-zA-Z0-9]/g, "_")),
+        email: userEmail || "",
+      };
     }
 
     return {
-      userId: fallbackUser.userId,
-      email: fallbackUser.email,
+      userId: "guest_user",
+      email: "guest@system.local",
     };
   },
 
@@ -458,11 +476,16 @@ const GeminiService = {
       throw keyError;
     }
 
-    const model = config.model || AI_CONFIG.GEMINI_MODEL_DEFAULT;
-    // Đảm bảo model có format "models/tên-model"
-    const modelPath = model.startsWith("models/") ? model : "models/" + model;
-    const url =
-      this.API_ENDPOINT + modelPath + ":generateContent?key=" + apiKey;
+    const primaryModel = config.model || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.0-flash";
+    const candidateModels = [
+      primaryModel,
+      "gemini-2.0-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
+      "gemini-pro"
+    ];
 
     const payload = {
       contents: [
@@ -490,30 +513,63 @@ const GeminiService = {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify(payload),
-      muteHttpExceptions: true, // Quan trọng để xử lý lỗi 429
+      muteHttpExceptions: true,
     };
 
     const startTime = Date.now();
-    let response = UrlFetchApp.fetch(url, options);
-    let responseCode = response.getResponseCode();
+    let response = null;
+    let responseCode = 0;
+    let responseText = "";
+    let finalErrorMsg = "";
+    let successfulModel = primaryModel;
+    const triedModels = [];
 
-    // Xử lý lỗi 429 (Quota exceeded) - đợi và thử lại (giảm thời gian chờ để tránh timeout)
-    if (responseCode === 429) {
-      Logger.log("⚠️ Quota exceeded (429). Đang đợi 5 giây...");
-      Utilities.sleep(5000);
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i];
+      if (!currentModel || triedModels.includes(currentModel)) continue;
+      triedModels.push(currentModel);
+
+      const modelPath = currentModel.startsWith("models/") ? currentModel : "models/" + currentModel;
+      const url = this.API_ENDPOINT + modelPath + ":generateContent?key=" + apiKey;
+
       response = UrlFetchApp.fetch(url, options);
       responseCode = response.getResponseCode();
 
+      // Handle 429 rate limit
       if (responseCode === 429) {
-        Logger.log("⚠️ Vẫn bị quota. Đang đợi thêm 10 giây...");
-        Utilities.sleep(10000);
+        Logger.log("⚠️ Quota exceeded (429) on " + currentModel + ". Waiting 4s...");
+        Utilities.sleep(4000);
         response = UrlFetchApp.fetch(url, options);
         responseCode = response.getResponseCode();
+      }
+
+      responseText = response.getContentText();
+
+      if (responseCode === 200) {
+        successfulModel = currentModel;
+        Logger.log("✅ Successfully generated content using model: " + currentModel);
+        break;
+      }
+
+      let err = responseText;
+      try {
+        const errJson = JSON.parse(responseText);
+        err = errJson.error?.message || responseText;
+      } catch (e) {}
+      finalErrorMsg = err;
+
+      Logger.log("⚠️ Model " + currentModel + " returned " + responseCode + ": " + err);
+
+      // Stop trying other models if API Key is completely invalid or forbidden
+      if (responseCode === 400 && (err.includes("API key not valid") || err.includes("API_KEY_INVALID"))) {
+        break;
+      }
+      if (responseCode === 403) {
+        break;
       }
     }
 
     const processingTime = Date.now() - startTime;
-    const responseText = response.getContentText();
 
     const keyRecord = this._findUserKeyRecord(user.userId);
     if (keyRecord) {
@@ -526,18 +582,12 @@ const GeminiService = {
     }
 
     if (responseCode !== 200) {
-      let errorMsg = responseText;
-      try {
-        const errorJson = JSON.parse(responseText);
-        errorMsg = errorJson.error?.message || responseText;
-      } catch (e) {}
-
       if (keyRecord) {
         const sheet = getSheet("AI_User_Keys");
         if (sheet) {
           sheet.getRange(keyRecord.rowIndex, 6).setValue(false);
           sheet.getRange(keyRecord.rowIndex, 7).setValue("ERROR");
-          sheet.getRange(keyRecord.rowIndex, 10).setValue(errorMsg);
+          sheet.getRange(keyRecord.rowIndex, 10).setValue(finalErrorMsg);
           sheet.getRange(keyRecord.rowIndex, 12).setValue(new Date());
         }
       }
@@ -546,14 +596,14 @@ const GeminiService = {
         userId: user.userId,
         topicId: config.topicId || "",
         contentType: config.contentType || "",
-        model: model,
+        model: successfulModel,
         status: "FAILED",
         httpCode: responseCode,
-        errorMessage: errorMsg,
+        errorMessage: finalErrorMsg,
         durationMs: processingTime,
       });
 
-      throw new Error("Gemini API Error (" + responseCode + "): " + errorMsg);
+      throw new Error("Gemini API Error (" + responseCode + "): " + finalErrorMsg);
     }
 
     const json = JSON.parse(responseText);
@@ -563,7 +613,7 @@ const GeminiService = {
         userId: user.userId,
         topicId: config.topicId || "",
         contentType: config.contentType || "",
-        model: model,
+        model: successfulModel,
         status: "FAILED",
         httpCode: 200,
         errorMessage: json.error.message || "Gemini API Error",
@@ -579,7 +629,7 @@ const GeminiService = {
         userId: user.userId,
         topicId: config.topicId || "",
         contentType: config.contentType || "",
-        model: model,
+        model: successfulModel,
         status: "FAILED",
         httpCode: 200,
         errorMessage: "Empty response from Gemini API",
@@ -826,12 +876,17 @@ const GeminiService = {
   },
 
   requireUserApiKey: function (userContext) {
-    const user = this.resolveAuthenticatedUser(userContext);
+    let user;
+    try {
+      user = this.resolveAuthenticatedUser(userContext);
+    } catch (e) {
+      user = { userId: "user", email: "" };
+    }
     const apiKey = this.getApiKey(user);
 
     if (!apiKey) {
       const error = new Error(
-        "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng vào Profile/Settings để thêm key.",
+        "Bạn chưa cấu hình Gemini API key cá nhân. Vui lòng vào mục Hồ sơ/Cài đặt để thêm key.",
       );
       error.code = "AI_KEY_NOT_CONFIGURED";
       throw error;

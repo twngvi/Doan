@@ -4242,15 +4242,20 @@
             console.error("Lỗi parse dữ liệu AI:", e);
           }
         }
-        showSaveNotification(false, "AI không thể tạo câu hỏi ôn tập. Vui lòng thử lại sau.");
+        var errorMsg = (response && response.message) ? response.message : "AI không thể tạo câu hỏi ôn tập. Vui lòng thử lại sau.";
+        showSaveNotification(false, errorMsg);
         document.getElementById("quiz-results").style.display = "block";
       })
       .withFailureHandler(function (error) {
         hideGeneratingModal();
-        showSaveNotification(false, "Lỗi kết nối AI: " + error.message);
+        showSaveNotification(false, "Lỗi kết nối AI: " + (error.message || error));
         document.getElementById("quiz-results").style.display = "block";
       })
-      .generateAIReviewQuestions(wrongQuestions, quizState.topicId);
+      .generateAIReviewQuestions(wrongQuestions, quizState.topicId, {
+        userId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).userId,
+        email: (JSON.parse(localStorage.getItem("currentUser") || "{}")).email,
+        sessionId: (JSON.parse(localStorage.getItem("currentUser") || "{}")).sessionId
+      });
   }
 
   /**
