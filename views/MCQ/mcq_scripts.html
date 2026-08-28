@@ -207,22 +207,29 @@
         merged[topicId].matchingDone =
           merged[topicId].matchingDone || localData.matchingDone || false;
 
-        var count = 0;
-        if (merged[topicId].lessonCompleted) count++;
-        if (merged[topicId].mindmapViewed) count++;
-        if (merged[topicId].flashcardsCompleted) count++;
-        
         var topic = allTopics.find(function(t) { return t.topicId === topicId; });
-        var quizRequired = topic && topic.quizStatus === "active";
-        var matchingRequired = topic && topic.matchingStatus === "active";
-        var quizDone = merged[topicId].quizDone;
-        var matchingDone = merged[topicId].matchingDone;
         
-        merged[topicId].completed = (count === 3) && (!quizRequired || quizDone) && (!matchingRequired || matchingDone);
+        var count = 0;
+        var totalAct = 4; // lesson, mindmap, flashcards, miniquiz
+
+        if (merged[topicId].lessonCompleted) count++;
+        if (topic && topic.hasMindmap === false) {
+           totalAct--;
+        } else if (merged[topicId].mindmapViewed) {
+           count++;
+        }
+        if (merged[topicId].flashcardsCompleted) count++;
+        if (merged[topicId].miniQuizCompleted) count++;
         
-        var totalAct = 3;
+        var quizRequired = topic ? (topic.hasQuiz !== false && topic.quizStatus !== "disabled" && topic.quizStatus !== "none") : true;
+        var matchingRequired = topic ? (topic.hasMatching !== false && topic.matchingStatus !== "disabled" && topic.matchingStatus !== "none") : true;
+        var quizDone = !!merged[topicId].quizDone;
+        var matchingDone = !!merged[topicId].matchingDone;
+        
         if (quizRequired) { totalAct++; if (quizDone) count++; }
         if (matchingRequired) { totalAct++; if (matchingDone) count++; }
+
+        merged[topicId].completed = (count === totalAct);
         merged[topicId].progress = Math.round((count / totalAct) * 100);
       }
     } catch (e) {

@@ -630,8 +630,8 @@ function getUserTopicProgress(authContext) {
             matchingDoneIdx >= 0 && isChecked(row[matchingDoneIdx]);
 
           const topic = topicMap[topicId];
-          const quizRequired = topic && topic.quizStatus === "active";
-          const matchingRequired = topic && topic.matchingStatus === "active";
+          const quizRequired = topic ? (topic.hasQuiz !== false && topic.quizStatus !== "disabled" && topic.quizStatus !== "none") : true;
+          const matchingRequired = topic ? (topic.hasMatching !== false && topic.matchingStatus !== "disabled" && topic.matchingStatus !== "none") : true;
 
           let progressPercent = 0;
           let completedCount = 0;

@@ -5810,8 +5810,8 @@ function updateTopicProgress(userId, topicId, progressType, progressData) {
     if (topicsResult && topicsResult.success && Array.isArray(topicsResult.topics)) {
       topic = topicsResult.topics.find(function(t) { return String(t.topicId) === String(topicId); });
     }
-    var quizRequired = topic && topic.quizStatus === "active";
-    var matchingRequired = topic && topic.matchingStatus === "active";
+    var quizRequired = topic ? (topic.hasQuiz !== false && topic.quizStatus !== "disabled" && topic.quizStatus !== "none") : true;
+    var matchingRequired = topic ? (topic.hasMatching !== false && topic.matchingStatus !== "disabled" && topic.matchingStatus !== "none") : true;
 
     // ⭐ Gọi hàm kiểm tra tổng hợp để xử lý status và Lịch học
     // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
@@ -6734,9 +6734,9 @@ function checkAndMarkTopicCompleted(userId, topicId, sheet, rowIndex, headers, c
     // Yêu cầu: lý thuyết phải bao gồm cả miniQuiz (nếu có cột)
     const theoryCompleted = lessonDone && (!topic || !topic.hasMindmap || mindmapDone) && flashcardsDone && (miniQuizCol < 0 || miniQuizDone);
     
-    // Quiz and Matching are required if they exist for the topic
-    var quizRequired = topic && (topic.quizStatus === "active" || topic.hasQuiz);
-    var matchingRequired = topic && (topic.matchingStatus === "active" || topic.hasMatching);
+    // Quiz and Matching are required by default for every topic
+    var quizRequired = topic ? (topic.hasQuiz !== false && topic.quizStatus !== "disabled" && topic.quizStatus !== "none") : true;
+    var matchingRequired = topic ? (topic.hasMatching !== false && topic.matchingStatus !== "disabled" && topic.matchingStatus !== "none") : true;
     
     const isTopicCompleted = theoryCompleted && (!quizRequired || quizDone) && (!matchingRequired || matchingDone);
     
