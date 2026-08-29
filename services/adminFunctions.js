@@ -2996,19 +2996,33 @@ function createTopicDocument(title, htmlContent) {
     
     // Move doc to the correct folder
     const file = DriveApp.getFileById(docId);
-    folder.addFile(file);
     try {
-      DriveApp.getRootFolder().removeFile(file);
-    } catch (e) {
-      Logger.log("뿯½š뿯½뿯½뿯½뿯½ Could not remove file from root: " + e.toString());
+      if (typeof file.moveTo === "function") {
+        file.moveTo(folder);
+      } else {
+        folder.addFile(file);
+        try {
+          DriveApp.getRootFolder().removeFile(file);
+        } catch (e) {}
+      }
+    } catch (moveErr) {
+      try {
+        folder.addFile(file);
+      } catch (addErr) {
+        Logger.log("⚠️ Could not move file to folder: " + addErr.toString());
+      }
     }
     
-    // Set sharing - anyone with link can view
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    // Set sharing - anyone with link can view (protected with try-catch so domain restriction won't block topic creation)
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (sharingError) {
+      Logger.log("⚠️ Sharing warning (file inherits permissions from folder): " + sharingError.toString());
+    }
     
     const docUrl = doc.getUrl();
     
-    Logger.log("뿯½œ… Doc created successfully");
+    Logger.log("✅ Doc created successfully");
     Logger.log("Doc ID: " + docId);
     Logger.log("Doc URL: " + docUrl);
     
