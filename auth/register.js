@@ -134,6 +134,8 @@ function registerWithEmail(userData) {
     const verifiedIndex = headers.indexOf("emailVerified");
     const tokenIndex = headers.indexOf("verificationToken");
     const tokenExpiresIndex = headers.indexOf("verificationExpires");
+    const usernameIndex = headers.indexOf("username");
+    const displayNameIndex = headers.indexOf("displayName");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailIndex] === userData.email) {
@@ -154,10 +156,15 @@ function registerWithEmail(userData) {
         usersSheet.getRange(i + 1, tokenIndex + 1).setValue(newToken);
         usersSheet.getRange(i + 1, tokenExpiresIndex + 1).setValue(newExpires);
 
+        const recipientName =
+          (usernameIndex >= 0 && data[i][usernameIndex]) ||
+          (displayNameIndex >= 0 && data[i][displayNameIndex]) ||
+          userData.email.split("@")[0];
+
         const emailSent = sendVerificationEmail(
           userData.email,
           newToken,
-          data[i][1] || userData.email.split("@")[0],
+          recipientName,
         );
 
         return {
@@ -448,6 +455,8 @@ function resendVerificationEmail(email) {
     const verifiedIndex = headers.indexOf("emailVerified");
     const tokenIndex = headers.indexOf("verificationToken");
     const tokenExpiresIndex = headers.indexOf("verificationExpires");
+    const usernameIndex = headers.indexOf("username");
+    const displayNameIndex = headers.indexOf("displayName");
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][emailIndex] === email) {
@@ -465,10 +474,15 @@ function resendVerificationEmail(email) {
         usersSheet.getRange(i + 1, tokenIndex + 1).setValue(newToken);
         usersSheet.getRange(i + 1, tokenExpiresIndex + 1).setValue(newExpires);
 
+        const recipientName =
+          (usernameIndex >= 0 && data[i][usernameIndex]) ||
+          (displayNameIndex >= 0 && data[i][displayNameIndex]) ||
+          email.split("@")[0];
+
         const emailSent = sendVerificationEmail(
           email,
           newToken,
-          data[i][1] || email.split("@")[0],
+          recipientName,
         );
 
         Logger.log(

@@ -30,6 +30,8 @@ function requestPasswordReset(email) {
     const data = usersSheet.getDataRange().getValues();
     const headers = data[0];
     const emailIndex = headers.indexOf("email");
+    const usernameIndex = headers.indexOf("username");
+    const displayNameIndex = headers.indexOf("displayName");
 
     // For password reset, we'll reuse verificationToken columns
     const resetTokenIndex = headers.indexOf("verificationToken");
@@ -58,10 +60,15 @@ function requestPasswordReset(email) {
 
         Logger.log("Code saved to database");
 
+        const recipientName =
+          (usernameIndex >= 0 && data[i][usernameIndex]) ||
+          (displayNameIndex >= 0 && data[i][displayNameIndex]) ||
+          "User";
+
         const emailSent = sendPasswordResetCodeEmail(
           email,
           resetCode,
-          data[i][1] || "User"
+          recipientName
         );
 
         logActivity({

@@ -13,6 +13,7 @@ const EMAIL_TYPE_CONFIG = {
     defaultBody: "Xin chào {{fullName}},\n\nCảm ơn bạn đã đăng ký tài khoản tại TerraCode!\n\nMã xác thực của bạn là: {{code}}\n\nVui lòng nhập mã này vào trang xác thực để kích hoạt tài khoản.\nMã này sẽ hết hạn sau 24 giờ.\n\nTrân trọng,\nĐội ngũ TerraCode",
     demoVars: {
       "{{fullName}}": "Test User",
+      "{{userName}}": "Test User",
       "{{email}}": "test@example.com",
       "{{code}}": "123456"
     }
@@ -24,6 +25,7 @@ const EMAIL_TYPE_CONFIG = {
     defaultBody: "Xin chào {{fullName}},\n\nChúng tôi nhận được yêu cầu reset mật khẩu cho tài khoản của bạn.\n\nMã xác thực của bạn là: {{code}}\n\nMã này sẽ hết hạn sau 1 giờ.\n\nTrân trọng,\nĐội ngũ TerraCode",
     demoVars: {
       "{{fullName}}": "Test User",
+      "{{userName}}": "Test User",
       "{{email}}": "test@example.com",
       "{{code}}": "654321"
     }
@@ -35,6 +37,7 @@ const EMAIL_TYPE_CONFIG = {
     defaultBody: "Xin chào {{userName}},\n\nHôm nay là {{todayDate}}. Bạn đã hoàn thành {{completedLessons}}/{{dailyGoal}} bài học.\nCòn {{remainingLessons}} bài nữa là đạt mục tiêu.\n\nVào học ngay: {{learningUrl}}",
     demoVars: {
       "{{userName}}": "Test User",
+      "{{fullName}}": "Test User",
       "{{email}}": "test@example.com",
       "{{dailyGoal}}": "5",
       "{{completedLessons}}": "3",
@@ -259,6 +262,9 @@ function sendVerificationEmail(email, code, fullName) {
   try {
     const template = getTemplateForSending('verification', {
       "{{fullName}}": fullName,
+      "{{userName}}": fullName,
+      "{{username}}": fullName,
+      "{{displayName}}": fullName,
       "{{code}}": code,
       "{{email}}": email
     });
@@ -287,6 +293,9 @@ function sendPasswordResetCodeEmail(email, code, fullName) {
   try {
     const template = getTemplateForSending('password_reset', {
       "{{fullName}}": fullName,
+      "{{userName}}": fullName,
+      "{{username}}": fullName,
+      "{{displayName}}": fullName,
       "{{code}}": code,
       "{{email}}": email
     });
