@@ -11,8 +11,8 @@ const AI_CONFIG = {
   // Gemini API Settings
   GEMINI_USER_KEY_PREFIX: "GEMINI_USER_KEY_",
   GEMINI_KEY_ENCRYPTION_SECRET_PROPERTY: "GEMINI_KEY_ENCRYPTION_SECRET",
-  GEMINI_MODEL_DEFAULT: "gemini-2.0-flash",
-  GEMINI_MODEL_ADVANCED: "gemini-2.0-flash",
+  GEMINI_MODEL_DEFAULT: "gemini-2.5-flash",
+  GEMINI_MODEL_ADVANCED: "gemini-2.5-flash",
 
   // Cache Settings
   CACHE_TTL_DAYS: 30, // Cache content trong 30 ngày
@@ -510,7 +510,7 @@ const DB_CONFIG = {
         "contentType", // mindmap|infographic|flashcards|lesson_summary|questions
         "generatedContent", // JSON output từ Gemini
         "promptUsed", // Prompt template đã dùng
-        "geminiModel", // gemini-1.5-pro | gemini-1.5-flash
+        "geminiModel", // gemini-2.5-flash | gemini-3.6-flash
         "tokensUsed", // Chi phí tokens
         "generationTime", // Thời gian generate (ms)
         "qualityScore", // 1-5 (user feedback)

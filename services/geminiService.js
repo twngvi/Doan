@@ -459,8 +459,121 @@ const GeminiService = {
     }
   },
 
+  _getWorkingModelAndEndpoint: function (apiKey, preferredModel) {
+    const key = this._normalizeApiKey(apiKey);
+    if (!key) {
+      return {
+        model: preferredModel || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash",
+        endpoint: "https://generativelanguage.googleapis.com/v1beta/",
+        error: "API key không được để trống",
+      };
+    }
+
+    const keyHash = this._hashApiKey(key).substring(0, 16);
+    const cacheKey = "GEMINI_MODEL_INFO_" + keyHash;
+    try {
+      const cached = CacheService.getScriptCache().get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.model && parsed.endpoint) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+
+    const endpoints = [
+      "https://generativelanguage.googleapis.com/v1beta/",
+      "https://generativelanguage.googleapis.com/v1/"
+    ];
+
+    let lastListError = "";
+
+    for (let i = 0; i < endpoints.length; i++) {
+      const ep = endpoints[i];
+      try {
+        const listUrl = ep + "models?key=" + key;
+        const res = UrlFetchApp.fetch(listUrl, { method: "get", muteHttpExceptions: true });
+        const resCode = res.getResponseCode();
+        const resText = res.getContentText();
+
+        if (resCode === 200) {
+          const json = JSON.parse(resText);
+          if (json && Array.isArray(json.models)) {
+            const availableModels = json.models
+              .filter(function (m) {
+                return (
+                  Array.isArray(m.supportedGenerationMethods) &&
+                  m.supportedGenerationMethods.includes("generateContent")
+                );
+              })
+              .map(function (m) {
+                return m.name.replace(/^models\//, "");
+              });
+
+            if (availableModels.length > 0) {
+              Logger.log("✅ Auto-discovered Gemini models on " + ep + ": " + availableModels.join(", "));
+
+              // Ưu tiên các model hiện hành
+              let chosenModel = "";
+              if (preferredModel && availableModels.includes(preferredModel)) {
+                chosenModel = preferredModel;
+              } else if (availableModels.includes("gemini-2.5-flash")) {
+                chosenModel = "gemini-2.5-flash";
+              } else if (availableModels.includes("gemini-2.5-flash-lite")) {
+                chosenModel = "gemini-2.5-flash-lite";
+              } else if (availableModels.includes("gemini-3.6-flash")) {
+                chosenModel = "gemini-3.6-flash";
+              } else if (availableModels.includes("gemini-3.5-flash")) {
+                chosenModel = "gemini-3.5-flash";
+              } else {
+                const flash = availableModels.find(function (m) { return m.includes("flash"); });
+                chosenModel = flash || availableModels[0];
+              }
+
+              const result = {
+                model: chosenModel,
+                endpoint: ep,
+                allModels: availableModels
+              };
+
+              try {
+                CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), 21600); // 6 hours
+              } catch (e) {}
+
+              return result;
+            }
+          }
+        } else {
+          try {
+            const errJson = JSON.parse(resText);
+            lastListError = errJson.error?.message || resText;
+          } catch (e) {
+            lastListError = resText;
+          }
+          Logger.log("⚠️ ListModels on " + ep + " returned (" + resCode + "): " + lastListError);
+        }
+      } catch (e) {
+        lastListError = e.toString();
+        Logger.log("⚠️ Exception during ListModels on " + ep + ": " + e.toString());
+      }
+    }
+
+    return {
+      model: preferredModel || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash",
+      endpoint: "https://generativelanguage.googleapis.com/v1beta/",
+      allModels: [
+        preferredModel || "gemini-2.5-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash"
+      ],
+      error: lastListError
+    };
+  },
+
   /**
-   * Gọi Gemini API với xử lý lỗi 429 (quota)
+   * Gọi Gemini API với cơ chế tự động dò tìm model & endpoint khả dụng
    * @param {string} prompt - Prompt gửi cho AI
    * @param {Object} config - Cấu hình (temperature, maxTokens, model)
    * @returns {string|Object} Response từ AI
@@ -476,16 +589,23 @@ const GeminiService = {
       throw keyError;
     }
 
-    const primaryModel = config.model || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.0-flash";
-    const candidateModels = [
-      primaryModel,
-      "gemini-2.0-flash",
-      "gemini-2.5-flash",
-      "gemini-1.5-flash-latest",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro",
-      "gemini-pro"
-    ];
+    const preferredModel = config.model || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash";
+    const discovery = this._getWorkingModelAndEndpoint(apiKey, preferredModel);
+    const endpoint = discovery.endpoint || this.API_ENDPOINT;
+
+    // Build candidate list prioritizing discovered models
+    let candidateModels = [];
+    if (discovery.allModels && discovery.allModels.length > 0) {
+      candidateModels = [discovery.model].concat(discovery.allModels);
+    } else {
+      candidateModels = [
+        preferredModel,
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash"
+      ];
+    }
 
     const payload = {
       contents: [
@@ -521,7 +641,7 @@ const GeminiService = {
     let responseCode = 0;
     let responseText = "";
     let finalErrorMsg = "";
-    let successfulModel = primaryModel;
+    let successfulModel = discovery.model || preferredModel;
     const triedModels = [];
 
     for (let i = 0; i < candidateModels.length; i++) {
@@ -530,7 +650,7 @@ const GeminiService = {
       triedModels.push(currentModel);
 
       const modelPath = currentModel.startsWith("models/") ? currentModel : "models/" + currentModel;
-      const url = this.API_ENDPOINT + modelPath + ":generateContent?key=" + apiKey;
+      const url = endpoint + modelPath + ":generateContent?key=" + apiKey;
 
       response = UrlFetchApp.fetch(url, options);
       responseCode = response.getResponseCode();
@@ -547,7 +667,7 @@ const GeminiService = {
 
       if (responseCode === 200) {
         successfulModel = currentModel;
-        Logger.log("✅ Successfully generated content using model: " + currentModel);
+        Logger.log("✅ Successfully generated content using model: " + currentModel + " on " + endpoint);
         break;
       }
 
@@ -603,6 +723,12 @@ const GeminiService = {
         durationMs: processingTime,
       });
 
+      // Clear cache on failure
+      try {
+        const keyHash = this._hashApiKey(apiKey).substring(0, 16);
+        CacheService.getScriptCache().remove("GEMINI_MODEL_INFO_" + keyHash);
+      } catch (e) {}
+
       throw new Error("Gemini API Error (" + responseCode + "): " + finalErrorMsg);
     }
 
@@ -642,7 +768,7 @@ const GeminiService = {
       userId: user.userId,
       topicId: config.topicId || "",
       contentType: config.contentType || "",
-      model: model,
+      model: successfulModel,
       status: "SUCCESS",
       httpCode: 200,
       errorMessage: "",
@@ -663,7 +789,7 @@ const GeminiService = {
     Logger.log(
       "✅ Gemini API call successful for user " +
         user.userId +
-        ". Time: " +
+        " (Model: " + successfulModel + "). Time: " +
         processingTime +
         "ms",
     );
@@ -671,12 +797,34 @@ const GeminiService = {
     // Try parse as JSON if expected
     if (config.expectJson) {
       try {
-        const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error("Không tìm thấy JSON object trong response");
+        let cleanText = String(text || "").trim();
+        // Remove markdown code fences if present (```json ... ```)
+        cleanText = cleanText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+        // 1. Direct parse
+        try {
+          return JSON.parse(cleanText);
+        } catch (e) {}
+
+        // 2. Check if array [ ... ]
+        const firstBracket = cleanText.indexOf("[");
+        const lastBracket = cleanText.lastIndexOf("]");
+        if (firstBracket !== -1 && lastBracket > firstBracket) {
+          try {
+            return JSON.parse(cleanText.substring(firstBracket, lastBracket + 1));
+          } catch (e) {}
         }
+
+        // 3. Check if object { ... }
+        const firstBrace = cleanText.indexOf("{");
+        const lastBrace = cleanText.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            return JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
+          } catch (e) {}
+        }
+
+        throw new Error("Không tìm thấy JSON hợp lệ trong response");
       } catch (e) {
         let snippet = text.substring(0, 150);
         throw new Error("Lỗi parse JSON từ AI (" + e.message + "). Data: " + snippet);
@@ -725,6 +873,12 @@ const GeminiService = {
     throw lastError;
   },
 
+  /**
+   * Kiểm tra tính hợp lệ của API Key người dùng
+   * @param {Object} userContext
+   * @param {string} apiKey - Optional: key cần test trước khi lưu
+   * @returns {Object} { success, message, code }
+   */
   validateUserApiKey: function (userContext, apiKey) {
     try {
       const user = this.resolveAuthenticatedUser(userContext);
@@ -746,8 +900,18 @@ const GeminiService = {
         };
       }
 
-      const modelPath = "models/" + AI_CONFIG.GEMINI_MODEL_DEFAULT;
-      const url = this.API_ENDPOINT + modelPath + ":generateContent?key=" + keyToTest;
+      const discovery = this._getWorkingModelAndEndpoint(keyToTest);
+      if (discovery.error && (!discovery.allModels || discovery.allModels.length === 0)) {
+        return {
+          success: false,
+          code: "AI_KEY_INVALID",
+          message: "Gemini từ chối API key: " + discovery.error,
+        };
+      }
+
+      const model = discovery.model || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash";
+      const modelPath = model.startsWith("models/") ? model : "models/" + model;
+      const url = (discovery.endpoint || this.API_ENDPOINT) + modelPath + ":generateContent?key=" + keyToTest;
       const payload = {
         contents: [{ parts: [{ text: "Respond exactly: VALID" }] }],
         generationConfig: {
@@ -781,7 +945,7 @@ const GeminiService = {
 
       return {
         success: true,
-        message: "API key hợp lệ",
+        message: "API key hợp lệ (Model: " + model + ")",
         userId: user.userId,
       };
     } catch (error) {

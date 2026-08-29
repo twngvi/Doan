@@ -618,30 +618,152 @@ const ContentGenerator = {
    */
   generateBatchQuestionVariants: function (wrongQuestions, userContext, requestMeta) {
     if (!wrongQuestions || wrongQuestions.length === 0) return [];
-    
-    // Rút gọn thông tin để tránh vượt quá token limit
-    const simplifiedQuestions = wrongQuestions.map(q => ({
-      id: q.id,
-      question: q.question,
-      options: q.options,
-      correctAnswer: q.correctAnswer
-    }));
-    
-    const prompt = PROMPT_TEMPLATES.BATCH_QUESTION_VARIANTS.replace(
-      "{wrongQuestionsJson}",
-      JSON.stringify(simplifiedQuestions, null, 2),
-    );
 
-    const result = GeminiService.callWithRetry(prompt, {
-      expectJson: true,
-      temperature: 0.8,
-      maxTokens: Math.max(1000, simplifiedQuestions.length * 500),
-      model: AI_CONFIG.GEMINI_MODEL_ADVANCED, // Dùng model mạnh hơn cho việc xử lý batch
-      topicId: requestMeta?.topicId || "",
-      contentType: "batch_question_variants",
-    }, userContext);
-    
-    return result;
+    const user = GeminiService.resolveAuthenticatedUser(userContext);
+    const apiKey = GeminiService.getApiKey(user);
+    if (!apiKey) {
+      const keyError = new Error("Bạn chưa cấu hình Gemini API key cá nhân.");
+      keyError.code = "AI_KEY_NOT_CONFIGURED";
+      throw keyError;
+    }
+
+    // Tách danh sách câu hỏi thành các chunk nhỏ (4-5 câu/gói) để gọi song song (Parallel Fetch)
+    const CHUNK_SIZE = 5;
+    const chunks = [];
+    for (let i = 0; i < wrongQuestions.length; i += CHUNK_SIZE) {
+      chunks.push(wrongQuestions.slice(i, i + CHUNK_SIZE));
+    }
+
+    const discovery = GeminiService._getWorkingModelAndEndpoint(apiKey, AI_CONFIG.GEMINI_MODEL_ADVANCED || "gemini-2.5-flash");
+    const endpoint = discovery.endpoint || "https://generativelanguage.googleapis.com/v1beta/";
+    const model = discovery.model || "gemini-2.5-flash";
+    const modelPath = model.startsWith("models/") ? model : "models/" + model;
+    const url = endpoint + modelPath + ":generateContent?key=" + apiKey;
+
+    // Xây dựng danh sách requests đồng thời
+    const requests = chunks.map(chunk => {
+      const simplified = chunk.map(q => ({
+        id: q.id,
+        question: q.question,
+        options: Array.isArray(q.options) ? q.options.slice(0, 4) : [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+        correctAnswer: q.correctAnswer
+      }));
+
+      const prompt = PROMPT_TEMPLATES.BATCH_QUESTION_VARIANTS.replace(
+        "{wrongQuestionsJson}",
+        JSON.stringify(simplified),
+      );
+
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1500,
+          responseMimeType: "application/json"
+        }
+      };
+
+      return {
+        url: url,
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+    });
+
+    Logger.log("🚀 Executing " + requests.length + " parallel AI generation requests via UrlFetchApp.fetchAll for " + wrongQuestions.length + " questions...");
+    let responses = [];
+    try {
+      responses = UrlFetchApp.fetchAll(requests);
+    } catch (fetchErr) {
+      Logger.log("⚠️ UrlFetchApp.fetchAll error: " + fetchErr.toString());
+      // Fallback: fetch sequentially if fetchAll fails
+      responses = requests.map(req => UrlFetchApp.fetch(req.url, req));
+    }
+
+    let allGeneratedQuestions = [];
+
+    for (let rIdx = 0; rIdx < responses.length; rIdx++) {
+      const resp = responses[rIdx];
+      const code = resp.getResponseCode();
+      const text = resp.getContentText();
+
+      if (code === 200) {
+        try {
+          const json = JSON.parse(text);
+          const rawAnswer = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawAnswer) {
+            let clean = String(rawAnswer).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+            let parsed = null;
+            try {
+              parsed = JSON.parse(clean);
+            } catch (e) {
+              const fb = clean.indexOf("[");
+              const lb = clean.lastIndexOf("]");
+              if (fb !== -1 && lb > fb) {
+                try { parsed = JSON.parse(clean.substring(fb, lb + 1)); } catch (e2) {}
+              }
+              if (!parsed) {
+                const fo = clean.indexOf("{");
+                const lo = clean.lastIndexOf("}");
+                if (fo !== -1 && lo > fo) {
+                  try { parsed = JSON.parse(clean.substring(fo, lo + 1)); } catch (e3) {}
+                }
+              }
+            }
+
+            let qList = [];
+            if (Array.isArray(parsed)) {
+              qList = parsed;
+            } else if (parsed && typeof parsed === "object") {
+              if (Array.isArray(parsed.questions)) qList = parsed.questions;
+              else if (Array.isArray(parsed.variants)) qList = parsed.variants;
+              else if (Array.isArray(parsed.data)) qList = parsed.data;
+              else {
+                for (let k in parsed) {
+                  if (Array.isArray(parsed[k]) && parsed[k].length > 0) {
+                    qList = parsed[k];
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (qList && qList.length > 0) {
+              allGeneratedQuestions = allGeneratedQuestions.concat(qList);
+            }
+          }
+        } catch (err) {
+          Logger.log("⚠️ Error parsing chunk " + rIdx + ": " + err.toString());
+        }
+      } else {
+        Logger.log("⚠️ Chunk " + rIdx + " failed with code " + code + ": " + text.substring(0, 120));
+      }
+    }
+
+    Logger.log("✅ Successfully generated " + allGeneratedQuestions.length + " questions out of " + wrongQuestions.length + " requested!");
+
+    // Nếu một số chunk bị thiếu hoặc lỗi, bổ sung câu hỏi gốc tương ứng để luôn đủ 100% số lượng câu hỏi sai
+    if (allGeneratedQuestions.length < wrongQuestions.length) {
+      const generatedIds = new Set(allGeneratedQuestions.map(q => String(q.id)));
+      for (let i = 0; i < wrongQuestions.length; i++) {
+        const orig = wrongQuestions[i];
+        if (!generatedIds.has(String(orig.id))) {
+          allGeneratedQuestions.push({
+            id: orig.id,
+            question: orig.question,
+            options: orig.options || [orig.optionA, orig.optionB, orig.optionC, orig.optionD].filter(Boolean),
+            correctAnswer: orig.correctAnswer,
+            explanation: orig.explanation || "",
+            hint: orig.hint || "",
+            difficulty: orig.difficulty || "medium"
+          });
+        }
+      }
+    }
+
+    return allGeneratedQuestions;
   },
 
   /**

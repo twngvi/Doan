@@ -240,12 +240,34 @@ function generateAIReviewQuestions(wrongQuestions, topicId, userContext) {
     let questionsList = [];
     if (Array.isArray(result)) {
       questionsList = result;
-    } else if (result && Array.isArray(result.questions)) {
-      questionsList = result.questions;
+    } else if (result && typeof result === "object") {
+      if (Array.isArray(result.questions)) {
+        questionsList = result.questions;
+      } else if (Array.isArray(result.variants)) {
+        questionsList = result.variants;
+      } else if (Array.isArray(result.data)) {
+        questionsList = result.data;
+      } else if (Array.isArray(result.items)) {
+        questionsList = result.items;
+      } else {
+        for (let k in result) {
+          if (Array.isArray(result[k]) && result[k].length > 0) {
+            questionsList = result[k];
+            break;
+          }
+        }
+      }
+    } else if (typeof result === "string") {
+      try {
+        const parsed = JSON.parse(result);
+        if (Array.isArray(parsed)) questionsList = parsed;
+        else if (parsed && Array.isArray(parsed.questions)) questionsList = parsed.questions;
+        else if (parsed && Array.isArray(parsed.variants)) questionsList = parsed.variants;
+      } catch (e) {}
     }
     
     if (!questionsList || questionsList.length === 0) {
-      return { success: false, message: "AI không trả về danh sách câu hỏi hợp lệ" };
+      return { success: false, message: "AI không trả về danh sách câu hỏi hợp lệ: " + (typeof result === "object" ? JSON.stringify(result).substring(0, 100) : String(result).substring(0, 100)) };
     }
     
     // Đảm bảo trả về mảng kết quả JSON stringified để tránh lỗi serialization
@@ -2318,10 +2340,17 @@ function saveQuizResult(resultData, authContext) {
         })
       : [];
 
+    const isRetry = resultData.isRetry === true ||
+                    resultData.mode === "ai_review" ||
+                    resultData.mode === "retry" ||
+                    resultData.attemptType === "ai_review" ||
+                    resultData.attemptType === "retry";
+
+    const attemptKey = resultData.attemptId || ("QR_" + Date.now());
     const rowMap = {
-      id: "QR_" + Date.now(),
+      id: attemptKey,
       userId: userId,
-      mode: "quiz",
+      mode: isRetry ? "ai_review" : (resultData.mode || "quiz"),
       topicId: resultData.topicId || "",
       topicTitle: resultData.topicTitle || "",
       score: resultData.score || 0,
@@ -2333,6 +2362,7 @@ function saveQuizResult(resultData, authContext) {
       currentQuestionIndex: resultData.currentQuestionIndex || 0,
       completedAt: resultData.completedAt || new Date().toISOString(),
       questionDetails: JSON.stringify(normalizedQuestionDetails),
+      isRetry: isRetry ? "true" : "false",
     };
 
     const resultEntry = headers.map(function (header) {
@@ -2341,15 +2371,53 @@ function saveQuizResult(resultData, authContext) {
         : "";
     });
 
-    quizSheet.appendRow(resultEntry);
+    // Check for duplicate submission within 15 seconds or matching attempt ID
+    const lastRowIndex = quizSheet.getLastRow();
+    const idCol = headers.indexOf("id");
+    const topicIdCol = headers.indexOf("topicId");
+    const scoreCol = headers.indexOf("score");
+    const totalQuestionsCol = headers.indexOf("totalQuestions");
+    const completedAtCol = headers.indexOf("completedAt");
+
+    let isDuplicate = false;
+    if (lastRowIndex > 1) {
+      const lastRowValues = quizSheet.getRange(lastRowIndex, 1, 1, Math.max(headers.length, 1)).getValues()[0];
+      const lastTopicId = topicIdCol >= 0 ? String(lastRowValues[topicIdCol] || "").trim() : "";
+      const lastScore = scoreCol >= 0 ? parseInt(lastRowValues[scoreCol]) || 0 : -1;
+      const lastTotal = totalQuestionsCol >= 0 ? parseInt(lastRowValues[totalQuestionsCol]) || 0 : -1;
+      const lastTimeStr = completedAtCol >= 0 ? String(lastRowValues[completedAtCol] || "") : "";
+      const lastId = idCol >= 0 ? String(lastRowValues[idCol] || "") : "";
+
+      const currentTopicId = String(resultData.topicId || "").trim();
+      const currentScore = parseInt(resultData.score) || 0;
+      const currentTotal = parseInt(resultData.totalQuestions) || 0;
+      const currentCompletedAt = new Date(resultData.completedAt || Date.now()).getTime();
+      const lastCompletedAt = new Date(lastTimeStr || 0).getTime();
+
+      if (
+        (resultData.attemptId && lastId === resultData.attemptId) ||
+        (lastTopicId === currentTopicId &&
+         lastScore === currentScore &&
+         lastTotal === currentTotal &&
+         Math.abs(currentCompletedAt - lastCompletedAt) < 15000)
+      ) {
+        isDuplicate = true;
+        Logger.log("⚠️ Detected duplicate quiz submission. Updating row " + lastRowIndex + " instead of appending duplicate.");
+        quizSheet.getRange(lastRowIndex, 1, 1, resultEntry.length).setValues([resultEntry]);
+      }
+    }
+
+    if (!isDuplicate) {
+      quizSheet.appendRow(resultEntry);
+    }
     invalidateDashboardCachesByEmail(userEmail, false);
 
     Logger.log("✅ Quiz result saved to PERSONAL sheet successfully");
 
-    // Award topic completion XP for completed quiz attempts (not partial autosave) that score >= 80%.
+    // Award topic completion XP CHỈ cho lượt làm chính thức (không phải ôn lại câu sai) đạt >= 80%.
     const quizStatus = String(resultData.status || "complete").toLowerCase();
     let quizXPResult = null;
-    if (resultData.topicId && quizStatus !== "partial" && resultData.percentage >= 80) {
+    if (resultData.topicId && quizStatus !== "partial" && !isRetry && resultData.percentage >= 80) {
       quizXPResult = awardTopicXPByEvent(userEmail, {
         topicId: resultData.topicId,
         eventId: "quiz_topic_completed:" + String(resultData.topicId).trim(),
@@ -2377,8 +2445,8 @@ function saveQuizResult(resultData, authContext) {
       }
     }
 
-    // ⭐ Also update quizDone in Topic_Progress
-    if (resultData.topicId && resultData.percentage >= 80) {
+    // ⭐ Also update quizDone in Topic_Progress ONLY for official full quiz attempts (not retry / AI review)
+    if (resultData.topicId && !isRetry && resultData.percentage >= 80) {
       try {
         const userId = getUserIdByEmail(userEmail);
         if (userId) {
@@ -4073,8 +4141,24 @@ function getQuizHistoryByTopic(topicId, limit, authContext) {
       (a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0),
     );
 
+    // Deduplicate history: Filter out near-duplicate submissions within 15 seconds
+    const deduplicatedHistory = [];
+    const seenSignatures = new Set();
+
+    for (let j = 0; j < history.length; j++) {
+      const item = history[j];
+      const timeMs = new Date(item.completedAt || 0).getTime();
+      const roundedTime = Math.floor(timeMs / 15000); // 15-second window
+      const sig = `${item.topicId}_${item.score}_${item.totalQuestions}_${roundedTime}`;
+      
+      if (!seenSignatures.has(sig)) {
+        seenSignatures.add(sig);
+        deduplicatedHistory.push(item);
+      }
+    }
+
     const maxItems = Math.max(1, parseInt(limit, 10) || 30);
-    return { success: true, history: history.slice(0, maxItems) };
+    return { success: true, history: deduplicatedHistory.slice(0, maxItems) };
   } catch (error) {
     Logger.log("❌ Error in getQuizHistoryByTopic: " + error.toString());
     return { success: false, message: error.toString(), history: [] };
@@ -6179,6 +6263,8 @@ function getQuizStatsPerTopic(authContext) {
     }
 
     const headers = data[0];
+    const modeCol = headers.indexOf("mode");
+    const isRetryCol = headers.indexOf("isRetry");
     const topicIdCol = headers.indexOf("topicId");
     const scoreCol = headers.indexOf("score");
     const totalQuestionsCol = headers.indexOf("totalQuestions");
@@ -6188,6 +6274,7 @@ function getQuizStatsPerTopic(authContext) {
 
     // Aggregate stats by topicId
     const statsMap = {};
+    const seenSignatures = new Set();
 
     for (let i = 1; i < data.length; i++) {
       const status = statusCol >= 0 ? data[i][statusCol] : "complete";
@@ -6203,23 +6290,32 @@ function getQuizStatsPerTopic(authContext) {
       const percentage =
         percentageCol >= 0 ? parseInt(data[i][percentageCol]) || 0 : 0;
       const completedAt = completedAtCol >= 0 ? data[i][completedAtCol] : null;
+      const mode = modeCol >= 0 ? String(data[i][modeCol] || "").toLowerCase() : "quiz";
+      const isRetryVal = isRetryCol >= 0 ? String(data[i][isRetryCol] || "").toLowerCase() : "";
+      const isRetryAttempt = isRetryVal === "true" || mode === "ai_review" || mode === "retry";
+
+      const timeMs = new Date(completedAt || 0).getTime();
+      const roundedTime = Math.floor(timeMs / 15000);
+      const sig = `${topicId}_${score}_${totalQuestions}_${roundedTime}`;
+      if (seenSignatures.has(sig)) continue;
+      seenSignatures.add(sig);
 
       if (!statsMap[topicId]) {
         // Initialize stats for this topic
         statsMap[topicId] = {
           hasPlayed: true,
-          bestScore: score,
-          bestTotal: totalQuestions,
-          bestPercent: percentage,
+          bestScore: isRetryAttempt ? 0 : score,
+          bestTotal: isRetryAttempt ? 0 : totalQuestions,
+          bestPercent: isRetryAttempt ? 0 : percentage,
           playCount: 1,
           lastPlayedAt: completedAt,
         };
       } else {
-        // Update stats: increment playCount, update best if higher
+        // Update stats: increment playCount
         statsMap[topicId].playCount++;
 
-        // Update best score if current percentage is higher
-        if (percentage > statsMap[topicId].bestPercent) {
+        // CHỈ cập nhật bestScore và bestPercent nếu là lượt làm chính thức (không phải ôn lại câu sai)
+        if (!isRetryAttempt && percentage > statsMap[topicId].bestPercent) {
           statsMap[topicId].bestScore = score;
           statsMap[topicId].bestTotal = totalQuestions;
           statsMap[topicId].bestPercent = percentage;
