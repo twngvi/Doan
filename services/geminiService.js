@@ -470,7 +470,7 @@ const GeminiService = {
     }
 
     const keyHash = this._hashApiKey(key).substring(0, 16);
-    const cacheKey = "GEMINI_MODEL_INFO_" + keyHash;
+    const cacheKey = "GEMINI_MODEL_INFO_V3_" + keyHash;
     try {
       const cached = CacheService.getScriptCache().get(cacheKey);
       if (cached) {
@@ -513,7 +513,6 @@ const GeminiService = {
             if (availableModels.length > 0) {
               Logger.log("✅ Auto-discovered Gemini models on " + ep + ": " + availableModels.join(", "));
 
-              // Ưu tiên các model hiện hành
               let chosenModel = "";
               if (preferredModel && availableModels.includes(preferredModel)) {
                 chosenModel = preferredModel;
@@ -521,10 +520,10 @@ const GeminiService = {
                 chosenModel = "gemini-2.5-flash";
               } else if (availableModels.includes("gemini-2.5-flash-lite")) {
                 chosenModel = "gemini-2.5-flash-lite";
-              } else if (availableModels.includes("gemini-3.6-flash")) {
-                chosenModel = "gemini-3.6-flash";
-              } else if (availableModels.includes("gemini-3.5-flash")) {
-                chosenModel = "gemini-3.5-flash";
+              } else if (availableModels.includes("gemini-2.0-flash")) {
+                chosenModel = "gemini-2.0-flash";
+              } else if (availableModels.includes("gemini-1.5-flash")) {
+                chosenModel = "gemini-1.5-flash";
               } else {
                 const flash = availableModels.find(function (m) { return m.includes("flash"); });
                 chosenModel = flash || availableModels[0];
@@ -558,15 +557,16 @@ const GeminiService = {
       }
     }
 
+    const fallbackDefault = AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash";
     return {
-      model: preferredModel || AI_CONFIG.GEMINI_MODEL_DEFAULT || "gemini-2.5-flash",
+      model: preferredModel || fallbackDefault,
       endpoint: "https://generativelanguage.googleapis.com/v1beta/",
       allModels: [
-        preferredModel || "gemini-2.5-flash",
+        preferredModel || fallbackDefault,
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash"
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
       ],
       error: lastListError
     };
@@ -575,7 +575,7 @@ const GeminiService = {
   /**
    * Gọi Gemini API với cơ chế tự động dò tìm model & endpoint khả dụng
    * @param {string} prompt - Prompt gửi cho AI
-   * @param {Object} config - Cấu hình (temperature, maxTokens, model)
+   * @param {Object} config - Cấu hình (temperature, maxTokens, model, thinkingBudget)
    * @returns {string|Object} Response từ AI
    */
   _callAPI: function (prompt, config = {}, userContext) {
@@ -596,15 +596,33 @@ const GeminiService = {
     // Build candidate list prioritizing discovered models
     let candidateModels = [];
     if (discovery.allModels && discovery.allModels.length > 0) {
-      candidateModels = [discovery.model].concat(discovery.allModels);
+      candidateModels = [discovery.model].concat(discovery.allModels.filter(m => m !== discovery.model));
     } else {
       candidateModels = [
-        preferredModel,
+        preferredModel || "gemini-2.5-flash",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash"
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
       ];
+    }
+
+    const genConfig = {
+      temperature: config.temperature !== undefined ? config.temperature : 0.7,
+      maxOutputTokens: Math.min(Math.max(Number(config.maxTokens) || 8192, 1), 8192),
+      topP: 0.9,
+      topK: 40,
+    };
+
+    // Tắt thinking mode để phản hồi nhanh chóng (1-3s), tránh lỗi timeout trên Google Apps Script
+    if (config.thinkingBudget !== undefined) {
+      genConfig.thinkingConfig = { thinkingBudget: config.thinkingBudget };
+    } else {
+      genConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
+    if (config.expectJson) {
+      genConfig.responseMimeType = "application/json";
     }
 
     const payload = {
@@ -617,12 +635,7 @@ const GeminiService = {
           ],
         },
       ],
-      generationConfig: {
-        temperature: config.temperature || 0.7,
-        maxOutputTokens: config.maxTokens || AI_CONFIG.MAX_TOKENS_PER_REQUEST,
-        topP: 0.9,
-        topK: 40,
-      },
+      generationConfig: genConfig,
     };
 
     if (config.expectJson) {
@@ -748,9 +761,23 @@ const GeminiService = {
       throw new Error("Gemini API Error: " + json.error.message);
     }
 
-    // Extract text từ response
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
+    // Extract text từ response (hỗ trợ cả Gemini 1.5 và Gemini 2.5 Flash thinking mode)
+    const rawParts = json.candidates?.[0]?.content?.parts || [];
+    let text = "";
+
+    const nonThoughtParts = rawParts.filter(function (p) {
+      return !p.thought && typeof p.text === "string" && p.text.trim().length > 0;
+    });
+
+    if (nonThoughtParts.length > 0) {
+      text = nonThoughtParts.map(function (p) { return p.text; }).join("\n");
+    } else if (rawParts.length > 0) {
+      text = rawParts.map(function (p) { return p.text || ""; }).join("\n");
+    } else {
+      text = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
+    if (!text || !text.trim()) {
       this._logKeyUsage({
         userId: user.userId,
         topicId: config.topicId || "",
@@ -917,6 +944,7 @@ const GeminiService = {
         generationConfig: {
           temperature: 0,
           maxOutputTokens: 16,
+          thinkingConfig: { thinkingBudget: 0 }
         },
       };
 

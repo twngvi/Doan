@@ -566,28 +566,170 @@ const ContentGenerator = {
    * @returns {Object} Questions data
    */
   generateQuestions: function (docContent, analysis, options = {}, userContext, requestMeta) {
-    const existingQuestionsText = options.existingQuestionsText || "Không có câu hỏi cũ nào.";
+    const rawExisting = options.existingQuestionsText || "Không có câu hỏi cũ nào.";
+    // Giới hạn câu hỏi cũ tối đa 30 câu để tránh làm phình prompt gây chậm và tràn token
+    const existingQuestionsText = rawExisting.length > 3000 ? rawExisting.substring(0, 3000) + "\n... (đã rút gọn danh sách)" : rawExisting;
     const focusConcepts = options.focusConcepts || [];
 
-    const prompt = PROMPT_TEMPLATES.MCQ_GENERATION.replace(
-      "{docContent}",
-      docContent,
-    )
-      .replace("{analysis}", JSON.stringify(analysis))
-      .replace("{existingQuestionsText}", existingQuestionsText)
-      .replace(
-        "{focusConcepts}",
-        focusConcepts.length > 0 ? focusConcepts.join(", ") : "Tất cả",
-      );
+    // Giới hạn tài liệu tối đa 12.000 ký tự để xử lý siêu tốc
+    const cleanDocContent = (docContent || "").substring(0, 12000);
+    const targetTotal = options.targetCount || 30;
 
-    return GeminiService.callWithRetry(prompt, {
-      expectJson: true,
-      temperature: 0.7,
-      maxTokens: 30000,
-      model: AI_CONFIG.GEMINI_MODEL_ADVANCED, // Dùng model mạnh hơn
-      topicId: requestMeta?.topicId || "",
-      contentType: "questions",
-    }, userContext);
+    const user = GeminiService.resolveAuthenticatedUser(userContext);
+    
+    // Tạo 3 lượt tuần tự (mỗi lượt 10 câu) để tránh Timeout (do gen 30 câu 1 lúc quá lâu) và tránh 429 (do gọi song song).
+    const chunks = [
+      { count: 10, difficulty: "easy", bloomLevel: "remember", note: "10 câu DỄ: Khái niệm, định nghĩa, cú pháp, từ khóa cơ bản." },
+      { count: 10, difficulty: "medium", bloomLevel: "understand", note: "10 câu TRUNG BÌNH: Luồng thực thi, giải thích cơ chế, dự đoán kết quả code." },
+      { count: 10, difficulty: "hard", bloomLevel: "analyze", note: "10 câu NÂNG CAO: Debug tìm lỗi, xử lý ngoại lệ, áp dụng tình huống thực tế, tối ưu hóa." }
+    ];
+
+    let questionsList = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      // Build dynamic existing list based on original + already generated chunks
+      let currentGeneratedList = "";
+      if (questionsList.length > 0) {
+        currentGeneratedList = "\n=== CÁC CÂU HỎI VỪA TẠO Ở LƯỢT TRƯỚC (KHÔNG TRÙNG LẶP) ===\n" + 
+          questionsList.map((q, idx) => `${idx + 1}. ${q.question || q.questionText}`).join("\n") +
+          "\n=================\n";
+      }
+
+      const prompt = `Bạn là chuyên gia sư phạm và biên soạn đề thi trắc nghiệm lập trình chuyên nghiệp.
+Nhiệm vụ: tạo CHÍNH XÁC ĐỦ ${chunk.count} CÂU HỎI TRẮC NGHIỆM (MCQ) từ tài liệu bài học.
+
+=== TÀI LIỆU BÀI HỌC ===
+${cleanDocContent}
+=== KẾT THÚC TÀI LIỆU ===
+
+=== DANH SÁCH CÂU HỎI ĐÃ CÓ TRONG HỆ THỐNG (TUYỆT ĐỐI KHÔNG TRÙNG LẶP) ===
+${existingQuestionsText}
+=== KẾT THÚC CÂU HỎI ĐÃ CÓ ===
+${currentGeneratedList}
+
+QUY TẮC BẮT BUỘC:
+1. BẮT BUỘC TẠO ĐỦ CHÍNH XÁC ${chunk.count} CÂU HỎI trong mảng "questions".
+2. Phân bổ độ khó: ${chunk.note}
+3. Mỗi câu hỏi phải có:
+   - "id": Mã câu hỏi dạng "Q01"
+   - "bloomLevel": "${chunk.bloomLevel}"
+   - "difficulty": "${chunk.difficulty}"
+   - "question": Nội dung câu hỏi
+   - "options": Mảng đúng 4 đáp án text [A, B, C, D]
+   - "correctAnswer": Số nguyên từ 0 đến 3 (0=A, 1=B, 2=C, 3=D)
+   - "explanation": Giải thích chi tiết
+   - "hint": Gợi ý
+
+TRẢ VỀ CHÍNH XÁC FORMAT JSON:
+{
+  "questions": [
+    {
+      "id": "Q01",
+      "bloomLevel": "${chunk.bloomLevel}",
+      "difficulty": "${chunk.difficulty}",
+      "question": "Nội dung câu hỏi?",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswer": 0,
+      "explanation": "Giải thích...",
+      "hint": "Gợi ý..."
+    }
+  ]
+}`;
+
+      try {
+        Logger.log(`⚡ Generating chunk ${i+1}/3: ${chunk.count} ${chunk.difficulty} questions...`);
+        const result = GeminiService.callWithRetry(prompt, {
+          expectJson: true,
+          temperature: 0.5,
+          maxTokens: 5000,
+          thinkingBudget: 0,
+          model: AI_CONFIG.GEMINI_MODEL_ADMIN || "gemini-2.5-flash",
+          topicId: requestMeta?.topicId || "",
+          contentType: "questions_chunk_" + (i+1),
+        }, userContext);
+
+        if (result) {
+          let list = [];
+          if (Array.isArray(result)) list = result;
+          else if (Array.isArray(result.questions)) list = result.questions;
+          else if (Array.isArray(result.data)) list = result.data;
+          else if (typeof result === "object") {
+            for (let k in result) {
+              if (Array.isArray(result[k]) && result[k].length > 0) {
+                list = result[k];
+                break;
+              }
+            }
+          }
+          if (list.length > 0) {
+            questionsList = questionsList.concat(list);
+          }
+        }
+      } catch (e) {
+        Logger.log(`⚠️ Error in question chunk ${i+1}: ` + e.toString());
+      }
+    }
+
+    // Top up nếu thiếu
+    if (questionsList.length < targetTotal) {
+      const remainingNeeded = targetTotal - questionsList.length;
+      Logger.log(`⚡ AI generated ${questionsList.length} questions. Requesting top-up of ${remainingNeeded} more questions...`);
+
+      const currentGeneratedText = questionsList.map((q, idx) => `${idx + 1}. ${q.question || q.questionText}`).join("\n");
+      const topUpPrompt = `Bạn là chuyên gia sư phạm. Hãy tạo THÊM ĐỦ ĐÚNG CHÍNH XÁC ${remainingNeeded} CÂU HỎI TRẮC NGHIỆM (MCQ) KHÁC BIỆT từ tài liệu sau để hoàn thiện đủ bộ đề ${targetTotal} câu.
+
+=== TÀI LIỆU BÀI HỌC ===
+${cleanDocContent}
+=== KẾT THÚC TÀI LIỆU ===
+
+=== CÁC CÂU HỎI ĐÃ TẠO Ở LƯỢT TRƯỚC (TUYỆT ĐỐI KHÔNG TRÙNG LẶP) ===
+${currentGeneratedText}
+=== KẾT THÚC CÂU HỎI ĐÃ TẠO ===
+
+YÊU CẦU:
+- Tạo ĐỦ ${remainingNeeded} câu hỏi mới hoàn toàn (độ khó tự do).
+- Trả về CHÍNH XÁC JSON: { "questions": [ { "id": "...", "bloomLevel": "understand", "difficulty": "medium", "question": "...", "options": ["A","B","C","D"], "correctAnswer": 0, "explanation": "...", "hint": "..." } ] }`;
+
+      try {
+        const topUpResult = GeminiService.callWithRetry(topUpPrompt, {
+          expectJson: true,
+          temperature: 0.5,
+          maxTokens: 5000,
+          thinkingBudget: 0,
+          model: AI_CONFIG.GEMINI_MODEL_ADMIN || "gemini-2.5-flash",
+          topicId: requestMeta?.topicId || "",
+          contentType: "questions_topup",
+        }, userContext);
+
+        if (topUpResult) {
+          let extraList = [];
+          if (Array.isArray(topUpResult)) extraList = topUpResult;
+          else if (Array.isArray(topUpResult.questions)) extraList = topUpResult.questions;
+          else if (Array.isArray(topUpResult.data)) extraList = topUpResult.data;
+          else if (typeof topUpResult === "object") {
+            for (let k in topUpResult) {
+              if (Array.isArray(topUpResult[k]) && topUpResult[k].length > 0) {
+                extraList = topUpResult[k];
+                break;
+              }
+            }
+          }
+          if (extraList.length > 0) {
+            questionsList = questionsList.concat(extraList);
+          }
+        }
+      } catch (topUpErr) {
+        Logger.log("⚠️ Top-up question generation error: " + topUpErr.toString());
+      }
+    }
+
+    if (questionsList.length > targetTotal) {
+      questionsList = questionsList.slice(0, targetTotal);
+    }
+
+    Logger.log("✅ Final questions created for admin: " + questionsList.length + " questions!");
+    return { questions: questionsList };
   },
 
   /**
@@ -659,7 +801,8 @@ const ContentGenerator = {
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 1500,
-          responseMimeType: "application/json"
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 }
         }
       };
 
@@ -702,13 +845,13 @@ const ContentGenerator = {
               const fb = clean.indexOf("[");
               const lb = clean.lastIndexOf("]");
               if (fb !== -1 && lb > fb) {
-                try { parsed = JSON.parse(clean.substring(fb, lb + 1)); } catch (e2) {}
+                try { parsed = JSON.parse(clean.substring(fb, lb + 1)); } catch (e2) { }
               }
               if (!parsed) {
                 const fo = clean.indexOf("{");
                 const lo = clean.lastIndexOf("}");
                 if (fo !== -1 && lo > fo) {
-                  try { parsed = JSON.parse(clean.substring(fo, lo + 1)); } catch (e3) {}
+                  try { parsed = JSON.parse(clean.substring(fo, lo + 1)); } catch (e3) { }
                 }
               }
             }
@@ -995,7 +1138,7 @@ const TopicContentOrchestrator = {
           } else {
             results.flashcards = { error: "Không thể lấy thuật ngữ cho chủ đề này." };
           }
-          
+
           // Optionally cache the non-AI flashcards
           AIContentCache.save({
             topicId: topicId,
@@ -1092,8 +1235,8 @@ const TopicContentOrchestrator = {
 
       Logger.log(
         "✅ All content generated in " +
-          (processingTime / 1000).toFixed(1) +
-          "s",
+        (processingTime / 1000).toFixed(1) +
+        "s",
       );
 
       return {

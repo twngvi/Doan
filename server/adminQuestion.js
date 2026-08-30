@@ -208,11 +208,12 @@ function adminGenerateQuestionsByAI(topicId) {
     const userId = Session.getActiveUser().getEmail() || "admin";
     const userContext = { userId: userId, email: userId }; // Fallback to email as userId for admin tools
     
-    // Lấy danh sách câu hỏi hiện có để truyền cho AI chống trùng lặp
+    // Lấy danh sách câu hỏi hiện có để truyền cho AI chống trùng lặp (giới hạn tối đa 30 câu)
     const existingQuestionsResult = adminGetQuestionsForTopic(topicId);
     let existingQuestionsText = "Không có câu hỏi cũ nào.";
     if (existingQuestionsResult.success && existingQuestionsResult.questions && existingQuestionsResult.questions.length > 0) {
-      existingQuestionsText = existingQuestionsResult.questions
+      const topQuestions = existingQuestionsResult.questions.slice(0, 30);
+      existingQuestionsText = topQuestions
         .map((q, idx) => `${idx + 1}. ${q.questionText}`)
         .join("\n");
     }
@@ -223,12 +224,8 @@ function adminGenerateQuestionsByAI(topicId) {
       return { success: false, message: "Không thể đọc tài liệu: " + docResult.error };
     }
     
-    // 3. Analyze Doc
-    const analysis = ContentGenerator.analyzeDocument(
-      docResult.content,
-      userContext,
-      { topicId: topicId }
-    );
+    // 3. Prepare analysis metadata directly
+    const analysis = { mainTopic: topic.title, keyConcepts: [] };
     
     // 4. Generate Questions
     const questionsResult = ContentGenerator.generateQuestions(
@@ -240,30 +237,41 @@ function adminGenerateQuestionsByAI(topicId) {
     );
     
     // Format the response for the admin UI
-    if (questionsResult && questionsResult.questions) {
-      if (questionsResult.questions.length === 0) {
-        return { success: false, message: "Không thể tạo thêm câu hỏi mới. Nội dung tài liệu đã được khai thác hết để tránh trùng lặp." };
+    let qList = [];
+    if (questionsResult) {
+      if (Array.isArray(questionsResult)) {
+        qList = questionsResult;
+      } else if (Array.isArray(questionsResult.questions)) {
+        qList = questionsResult.questions;
+      } else if (Array.isArray(questionsResult.data)) {
+        qList = questionsResult.data;
+      } else if (typeof questionsResult === "object") {
+        for (let k in questionsResult) {
+          if (Array.isArray(questionsResult[k]) && questionsResult[k].length > 0) {
+            qList = questionsResult[k];
+            break;
+          }
+        }
       }
-      
+    }
+
+    if (qList && qList.length > 0) {
       // Map to the format we need in DB
-      const formattedQuestions = questionsResult.questions.map((q, index) => ({
+      const formattedQuestions = qList.map((q, index) => ({
         questionId: "TEMP_" + Date.now() + "_" + index, // Dùng questionId để adminSaveQuestions nhận diện là câu mới
         topicId: topicId,
-        questionText: q.question,
-        optionA: q.options[0] || "",
-        optionB: q.options[1] || "",
-        optionC: q.options[2] || "",
-        optionD: q.options[3] || "",
-        correctAnswer: q.correctAnswer === 0 ? "A" : q.correctAnswer === 1 ? "B" : q.correctAnswer === 2 ? "C" : "D",
+        questionText: q.question || q.questionText || "",
+        optionA: (Array.isArray(q.options) ? q.options[0] : q.optionA) || "",
+        optionB: (Array.isArray(q.options) ? q.options[1] : q.optionB) || "",
+        optionC: (Array.isArray(q.options) ? q.options[2] : q.optionC) || "",
+        optionD: (Array.isArray(q.options) ? q.options[3] : q.optionD) || "",
+        correctAnswer: q.correctAnswer === 0 ? "A" : q.correctAnswer === 1 ? "B" : q.correctAnswer === 2 ? "C" : (q.correctAnswer === 3 || q.correctAnswer === "D") ? "D" : (typeof q.correctAnswer === "string" ? q.correctAnswer.toUpperCase() : "A"),
         explanation: q.explanation || "",
         difficulty: q.difficulty || "medium",
         status: "draft",
         source: "ai_generated",
         bloomLevel: q.bloomLevel || "understand"
       }));
-      
-      // Update topic status to ai_generated
-      adminUpdateTopicQuizStatus(topicId, "ai_generated");
       
       // Tự động lưu các câu hỏi nháp này vào Database
       adminSaveQuestions(topicId, formattedQuestions);
@@ -278,6 +286,8 @@ function adminGenerateQuestionsByAI(topicId) {
         success: true,
         questions: latestQuestionsResult.success ? latestQuestionsResult.questions : formattedQuestions
       };
+    } else if (questionsResult && Array.isArray(questionsResult.questions) && questionsResult.questions.length === 0) {
+      return { success: false, message: "Không thể tạo thêm câu hỏi mới. Nội dung tài liệu đã được khai thác hết để tránh trùng lặp." };
     } else {
       let rawText = typeof questionsResult === "string" ? questionsResult : JSON.stringify(questionsResult);
       if (rawText && rawText.length > 200) rawText = rawText.substring(0, 200) + "...";
@@ -377,6 +387,7 @@ function adminSaveQuestions(topicId, questions) {
     }
     
     let approvedCount = 0;
+    const rowsToAppend = [];
     
     questions.forEach(q => {
       const qIdStr = q.questionId ? String(q.questionId).trim() : "";
@@ -416,14 +427,21 @@ function adminSaveQuestions(topicId, questions) {
         // Update existing row
         mcqSheet.getRange(existingIds[questionId], 1, 1, headers.length).setValues([rowData]);
       } else {
-        // Append new row
-        mcqSheet.appendRow(rowData);
+        // Collect new row for batch insert
+        rowsToAppend.push(rowData);
       }
     });
+
+    if (rowsToAppend.length > 0) {
+      const lastRow = mcqSheet.getLastRow();
+      mcqSheet.getRange(lastRow + 1, 1, rowsToAppend.length, headers.length).setValues(rowsToAppend);
+    }
     
     // Update Topic Status
     if (approvedCount > 0) {
       adminUpdateTopicQuizStatus(topicId, "ready");
+    } else if (questions && questions.length > 0) {
+      adminUpdateTopicQuizStatus(topicId, "ai_generated");
     } else {
       adminUpdateTopicQuizStatus(topicId, "need_questions");
     }

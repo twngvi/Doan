@@ -851,56 +851,136 @@ function adminGenerateMatchingCardsByAI(topicId) {
       return { success: false, message: "Không thể đọc tài liệu: " + docResult.error };
     }
 
-    // 4. Call Gemini AI directly with a custom prompt
-    const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau đây, hãy trích xuất các thuật ngữ/khái niệm quan trọng nhất và tạo thành các thẻ ghép (matching cards).
+    // 4. Call Gemini AI to generate 30 matching cards sequentially (3 chunks of 10)
+    const user = GeminiService.resolveAuthenticatedUser(userContext);
+    const targetCardsCount = 30;
+
+    const chunks = [
+      { count: 10, difficulty: "easy", note: "10 thẻ DỄ: Các từ khóa, định nghĩa cơ bản, hàm cốt lõi." },
+      { count: 10, difficulty: "medium", note: "10 thẻ TRUNG BÌNH: Cú pháp nâng cao, tham số, giải thích luồng hoạt động." },
+      { count: 10, difficulty: "hard", note: "10 thẻ NÂNG CAO: Tối ưu hóa, ngoại lệ, mẹo hoặc cơ chế sâu bên trong." }
+    ];
+
+    let cardList = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      let currentGeneratedList = "";
+      if (cardList.length > 0) {
+        currentGeneratedList = "\n=== CÁC THẺ VỪA TẠO Ở LƯỢT TRƯỚC (KHÔNG TRÙNG LẶP) ===\n" + 
+          cardList.map((c, idx) => `${idx + 1}. ${c.term}`).join(", ") +
+          "\n=================\n";
+      }
+
+      const prompt = `Bạn là chuyên gia giáo dục. Từ nội dung bài học sau, hãy trích xuất CHÍNH XÁC ĐỦ ${chunk.count} thuật ngữ/khái niệm quan trọng và tạo thành các thẻ ghép (matching cards).
 
 === NỘI DUNG BÀI HỌC ===
-${docResult.content}
+${docResult.content.substring(0, 12000)}
 === KẾT THÚC ===
 
 === DANH SÁCH THẺ ĐÃ TỒN TẠI (TUYỆT ĐỐI KHÔNG ĐƯỢC TRÙNG) ===
 ${existingTermsText}
-=== KẾT THÚC DANH SÁCH THẺ CŨ ===
+=== KẾT THÚC ===
+${currentGeneratedList}
 
-Trả về CHÍNH XÁC định dạng JSON sau:
+YÊU CẦU BẮT BUỘC:
+- BẮT BUỘC tạo ĐỦ ĐÚNG ${chunk.count} thẻ trong mảng "cards".
+- Phân bổ: ${chunk.note}
+- Trả về CHÍNH XÁC định dạng JSON:
 {
   "cards": [
     {
-      "term": "Thuật ngữ ngắn gọn (1-5 từ)",
+      "term": "Thuật ngữ ngắn gọn",
       "definition": "Định nghĩa chi tiết",
       "shortDefinition": "Định nghĩa ngắn gọn (1 câu)",
       "example": "Ví dụ minh họa",
       "hint": "Gợi ý để người chơi dễ đoán",
-      "difficulty": "easy|medium|hard",
-      "tags": "tag1, tag2"
+      "difficulty": "${chunk.difficulty}",
+      "tags": "python, cơ bản"
     }
   ]
-}
+}`;
 
-YÊU CẦU CỰC KỲ QUAN TRỌNG:
-- Cố gắng tạo TỐI ĐA 30 thẻ mới.
-- Bắt buộc phân bổ độ khó (nếu đủ 30 thẻ) theo đúng số lượng sau: 18 thẻ "easy" (dễ), 8 thẻ "medium" (trung bình), 4 thẻ "hard" (khó). Nếu không đủ 30 thẻ, hãy giữ tỷ lệ độ khó tương đương.
-- CHỐNG TRÙNG LẶP: Đọc kỹ phần DANH SÁCH THẺ ĐÃ TỒN TẠI. TUYỆT ĐỐI KHÔNG TẠO ra các thẻ có thuật ngữ (term) hoặc nội dung trùng lặp với các thẻ đã tồn tại. MỖI LẦN TẠO PHẢI LÀ CÁC THẺ KHÁC BIỆT HOÀN TOÀN.
-- NỘI DUNG GIỮA CÁC THẺ MỚI CŨNG KHÔNG ĐƯỢC TRÙNG NHAU.
-- Nếu tài liệu đã được khai thác hết và KHÔNG THỂ tạo thêm bất kỳ thẻ KHÁC BIỆT nào nữa, hãy trả về mảng "cards" rỗng [].
-- term: Là cụm từ cốt lõi, không diễn giải dài dòng.
-- CHỈ trả về JSON hợp lệ, không có markdown text dư thừa.
-- CHỈ dùng kiến thức trong tài liệu, KHÔNG tạo thuật ngữ không có trong tài liệu.`;
+      try {
+        Logger.log(`⚡ Generating matching card chunk ${i+1}/3: ${chunk.count} ${chunk.difficulty} cards...`);
+        const aiResult = GeminiService.callWithRetry(prompt, {
+          expectJson: true,
+          temperature: 0.5,
+          maxTokens: 5000,
+          thinkingBudget: 0,
+          model: AI_CONFIG.GEMINI_MODEL_ADMIN || "gemini-2.5-flash",
+          topicId: topicId,
+          contentType: "matching_cards_chunk_" + (i+1),
+        }, userContext);
 
-    const aiResult = GeminiService.callWithRetry(prompt, {
-      expectJson: true,
-      temperature: 0.7,
-      maxTokens: 20000,
-      topicId: topicId,
-      contentType: "matching_cards_ai_admin",
-    }, userContext);
-
-    if (!aiResult || !aiResult.cards || !Array.isArray(aiResult.cards)) {
-      return { success: false, message: "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại." };
+        if (aiResult) {
+          let list = [];
+          if (Array.isArray(aiResult)) list = aiResult;
+          else if (Array.isArray(aiResult.cards)) list = aiResult.cards;
+          else if (Array.isArray(aiResult.data)) list = aiResult.data;
+          else if (typeof aiResult === "object") {
+            for (let k in aiResult) {
+              if (Array.isArray(aiResult[k]) && aiResult[k].length > 0) {
+                list = aiResult[k];
+                break;
+              }
+            }
+          }
+          if (list.length > 0) cardList = cardList.concat(list);
+        }
+      } catch (err) {
+        Logger.log(`⚠️ Error generating matching card chunk ${i+1}: ` + err.toString());
+      }
     }
 
-    if (aiResult.cards.length === 0) {
-      return { success: false, message: "Không thể tạo thêm thẻ mới. Nội dung tài liệu đã được khai thác hết để tránh trùng lặp." };
+    // Top-up nếu chưa đủ 30 thẻ
+    if (cardList.length < targetCardsCount) {
+      const needMore = targetCardsCount - cardList.length;
+      Logger.log(`⚡ Generated ${cardList.length} matching cards. Requesting top-up of ${needMore} cards...`);
+
+      const currentTerms = cardList.map(c => c.term).join(", ");
+      const topUpPrompt = `Hãy trích xuất THÊM ĐỦ ĐÚNG CHÍNH XÁC ${needMore} thuật ngữ/khái niệm KHÁC BIỆT từ tài liệu sau để bổ sung đủ ${targetCardsCount} thẻ ghép.
+=== NỘI DUNG BÀI HỌC ===
+${docResult.content.substring(0, 12000)}
+=== KẾT THÚC ===
+
+=== CÁC THUẬT NGỮ ĐÃ CÓ (KHÔNG TRÙNG) ===
+${currentTerms}
+=== KẾT THÚC ===
+
+Trả về JSON: { "cards": [ { "term": "...", "definition": "...", "shortDefinition": "...", "example": "...", "hint": "...", "difficulty": "medium", "tags": "python" } ] }`;
+
+      try {
+        const topUpResult = GeminiService.callWithRetry(topUpPrompt, {
+          expectJson: true,
+          temperature: 0.5,
+          maxTokens: 5000,
+          thinkingBudget: 0,
+          model: AI_CONFIG.GEMINI_MODEL_ADMIN || "gemini-2.5-flash",
+          topicId: topicId,
+          contentType: "matching_cards_ai_admin_topup",
+        }, userContext);
+
+        if (topUpResult) {
+          let extra = [];
+          if (Array.isArray(topUpResult)) extra = topUpResult;
+          else if (Array.isArray(topUpResult.cards)) extra = topUpResult.cards;
+          else if (Array.isArray(topUpResult.data)) extra = topUpResult.data;
+          if (extra.length > 0) {
+            cardList = cardList.concat(extra);
+          }
+        }
+      } catch (e2) {
+        Logger.log("⚠️ Top-up matching cards error: " + e2.toString());
+      }
+    }
+
+    if (cardList.length > targetCardsCount) {
+      cardList = cardList.slice(0, targetCardsCount);
+    }
+
+    if (cardList.length === 0) {
+      return { success: false, message: "AI không trích xuất được thẻ mới từ tài liệu." };
     }
 
     const existingTermsSet = new Set();
@@ -910,7 +990,7 @@ YÊU CẦU CỰC KỲ QUAN TRỌNG:
       });
     }
 
-    const newCards = aiResult.cards.filter(c => c.term && !existingTermsSet.has(c.term.toLowerCase().trim()));
+    const newCards = cardList.filter(c => c.term && !existingTermsSet.has(c.term.toLowerCase().trim()));
 
     if (newCards.length === 0) {
       return { success: false, message: "Không thể tạo thêm thẻ mới từ tài liệu này (đã cạn kiệt thuật ngữ bài học hoặc toàn bộ bị trùng lặp)." };
