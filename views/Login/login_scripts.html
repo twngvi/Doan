@@ -203,8 +203,8 @@
         };
 
         // Call backend function
-        google.script.run
-          .withSuccessHandler(function (response) {
+        // Call backend function
+        const handleSuccess = function (response) {
             console.log("Login response:", response);
             setLoading(false);
             isSubmitting = false;
@@ -221,7 +221,7 @@
                 setLoading(true);
                 payload.force = true;
                 google.script.run
-                  .withSuccessHandler(arguments.callee)
+                  .withSuccessHandler(handleSuccess)
                   .withFailureHandler(function (error) {
                     console.error("Force Login error:", error);
                     setLoading(false);
@@ -284,7 +284,10 @@
             } else {
               showError(response.message || "Email hoặc mật khẩu không đúng");
             }
-          })
+          };
+
+        google.script.run
+          .withSuccessHandler(handleSuccess)
           .withFailureHandler(function (error) {
             console.error("Login error:", error);
             setLoading(false);
