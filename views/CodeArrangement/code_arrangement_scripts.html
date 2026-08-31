@@ -121,7 +121,14 @@
   }
 
   function caSearchGames(query) {
-    query = (query || '').trim().toLowerCase();
+    const caNormalizeText = (text) => {
+      if (!text) return "";
+      return String(text)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    };
+    query = caNormalizeText(query).trim();
     const listBody = document.getElementById('caListBody');
     if (!listBody) return;
 
@@ -155,9 +162,9 @@
 
     if (query) {
       filtered = filtered.filter(function(game) {
-        const title = (game.title || '').toLowerCase();
-        const desc = (game.description || '').toLowerCase();
-        const lang = (game.programmingLanguage || '').toLowerCase();
+        const title = caNormalizeText(game.title);
+        const desc = caNormalizeText(game.description);
+        const lang = caNormalizeText(game.programmingLanguage);
         return title.indexOf(query) !== -1 || desc.indexOf(query) !== -1 || lang.indexOf(query) !== -1;
       });
     }

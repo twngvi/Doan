@@ -66,18 +66,22 @@
   }
 
   function filterCAList() {
-    const search = document
-      .getElementById("caSearchInput")
-      .value
-      .trim()
-      .toLowerCase();
+    const caNormalizeText = (text) => {
+      if (!text) return "";
+      return String(text)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    };
+
+    const search = caNormalizeText(document.getElementById("adminCaSearchInput").value);
 
     const status = document.getElementById("caStatusFilter").value;
     const difficulty = document.getElementById("caDifficultyFilter").value;
 
     const filtered = caList.filter(function (item) {
-      const title = String(item.title || "").toLowerCase();
-      const arrangementId = String(item.arrangementId || "").toLowerCase();
+      const title = caNormalizeText(item.title);
+      const arrangementId = caNormalizeText(item.arrangementId);
       const itemStatus = String(item.status || "").toLowerCase();
       const itemDifficulty = String(item.difficulty || "").toLowerCase();
 
