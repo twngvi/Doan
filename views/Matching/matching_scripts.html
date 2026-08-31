@@ -1947,6 +1947,20 @@
 
   // ===== START GAME FROM TOPIC =====
   function startMatchingGameFromTopic(topic) {
+    if (typeof window.checkGeminiKeyAndProceed === "function") {
+      window.checkGeminiKeyAndProceed(
+        function() {
+          _startMatchingGameFromTopicInternal(topic);
+        },
+        "Yêu cầu API Key",
+        "Bạn cần cung cấp Gemini API Key cá nhân để tiếp tục trò chơi Matching. Bạn có muốn đi tới trang Hồ sơ để nhập Key không?"
+      );
+    } else {
+      _startMatchingGameFromTopicInternal(topic);
+    }
+  }
+
+  function _startMatchingGameFromTopicInternal(topic) {
     // Hide topic selection, show game
     setMatchingPreplayMode(false);
     updateMatchingGameHeader(topic);
@@ -2138,12 +2152,19 @@
   }
 
   function showGeminiKeyConfigWarning(message) {
-    showToast(
-      message ||
-        "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
-      "warning",
-    );
-    redirectToProfileAiKeySetup();
+    if (typeof window.showGlobalApiKeyPrompt === "function") {
+      window.showGlobalApiKeyPrompt(
+        "Yêu cầu API Key",
+        "Bạn cần cung cấp Gemini API Key cá nhân để tiếp tục trò chơi Matching. Bạn có muốn đi tới trang Hồ sơ để nhập Key không?"
+      );
+    } else {
+      showToast(
+        message ||
+          "Bạn chưa gắn Gemini API key cá nhân. Vui lòng vào Profile/Settings để cấu hình.",
+        "warning"
+      );
+      redirectToProfileAiKeySetup();
+    }
   }
 
   function redirectToProfileAiKeySetup() {

@@ -3916,4 +3916,158 @@ function showLoginSuccessScreen(user, redirectPage) {
   }, 1500);
 }
 
+/**
+ * Hiển thị popup yêu cầu nhập API Key (dùng chung cho toàn hệ thống)
+ * Thay thế cho showCustomApiKeyPrompt cũ
+ */
+window.showGlobalApiKeyPrompt = function(titleText, descText) {
+  // Xóa popup cũ nếu có
+  const existing = document.getElementById("custom-apikey-prompt");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "custom-apikey-prompt";
+  overlay.style.position = "fixed";
+  overlay.style.top = "0";
+  overlay.style.left = "0";
+  overlay.style.width = "100vw";
+  overlay.style.height = "100vh";
+  overlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+  overlay.style.zIndex = "99999";
+  overlay.style.display = "flex";
+  overlay.style.justifyContent = "center";
+  overlay.style.alignItems = "center";
+  overlay.style.animation = "fadeIn 0.2s ease-out";
+
+  const box = document.createElement("div");
+  box.style.background = "#fff";
+  box.style.padding = "24px";
+  box.style.borderRadius = "12px";
+  box.style.boxShadow = "0 10px 25px rgba(0,0,0,0.1)";
+  box.style.maxWidth = "400px";
+  box.style.width = "90%";
+  box.style.textAlign = "center";
+  box.style.fontFamily = "inherit";
+
+  const title = document.createElement("h3");
+  title.innerText = titleText || "Yêu cầu API Key";
+  title.style.margin = "0 0 12px 0";
+  title.style.color = "#1f2937";
+  title.style.fontSize = "1.25rem";
+
+  const desc = document.createElement("p");
+  desc.innerText = descText || "Bạn cần cung cấp Gemini API Key cá nhân để tiếp tục. Bạn có muốn đi tới trang Hồ sơ để nhập Key không?";
+  desc.style.margin = "0 0 24px 0";
+  desc.style.color = "#4b5563";
+  desc.style.lineHeight = "1.5";
+  desc.style.fontSize = "0.95rem";
+
+  const btnGroup = document.createElement("div");
+  btnGroup.style.display = "flex";
+  btnGroup.style.justifyContent = "center";
+  btnGroup.style.gap = "12px";
+
+  const btnCancel = document.createElement("button");
+  btnCancel.innerText = "Không đồng ý";
+  btnCancel.style.padding = "10px 16px";
+  btnCancel.style.border = "none";
+  btnCancel.style.borderRadius = "6px";
+  btnCancel.style.background = "#f3f4f6";
+  btnCancel.style.color = "#4b5563";
+  btnCancel.style.cursor = "pointer";
+  btnCancel.style.fontWeight = "600";
+  btnCancel.style.transition = "background 0.2s";
+  btnCancel.onmouseover = () => btnCancel.style.background = "#e5e7eb";
+  btnCancel.onmouseout = () => btnCancel.style.background = "#f3f4f6";
+  btnCancel.onclick = () => overlay.remove();
+
+  const btnOk = document.createElement("button");
+  btnOk.innerText = "Đồng ý";
+  btnOk.style.padding = "10px 16px";
+  btnOk.style.border = "none";
+  btnOk.style.borderRadius = "6px";
+  btnOk.style.background = "#3b82f6";
+  btnOk.style.color = "white";
+  btnOk.style.cursor = "pointer";
+  btnOk.style.fontWeight = "600";
+  btnOk.style.transition = "background 0.2s";
+  btnOk.onmouseover = () => btnOk.style.background = "#2563eb";
+  btnOk.onmouseout = () => btnOk.style.background = "#3b82f6";
+  btnOk.onclick = () => {
+    overlay.remove();
+    if (typeof window.showPage === "function") {
+      window.showPage("page-profile");
+    }
+    setTimeout(function () {
+      if (typeof window.openProfileSection === "function") {
+        window.openProfileSection("ai-key");
+      }
+    }, 220);
+  };
+
+  btnGroup.appendChild(btnCancel);
+  btnGroup.appendChild(btnOk);
+
+  box.appendChild(title);
+  box.appendChild(desc);
+  box.appendChild(btnGroup);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+};
+
+/**
+ * Kiểm tra trạng thái API Key trước khi tiến hành một hành động.
+ * Nếu đã có, gọi onSuccess(). Nếu chưa có, hiển thị prompt yêu cầu.
+ */
+window.checkGeminiKeyAndProceed = function(onSuccess, promptTitle, promptDesc) {
+  if (window.currentUserApiKeyStatus) {
+    if (window.currentUserApiKeyStatus.hasKey) {
+      if (typeof onSuccess === "function") onSuccess();
+    } else {
+      if (typeof window.showGlobalApiKeyPrompt === "function") {
+        window.showGlobalApiKeyPrompt(promptTitle, promptDesc);
+      }
+    }
+  } else {
+    if (typeof window.showLoading === "function") {
+      window.showLoading(true, "Đang kiểm tra API Key...");
+    }
+    const userId = (window.currentUser && window.currentUser.userId) || 
+                   (window.currentUser && window.currentUser.email) || null;
+                   
+    if (!userId) {
+      if (typeof window.showLoading === "function") window.showLoading(false);
+      if (typeof window.showToast === "function") window.showToast("Lỗi xác thực. Vui lòng đăng nhập lại.", "error");
+      return;
+    }
+
+    if (google && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (typeof window.showLoading === "function") {
+            window.showLoading(false);
+          }
+          window.currentUserApiKeyStatus = response; // Cache lại
+          if (response && response.hasKey) {
+            if (typeof onSuccess === "function") onSuccess();
+          } else {
+            if (typeof window.showGlobalApiKeyPrompt === "function") {
+              window.showGlobalApiKeyPrompt(promptTitle, promptDesc);
+            }
+          }
+        })
+        .withFailureHandler(function(error) {
+          if (typeof window.showLoading === "function") {
+            window.showLoading(false);
+          }
+          if (typeof window.showToast === "function") {
+            window.showToast("Lỗi kiểm tra API Key: " + String(error), "error");
+          } else {
+            console.error("Lỗi kiểm tra API Key:", error);
+          }
+        })
+        .getUserGeminiKeyStatus(userId);
+    }
+  }
+};
 </script>
