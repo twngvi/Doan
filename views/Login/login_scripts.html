@@ -200,9 +200,9 @@
         const payload = {
           username: email,
           password: password,
+          force: true, // Tự động force login để ghi đè session cũ, không cần hỏi người dùng
         };
 
-        // Call backend function
         // Call backend function
         const handleSuccess = function (response) {
             console.log("Login response:", response);
@@ -211,25 +211,6 @@
             
             if (!response) {
               showError("Lỗi hệ thống: Phản hồi từ server bị rỗng.");
-              return;
-            }
-
-            if (response && response.requireConfirmation) {
-              if (confirm(response.message)) {
-                // Retry login with force=true
-                isSubmitting = true;
-                setLoading(true);
-                payload.force = true;
-                google.script.run
-                  .withSuccessHandler(handleSuccess)
-                  .withFailureHandler(function (error) {
-                    console.error("Force Login error:", error);
-                    setLoading(false);
-                    isSubmitting = false;
-                    showError("Lỗi kết nối. Vui lòng thử lại.");
-                  })
-                  .terracodeLoginV2(payload);
-              }
               return;
             }
 

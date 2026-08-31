@@ -352,6 +352,8 @@ function processGoogleUserLogin(googleProfile, force = false) {
         userSheet.getRange(userRowIndex, activeSessionIdIndex + 1).setValue("");
       }
 
+      // Đã comment out đoạn check session conflict (requireConfirmation) để cho phép đăng nhập tự do (tự động force login)
+      /*
       if (currentActiveSession && currentActiveSession !== "" && isSessionFresh && !force) {
         const token = "G_CONFIRM_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
         CacheService.getScriptCache().put(token, JSON.stringify(googleProfile), 300);
@@ -361,6 +363,7 @@ function processGoogleUserLogin(googleProfile, force = false) {
           message: "Tài khoản của bạn đang được đăng nhập ở thiết bị khác. Nếu bạn tiếp tục đăng nhập, thiết bị kia sẽ bị đăng xuất. Bạn có muốn tiếp tục?",
         };
       }
+      */
     }
 
     userSheet.getRange(userRowIndex, 2).setValue(googleId); // Update Google ID
