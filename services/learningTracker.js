@@ -432,17 +432,35 @@ function dailyCheckin(userContext) {
       try {
         const masterDbId = DB_CONFIG.SPREADSHEET_ID || "1SWwP0CIdpw050Qq9q4MbZYKkFfGy60t8uMfFZwCF9Ds";
         const masterSS = SpreadsheetApp.openById(masterDbId);
+        
+        // Fetch from User_Stats instead of Users, since XP is stored there
+        const statsSheet = masterSS.getSheetByName("User_Stats");
         const usersSheet = masterSS.getSheetByName("Users");
-        const usersData = usersSheet.getDataRange().getValues();
-        const usersHeaders = usersData[0];
-        const emailCol = usersHeaders.indexOf("email");
-        const xpCol = usersHeaders.indexOf("totalXP");
-        const xqpCol = usersHeaders.indexOf("totalXQP");
-        for (var i = 1; i < usersData.length; i++) {
-          if (String(usersData[i][emailCol]).trim() === String(userEmail).trim()) {
-            responseNewTotalXP = parseInt(usersData[i][xpCol]) || 0;
-            responseNewTotalXQP = xqpCol >= 0 ? (parseInt(usersData[i][xqpCol]) || 0) : 0;
-            break;
+        
+        if (statsSheet && usersSheet) {
+          // First, get userId from Users sheet
+          let targetUserId = "";
+          const usersData = usersSheet.getDataRange().getValues();
+          const emailCol = usersData[0].indexOf("email");
+          for (let i = 1; i < usersData.length; i++) {
+            if (String(usersData[i][emailCol]).trim() === String(userEmail).trim()) {
+              targetUserId = usersData[i][0];
+              break;
+            }
+          }
+          
+          if (targetUserId) {
+            // Then fetch XP/XQP from User_Stats
+            const statsData = statsSheet.getDataRange().getValues();
+            const xpCol = statsData[0].indexOf("totalXP");
+            const xqpCol = statsData[0].indexOf("totalXQP");
+            for (let i = 1; i < statsData.length; i++) {
+              if (statsData[i][0] === targetUserId) {
+                responseNewTotalXP = xpCol >= 0 ? (parseInt(statsData[i][xpCol]) || 0) : 0;
+                responseNewTotalXQP = xqpCol >= 0 ? (parseInt(statsData[i][xqpCol]) || 0) : 0;
+                break;
+              }
+            }
           }
         }
       } catch (fetchErr) {

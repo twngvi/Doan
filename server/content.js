@@ -2120,6 +2120,17 @@ function syncUserPointsAcrossDBs(userEmail, xpDelta) {
         }
       }
 
+      if (!userFound) {
+        result.totalXP = xpDelta;
+        result.totalXQP = xpDelta;
+        
+        // Create the missing User_Stats row (14 columns schema)
+        const newStatsRow = [targetUserId, 1, 1, 0, result.totalXP, result.totalXQP, 0, 0, 0, 1, 0, 0, 0, 0];
+        statsSheet.appendRow(newStatsRow);
+        SpreadsheetApp.flush();
+        userFound = true;
+      }
+
       // Update Users sheet as well so that getDashboardData can fetch it correctly
       if (userRowIndex >= 0) {
         if (uXpCol >= 0) usersSheet.getRange(userRowIndex + 1, uXpCol + 1).setValue(result.totalXP);

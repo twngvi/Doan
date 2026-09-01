@@ -253,13 +253,14 @@
                 updateURLState('dashboard');
               }
 
-              // Navigate to dashboard
+              // Navigate to dashboard with a full page reload (matches Google login behavior)
               setTimeout(() => {
-                if (typeof showPage === "function") {
-                  showPage("page-dashboard", {}, false); // false = không tạo history entry mới
-                  if (typeof loadDashboardData === "function") {
-                    loadDashboardData();
-                  }
+                try {
+                  const url = new URL(window.top.location.href);
+                  url.searchParams.set('page', 'dashboard');
+                  window.top.location.href = url.toString();
+                } catch (e) {
+                  window.top.location.href = "?page=dashboard";
                 }
               }, 500);
             } else {

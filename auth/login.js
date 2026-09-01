@@ -187,6 +187,15 @@ function loginWithEmail(credentials) {
           }
         }
 
+        try {
+          runPostLoginTasks({
+            userId: String(data[i][userIdIndex] || ""),
+            email: credentials.email
+          });
+        } catch (e) {
+          Logger.log("Warning: runPostLoginTasks failed during login: " + e.toString());
+        }
+
         return {
           success: true,
           message: "Đăng nhập thành công!",
