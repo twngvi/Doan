@@ -253,16 +253,20 @@
                 updateURLState('dashboard');
               }
 
-              // Navigate to dashboard with a full page reload (matches Google login behavior)
-              setTimeout(() => {
-                try {
-                  const url = new URL(window.top.location.href);
-                  url.searchParams.set('page', 'dashboard');
-                  window.top.location.href = url.toString();
-                } catch (e) {
-                  window.top.location.href = "?page=dashboard";
-                }
-              }, 500);
+              // Sử dụng hàm điều hướng chung (giống hệt Google Login) có sẵn trong client_js.html
+              if (typeof showLoginSuccessAndRedirect === "function") {
+                showLoginSuccessAndRedirect(user);
+              } else {
+                // Fallback nếu hàm chưa được tải
+                setTimeout(() => {
+                  if (typeof showPage === "function") {
+                    showPage("page-dashboard", {}, false);
+                    if (typeof loadDashboardData === "function") {
+                      loadDashboardData();
+                    }
+                  }
+                }, 500);
+              }
             } else {
               showError(response.message || "Email hoặc mật khẩu không đúng");
             }

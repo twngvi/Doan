@@ -3893,14 +3893,48 @@ function showLoginSuccessScreen(user, redirectPage) {
         document.body.removeChild(overlay);
       }
       
-      // Full page reload để khôi phục toàn bộ session data và trigger các logic khởi tạo của app
+      // SPA Routing hoàn toàn để tránh reload iframe (gây lỗi trắng trang)
       try {
         const cleanTargetPage = targetPage.replace('page-', '');
-        const url = new URL(window.top.location.href);
-        url.searchParams.set('page', cleanTargetPage);
-        window.top.location.href = url.toString();
+        if (typeof updateURLState === "function") {
+          updateURLState(cleanTargetPage);
+        }
       } catch (e) {
-        window.location.reload();
+        console.warn("Could not update URL state:", e);
+      }
+
+      if (typeof showPage === "function") {
+        showPage(targetPage, {}, false);
+        
+        // Khởi tạo nội dung tương ứng
+        if (targetPage === "page-dashboard" && typeof loadDashboardData === "function") {
+          loadDashboardData();
+        } else if (targetPage === "page-admin" && typeof showAdminPage === "function") {
+          // Lấy trang admin cuối cùng hoặc mặc định là online-stats
+          let adminTarget = "page-online-stats";
+          try {
+            const storedPage = localStorage.getItem("adminLastActivePage");
+            if (storedPage && storedPage.startsWith("page-")) {
+              adminTarget = storedPage;
+            }
+          } catch(e) {}
+          
+          showAdminPage(adminTarget);
+          
+          // Cập nhật nav item active
+          const navItem = document.querySelector(".admin-sidebar .nav-item[data-page='" + adminTarget + "']");
+          if (navItem && typeof setActiveNavItem === "function") {
+            setActiveNavItem(navItem);
+          }
+
+          // Cập nhật avatar/tên cho Admin Header
+          const adminAvatar = document.getElementById("admin-avatar");
+          const adminUsername = document.getElementById("admin-username");
+          if (adminAvatar && user && user.avatar) adminAvatar.src = user.avatar;
+          if (adminUsername && user && (user.displayName || user.fullName || user.username)) {
+            adminUsername.textContent = user.displayName || user.fullName || user.username;
+          }
+        }
       }
     }, 500);
   };
