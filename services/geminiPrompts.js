@@ -301,8 +301,8 @@ LƯU Ý FORMAT:
 
 YÊU CẦU:
 - Giữ nguyên khái niệm cốt lõi cần kiểm tra
-- Thay đổi đủ để không nhận ra là câu hỏi cũ
-- Đáp án đúng có thể khác vị trí với câu gốc
+- BẮT BUỘC thay đổi toàn bộ cách diễn đạt của câu hỏi để không nhận ra là câu hỏi cũ.
+- BẮT BUỘC viết lại nội dung của tất cả các đáp án (options) khác đi, tuyệt đối không được dùng lại nguyên văn đáp án cũ rồi chỉ đổi vị trí.
 - Độ khó tương đương hoặc cao hơn một chút`,
 
   /**
@@ -328,12 +328,13 @@ Trả về CHÍNH XÁC format JSON sau (trả về một mảng chứa các câu
   }
 ]
 
-LƯU Ý FORMAT CỰC KỲ QUAN TRỌNG:
+LƯU Ý FORMAT VÀ YÊU CẦU CỰC KỲ QUAN TRỌNG:
 - Trả về ĐÚNG MỘT MẢNG JSON, số lượng phần tử phải BẰNG ĐÚNG số lượng câu hỏi đầu vào.
 - Trường "id" PHẢI GIỮ NGUYÊN id của câu hỏi gốc tương ứng.
 - "options" phải là mảng CHÍNH XÁC 4 chuỗi (không phải object).
 - "correctAnswer" là số từ 0-3 (index của đáp án đúng).
-- KHÔNG trả về thêm bất kỳ văn bản nào ngoài JSON.`,
+- KHÔNG trả về thêm bất kỳ văn bản nào ngoài JSON.
+- TUYỆT ĐỐI KHÔNG được giữ nguyên văn câu hỏi và câu trả lời cũ rồi chỉ đổi vị trí. BẮT BUỘC phải viết lại (rephrase) nội dung câu hỏi và TẤT CẢ các đáp án.`,
 
   /**
    * Tạo bài học tóm tắt (Lesson Summary)
