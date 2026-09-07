@@ -1428,70 +1428,46 @@
         };
       }
 
-      if (mode === "lesson") {
-        const isUnlocked = isLessonTopicUnlocked(topicId);
-        const prerequisite = getPrerequisiteTopicInfo(topicId);
-
-        let reason = "";
-        if (!isUnlocked) {
-          if (prerequisite.hasPrerequisite) {
-            reason =
-              `Chưa mở khóa Bài học - cần hoàn thành chủ đề trước: "${prerequisite.title}"`;
-          } else {
-            reason = "Chưa mở khóa Bài học";
-          }
+      // Đồng bộ logic với topics_scripts.html: Ưu tiên trạng thái từ server
+      if (typeof topic.unlocked === 'boolean') {
+        if (topic.unlocked) {
+          return {
+            isLocked: false,
+            reason: ""
+          };
+        } else {
+          return {
+            isLocked: true,
+            reason: topic.lockedReason || "Chưa mở khóa chủ đề này"
+          };
         }
-
-        return {
-          isLocked: !isUnlocked,
-          reason: reason,
-        };
       }
 
-      if (mode === "quiz") {
-        const isUnlocked = isQuizTopicUnlocked(topicId);
-        const prerequisite = getPrerequisiteTopicInfo(topicId);
-
-        let reason = "";
-        if (!isUnlocked) {
-          if (prerequisite.hasPrerequisite) {
-            reason =
-              `Chưa mở khóa Quiz - cần đạt >=80% ở chủ đề trước: "${prerequisite.title}"`;
-          } else {
-            reason = "Chưa mở khóa Quiz";
-          }
-        }
-
-        return {
-          isLocked: !isUnlocked,
-          reason: reason,
-        };
+      // Fallback nếu server không trả về trường unlocked (API cũ)
+      let condition = null;
+      if (topic.unlockCondition) {
+        try { condition = JSON.parse(topic.unlockCondition); } catch (e) {}
+      } else if (topic.prerequisiteTopics) {
+        var ids = String(topic.prerequisiteTopics).split(',').map(function(id) { return id.trim(); }).filter(Boolean);
+        if (ids.length > 0) condition = { prerequisiteTopicIds: ids, mode: 'all' };
       }
 
-      if (mode === "matching") {
-        const isUnlocked = isMatchingTopicUnlocked(topicId);
-        const prerequisite = getPrerequisiteTopicInfo(topicId);
-
-        let reason = "";
-        if (!isUnlocked) {
-          if (prerequisite.hasPrerequisite) {
-            reason =
-              `Chưa mở khóa Matching - cần đạt >=80% ở chủ đề trước: "${prerequisite.title}"`;
-          } else {
-            reason = "Chưa mở khóa Matching";
-          }
-        }
-
-        return {
-          isLocked: !isUnlocked,
-          reason: reason,
-        };
+      if (!topic.isLocked && !condition) {
+        return { isLocked: false, reason: "" };
       }
 
-      return {
-        isLocked: false,
-        reason: "",
-      };
+      if (condition && Array.isArray(condition.prerequisiteTopicIds) && condition.prerequisiteTopicIds.length > 0) {
+        var preIds = condition.prerequisiteTopicIds;
+        var reqMode = condition.mode || 'all';
+        var checks = preIds.map(function(id) {
+          var progress = userTopicProgress[id] || {};
+          return progress.status === 'completed' || isTopicCompleted(progress, id);
+        });
+        var isUnlocked = reqMode === 'any' ? checks.some(Boolean) : checks.every(Boolean);
+        return { isLocked: !isUnlocked, reason: isUnlocked ? "" : "Cần hoàn thành chủ đề điều kiện" };
+      }
+
+      return { isLocked: !!topic.isLocked, reason: topic.isLocked ? "Chủ đề đang bị khóa" : "" };
     }
 
     function getTopicModeDescriptors(topic) {
